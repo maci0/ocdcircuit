@@ -82,6 +82,8 @@ Ports: `ports/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
 to `.ocd` — see `examples/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).
 `ports/mitox.py` ports LCSC-footprint boards, harvesting exact pad geometry
 into `.fp` files — see `examples/mitox/` (43 parts, 4L, full fab output).
+`ports/atopile.py` ports atopile projects (`~` wiring, kicad_mod footprints,
+LCSC) — see `examples/bme690/` (BME690 carrier, verify-then-pin).
 
 Layout: `ocdcircuit/` (core, circuit, parts, solver, drc, fab, silk, export,
 agent, plugins), `studio.py`, `ocd.py`, `docs/`, `examples/`, `tests/`.

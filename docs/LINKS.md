@@ -16,3 +16,5 @@ is, why it's here.
   thousands of .pretty footprints, directly importable via `fp`.
 - [pico_tmc2209-tscircuit](../examples/pico_tmc2209/pico_tmc2209.ocd) —
   our first port: Pico + 3×TMC2209 via `ports/tscircuit.py`.
+- [atopile](https://atopile.io) — Python HDL for PCBs; our `ports/atopile.py`
+  converts `.ato` + `.kicad_mod` to `.ocd`.

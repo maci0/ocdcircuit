@@ -1,0 +1,31 @@
+board bme690_carrier 24.48x40.67 2L
+# ported from atopile main.ato — signals + ~ wiring preserved
+fp fp/PinSocket_1x09_P1.27mm_Vertical.kicad_mod
+fp fp/PinSocket_1x07_P1.27mm_Vertical.kicad_mod
+fp fp/PinHeader_1x09_P2.54mm_Vertical.kicad_mod
+fp fp/PinHeader_1x07_P2.54mm_Vertical.kicad_mod
+part J1 PinSocket_1x09_P1.27mm_Vertical lcsc=C59983
+part J2 PinSocket_1x07_P1.27mm_Vertical lcsc=C59983
+part J3 PinHeader_1x09_P2.54mm_Vertical lcsc=C2337
+part J4 PinHeader_1x07_P2.54mm_Vertical lcsc=C2337
+net CS: J1.8 J3.8
+net GND: J1.3 J3.3
+net GPIO0: J1.4 J3.4
+net GPIO1: J1.5 J3.5
+net GPIO4: J2.3 J4.3
+net GPIO5: J2.4 J4.4
+net GPIO6: J2.5 J4.5
+net GPIO7: J2.6 J4.6
+net INT1: J1.6 J3.6
+net INT2: J1.7 J3.7
+net PROM: J2.7 J4.7
+net SCK: J1.9 J3.9
+net SDI: J2.2 J4.2
+net SDO: J2.1 J4.1
+net VDD: J1.1 J3.1
+net VDDIO: J1.2 J3.2
+# fix J1 at 3.35 37.67 — dropped: stale layout (overlap), solver places freely
+# fix J2 at 21.13 37.67 — dropped: stale layout (overlap), solver places freely
+# fix J3 at 3.35 23.67 — dropped: stale layout (overlap), solver places freely
+# fix J4 at 21.13 23.67 — dropped: stale layout (overlap), solver places freely
+power GND

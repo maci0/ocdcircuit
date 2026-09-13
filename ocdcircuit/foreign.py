@@ -260,6 +260,21 @@ def load_foreign(path: str) -> list[tuple[str, Footprint]]:
     return [(name, fp)]
 
 
+def _footprint_ref(fpnode: list[object]) -> str:
+    """Reference designator: v5 fp_text reference, v6+ property Reference,
+    else our user text, else empty."""
+    fallback = ""
+    for t in _kids(fpnode, "fp_text"):
+        if len(t) > 2 and _unq(t[1]) in ("reference", "user"):
+            if _unq(t[1]) == "reference":
+                return _unq(t[2])
+            fallback = _unq(t[2])
+    for t in _kids(fpnode, "property"):
+        if len(t) > 2 and _unq(t[1]) == "Reference":
+            return _unq(t[2])
+    return fallback
+
+
 def kicad_pcb_netlist(text: str) -> dict[str, object]:
     """Import netlist from .kicad_pcb s-expr: footprints + pads→nets.
     Returns IR dict loadable via agent.from_ir (positions preserved)."""
@@ -273,12 +288,7 @@ def kicad_pcb_netlist(text: str) -> dict[str, object]:
     nets: dict[str, dict[str, object]] = {}
     fps: dict[str, Footprint] = {}
     for fpnode in _kids(root, "footprint"):
-        ref = ""
-        for t in _kids(fpnode, "fp_text"):
-            if len(t) > 2 and _unq(t[1]) in ("reference", "user"):
-                ref = _unq(t[2])
-                if _unq(t[1]) == "reference":
-                    break
+        ref = _footprint_ref(fpnode)
         if not ref:
             ref = f"U{len(parts) + 1}"
         at = next((c for c in fpnode[1:] if isinstance(c, list) and c and c[0] == "at"), None)

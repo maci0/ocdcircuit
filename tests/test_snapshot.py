@@ -23,6 +23,8 @@ def fingerprint() -> dict[str, dict[str, object]]:
                        os.path.join(EX, "pico_tmc2209"), None, 3),
                       ("mitox.ocd", "compact", "maze",
                        os.path.join(EX, "mitox"), None, 2),
+                      ("bme690_carrier.ocd", "diffusion", "maze",
+                       os.path.join(EX, "bme690"), None, 3),
                       ("blinky_555.ocd", "diffusion", "maze", EX, 1, 3),
                       ("blinky_555.ocd", "compact", "maze", EX, 4, 3),
                       ("blinky_555.ocd", "compact", "maze", EX, 8, 3)]:
