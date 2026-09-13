@@ -73,6 +73,14 @@ def _num(s: object) -> float:
     return float(_unq(s))
 
 
+def _isnum(s: object) -> bool:
+    try:
+        float(_unq(s))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def _kids(node: list[object], tag: str) -> list[list[object]]:
     return [c for c in node[1:] if isinstance(c, list) and c and c[0] == tag]
 
@@ -122,7 +130,10 @@ def kicad_mod(text: str) -> tuple[str, Footprint]:
         y = _num(at[2]) if at and len(at) > 2 else 0.0
         # NOTE: pad rotation ignored (needs footprint-level rot support)
         if typ in ("thru_hole",) or dr is not None:
-            d = _num(dr[1]) if dr and len(dr) > 1 else 0.8
+            ds = [a for a in (dr[1:] if dr else []) if _isnum(a)]
+            d = max([float(a) for a in ds] or [0.8])
+            # ponytail: slot drills → bounding circle (conservative annular
+            # ring; true slot milling when export learns slots)
             holes[num] = (x, y, d)
             box(x, y, d + 0.7, d + 0.7)
         else:

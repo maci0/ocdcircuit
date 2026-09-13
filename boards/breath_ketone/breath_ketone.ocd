@@ -1,0 +1,101 @@
+board breath_ketone 16.635x42.06 2L
+# ported from atopile main.ato — signals + ~ wiring preserved
+fp fp/USB-C_SMD-TYPE-C-31-M-12_1.kicad_mod
+fp fp/SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR.kicad_mod
+fp fp/B5819W.kicad_mod
+fp fp/AO3401A.kicad_mod
+fp fp/SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR.kicad_mod
+fp fp/LGA-8_L3.0-W3.0-P0.80_BME688.kicad_mod
+fp fp/Raytac_MDBT50Q.kicad_mod
+fp fp/USBLC6-2SC6.kicad_mod
+fp fp/OLED_042_72x40.kicad_mod
+fp fp/LiPo_Pads_501225.kicad_mod
+fp fp/TS1088.kicad_mod
+fp fp/E6C0606RGB.kicad_mod
+fp fp/SWD_TestPads.kicad_mod
+part J1 USB-C_SMD-TYPE-C-31-M-12_1 lcsc=C165948
+part J2 R0402 lcsc=C25905
+part J3 R0402 lcsc=C25905
+part J4 SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR lcsc=C14879
+part J5 R0402 lcsc=C25744
+part J6 C0402 lcsc=C23733
+part J7 C0402 lcsc=C23733
+part J8 B5819W lcsc=C8598
+part J9 AO3401A lcsc=C15127
+part J10 SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR lcsc=C5446
+part J11 C0402 lcsc=C52923
+part J12 C0402 lcsc=C52923
+part J13 R0402 lcsc=C25900
+part J14 R0402 lcsc=C25900
+part J15 LGA-8_L3.0-W3.0-P0.80_BME688 lcsc=C42431867
+part J16 C0402 lcsc=C1525
+part J17 C0402 lcsc=C1525
+part J18 Raytac_MDBT50Q lcsc=C5118826
+part J19 USBLC6-2SC6 lcsc=C7519
+part J20 C0402 lcsc=C1525
+part J21 C0402 lcsc=C1525
+part J22 C0402 lcsc=C52923
+part J23 C0603 lcsc=C19702
+part J24 OLED_042_72x40 lcsc=HANDSOLDER
+part J25 LiPo_Pads_501225 lcsc=HANDSOLDER
+part J26 TS1088 lcsc=C720477
+part J27 E6C0606RGB lcsc=C375569
+part J28 R0402 lcsc=C25104
+part J29 R0402 lcsc=C25076
+part J30 R0402 lcsc=C25076
+part J31 SWD_TestPads lcsc=HANDSOLDER
+net GND: J1.A1B12 J10.1 J11.2 J12.2 J15.1 J15.5 J16.2 J17.2 J18.1 J19.2 J2.2 J20.2 J21.2 J22.2 J23.2 J24.2 J25.2 J26.2 J3.2 J31.2 J4.2 J5.2 J6.2 J7.2
+net SCL: J14.1 J15.4 J18.16 J24.3
+net SDA: J13.1 J15.3 J18.19 J24.4
+net V3V3: J10.2 J12.1 J13.2 J14.2 J15.2 J15.6 J15.8 J16.1 J17.1 J18.28 J18.30 J21.1 J22.1 J23.1 J24.1 J27.2 J31.1
+net VBAT: J25.1 J4.3 J7.1 J9.3
+net VBUS: J1.A4B9 J18.32 J19.5 J20.1 J4.4 J6.1 J8.2 J9.1
+net VSYS: J10.3 J11.1 J8.1 J9.2
+net X_J19.1: J1.A6 J1.B6 J18.35 J19.1
+net X_J19.3: J1.A7 J1.B7 J18.34 J19.3
+net X_J2.1: J1.A5 J2.1
+net X_J26.1: J18.39 J26.1
+net X_J28.1: J27.4 J28.1
+net X_J28.2: J18.37 J28.2
+net X_J29.1: J27.3 J29.1
+net X_J29.2: J18.36 J29.2
+net X_J3.1: J1.B5 J3.1
+net X_J30.1: J27.1 J30.1
+net X_J30.2: J18.22 J30.2
+net X_J31.3: J18.51 J31.3
+net X_J31.4: J18.53 J31.4
+net X_J31.5: J18.40 J31.5
+net X_J4.1: J18.20 J4.1
+net X_J5.1: J4.5 J5.1
+fix J1 at 9.36 4.5
+# fix J10 at 12.76 21.5 — dropped: stale layout (overlap), solver places freely
+# fix J11 at 13.36 31.7 — dropped: stale layout (overlap), solver places freely
+# fix J12 at 13.36 24.9 — dropped: stale layout (overlap), solver places freely
+# fix J13 at 5.56 10.7 — dropped: stale layout (overlap), solver places freely
+# fix J14 at 13.16 10.7 — dropped: stale layout (overlap), solver places freely
+# fix J15 at 9.36 35.1 — dropped: stale layout (overlap), solver places freely
+# fix J16 at 4.96 31.7 — dropped: stale layout (overlap), solver places freely
+# fix J17 at 10.56 28.3 — dropped: stale layout (overlap), solver places freely
+# fix J18 at 9.36 29.8 — dropped: stale layout (overlap), solver places freely
+# fix J19 at 9.36 14.7 — dropped: stale layout (overlap), solver places freely
+# fix J2 at 10.16 20.2 — dropped: stale layout (overlap), solver places freely
+# fix J20 at 10.56 24.9 — dropped: stale layout (overlap), solver places freely
+# fix J21 at 7.76 24.9 — dropped: stale layout (overlap), solver places freely
+# fix J22 at 13.36 28.3 — dropped: stale layout (overlap), solver places freely
+# fix J23 at 7.76 28.3 — dropped: stale layout (overlap), solver places freely
+fix J24 at 9.36 39.3
+# fix J25 at 9.36 12.7 — dropped: stale layout (overlap), solver places freely
+# fix J26 at 9.36 10.7 — dropped: stale layout (overlap), solver places freely
+# fix J27 at 5.56 35.1 — dropped: stale layout (overlap), solver places freely
+# fix J28 at 5.56 33.1 — dropped: stale layout (overlap), solver places freely
+# fix J29 at 6.06 20.1 — dropped: stale layout (overlap), solver places freely
+fix J3 at 5.36 15.7
+# fix J30 at 10.56 31.7 — dropped: stale layout (overlap), solver places freely
+# fix J31 at 2.46 29.8 — dropped: stale layout (overlap), solver places freely
+# fix J4 at 5.96 21.5 — dropped: stale layout (overlap), solver places freely
+# fix J5 at 7.76 31.7 — dropped: stale layout (overlap), solver places freely
+# fix J6 at 5.16 24.9 — dropped: stale layout (overlap), solver places freely
+# fix J7 at 4.96 28.3 — dropped: stale layout (overlap), solver places freely
+# fix J8 at 5.16 18.1 — dropped: stale layout (overlap), solver places freely
+# fix J9 at 9.36 18.1 — dropped: stale layout (overlap), solver places freely
+power GND

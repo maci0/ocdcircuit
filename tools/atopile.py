@@ -126,11 +126,13 @@ def parse_parts(text: str) -> dict[str, dict[str, object]]:
 
 
 def positions_from_pcb(path: str) -> tuple[dict[str, tuple[float, float]],
-                                           float, float]:
-    """{ref: (x, y)} in mm + board w/h from Edge.Cuts bbox of a .kicad_pcb."""
+                                           float, float,
+                                           dict[str, str]]:
+    """{ref: (x, y)} in mm + board w/h + {ref: footprint} from a .kicad_pcb."""
     from ocdcircuit.foreign import sexpr, _kids, _unq, _num, _footprint_ref
     root = sexpr(open(path).read())
     refs: dict[str, tuple[float, float]] = {}
+    fps: dict[str, str] = {}
     for fp in _kids(root, "footprint"):
         ref = _footprint_ref(fp)
         at = next((c for c in fp[1:] if isinstance(c, list) and c and c[0] == "at"), None)
@@ -138,6 +140,7 @@ def positions_from_pcb(path: str) -> tuple[dict[str, tuple[float, float]],
         y = _num(at[2]) if at and len(at) > 2 else 0.0
         if ref:
             refs[ref] = (x, y)
+            fps[ref] = _unq(fp[1]).split(":")[-1] if len(fp) > 1 else ""
     xs: list[float] = []
     ys: list[float] = []
     for gr in _kids(root, "gr_line"):
@@ -150,7 +153,7 @@ def positions_from_pcb(path: str) -> tuple[dict[str, tuple[float, float]],
     h = max(ys) - min(ys) if ys else 30.0
     ox, oy = (min(xs), min(ys)) if xs else (0.0, 0.0)
     # KiCad Y grows down, ours grows up → flip
-    return ({r: (x - ox, h - (y - oy)) for r, (x, y) in refs.items()}, w, h)
+    return ({r: (x - ox, h - (y - oy)) for r, (x, y) in refs.items()}, w, h, fps)
 
 
 def convert(projdir: str, outdir: str) -> str:
@@ -220,13 +223,14 @@ def convert(projdir: str, outdir: str) -> str:
         named.setdefault(signame or f"X_{r[-6:]}", []).extend(pinlist)
     # positions from layout pcb (match by order if refs differ)
     pos: dict[str, tuple[float, float]] = {}
+    lay_fp: dict[str, str] = {}
     bw, bh = 40.0, 30.0
     laydir = os.path.join(projdir, "atopile", "layouts")
     if os.path.isdir(laydir):
         for root, _ds, fs in os.walk(laydir):
             for fn in fs:
                 if fn.endswith(".kicad_pcb"):
-                    pos, bw, bh = positions_from_pcb(os.path.join(root, fn))
+                    pos, bw, bh, lay_fp = positions_from_pcb(os.path.join(root, fn))
                     break
             if pos:
                 break
@@ -277,15 +281,27 @@ def convert(projdir: str, outdir: str) -> str:
     # committed .kicad_pcb). Verify-then-pin, never blind-pin.
     from ocdcircuit import agent as _agent
     probe = _agent.loads("\n".join(L) + "\n", base=outdir)
-    for ref, (x, y) in sorted(pos.items()):
-        if ref in modemap and ref in probe.parts:
+    # layout refs rarely match porter refs: remap by footprint+order
+    by_fp: dict[str, list[str]] = {}
+    for ref in probe.parts:
+        by_fp.setdefault(modemap.get(ref, ""), []).append(ref)
+    lay_by_fp: dict[str, list[str]] = {}
+    for ref, fp in lay_fp.items():
+        lay_by_fp.setdefault(fp, []).append(ref)
+    remap: dict[str, tuple[float, float]] = {}
+    for fp, layrefs in lay_by_fp.items():
+        cands = by_fp.get(fp, [])
+        for lr, pr in zip(sorted(layrefs), sorted(cands)):
+            remap[pr] = pos[lr]
+    for ref, (x, y) in sorted(remap.items()):
+        if ref in probe.parts:
             part = probe.parts[ref]
             pw, ph = part.wh()
             # compare against fellow fixed candidates (probe coords are center)
             clash = any(
                 o != ref and abs(x - ox) < (pw + probe.parts[o].wh()[0]) / 2 + 0.1
                 and abs(y - oy) < (ph + probe.parts[o].wh()[1]) / 2 + 0.1
-                for o, (ox, oy) in pos.items() if o in probe.parts)
+                for o, (ox, oy) in remap.items() if o in probe.parts)
             inside = (pw / 2 + 0.3 <= x <= bw - pw / 2 - 0.3 and
                       ph / 2 + 0.3 <= y <= bh - ph / 2 - 0.3)
             if not clash and inside:
