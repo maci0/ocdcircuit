@@ -291,7 +291,7 @@ _kmod = '''(footprint "T1" (layer "F.Cu") (at 0 0)
   (pad "2" smd rect (at 1 0) (size 1 1.5) (layers "F.Cu"))
   (model "x.stp"))'''
 _fn, _fm = foreign.kicad_mod(_kmod)
-assert _fn == "T1" and set(_fm["pads"]) == {"1", "2"}
+assert _fn == "T1" and set(cast(dict[str, object], _fm["pads"])) == {"1", "2"}
 assert _fm["models"] == ["x.stp"]
 _lbr = '''<eagle><drawing><library><packages><package name="P1">
 <smd name="1" x="0" y="0" dx="1" dy="1"/><pad name="2" x="2" y="0" drill="0.8"/>
