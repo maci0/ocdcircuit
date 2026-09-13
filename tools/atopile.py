@@ -28,15 +28,79 @@ def _strip_comments(src: str) -> str:
 
 def parse_main(text: str) -> tuple[list[str], dict[str, str], list[tuple[str, str, str]]]:
     """→ (signals, instances {var: component}, wires [(lhs, op, rhs)]).
-    lhs/rhs are dotted (j1.p1) or bare signals."""
+    lhs/rhs are dotted (j1.p1) or bare signals. Hierarchical `module M:`
+    blocks elaborate inline: `x = new M` stamps prefixed copies
+    (x_var, x_port signals), so the rest of the pipeline stays flat."""
     src = _strip_comments(text)
-    signals = re.findall(r"^\s*signal\s+(\w+)", src, re.M)
+    modules: dict[str, tuple[list[str], dict[str, str], list[tuple[str, str, str]]]] = {}
+    for m in re.finditer(r"^module\s+(\w+)\s*:(.*?)(?=^module\s+\w+\s*:|\Z)",
+                         src, re.M | re.S):
+        msig: list[str] = []
+        minst: dict[str, str] = {}
+        mwires: list[tuple[str, str, str]] = []
+        for line in m.group(2).splitlines():
+            sm = re.match(r"^\s*signal\s+(\w+)", line)
+            if sm:
+                msig.append(sm.group(1))
+                continue
+            im = re.match(r"^\s*(\w+)\s*=\s*new\s+(\w+)", line)
+            if im:
+                minst[im.group(1)] = im.group(2)
+                continue
+            wm = re.match(r"^\s*([\w.]+)\s*(~|>)\s*([\w.]+)", line)
+            if wm:
+                mwires.append((wm.group(1), wm.group(2), wm.group(3)))
+        modules[m.group(1)] = (msig, minst, mwires)
+    pre = re.split(r"^module\s+\w+\s*:", src, flags=re.M)[0]
+    signals = re.findall(r"^\s*signal\s+(\w+)", pre, re.M)
     insts: dict[str, str] = {}
-    for m in re.finditer(r"^\s*(\w+)\s*=\s*new\s+(\w+)", src, re.M):
+    for m in re.finditer(r"^\s*(\w+)\s*=\s*new\s+(\w+)", pre, re.M):
         insts[m.group(1)] = m.group(2)
     wires: list[tuple[str, str, str]] = []
-    for m in re.finditer(r"^\s*([\w.]+)\s*(~|>)\s*([\w.]+)", src, re.M):
+    for m in re.finditer(r"^\s*([\w.]+)\s*(~|>)\s*([\w.]+)", pre, re.M):
         wires.append((m.group(1), m.group(2), m.group(3)))
+    # `module App:` is the root when present (flat files have no modules)
+    if "App" in modules:
+        _s, _i, _w = modules.pop("App")
+        signals += [s for s in _s if s not in signals]
+        insts.update(_i)
+        wires += _w
+    # elaborate: module instances become flat prefixed copies.
+    # - internal wires: bare signals qualify NOW (once): s → var_s
+    # - existing wires: only var.rest endpoints rewrite (ports); bare
+    #   App signals are a different namespace — never touch them.
+    def _local(tok: str, var: str, sigs: set[str],
+               ivars: set[str]) -> str:
+        if "." in tok:
+            v, rest = tok.split(".", 1)
+            if v in ivars:
+                return f"{var}_{v}.{rest}"
+            return tok
+        return f"{var}_{tok}" if tok in sigs else tok
+
+    def _port(tok: str, var: str) -> str:
+        if "." in tok:
+            v, rest = tok.split(".", 1)
+            return f"{var}_{rest}" if v == var else tok
+        return tok
+
+    # loop: nested modules (core instantiates Indicator) expand bottom-up
+    for _ in range(8):  # ponytail: depth cap, atopile allows recursion
+        todo = [(v, c) for v, c in insts.items() if c in modules]
+        if not todo:
+            break
+        for var, comp in todo:
+            del insts[var]
+            msig, minst, mwires = modules[comp]
+            sigs = set(msig)
+            for v, c in minst.items():
+                insts[f"{var}_{v}"] = c
+            ivars = set(minst)
+            for lhs, op, rhs in mwires:
+                wires.append((_local(lhs, var, sigs, ivars), op,
+                              _local(rhs, var, sigs, ivars)))
+            wires = [(_port(a, var), op, _port(b, var))
+                     for a, op, b in wires]
     return signals, insts, wires
 
 
@@ -125,14 +189,14 @@ def convert(projdir: str, outdir: str) -> str:
     def phys(var: str, pin: str) -> str:
         return f"{refs.get(var, var)}.{pinmap.get(var, {}).get(pin, pin)}"
 
+    def _side(tok: str) -> str:
+        if "." in tok:
+            v, p = tok.split(".")
+            return phys(v, p)
+        return tok
+
     for lhs, _op, rhs in wires:
-        if "." in lhs:
-            v, p = lhs.split(".")
-            a = phys(v, p)
-        else:
-            a = lhs
-        b = rhs
-        ra, rb = find(a), find(b)
+        ra, rb = find(_side(lhs)), find(_side(rhs))
         if ra != rb:
             parent[rb] = ra
     nets: dict[str, list[str]] = {}
@@ -185,6 +249,10 @@ def convert(projdir: str, outdir: str) -> str:
                 src_fp = os.path.join(root, os.path.basename(fpfile))
                 break
         if src_fp:
+            from ocdcircuit.parts import FOOTPRINTS
+            if fpname in FOOTPRINTS:
+                modemap[ref] = fpname  # std land pattern — no import needed
+                continue
             dst = os.path.join(outdir, "fp", os.path.basename(fpfile))
             import shutil
             shutil.copy(src_fp, dst)  # verbatim; our kicad importer parses it

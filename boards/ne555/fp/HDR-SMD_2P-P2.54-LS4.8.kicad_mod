@@ -1,0 +1,149 @@
+(footprint "DEALON_DZ254S_11_02_48:HDR-SMD_2P-P2.54-LS4.8"
+	(version 20241229)
+	(generator "faebryk_convert")
+	(generator_version "v5")
+	(layer "F.Cu")
+	(tedit "5DC5F6A4")
+	(uuid "b69fb70e-4cf7-4c74-a4de-7be1aa597b74")
+	(property "Reference" "REF**"
+		(at 0 -5.27)
+		(layer "F.SilkS")
+		(uuid "165740a1-a9b8-4f84-9c99-4d66107dcde4")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "HDR-SMD_2P-P2.54-LS4.8"
+		(at 0 5.27)
+		(layer "F.Fab")
+		(uuid "0371e8e5-eef1-42ef-a206-4c42f8c0a1ef")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_circle
+		(center -2.54 2.16)
+		(end -2.39 2.16)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(locked no)
+		(uuid "64448c61-48b8-4c23-8c43-821fef6f9a5b")
+	)
+	(fp_circle
+		(center -2.54 2.4)
+		(end -2.51 2.4)
+		(stroke
+			(width 0.06)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(locked no)
+		(uuid "564fb5de-dc90-423c-9f01-2b82b7958244")
+	)
+	(fp_line
+		(start 2.54 -1.27)
+		(end 2.13 -1.27)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "c95011fc-4a5c-4982-949e-266f8c203fa4")
+	)
+	(fp_line
+		(start 2.54 1.27)
+		(end -0.41 1.27)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "97aea34e-43e7-4743-bf6a-5cf5fee2fb21")
+	)
+	(fp_line
+		(start 2.54 -1.27)
+		(end 2.54 1.27)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "64bb904e-3ec8-4daa-a318-208354da117e")
+	)
+	(fp_line
+		(start -2.54 1.27)
+		(end -2.54 -1.27)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "835bb70a-6185-44be-93a5-984e3c82d3a1")
+	)
+	(fp_line
+		(start -2.14 1.27)
+		(end -2.54 1.27)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "00ebd3aa-4228-4d9d-adc4-5b3adb1894cc")
+	)
+	(fp_line
+		(start -2.54 -1.27)
+		(end 0.4 -1.27)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "d4174960-6294-42ab-8237-592bee3fffa8")
+	)
+	(pad "2" smd rect
+		(at 1.27 -1.27 0)
+		(size 1.02 2.54)
+		(layers "F.Cu" "F.Paste" "F.Mask")
+		(uuid "ffc80641-bc09-4c8c-9d32-6429b2f0b8f7")
+	)
+	(pad "1" smd rect
+		(at -1.27 1.27 0)
+		(size 1.02 2.54)
+		(layers "F.Cu" "F.Paste" "F.Mask")
+		(uuid "c12c6a05-b746-4ede-9b29-43325708ba9f")
+	)
+	(model "${KIPRJMOD}/../../parts/DEALON_DZ254S_11_02_48/HDR-SMD_2P-P2.54_XKB_X6511WVS-02H-C60D48R2.step"
+		(offset
+			(xyz 0 0 -0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+	(embedded_fonts no)
+)

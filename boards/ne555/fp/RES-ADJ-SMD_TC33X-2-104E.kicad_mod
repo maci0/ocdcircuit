@@ -1,0 +1,165 @@
+(footprint "BOURNS_TC33X_2_104E:RES-ADJ-SMD_TC33X-2-104E"
+	(version 20241229)
+	(generator "faebryk_convert")
+	(generator_version "v5")
+	(layer "F.Cu")
+	(tedit "5DC5F6A4")
+	(uuid "f9cccbc5-d4c2-4e1a-b54e-7c16f3ee836a")
+	(property "Reference" "REF**"
+		(at 0 -5.6)
+		(layer "F.SilkS")
+		(uuid "98e2c7e5-084f-447f-b070-8275ddf6af94")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "RES-ADJ-SMD_TC33X-2-104E"
+		(at 0 5.6)
+		(layer "F.Fab")
+		(uuid "42d1f82b-3bb1-46a7-b94d-f9075cbbf3f1")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_circle
+		(center -1.5 1.9)
+		(end -1.47 1.9)
+		(stroke
+			(width 0.06)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(locked no)
+		(uuid "0fe0af58-a4a2-441a-a9f1-ef4003e0d742")
+	)
+	(fp_circle
+		(center -1.78 1.91)
+		(end -1.65 1.91)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "Cmts.User")
+		(locked no)
+		(uuid "9320d71d-468f-4542-bc25-00a499693cfc")
+	)
+	(fp_circle
+		(center 0 0)
+		(end 0.52 0)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(locked no)
+		(uuid "8e5b84ad-0af3-4d78-b294-c41bad3796cf")
+	)
+	(fp_circle
+		(center -2.03 1.91)
+		(end -1.9 1.91)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(locked no)
+		(uuid "7ab51519-477b-4756-bdf1-af7eb733de81")
+	)
+	(fp_line
+		(start -0.13 1.83)
+		(end 0.12 1.83)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "0ce5a368-1b3b-4015-bbe3-8b516e313755")
+	)
+	(fp_line
+		(start -1.53 -1.98)
+		(end -1.53 0.76)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "ce2c5513-da47-4274-a223-e71a8c9f1492")
+	)
+	(fp_line
+		(start 1.03 -1.98)
+		(end 1.52 -1.98)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "9436dc31-1cf2-4518-a948-50bd3835e1cd")
+	)
+	(fp_line
+		(start 1.52 -1.98)
+		(end 1.52 0.76)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "a352edae-cc3e-4c6e-83a0-90e350b562e0")
+	)
+	(fp_line
+		(start -1.53 -1.98)
+		(end -1.03 -1.98)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "c53190c9-8f5d-42c8-ae32-4b62cd5f4675")
+	)
+	(pad "1" smd rect
+		(at -0.95 1.6 0)
+		(size 1.2 1.2)
+		(layers "F.Cu" "F.Paste" "F.Mask")
+		(uuid "d6417fed-12c6-4222-af11-fe28b10ea6a3")
+	)
+	(pad "3" smd rect
+		(at 0.95 1.6 0)
+		(size 1.2 1.2)
+		(layers "F.Cu" "F.Paste" "F.Mask")
+		(uuid "fadbcacb-52e5-481e-b655-5f562c9b8eb0")
+	)
+	(pad "2" smd rect
+		(at 0 -1.6 0)
+		(size 1.6 1.5)
+		(layers "F.Cu" "F.Paste" "F.Mask")
+		(uuid "5f5050b4-0cd7-40b3-85b8-d1698247c2d3")
+	)
+	(model "${KIPRJMOD}/../../parts/BOURNS_TC33X_2_104E/RES-ADJ-SMD_TC33X-2-104E.step"
+		(offset
+			(xyz 0 0 -0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+	(embedded_fonts no)
+)
