@@ -395,6 +395,14 @@ def _validate(b: Board) -> None:
                 raise ValueError(f"net {n}: unknown part {ref!r}")
             if str(pin) not in pads_of(b.parts[ref].fp, lib):
                 raise ValueError(f"net {n}: {ref} has no pin {pin!r}")
+    # ponytail: warn-only until pour has a consumer (LANDSCAPE defers pour
+    # support in DRC/export) — parsing must never silently do nothing.
+    for c in b.constraints:
+        if c.get("t") == "pour":
+            import sys as _sys
+            print(f"ocd: note: pour {c['net']} on {c['layer']} "
+                  f"parsed but not yet applied (no pour consumer)",
+                  file=_sys.stderr)
 
 
 AUTO_JOIN = ("VCC", "GND", "VDD", "VSS", "5V", "3V3")

@@ -5,13 +5,15 @@ VPSC, local-search/population methods, Steiner/schematic/analog).
 
 ## Summary
 
-For ocdcircuit's scale (tens of parts, zero-dependency Python), the literature
-supports the current architecture: a force-directed / Langevin-style stochastic
-placer plus A* maze routing, with multi-seed best-of as cheap insurance. Exact
+For ocdcircuit's scale (tens of parts, zero-dependency Python), measurement
+supports the current architecture: released diffusion finds zero-error layouts
+at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
+(`outputs/dense-demo-experiment.md`). Exact
 methods (CP-SAT, ILP/MILP) buy optimality proofs but cost a dependency plus a
 linearized/disjunctive formulation the true objective doesn't need yet. The
 cheapest upgrades, in order: (1) second rip-up & reroute pass in
-the maze router (ordering + one bounded retry already exist); (2) a greedy legalization/overlap-removal pass after diffusion;
+the maze router (ordering + one bounded retry already exist — maze falls back
+to airwires on contested dense nets while lroute stays instant); (2) a greedy legalization/overlap-removal pass after diffusion;
 (3) cooling-schedule tuning. Skip: ILP dependency, ePlace/RePlAce
 reimplementation, ML placers, push-and-shove.
 
@@ -193,8 +195,9 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
 
 1. At what part count / density does multi-start diffusion measurably lose to
    CP-SAT on a linearized model? Needs a benchmark, not literature.
-2. Does negotiated-congestion-lite beat plain rip-up & reroute on dense demo
-   boards (e.g. `examples/pico_tmc2209/`)? ~50-line experiment.
+2. Does a second rip-up pass close the airwire-fallback gap on dense demo
+   boards (pico: ~197 maze warnings w/ fallbacks vs 26 lroute clearance
+   warnings)? Count fallbacks, not warnings.
 3. Length-matching currently penalizes *pad-distance* estimates pre-route; when
    should `_match_cost` switch to routed length, and are meanders ever needed?
 4. Exact CP-SAT scale numbers, DPLL/CDCL primary methods, solver benchmark

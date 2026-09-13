@@ -69,8 +69,8 @@ O(n)/O(n²) at tens of parts. Research only — no implementation this round.
 - **45° vs 90°**: Altium reports a lab test (17 ps rise pulses) showing NO
   radiated-EMI difference between 90° and 45° corners, citing Howard Johnson's
   "big bad bend" debunk —
-  [Altium (ES mirror; EN page timed out, content unverified)](https://resources.altium.com/es/p/pcb-routing-angle-myths-45-degree-angle-versus-90-degree-angle),
-  [Johnson original, unfetched — flagged](https://www.sigcon.com/Pubs/edn/bigbadbend.htm).
+  [Altium ES mirror](https://resources.altium.com/es/p/pcb-routing-angle-myths-45-degree-angle-versus-90-degree-angle),
+  [Johnson original, confirmed via direct fetch](https://www.sigcon.com/Pubs/edn/bigbadbend.htm).
   Exceptions: ≥10 GHz / microwave with ≥100 mil traces. Origin of the 45°
   rule = legacy acid-trap etching + peel strength, now obsolete; 45° persists
   as CAD default + habit. No IPC clause found — practitioner-only, flagged.
@@ -167,27 +167,43 @@ Status: ✅ = derivable from existing state (~0 lines); 🔧 = ~10 lines;
 🏗️ = needs geometry engine. Targets are judgment (flagged J) except
 literature-backed (L) and fab-verified (F).
 
-| # | Metric | Formula | Target | Cost |
+Conventions (normative for any implementation — review round 1):
+- Every metric returns 0..1 (higher = tidier) or is marked RAW (physical
+  units, not aggregated). Counts never enter a weighted sum directly.
+- Undefined inputs return `None` (not 0): unrouted/empty boards for trace
+  metrics (T1–T6), <2 parts for spacing metrics (T7–T9), no match/diff
+  constraints for T6-gap, no silk labels for T14–T15. Aggregators skip
+  `None` and report coverage (e.g. "9/12 metrics defined").
+- Purchase-1997 transfer holds for T13 (schematic = node-link) only. T1/T2
+  "(L)" labels are proposal-by-analogy, not literature — PCB crossings are
+  DRC shorts the maze already avoids; comprehension cost ≠ violation cost.
+- The weight vector below is **illustrative, not normative**: no count→0..1
+  normalization is defined, sub-weights are undefined (T7/T8/T9 would
+  triple-count regularity), and cross-board scalar ranking is forbidden.
+  Publish components; aggregate only within one board with stated weights.
+
+| # | Metric | Formula (0..1 unless RAW) | Target | Cost |
 |---|---|---|---|---|
-| T1 | Same-layer crossings | count + per routed cm | 0 (L) | 🔧 |
-| T2 | Bends per mm | Σ direction-changes / Σ length | min (L) | 🔧 |
-| T3 | Orthogonality fraction | axis-aligned length / total | 1.0 (J) | ✅ |
-| T4 | Via count / layer changes | per net + board total (maze routes only — L-router emits no vias) | min (J) | 🔧 |
-| T5 | Clearance headroom | min(actual/min) per net class | ≥1.2 (J) | 🔧 |
-| T6 | Length skew + gap σ | max intra-pair ΔL (from `_net_length`), gap stdev (new code — `_diff_cost` only checks pad-pair distance) | spec-dep (fab-blog table, not interface spec) | 🔧 |
-| T7 | Placement alignment | shared-x/y fraction @ ε=0.1mm | →1 (J) | 🔧 |
-| T8 | Grid-snap residual | mean dist to 0.25mm multiple (= maze GRID) | 0 (J) | 🔧 |
-| T9 | Spacing uniformity | 1 − CV of neighbor gaps | →1 (J) | 🔧 |
+| T1 | Same-layer crossings | RAW count + per routed cm; `None` if unrouted | 0 (proposal, was L) | 🔧 |
+| T2 | Bends per mm | RAW Σ direction-changes / Σ length; `None` if unrouted (beware zero-length via segs) | min (proposal, was L) | 🔧 |
+| T3 | Orthogonality fraction | axis-aligned length / total; `None` if no traces (regression-tripwire only — routers emit Manhattan by construction) | 1.0 (J) | ✅ |
+| T4 | Via count / layer changes | RAW per net + board total (maze routes only — L-router emits no vias; `getattr(s,'via',False)`) | min (J) | 🔧 |
+| T5 | Clearance headroom | min(actual/min); `None` if no traces. No net-class entity exists (single global `min_space`) — per-net-class split is future work | ≥1.2 (J, underived — do not gate on it) | 🔧 |
+| T6 | Length skew + gap σ | skew RAW mm via `_net_length` (pad estimate when unrouted — label which); gap-σ needs new code + defined population | spec-dep (fab-blog table, not interface spec) | 🔧 |
+| T7 | Placement alignment | shared-x/y fraction @ ε — ε **uncalibrated** (0.1 mm is a placeholder; continuous placer has no alignment term, so →1 is unreachable today); `None` if <2 parts | →1 (J) | 🔧 |
+| T8 | Grid-snap residual | mean dist to actual grid multiple (pin to the board's `route-grid` constraint, not literal 0.25) | 0 (J) | 🔧 |
+| T9 | Spacing uniformity | 1 − CV of neighbor gaps; `None` if <2 parts or mean gap 0 (conflicts with T7 by design — aligned groups score low here) | →1 (J) | 🔧 |
 | T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | 🔧 |
 | T11 | Copper tile variance | σ of tile density + layer Δ | Δ≤20% (F) | 🏗️ |
-| T12 | Acid-trap scan | # acute <90° copper wedges | 0 (F) | 🏗️ |
-| T13 | Schematic crossings/jogs | N/A until a real schematic placer lands (current renderer is one-column-per-net parallel lines — trivially 0) | min (L) | 🏗️ |
-| T14 | Silk overlap veto | text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents) | 0 (F) | 🔧 |
-| T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field) | →1 (J) | 🔧 |
+| T12 | Acid-trap scan | RAW # acute <90° copper wedges (always 0 under Manhattan-only routing — placeholder) | 0 (F) | 🏗️ |
+| T13 | Schematic crossings/jogs | N/A until a real schematic placer lands (current renderer is one-column-per-net parallel lines — trivially 0) | min (L — the one valid Purchase transfer) | 🏗️ |
+| T14 | Silk overlap | RAW text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents); **scored, never veto-gated** until precision is measured | 0 (F) | 🔧 |
+| T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field; deterministic offsets → ~100% until placer changes — non-discriminative) | →1 (J) | 🔧 |
 
-Suggested default weights (shown, overridable): traces 0.35 (T1–T4),
+Illustrative weights (do not implement literally): traces 0.35 (T1–T4),
 placement 0.25 (T7–T10), DFM 0.25 (T5–T6, T11–T12), readability 0.15
-(T13–T15); T14 veto-gated (any overlap fails neat regardless of sum).
+(T13–T15). T14 is scored, not veto-gated (veto removed — round-1 review:
+crude heuristic + veto = false-fail gate on fab-legal boards).
 
 ## Open questions
 

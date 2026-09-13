@@ -17,7 +17,8 @@
 - `convert.py` — netlist.json + layout.json → `monster6502.ocd`
   (run: `python3 convert.py`; needs `netlist.json` + `layout.json` beside it)
 - `monster6502.ocd` — generated, 5420 parts / 2593 nets / ~14.9k pins
-  (DNP Pico U1 dropped; its private nets dropped with it; vcc/vss kept)
+  (raw: 5421 comps / 2624 nets; DNP Pico U1 + 31 pico-private/single-pin nets
+  dropped; vcc/vss kept)
 - `fet_sot323.fp`, `chip0402.fp`, `testpoint.fp` — true-size footprints
   (stdlib SOT23/R0402 carry courtyard margins that false-overlap at
   3.7×2.8mm die-true pitch)
@@ -26,8 +27,9 @@
 
 ## Stats (measured)
 
-- 4051 FETs + 1110 R + 156 C + 55 LED + 12 diode + 36 TP; 2624 nets
-  (1282 2-pin; p50 fanout 3, p90 7, p99 20; vss 2502 pins, vcc 1350)
+- 4051 FETs + 1110 R + 156 C + 55 LED + 12 diode + 36 TP (raw counts);
+  2624 raw nets (1282 2-pin; p50 fanout 3, p90 7, p99 20; vss 2502 pins,
+  vcc 1350). Generated file: 5420 parts / 2593 nets (see above).
 - 5271 parts carry die-true `fix` positions (golden reference for scoring);
   150 back-side decoupling caps unplaced (placer decides)
 - `fix` = placement ground truth: ocd only honors `fix` inside `place()`,

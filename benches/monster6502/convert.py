@@ -1,16 +1,17 @@
 """discrete6502 (MOnSter-inspired 6502) netlist -> .ocd benchmark converter.
 
 Source: https://github.com/epatel/discrete6502 (CC BY-NC-SA 4.0, logic from
-visual6502 reverse-engineered netlist). Raw files (NOT committed, see
-SOURCES.md): gen/netlist.json (components + nets), gen/layout.json (unused).
+visual6502 reverse-engineered netlist). Raw files (committed, see
+SOURCES.md): gen/netlist.json (components + nets), gen/layout.json
+(authoritative true-mm positions).
 
-Mapping: 4051 FETs (SOT-323 3-pin) -> SOT363; 1110 R_0402 -> R0402;
-55 LEDs -> LED0603; 156 caps -> C0402/C0805; 12 diodes -> D_SOD323;
-36 testpoints + 1 Pico -> PINHD2 placeholders (ocd has no THT pad/Pico).
-Positions: source mil -> mm (/39.3701). The ocd board keeps real size
-291x322mm, 6 layers (source is 6-layer; ocd supports NL).
+Mapping: 4051 FETs -> FET_SOT323 (.fp, true 2.0x1.25); R/C0402 -> CHIP0402
+(.fp); 55 LEDs -> LED0603 (stdlib); C0805 -> C0805; diodes -> D_SOD323;
+36 testpoints -> TP1 (.fp); DNP Pico U1 dropped with its private nets.
+Positions: layout.json mm (netlist.json pos units are NOT mil — ignored).
+Board 291x322 6L. DNP ballast excluded.
 
-Usage: python3 convert.py  # writes monster6502.ocd (needs netlist.json beside it)
+Usage: python3 convert.py  # writes monster6502.ocd (needs netlist.json + layout.json)
 # ponytail: no cli args, single-purpose script — flags when reused.
 """
 from __future__ import annotations

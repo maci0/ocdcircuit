@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
 examples/out/
+benches/monster6502/baseline_*.txt
