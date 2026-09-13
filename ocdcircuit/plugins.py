@@ -157,45 +157,22 @@ class MazeRouter(Plugin[int]):
 
 
 class CoarseRouter(Plugin[int]):
-    """Block-level routing: coarse-grid maze (2mm) for inter-block trunks,
-    then fine maze inside instances. ~10x faster than full-fine maze on
-    1000+ part boards; trunks get refined by a later fine pass."""
+    """Coarse-grid maze (default 2mm): ~10x faster than full-fine maze on
+    1000+ part boards. Coarse geometry throughout (no fine refinement —
+    run router:maze afterwards when a board earns it)."""
     kind, key = "router", "coarse"
 
     def run(self, board: Board, *a: object, **k: object) -> int:
         from typing import cast
         from . import maze as _maze
-        from .circuit import Seg
-        coarse = float(k.get("grid", 2.0))  # type: ignore[arg-type]
-        # pass 1: inter-block nets (pins in different owners, or flat) on
-        # the coarse grid — temporarily hide intra-instance nets
-        saved = list(board.traces)
-        board.traces = []
+        coarse = float(cast(float, k.get("grid", 2.0)))
         board.constrain({"t": "route-grid", "grid": coarse})
         try:
-            n1 = _maze.maze(board, frames=None)
+            return _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
         finally:
             board.constraints = [c for c in board.constraints
                                  if not (c.get("t") == "route-grid"
                                          and c.get("grid") == coarse)]
-        void: list[Seg] = []
-        kept: list[Seg] = []
-        for s in board.traces:
-            internal = False
-            for n, net in board.nets.items():
-                if n != s.net:
-                    continue
-                owners = {board.parts[r].owner for r, _ in net.pins
-                          if r in board.parts}
-                if len(owners) == 1 and None not in owners:
-                    internal = True
-            (void if internal else kept).append(s)
-        # pass 2: intra-instance nets on the fine grid
-        board.traces = kept
-        n2 = _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
-        void_nets = {s.net for s in void}
-        void_nets -= {s.net for s in board.traces if s in kept}
-        return n1 + n2 - len(kept) + len(void)
 
 
 class WireMaskRouter(Plugin[int]):
