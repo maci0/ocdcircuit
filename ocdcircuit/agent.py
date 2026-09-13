@@ -216,6 +216,8 @@ def dumps(board: Board) -> str:
     dump `use` lines + local content only; reload re-merges identically."""
     owned = {p.ref for p in board.parts.values() if p.owner}
     L = [f"board {board.name} {board.width:g}x{board.height:g} {board.layers}L"]
+    for k in sorted(board.meta):
+        L.append(f"meta {k} {board.meta[k]}")
     for bname in sorted(board.blocks):
         L.append(f"block {bname}")
         L.extend(f"  {ln}" for ln in board.blocks[bname].lines)
@@ -446,6 +448,11 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err(e)
         elif kw == "part":
             _exec_part(b, line, err)
+        elif kw == "meta":
+            toks = line.split(None, 2)
+            if len(toks) != 3 or not toks[1]:
+                raise err("want: meta KEY value...")
+            b.meta[toks[1]] = toks[2]
         elif kw == "net" or "::" in line:
             _exec_net(b, line, err)
         else:

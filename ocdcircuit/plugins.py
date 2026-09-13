@@ -368,7 +368,7 @@ THEMES: dict[str, dict[str, object]] = {
 def ir_of(board: Board) -> dict[str, object]:
     return {
         "board": {"name": board.name, "w": board.width, "h": board.height,
-                  "layers": board.layers, "fab": board.fab},
+                  "layers": board.layers, "fab": board.fab, "meta": dict(board.meta)},
         "parts": [{"ref": p.ref, "fp": p.fp, "value": p.value,
                    "x": round(p.x, 3), "y": round(p.y, 3)}
                   for p in board.parts.values()],
@@ -393,6 +393,9 @@ def from_ir(doc: dict[str, object]) -> Board:
     fab = bb.get("fab")
     if isinstance(fab, str):
         b.fab = fab
+    meta = bb.get("meta", {})
+    assert isinstance(meta, dict)
+    b.meta.update({str(k): str(v) for k, v in meta.items()})
     for fn, meta in cast(dict[str, dict[str, object]], doc.get("_imported_fp", {})).items():
         if fn not in b._lib():
             b.add_footprint(fn, meta)

@@ -6,6 +6,7 @@ Build with `python apps/ocd.py <file.ocd>` — errors name the line number.
 
 ```ocd
 board blinky555 40x30 2L       # board NAME WxH [NL] — 1..32 layers (default 2)
+meta title Blinky 555          # meta KEY value... (title/rev/desc/… → KiCad/IR)
 part U1 SOIC8 NE555            # part REF FOOTPRINT [value...]
 VCC :: J1.1 <--> U1.8 <--> R1.1  # net flow: NAME [attrs] :: REF.PIN <--> ...
 GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> = layer, w<n> = width mm

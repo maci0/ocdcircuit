@@ -552,6 +552,15 @@ for frag in ("match on unknown net NZZZ", "pour on unknown net NONET",
              "outside sane range"):
     assert any(frag in w for w in cast(list[str], _l2r["warnings"])), (_l2r, frag)
 assert len(cast(list[str], _l2r["warnings"])) == len(set(cast(list[str], _l2r["warnings"])))
+# meta lines: title/rev/desc round-trip, flow into IR + KiCad title
+_mb = agent.loads("board t 40x30\nmeta title Blinky 555\nmeta rev A\n"
+                  "part R1 R0805 10k\nnet N: R1.1 R1.2\n")
+assert _mb.meta == {"title": "Blinky 555", "rev": "A"}, _mb.meta
+assert agent.dumps(agent.loads(agent.dumps(_mb))) == agent.dumps(_mb)
+import json as _jm
+assert _jm.loads(agent.to_json(_mb))["board"]["meta"] == {"title": "Blinky 555", "rev": "A"}
+_kd = _mb.export("kicad", outdir=tempfile.mkdtemp())[0]
+assert '(title "Blinky 555")' in open(_kd).read()
 # doctor: registry healthy on a live board
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)

@@ -93,6 +93,7 @@ class Board(Component):
         self.ctx = Context()
         self.width, self.height, self.layers = width, height, layers
         self.fab: str = "jlc"
+        self.meta: dict[str, str] = {}  # `meta k v` lines: title/rev/desc/...
         self.parts: dict[str, Part] = {}
         self.nets: dict[str, Net] = {}
         self.traces: list[Seg] = []

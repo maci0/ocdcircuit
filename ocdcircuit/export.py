@@ -175,7 +175,7 @@ def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
         else:
             shape.append(f"TRACK~{t.width / 0.254:.1f}~{t.layer + 1}~{t.net}~{pts}~gt{t.layer}")
     doc = {"head": "3~1.7.5", "canvas": "CA~2400~2400~#000000~yes~#FFFFFF~10~1200~1200~line~1~mil~1~45~visible~0.5~400~300",
-           "shape": shape, "title": board.name,
+           "shape": shape, "title": board.meta.get("title", board.name),
            "dataStr": {"layers": ["1~TopLayer~#FF0000~true~true~true",
                                   "2~BottomLayer~#0000FF~true~false~true",
                                   "10~BoardOutline~#FF00FF~true~false~true"]}}
@@ -217,6 +217,8 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     L: list[str] = []
     A = L.append
     A("(kicad_pcb (version 20221018) (generator ocdcircuit)")
+    if board.meta.get("title"):
+        A(f'  (title_block (title {_sexp_str(board.meta["title"])}))')
     A('  (general (thickness 1.6))')
     A('  (paper "A4")')
     layers = kicad_layers(board.layers)
