@@ -164,9 +164,25 @@ assert agent.to_json(bj).startswith("{")
 assert bj.render("svg").startswith("<svg")
 assert bj.render("stl").startswith("solid")
 
-# fab profiles: oshpark is stricter than jlc on drills
+# fab profiles: oshpark is stricter than jlc on drills; jlc-flex is ENIG-only FPC
 from ocdcircuit import fab
 assert fab.get("oshpark")["min_drill"] == 0.508
+assert fab.get("jlc-flex")["layers"] == (1, 2, 4)
+assert fab.get("jlc-flex")["finishes"] == ("ENIG",)
+# flex: bend/stiffener round-trip, DRC, no maze vias in dynamic bends
+_fb = agent.loads("board f 60x20 2L\npart J1 PINHD4\npart U1 SOIC8 X\n"
+                  "net A: J1.1 U1.1\nnet B: J1.2 U1.2\n"
+                  "bend 30 10 6x20 r5\nstiffener 5 10 10x12 FR4 0.4\n"
+                  "fix J1 at 8 10\nfix U1 at 50 10\n", base=EX)
+assert agent.dumps(agent.loads(agent.dumps(_fb), base=EX)) == agent.dumps(_fb)
+_fb.fab = "jlc-flex"
+_fb.place(seeds=1, iters=30)
+_fb.route_board("maze")
+assert _fb.check("jlc-flex")["errors"] == [], _fb.check("jlc-flex")["errors"]
+assert not [t for t in _fb.traces if getattr(t, "via", False) and 27 <= t.x1 <= 33]
+_tb = agent.loads("board t 40x30\npart R1 R0805 1k\nbend 20 15 10x10 r1\nfix R1 at 20 15\n", base=EX)
+errs = cast(list[str], _tb.check("jlc-flex")["errors"])
+assert any(e.startswith("bend-part") for e in errs) and any(e.startswith("bend-radius") for e in errs)
 bo.fab = "oshpark"
 ro = bo.check()
 assert ro["fab"] == "oshpark"

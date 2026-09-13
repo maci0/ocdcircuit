@@ -136,6 +136,17 @@ def parse_constraint(text: str) -> Constraint | None:
     if m:
         return {"t": "hole", "x": float(m.group(1)), "y": float(m.group(2)),
                 "d": float(m.group(3))}
+    m = re.match(r"bend ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+) r([\d.]+)( static)?$", t, re.I)
+    if m:
+        return {"t": "bend", "x": float(m.group(1)), "y": float(m.group(2)),
+                "w": float(m.group(3)), "h": float(m.group(4)),
+                "r": float(m.group(5)), "dynamic": not m.group(6)}
+    m = re.match(r"stiffener ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+) (PI|FR4|steel) ([\d.]+)$",
+                 t, re.I)
+    if m:
+        return {"t": "stiffener", "x": float(m.group(1)), "y": float(m.group(2)),
+                "w": float(m.group(3)), "h": float(m.group(4)),
+                "mat": m.group(5), "th": float(m.group(6))}
     m = re.match(r"sim\s+vcc\s+(\w+)\s+([\d.]+)(?:\s+([\d.]+))?$", t, re.I)
     if m:
         c: Constraint = {"t": "sim", "kind": "vcc", "net": m.group(1), "v0": float(m.group(2))}
@@ -231,6 +242,13 @@ def dumps(board: Board) -> str:
             L.append(f"cutout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}")
         elif t == "hole":
             L.append(f"hole {_f(c['x']):g} {_f(c['y']):g} {_f(c['d']):g}")
+        elif t == "bend":
+            dyn = "" if c.get("dynamic") else " static"
+            L.append(f"bend {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}"
+                     f" r{_f(c['r']):g}{dyn}")
+        elif t == "stiffener":
+            L.append(f"stiffener {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}"
+                     f" {c['mat']} {_f(c['th']):g}")
         elif t == "sim":
             L.append(_dump_sim(c))
         elif t == "match":

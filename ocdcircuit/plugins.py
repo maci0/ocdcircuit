@@ -168,6 +168,16 @@ class JlcDrc(FabDrc):
         return drc.check(board, fab=fab or "jlc")
 
 
+class FlexDrc(FabDrc):
+    kind, key = "drc", "jlc-flex"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import drc
+        fab = k.get("fab")
+        assert fab is None or isinstance(fab, str)
+        return drc.check(board, fab=fab or "jlc-flex")
+
+
 class JlcExporter(Plugin[list[str]]):
     kind, key = "exporter", "jlc"
 
@@ -590,7 +600,7 @@ class SimPlugin(Plugin[dict[str, object]]):
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer,
              GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
-             JlcDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
+             JlcDrc, FlexDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
              CalcPlugin, SimPlugin,

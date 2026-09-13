@@ -107,6 +107,24 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
         elif c.get("t") == "hole":
             if _f(c["d"]) < min_drill:
                 errors.append(f"hole-drill {c['d']} < {min_drill}")
+        elif c.get("t") == "bend":
+            cx, cy = _f(c["x"]), _f(c["y"])
+            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            for t in board.traces:
+                # traces must cross bends (that's the point); vias must not
+                # (dynamic bends: strict error; static: covered vias tolerated)
+                if getattr(t, "via", False) and c.get("dynamic", True):
+                    if abs(t.x1 - cx) < hw and abs(t.y1 - cy) < hh:
+                        errors.append(f"bend-via {t.net}")
+            for p in parts:
+                pw, ph = p.wh()
+                if abs(p.x - cx) < hw + pw / 2 and abs(p.y - cy) < hh + ph / 2:
+                    errors.append(f"bend-part {p.ref}")
+            # radius vs finished thickness: 6x static, 10x dynamic (JLC FPC)
+            th = float(cast(tuple[float, float], P["thickness"])[1])
+            need = (10 if c.get("dynamic", True) else 6) * th
+            if _f(c["r"]) < need:
+                errors.append(f"bend-radius {c['r']} < {need:g} (dynamic={c.get('dynamic', True)})")
     from .solver import _diff_cost, _match_cost
     mc = _match_cost(board)
     if mc > 5.0:

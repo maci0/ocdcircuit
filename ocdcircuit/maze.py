@@ -58,6 +58,7 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
            blocked: set[tuple[int, int]], soft: set[tuple[int, int]],
            own: set[tuple[int, int, int]],
            nx: int, ny: int, nl: int, bend: float, via: float,
+           novia: set[tuple[int, int]] | None = None,
            ) -> list[tuple[int, int, int]] | None:
     """(gx, gy, layer) search. own-net cells are free (copper reuse).
     soft (part courtyard) cells passable at +SOFT per cell — escapes work,
@@ -91,8 +92,11 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
             if not (0 <= nx2 < nx and 0 <= ny2 < ny):
                 continue
             step = 1.0 + (bend if dd != ndir and ndir != -1 else 0.0)
-            # any-layer vias: stay, or jump to an adjacent layer (stacked)
+            # any-layer vias: stay, or jump to an adjacent layer (stacked).
+            # bend regions forbid layer jumps (flex: no vias in bend area)
             alts = [ll] if nl == 1 else [ll, ll - 1, ll + 1]
+            if novia and (nx2, ny2) in novia:
+                alts = [ll]
             for l2 in alts:
                 if not (0 <= l2 < nl):
                     continue
@@ -215,6 +219,15 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
     if len(pts) < 2:
         return True
     layer = net.layer if net.layer is not None else 0
+    # dynamic bend rects: traces pass, layer jumps forbidden
+    novia: set[tuple[int, int]] = set()
+    for c in board.constraints:
+        if c.get("t") == "bend" and c.get("dynamic", True):
+            cx, cy = _f(c["x"]), _f(c["y"])
+            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            for gx in range(int((cx - hw) / grid), int((cx + hw) / grid) + 1):
+                for gy in range(int((cy - hh) / grid), int((cy + hh) / grid) + 1):
+                    novia.add((gx, gy))
     blocked = set(copper) | halo
     blocked.update(c for c, owner in pad_cells.items() if owner != net.name)
     soft = set(base_blocked)
@@ -232,7 +245,7 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
              min(ny - 1, max(0, int(a[1] / grid))), layer)
         g = (min(nx - 1, max(0, int(b[0] / grid))),
              min(ny - 1, max(0, int(b[1] / grid))))
-        path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via)
+        path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via, novia)
         if path is None:
             return False
         new.extend(_path_segs(board, net.name, path, grid, net.width))

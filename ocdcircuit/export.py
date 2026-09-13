@@ -225,6 +225,18 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
             A(f'  (pad HOLE thru_hole circle (at {_f(con["x"]):.4f} {_f(con["y"]):.4f}) '
               f'(size {_f(con["d"]) + 0.6:.4f} {_f(con["d"]) + 0.6:.4f}) '
               f'(drill {_f(con["d"]):.4f}) (layers *.Cu *.Mask) (net 0))')
+        elif kind in ("bend", "stiffener"):
+            cx, cy = _f(con["x"]), _f(con["y"])
+            hw, hh = _f(con["w"]) / 2, _f(con["h"]) / 2
+            tag = ("BEND" + ("-DYN" if con.get("dynamic", True) else "-STAT")) \
+                if kind == "bend" else f"STIFF-{con['mat']}-{_f(con['th']):g}"
+            for x1, y1, x2, y2 in [(cx - hw, cy - hh, cx + hw, cy - hh),
+                                   (cx + hw, cy - hh, cx + hw, cy + hh),
+                                   (cx + hw, cy + hh, cx - hw, cy + hh),
+                                   (cx - hw, cy + hh, cx - hw, cy - hh)]:
+                A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
+                  f'(layer "Cmts.User") (width 0.05))')
+            A(f'  (gr_text "{tag}" (at {cx:.4f} {cy:.4f}) (layer "Cmts.User"))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
     open(fn, "w").write("\n".join(L) + "\n")

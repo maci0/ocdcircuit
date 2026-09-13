@@ -28,6 +28,13 @@ PROFILES: dict[str, FabProfile] = {
         "thickness": (0.4, 2.4), "finishes": ("HASL", "HASL-LF", "ENIG", "OSP"),
         "url": "https://www.pcbway.com/capabilities.html",
     },
+    "jlc-flex": {
+        "name": "JLCPCB flex (FPC)", "layers": (1, 2, 4),
+        "min_trace": 0.1, "min_space": 0.1, "min_drill": 0.1,
+        "annular": 0.18, "edge": 0.3, "max_w": 234, "max_h": 490,
+        "thickness": (0.07, 0.45), "finishes": ("ENIG",),
+        "url": "https://jlcpcb.com/capabilities/flex-pcb-capabilities",
+    },
     "oshpark": {
         "name": "OSH Park", "layers": (2, 4),
         "min_trace": 0.1524, "min_space": 0.1524, "min_drill": 0.508,
