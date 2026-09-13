@@ -166,6 +166,9 @@ assert cast(str, bj.render("svg")).startswith("<svg")
 assert cast(str, bj.render("stl")).startswith("solid")
 assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
 assert "<canvas" in cast(str, bj.render("html3d"))
+_sch = cast(str, bj.render("sch"))
+assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch
+assert _sch.count("<circle") == sum(len(n.pins) for n in bj.nets.values())
 
 # fab profiles: oshpark is stricter than jlc on drills; jlc-flex is ENIG-only FPC
 from ocdcircuit import fab

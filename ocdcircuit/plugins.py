@@ -512,34 +512,63 @@ class AssemblyRenderer(Plugin[str]):
 
 
 class SchRenderer(Plugin[str]):
-    """Schematic SVG: one column per net, parts as labeled boxes on their
-    nets. Readable, not pretty — structure for humans, routing for machines."""
+    """Schematic SVG, Sugiyama-lite (research §5): parts as nodes in one
+    barycenter-ordered row (shared nets pull together), nets as vertical
+    rails with pin dots at intersections. Structure for humans."""
     kind, key = "renderer", "sch"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
         theme = str(k.get("theme", "dark"))
         th = THEMES.get(theme, THEMES["dark"])
         layers = cast(list[str], th["layers"])
+        refs = sorted(board.parts)
         nets = sorted(board.nets)
-        col_w, row_h = 130, 34
-        W = max(1, len(nets)) * col_w + 20
-        H = 60 + max([len(board.nets[n].pins) for n in nets] + [1]) * row_h
+        pin_nets: dict[str, set[str]] = {r: set() for r in refs}
+        for n, net in board.nets.items():
+            for r, _ in net.pins:
+                if r in pin_nets:
+                    pin_nets[r].add(n)
+        # barycenter sweeps: order parts so shared-net neighbors sit close
+        order = list(refs)
+        pos = {r: float(i) for i, r in enumerate(order)}
+        for _ in range(6):
+            for r in order:
+                nb = [q for q in refs if q != r and pin_nets[r] & pin_nets[q]]
+                if nb:
+                    pos[r] = sum(pos[q] for q in nb) / len(nb)
+            order.sort(key=lambda r: pos[r])
+        col_w, top, bot = 120, 70, 30
+        W = max(1, len(order)) * col_w + 20
+        H = top + len(nets) * 26 + bot + 40
         el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
               f'viewBox="0 0 {W} {H}">',
               f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["panel"]}"/>']
         text = str(th["text"])
+        px = {r: 10 + i * col_w + col_w / 2 for i, r in enumerate(order)}
+        for r in order:
+            p = board.parts[r]
+            el.append(f'<rect x="{px[r] - 50}" y="{top - 34}" width="100" height="30" '
+                      f'fill="{th["part"]}" stroke="{text}"/>')
+            el.append(f'<text x="{px[r]}" y="{top - 20}" fill="{text}" font-size="11" '
+                      f'text-anchor="middle">{r}</text>')
+            el.append(f'<text x="{px[r]}" y="{top - 8}" fill="{text}" font-size="9" '
+                      f'text-anchor="middle">{p.fp}</text>')
         for i, n in enumerate(nets):
-            x = 10 + i * col_w + col_w / 2
-            el.append(f'<line x1="{x}" y1="30" x2="{x}" y2="{H - 10}" '
+            y = top + 20 + i * 26
+            xs = sorted(px[r] for r, _ in board.nets[n].pins if r in px)
+            if not xs:
+                continue
+            el.append(f'<line x1="{xs[0]}" y1="{y}" x2="{xs[-1]}" y2="{y}" '
                       f'stroke="{layers[i % len(layers)]}" stroke-width="2"/>')
-            el.append(f'<text x="{x}" y="20" fill="{text}" font-size="12" '
-                      f'text-anchor="middle">{n}</text>')
-            for j, (ref, pin) in enumerate(board.nets[n].pins):
-                y = 50 + j * row_h
-                el.append(f'<rect x="{x - 45}" y="{y - 10}" width="90" height="20" '
-                          f'fill="{th["part"]}" stroke="{layers[i % len(layers)]}"/>')
-                el.append(f'<text x="{x}" y="{y + 4}" fill="{text}" font-size="10" '
-                          f'text-anchor="middle">{ref}.{pin}</text>')
+            el.append(f'<text x="{xs[0] - 8}" y="{y + 4}" fill="{text}" font-size="10" '
+                      f'text-anchor="end">{n}</text>')
+            for ref, pin in board.nets[n].pins:
+                if ref not in px:
+                    continue
+                el.append(f'<line x1="{px[ref]}" y1="{top - 4}" x2="{px[ref]}" y2="{y}" '
+                          f'stroke="{layers[i % len(layers)]}" stroke-width="1"/>')
+                el.append(f'<circle cx="{px[ref]}" cy="{y}" r="3" '
+                          f'fill="{layers[i % len(layers)]}"/>')
         el.append("</svg>")
         return "\n".join(el)
 
