@@ -252,6 +252,121 @@ class Board(Component):
 
         self.ctx.emit(_do, _undo)
 
+    # -- declarative desired-state (reconcile, not verbs) --
+    def declare(self, want: dict[str, object]) -> dict[str, int]:
+        """Reconcile board to a desired state: {"parts": {ref: {fp, value?}},
+        "nets": {net: [REF.PIN...]}, "constraints": [...], "board": {...}}.
+        Adds missing, drops stale, updates changed — order-independent,
+        idempotent. Returns counts. One undoable unit via snapshot/rollback
+        by the caller (each sub-op already emits its own inverse)."""
+        counts = {"added": 0, "removed": 0, "updated": 0, "nets": 0}
+        parts = want.get("parts", {})
+        nets = want.get("nets", {})
+        constr = want.get("constraints", [])
+        bd = want.get("board", {})
+        assert isinstance(parts, dict) and isinstance(nets, dict)
+        assert isinstance(constr, list) and isinstance(bd, dict)
+        if "w" in bd or "h" in bd:
+            bw = bd.get("w", self.width)
+            bh = bd.get("h", self.height)
+            assert isinstance(bw, (int, float)) and isinstance(bh, (int, float))
+            if (float(bw), float(bh)) != (self.width, self.height):
+                self.set_board(float(bw), float(bh))
+                counts["updated"] += 1
+        for ref in list(self.parts):
+            if ref not in parts:
+                self.remove_part(str(ref))
+                counts["removed"] += 1
+        for ref, spec in parts.items():
+            assert isinstance(spec, dict)
+            fp = str(spec.get("fp", ""))
+            value = str(spec.get("value", ""))
+            if ref not in self.parts:
+                self.add_part(str(ref), fp, value)
+                counts["added"] += 1
+            else:
+                p = self.parts[str(ref)]
+                if p.fp != fp or p.value != value:
+                    self.remove_part(str(ref))
+                    self.add_part(str(ref), fp, value)
+                    counts["updated"] += 1
+        want_pins: dict[str, set[tuple[str, str]]] = {}
+        for n, pins in nets.items():
+            assert isinstance(pins, list)
+            want_pins[str(n)] = {(str(r), str(q)) for tok in pins
+                                 for r, q in [str(tok).split(".")]}
+        for n in list(self.nets):
+            if n not in want_pins:
+                for ref, pin in list(self.nets[n].pins):
+                    self.disconnect(n, ref, pin)
+                if not self.nets[n].pins:
+                    self.drop_net(n)
+                counts["nets"] += 1
+        for n, pins in want_pins.items():
+            cur = {(r, q) for r, q in self.net(n).pins}
+            for ref, pin in pins - cur:
+                self.connect(n, ref, pin)
+                counts["nets"] += 1
+            for ref, pin in cur - pins:
+                self.disconnect(n, ref, pin)
+                counts["nets"] += 1
+        # constraints: exact-set semantics (order-independent)
+        cur_c = [self._ckey(c) for c in self.constraints]
+        want_c = [self._ckey(c) for c in constr if isinstance(c, dict)]
+        if sorted(cur_c) != sorted(want_c):
+            for c in list(self.constraints):
+                self.unconstrain(c)
+            for c in constr:
+                assert isinstance(c, dict)
+                self.constrain(c)
+            counts["updated"] += 1
+        return counts
+
+    @staticmethod
+    def _ckey(c: Constraint) -> str:
+        import json
+        return json.dumps(c, sort_keys=True, default=str)
+
+    def disconnect(self, netname: str, ref: str, pin: PinLike) -> None:
+        """Remove one pin from a net (inverse of connect)."""
+        net = self.nets.get(netname)
+        if net is None:
+            return
+        entry = (ref, str(pin))
+        if entry in net.pins:
+            def _drop() -> None:
+                net.pins.remove(entry)
+
+            def _add() -> None:
+                net.pins.append(entry)
+
+            self.ctx.emit(_drop, _add)
+
+    def drop_net(self, name: str) -> None:
+        """Remove an empty net."""
+        n = self.nets.get(name)
+        if n is None or n.pins:
+            return
+
+        def _drop() -> None:
+            self.nets.pop(name, None)
+
+        def _add() -> None:
+            self.nets[name] = n
+
+        self.ctx.emit(_drop, _add)
+
+    def unconstrain(self, c: Constraint) -> None:
+        """Remove one constraint (inverse of constrain)."""
+        if c in self.constraints:
+            def _drop() -> None:
+                self.constraints.remove(c)
+
+            def _add() -> None:
+                self.constraints.append(c)
+
+            self.ctx.emit(_drop, _add)
+
     # -- nets --
     def net(self, name: str) -> Net:
         if name not in self.nets:

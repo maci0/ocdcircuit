@@ -247,12 +247,24 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 15
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 16
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
 assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
+# declarative set_state: idempotent, order-independent, atomic
+_ss1 = _call("set_state", {"parts": {"QX": {"fp": "R0805", "value": "1k"}},
+                           "nets": {"QN": ["QX.1", "QX.2"]}, "constraints": []})
+assert cast(dict[str, object], _ss1["applied"])["added"] == 1, _ss1
+_ss2 = _call("set_state", {"parts": {"QX": {"fp": "R0805", "value": "1k"}},
+                           "nets": {"QN": ["QX.2", "QX.1"]}, "constraints": []})
+assert _ss2["applied"] == {"added": 0, "removed": 0, "updated": 0, "nets": 0}, _ss2
+_bad = _call("set_state", {"parts": {"QY": {"fp": "NOPE"}}})
+assert "error" in _bad, _bad  # atomic: nothing applied
+_st = _call("get_state", {})
+assert any(p["ref"] == "QX" for p in cast(list[dict[str, object]],
+           cast(dict[str, object], _st["ir"])["parts"]))  # QX survived rollback
 assert _call("parse_constraint", {"text": "keep U1 near C1"})["constraint"] == {
     "t": "near", "a": "U1", "b": "C1", "w": 2.0}
 assert _call("check", {})["errors"] == []

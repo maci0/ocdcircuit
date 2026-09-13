@@ -62,6 +62,20 @@ def t_patch(a: dict[str, object]) -> dict[str, object]:
     return {"applied": n}
 
 
+def t_state_set(a: dict[str, object]) -> dict[str, object]:
+    """Declarative desired-state: {parts, nets, constraints, board}.
+    Reconciles (add/drop/update), idempotent, order-independent, atomic
+    (rollback on error). Prefer over apply_patch for agents."""
+    b = _board()
+    snap = b.ctx.snapshot()
+    try:
+        counts = b.declare(a)
+    except (ValueError, KeyError, AssertionError) as e:
+        b.ctx.rollback(snap)
+        return {"applied": {}, "error": str(e)}
+    return {"applied": counts}
+
+
 def t_parse(a: dict[str, object]) -> dict[str, object]:
     c = agent.parse_constraint(str(a["text"]))
     return {"constraint": c}
@@ -172,6 +186,9 @@ TOOLS: dict[str, object] = {
     "load_board": (t_load, {"text": "ocd source (or path)", "fab": "fab key"}),
     "get_state": (t_state, {}),
     "apply_patch": (t_patch, {"ops": "patch op list (undoable, atomic)"}),
+    "set_state": (t_state_set, {"parts": "{ref: {fp, value?}}",
+                                "nets": "{net: [REF.PIN]}",
+                                "constraints": "[...] (declarative, idempotent)"}),
     "parse_constraint": (t_parse, {"text": "NL constraint"}),
     "place": (t_place, {"key": "placer?", "seeds": 4, "iters": 400, "frames?": True}),
     "route": (t_route, {"key": "router?", "frames?": True}),

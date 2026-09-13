@@ -8,3 +8,11 @@ the agent wire format. One constraint grammar (`parse_constraint`) serves both.
 ## Why
 JSON is machine IR, not human-readable. A custom AST language would be a third
 thing to maintain — `.ocd` reuses the constraint strings agents already emit.
+
+## Update (declarative API)
+`.ocd` text was always declarative; the API caught up. `Board.declare()`
+takes desired state ({parts, nets, constraints, board}) and reconciles:
+add missing, drop stale, update changed — idempotent, order-independent,
+atomic via rollback. MCP `set_state` exposes it (prefer over `apply_patch`
+verbs for agents). Inverse ops added: `disconnect`, `drop_net`,
+`unconstrain`. Studio text→build is declare-by-construction (full reload).
