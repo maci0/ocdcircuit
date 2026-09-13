@@ -115,43 +115,52 @@ class Board(Component):
         return reg
 
     def use(self, kind: str, key: str) -> None:
-        """Hot-swap the active plugin for a kind. Undoable."""
-        plug = self.plugins().get(kind, key)
+        """Hot-swap the active plugin for a kind. Undoable. Explicit use
+        re-arms a failed entry (failure memory only blocks implicit runs)."""
+        reg = self.plugins()
+        try:
+            plug = reg.get(kind, key)
+        except KeyError:
+            if (kind, key) not in reg.items:
+                raise
+            plug = reg.items[(kind, key)]
         assert isinstance(plug, Plugin)
         plug.use(self.ctx)
 
-    def place(self, key: str | None = None, **k: object) -> float:
-        plug = self.plugins().get("placer", key)
+    def _run(self, kind: str, key: str | None, **k: object) -> object:
+        """Dispatch with failure memory: a raising plugin is marked failed
+        and the previous entry keeps serving (harness-loader style)."""
+        reg = self.plugins()
+        plug = reg.get(kind, key)
         assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        try:
+            return plug.run(self, **k)
+        except Exception as e:
+            reg.fail(plug.kind, plug.key, f"{type(e).__name__}: {e}")
+            raise
+
+    def place(self, key: str | None = None, **k: object) -> float:
+        out = self._run("placer", key, **k)
         assert isinstance(out, float)
         return out
 
     def route_board(self, key: str | None = None, **k: object) -> int:
-        plug = self.plugins().get("router", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("router", key, **k)
         assert isinstance(out, int)
         return out
 
     def check(self, key: str | None = None) -> dict[str, object]:
-        plug = self.plugins().get("drc", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self)
+        out = self._run("drc", key)
         assert isinstance(out, dict)
         return out
 
     def export(self, key: str | None = None, **k: object) -> list[str]:
-        plug = self.plugins().get("exporter", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("exporter", key, **k)
         assert isinstance(out, list)
         return out
 
     def render(self, key: str | None = None, **k: object) -> str | bytes:
-        plug = self.plugins().get("renderer", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("renderer", key, **k)
         assert isinstance(out, (str, bytes))
         return out
 
@@ -162,66 +171,50 @@ class Board(Component):
             from .silk import level_of
             key = ("ref" if level_of(self) == 0 else "fab"
                    if level_of(self) >= 3 else "full")
-        plug = self.plugins().get("silk", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("silk", key, **k)
         assert isinstance(out, dict)
         return out
 
     def import_fp(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Import: fp / kicad / eagle (.lbr) / eagle-brd (.brd) /
         tscircuit / pcb (.kicad_pcb or .brd, sniffed) / easyeda (Std JSON)."""
-        plug = self.plugins().get("importer", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("importer", key, **k)
         assert isinstance(out, dict)
         return out
 
     def calc(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Embedded calculators: trace width, via current, divider."""
-        plug = self.plugins().get("calc", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("calc", key, **k)
         assert isinstance(out, dict)
         return out
 
     def simulate(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Circuit simulation: what="dc" (default) | "tran"."""
-        plug = self.plugins().get("simulate", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("simulate", key, **k)
         assert isinstance(out, dict)
         return out
 
     def lint(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Static lint: source hygiene, no place/route. DRC owns geometry."""
-        plug = self.plugins().get("lint", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("lint", key, **k)
         assert isinstance(out, dict)
         return out
 
     def score(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Neatness scorecard. Prefer tidy components over the scalar."""
-        plug = self.plugins().get("score", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("score", key, **k)
         assert isinstance(out, dict)
         return out
 
     def doctor(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Tooling self-check via the registry (this board proves mounting)."""
-        plug = self.plugins().get("doctor", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, **k)
+        out = self._run("doctor", key, **k)
         assert isinstance(out, dict)
         return out
 
     def diff(self, other: Board, key: str | None = None, **k: object) -> str:
         """What changed vs another board (knoll diff style)."""
-        plug = self.plugins().get("diff", key)
-        assert isinstance(plug, Plugin)
-        out = plug.run(self, other=other, **k)
+        out = self._run("diff", key, other=other, **k)
         assert isinstance(out, str)
         return out
 

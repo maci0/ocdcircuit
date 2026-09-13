@@ -93,6 +93,7 @@ class Registry:
     def __init__(self) -> None:
         self.items: dict[tuple[str, str], object] = {}
         self.active: dict[str, str] = {}
+        self.failed: dict[tuple[str, str], str] = {}
 
     def _add(self, kind: str, key: str, inst: object) -> None:
         self.items[(kind, key)] = inst
@@ -111,6 +112,8 @@ class Registry:
         if key is None:
             opts = sorted(str(kk) for (k, kk) in self.items if k == kind)
             raise KeyError(f"no {kind} plugin mounted (have {opts})")
+        if (kind, key) in self.failed:
+            raise KeyError(f"plugin {kind}:{key} failed ({self.failed[(kind, key)]})")
         try:
             return self.items[(kind, key)]
         except KeyError:
@@ -121,6 +124,19 @@ class Registry:
         if (kind, key) not in self.items:
             raise KeyError(f"can't swap to unmounted {kind}:{key}")
         self.active[kind] = key
+        self.failed.pop((kind, key), None)  # explicit re-arm clears failure
+
+    def fail(self, kind: str, key: str, why: str) -> None:
+        """Mark an entry failed (bad run): get() refuses it until re-armed
+        via use() or a remount. Previous active entry keeps serving."""
+        self.failed[(kind, key)] = why
+        if self.active.get(kind) == key:
+            rest = sorted(kk for (k, kk) in self.items
+                          if k == kind and (k, kk) not in self.failed)
+            if rest:
+                self.active[kind] = rest[0]
+            else:
+                self.active.pop(kind, None)
 
     def list(self, kind: str | None = None) -> list[str]:
         """Key names for a kind (or 'kind:key' strings when kind is None)."""

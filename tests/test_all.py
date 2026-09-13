@@ -299,6 +299,34 @@ assert _call("check", {})["errors"] == []
 assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:fp" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "simulate:mna" in cast(list[str], _call("list_plugins", {})["plugins"])
+# failure memory: raising plugin is marked failed, previous entry serves,
+# explicit use() re-arms (harness-loader style rollback)
+from ocdcircuit.core import Plugin as _Pl
+_bo = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+
+
+class _Boom(_Pl[dict[str, object]]):
+    kind, key = "drc", "boom"
+
+    def run(self, board: object, *a: object, **k: object) -> dict[str, object]:
+        raise RuntimeError("kaput")
+
+
+_Boom("drc:boom").mount(_bo.ctx)
+_bo.use("drc", "boom")
+try:
+    _bo.check("boom")
+    raise AssertionError("should have raised")
+except RuntimeError:
+    pass
+assert _bo.plugins().active.get("drc") != "boom"
+try:
+    _bo.check("boom")
+    raise AssertionError("should have refused")
+except KeyError:
+    pass
+_bo.use("drc", "boom")  # re-arm
+assert _bo.plugins().active.get("drc") == "boom"
 assert "importer:eagle-brd" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "exporter:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
