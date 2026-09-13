@@ -70,5 +70,8 @@ report; motion is the product; one concept, one hue.
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.
 
+Ports: `ports/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
+to `.ocd` — see `examples/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).
+
 Layout: `ocdcircuit/` (core, circuit, parts, solver, drc, fab, silk, export,
 agent, plugins), `studio.py`, `ocd.py`, `docs/`, `examples/`, `tests/`.

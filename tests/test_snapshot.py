@@ -16,10 +16,12 @@ GOLD = os.path.join(HERE, "golden.json")
 
 def fingerprint() -> dict[str, dict[str, object]]:
     out: dict[str, dict[str, object]] = {}
-    for f, pl, rt in [("blinky_555.ocd", "diffusion", "lroute"),
-                      ("blinky_555.ocd", "compact", "maze"),
-                      ("psu.ocd", "diffusion", "lroute")]:
-        b = agent.loads(open(os.path.join(EX, f)).read(), base=EX)
+    for f, pl, rt, ex in [("blinky_555.ocd", "diffusion", "lroute", EX),
+                      ("blinky_555.ocd", "compact", "maze", EX),
+                      ("psu.ocd", "diffusion", "lroute", EX),
+                      ("pico_tmc2209.ocd", "compact", "maze",
+                       os.path.join(EX, "pico_tmc2209"))]:
+        b = agent.loads(open(os.path.join(ex, f)).read(), base=ex)
         b.place(pl, seeds=3, iters=200)
         b.route_board(rt)
         snap = {

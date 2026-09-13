@@ -304,6 +304,7 @@ FOOTPRINTS = {
     "PINHD2X2": pinheader2x(2), "PINHD2X3": pinheader2x(3),
     "PINHD2X4": pinheader2x(4), "PINHD2X5": pinheader2x(5),
     "PINHD2X10": pinheader2x(10),
+    "PINHD2X20": pinheader2x(20),
     "JST2": jst(2), "JST3": jst(3), "JST4": jst(4),
     "USB_C": usb_c(), "USB_C_EDGE": usb_c_edge(), "USB_MICRO": usb_micro(), "USB_MINI": usb_mini(),
     "BARREL": barrel_jack(), "TERMINAL2": terminal2(),

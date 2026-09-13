@@ -14,3 +14,5 @@ is, why it's here.
   for our lib.
 - [KiCad footprint libs](https://gitlab.com/kicad/libraries/kicad-footprints) —
   thousands of .pretty footprints, directly importable via `fp`.
+- [pico_tmc2209-tscircuit](../examples/pico_tmc2209/pico_tmc2209.ocd) —
+  our first port: Pico + 3×TMC2209 via `ports/tscircuit.py`.

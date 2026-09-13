@@ -9,6 +9,11 @@
   "parts": 10,
   "segs": 38
  },
+ "pico_tmc2209.ocd/compact/maze": {
+  "hash": "63c4e3c7609b58ba",
+  "parts": 20,
+  "segs": 218
+ },
  "psu.ocd/diffusion/lroute": {
   "hash": "b94bcd099f0fe457",
   "parts": 3,
