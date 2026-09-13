@@ -86,13 +86,28 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
                         (W, H, 0.0, H), (0.0, H, 0.0, 0.0)]
     open(fn, "w").write(_gerber([], outl, 0.1))
     files.append(fn)
-    # drill: one via per layer-change-free net is enough v0 → drill at net hubs
-    drills: set[tuple[float, float]] = set()
+    # drill: PTH holes (soldering) + vias (layer changes).
+    # 1-layer boards have no vias — but PTH drills still go here.
+    from .parts import hole_drill as _hd
+    drills: dict[float, set[tuple[float, float]]] = {}
+    for p in board.parts.values():
+        for pin in pads_of(p.fp, lib):
+            dr = _hd(p.fp, pin, lib)
+            if dr > 0:
+                x, y = board.pad_pos(p.ref, pin)
+                drills.setdefault(dr, set()).add((round(x, 3), round(y, 3)))
     for t in board.traces:
-        drills.add((round(t.x1, 3), round(t.y1, 3)))
+        if getattr(t, "via", False):
+            drills.setdefault(0.4, set()).add((round(t.x1, 3), round(t.y1, 3)))
     fn = os.path.join(outdir, f"{board.name}.TXT")
-    d = ["M48", "METRIC,TZ", "T1C0.400", "%", "G90", "G05", "T1"]
-    d += [f"X{x:.3f}Y{y:.3f}" for x, y in sorted(drills)]
+    d = ["M48", "METRIC,TZ"]
+    tools = sorted(drills)
+    for i, dr in enumerate(tools, 1):
+        d.append(f"T{i}C{dr:.3f}")
+    d.append("%")
+    for i, dr in enumerate(tools, 1):
+        d.append(f"G90\nG05\nT{i}")
+        d += [f"X{x:.3f}Y{y:.3f}" for x, y in sorted(drills[dr])]
     d += ["T0", "M30"]
     open(fn, "w").write("\n".join(d))
     files.append(fn)

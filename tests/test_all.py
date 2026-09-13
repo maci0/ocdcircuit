@@ -214,6 +214,13 @@ with tempfile.TemporaryDirectory() as d:
     assert any(f.endswith(".GTL.gbr") for f in files)
     assert any(f.endswith(".kicad_pcb") for f in files)
     assert any(f.endswith(".TXT") for f in files)
+    # drill file carries PTH holes (J1=PINHD2), grouped by tool diameter
+    drl = open([f for f in files if f.endswith(".TXT")][0]).read()
+    assert "M48" in drl and "M30" in drl
+    j1xy = sorted((round(float(b.pad_pos("J1", pin)[0]), 3),
+                   round(float(b.pad_pos("J1", pin)[1]), 3)) for pin in ("1", "2"))
+    for x, y in j1xy:
+        assert f"X{x:.3f}Y{y:.3f}" in drl, drl
     assert any(f.endswith("BOM.csv") for f in files)
     assert any(f.endswith(".json") for f in files)
     assert any(f.endswith(".ocd") for f in files)
