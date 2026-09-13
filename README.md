@@ -66,6 +66,11 @@ report; motion is the product; one concept, one hue.
   tscircuit JSON, or native `.fp` — plus `.kicad_pcb` netlist import.
 - **Textured 3D**: `render("gltf")` with PBR materials (mask/copper/silk/
   chip/tantalum/electrolytic/LED/steel); studio canvas shades faces live.
+- **Simulators are plugins** (`simulate:mna`): DC operating point +
+  transient (trapezoidal→Euler MNA, stdlib) via `sim` constraints;
+  `ocd --sim dc|tran`, studio ⚡ readout, MCP `simulate` tool.
+- **Importers are plugins** (`importer:fp/kicad/eagle/tscircuit/pcb`):
+  `b.import_fp("kicad", path=…)`; calculators too (`calc:std`).
 - **Agents are first-class**: `mcp.py` is an MCP stdio server (12 tools:
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.

@@ -421,10 +421,121 @@ class FabSilk(Plugin[dict[str, object]]):
         return {"texts": list(s.texts), "dots": list(s.dots), "boxes": list(s.boxes)}
 
 
+class FpImporter(Plugin[dict[str, object]]):
+    """Footprint importer: native .fp (re-exported for plugin listing)."""
+    kind, key = "importer", "fp"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .footprint import load_file
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        name, meta = load_file(path)
+        board.add_footprint(name, meta, path)
+        return {"name": name}
+
+
+class KicadImporter(Plugin[dict[str, object]]):
+    """Footprint importer: KiCad .kicad_mod/.pretty (pads, holes, models)."""
+    kind, key = "importer", "kicad"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import load_foreign
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        names = []
+        for name, meta in load_foreign(path):
+            if name not in board._lib() or name in board.custom_fp:
+                board.add_footprint(name, meta, path)
+            names.append(name)
+        return {"names": names}
+
+
+class EagleImporter(Plugin[dict[str, object]]):
+    """Footprint importer: Eagle .lbr (all packages)."""
+    kind, key = "importer", "eagle"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import load_foreign
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        names = []
+        for name, meta in load_foreign(path):
+            board.add_footprint(name, meta, path)
+            names.append(name)
+        return {"names": names}
+
+
+class TscircuitImporter(Plugin[dict[str, object]]):
+    """Footprint importer: tscircuit Circuit-JSON pad soups."""
+    kind, key = "importer", "tscircuit"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import load_foreign
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        names = []
+        for name, meta in load_foreign(path):
+            board.add_footprint(name, meta, path)
+            names.append(name)
+        return {"names": names}
+
+
+class PcbImporter(Plugin[dict[str, object]]):
+    """Netlist importer: .kicad_pcb → parts/nets/positions on THIS board."""
+    kind, key = "importer", "pcb"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import kicad_pcb_netlist
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        with open(path) as f:
+            ir = kicad_pcb_netlist(f.read())
+        nb = from_ir(ir)
+        for ref, p in nb.parts.items():
+            board.add_part(ref, p.fp, p.value, p.x, p.y)
+        for n, net in nb.nets.items():
+            for ref, pin in net.pins:
+                board.connect(n, ref, pin)
+        return {"parts": len(nb.parts), "nets": len(nb.nets)}
+
+
+class CalcPlugin(Plugin[dict[str, object]]):
+    """Embedded calculators: trace width, via current, divider."""
+    kind, key = "calc", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import calc as _calc
+        what = str(k.get("what", "trace"))
+        if what == "trace":
+            return {"mm": _calc.trace_width(_f(k.get("amps", 1.0)),
+                                            _f(k.get("rise", 10.0)),
+                                            _f(k.get("oz", 1.0)))}
+        if what == "via":
+            return {"amps": _calc.via_amps(_f(k.get("drill", 0.3)))}
+        if what == "divider":
+            return {"vout": _calc.divider(_f(k.get("vin", 9.0)),
+                                          _f(k.get("rtop", 10000.0)),
+                                          _f(k.get("rbot", 4700.0)))}
+        raise ValueError(f"unknown calc {what!r} (trace|via|divider)")
+
+
+class SimPlugin(Plugin[dict[str, object]]):
+    """Circuit simulator: DC operating point + transient (MNA, stdlib)."""
+    kind, key = "simulate", "mna"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import sim as _sim
+        what = k.pop("what", "dc")
+        assert isinstance(what, str)
+        return _sim.run(board, what, **k)
+
+
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
              JlcDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
+             FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
+             CalcPlugin, SimPlugin,
              SvgRenderer, SchRenderer, StlRenderer, GltfRenderer)
 
 

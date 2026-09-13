@@ -128,6 +128,30 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
+    def import_fp(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Footprint import: fp (native) / kicad / eagle / tscircuit / pcb."""
+        plug = self.plugins().get("importer", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def calc(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Embedded calculators: trace width, via current, divider."""
+        plug = self.plugins().get("calc", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def simulate(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Circuit simulation: what="dc" (default) | "tran"."""
+        plug = self.plugins().get("simulate", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
     # -- parts library via plugin, stdlib fallback --
     def _lib(self) -> dict[str, dict[str, object]]:
         from .parts import FOOTPRINTS as STD

@@ -15,6 +15,11 @@ route GND on 1               # force net to layer (top/bottom also work: 0/1)
 trace VCC 0.5                # trace width mm
 power VCC GND                # widen nets to 0.5 (power)
 nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
+sim vcc VIN 9                # 5V-style source net→GND (0 5 = step for tran)
+sim sine IN 1.65 1.65 1000   # sine source: offset amplitude freq-Hz
+sim tran 0.01 1000           # transient: t_end steps
+sim probe N_OUT              # record net (default: all)
+sim r R1 10k                 # value override when part text is exotic
 match A0 A1                  # length-match nets (placer cost + DRC skew report)
 diff DP DN gap 0.3           # diff pair: equal length + 0.3mm coupling gap
 silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets

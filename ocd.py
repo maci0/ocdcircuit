@@ -5,19 +5,22 @@ import sys
 from typing import cast
 
 USAGE = ("usage: ocd [--fab jlc|pcbway|oshpark|seeed|aisler] "
-         "[--placer diffusion|compact|thermal] [--router lroute|maze] <circuit.ocd>")
+         "[--placer diffusion|compact|thermal] [--router lroute|maze] "
+         "[--sim dc|tran] <circuit.ocd>")
 
 
 def main(argv: list[str]) -> int:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from ocdcircuit import agent
-    fab, placer, router = "jlc", None, None
+    fab, placer, router, simwhat = "jlc", None, None, None
     args = argv[1:]
-    while len(args) >= 2 and args[0] in ("--fab", "--placer", "--router"):
+    while len(args) >= 2 and args[0] in ("--fab", "--placer", "--router", "--sim"):
         if args[0] == "--fab":
             fab = args[1]
         elif args[0] == "--placer":
             placer = args[1]
+        elif args[0] == "--sim":
+            simwhat = args[1]
         else:
             router = args[1]
         args = args[2:]
@@ -48,6 +51,23 @@ def main(argv: list[str]) -> int:
     warnings = cast(list[object], r["warnings"])
     print(f"{b.name}: cost={c:.1f} segs={n} errors={errors} warnings={len(warnings)}")
     print(f"{len(files)} fab files + svg + stl in {out}/")
+    if simwhat:
+        try:
+            res = b.simulate(what=simwhat)
+        except (ValueError, KeyError) as e:
+            print(f"ocd: sim: {e}")
+            return 1
+        if "nets" in res:
+            nets = cast(dict[str, object], res["nets"])
+            cells = []
+            for k, v in sorted(nets.items()):
+                assert isinstance(v, (int, float))
+                cells.append(f"{k}={float(v):.3f}V")
+            print("sim dc: " + " ".join(cells))
+        else:
+            waves = cast(dict[str, list[float]], res["waves"])
+            for k, v in sorted(waves.items()):
+                print(f"sim {k}: final={v[-1]:.3f}V min={min(v):.3f} max={max(v):.3f} ({len(v)} pts)")
     if errors:
         return 2
     seen: set[str] = set()

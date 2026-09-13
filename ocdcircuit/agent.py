@@ -119,6 +119,28 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"nc ((?:\w+\.\w+ ?)+)$", t, re.I)
     if m:
         return {"t": "nc", "pins": m.group(1).split()}
+    m = re.match(r"sim\s+vcc\s+(\w+)\s+([\d.]+)(?:\s+([\d.]+))?$", t, re.I)
+    if m:
+        c: Constraint = {"t": "sim", "kind": "vcc", "net": m.group(1), "v0": float(m.group(2))}
+        if m.group(3) is not None:
+            c["v1"] = float(m.group(3))
+        return c
+    m = re.match(r"sim\s+sine\s+(\w+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "sine", "net": m.group(1),
+                "off": float(m.group(2)), "amp": float(m.group(3)), "freq": float(m.group(4))}
+    m = re.match(r"sim\s+isrc\s+(\w+)\s+([\d.]+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "isrc", "net": m.group(1), "value": float(m.group(2))}
+    m = re.match(r"sim\s+tran\s+([\d.]+)\s+(\d+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "tran", "t_end": float(m.group(1)), "steps": int(m.group(2))}
+    m = re.match(r"sim\s+probe\s+(\w+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "probe", "net": m.group(1)}
+    m = re.match(r"sim\s+([rcl])\s+(\w+)\s+(\S+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": m.group(1), "ref": m.group(2), "value": m.group(3)}
     m = re.match(r"board ([\d.]+) ?x ([\d.]+)$", t, re.I)
     if m:
         return {"t": "board", "w": float(m.group(1)), "h": float(m.group(2))}
@@ -175,6 +197,8 @@ def dumps(board: Board) -> str:
             L.append(f"silk {c['level']}")
         elif t == "nc":
             L.append(f"nc {' '.join(cast(list[str], c['pins']))}")
+        elif t == "sim":
+            L.append(_dump_sim(c))
         elif t == "match":
             L.append(f"match {' '.join(cast(list[str], c['nets']))}")
         elif t == "diff":
@@ -188,6 +212,25 @@ def dumps(board: Board) -> str:
             seen_power.append(nets)
             L.append(f"power {' '.join(cast(list[str], c['nets']))}")
     return "\n".join(L) + "\n"
+
+
+def _dump_sim(c: Constraint) -> str:
+    k = str(c.get("kind", ""))
+    if k == "vcc":
+        s = f"sim vcc {c['net']} {_f(c.get('v0', 0)):g}"
+        if c.get("v1") is not None:
+            s += f" {_f(c['v1']):g}"
+        return s
+    if k == "sine":
+        return (f"sim sine {c['net']} {_f(c.get('off', 0)):g} "
+                f"{_f(c.get('amp', 1)):g} {_f(c.get('freq', 1000)):g}")
+    if k == "isrc":
+        return f"sim isrc {c['net']} {_f(c.get('value', 0)):g}"
+    if k == "tran":
+        return f"sim tran {_f(c.get('t_end', 0.01)):g} {_i(c.get('steps'), 1000)}"
+    if k == "probe":
+        return f"sim probe {c['net']}"
+    return f"sim {k} {c.get('ref', '')} {c.get('value', '')}"
 
 
 def loads(text: str, base: str | os.PathLike[str] | None = None) -> Board:

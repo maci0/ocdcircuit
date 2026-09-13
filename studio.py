@@ -187,6 +187,7 @@ function drawDRC(r){
   if(r.errors.length)h+=r.errors.map(e=>`<div class=err>✗ ${e}</div>`).join('');
   else h+='<div class=ok>✓ DRC clean ('+r.fab+')</div>';
   h+=r.warnings.slice(0,5).map(w=>`<div class=warn>~ ${w}</div>`).join('');
+  if(r.sim&&Object.keys(r.sim).length)h+='<div class=ok>⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')+'</div>';
   d.innerHTML=h;
 }
 function setEditor(t){$('ed').innerText=t;}
@@ -259,9 +260,19 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                       "mat": mats[-1] if mats else "chip", "bodies": bds}
     nets = {n: [f"{r}.{pin}" for r, pin in net.pins] for n, net in b.nets.items()}
     fixed = {str(c["ref"]): True for c in b.constraints if c.get("t") == "fixed"}
+    sim_nets: dict[str, float] = {}
+    if any(c.get("t") == "sim" for c in b.constraints):
+        try:
+            res = b.simulate()
+            raw = res.get("nets", {})
+            assert isinstance(raw, dict)
+            sim_nets = {str(k): round(float(v), 3) for k, v in raw.items()
+                        if isinstance(v, (int, float))}
+        except (ValueError, KeyError):
+            sim_nets = {}
     return {"text": text, "parts": parts, "nets": nets, "fixed": fixed,
             "bw": b.width, "bh": b.height, "frames": frames,
-            "traces": traces, "cost": round(cost, 1),
+            "traces": traces, "cost": round(cost, 1), "sim": sim_nets,
             "errors": drc["errors"], "warnings": drc["warnings"],
             "fab": drc.get("fab", "jlc"), "silk": 1}
 

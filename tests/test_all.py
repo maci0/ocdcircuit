@@ -247,7 +247,7 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 12
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 15
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
@@ -257,6 +257,10 @@ assert _call("parse_constraint", {"text": "keep U1 near C1"})["constraint"] == {
     "t": "near", "a": "U1", "b": "C1", "w": 2.0}
 assert _call("check", {})["errors"] == []
 assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "importer:fp" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "simulate:mna" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert cast(float, _call("calc", {"what": "divider", "vin": 9, "rtop": 10000,
+                                  "rbot": 4700})["vout"]) > 2.8
 assert "error" in _rpc("tools/call", {"name": "nope", "arguments": {}})
 mcp.kill()
 print("MCP OK")
@@ -305,4 +309,14 @@ import json as _jj
 _g = _jj.loads(bo.render("gltf"))
 assert {m["name"] for m in _g["materials"]} >= {"mask", "copper", "chip"}
 assert len(_g["meshes"]) == len(_g["materials"])
+
+# everything-is-a-plugin: simulate engine physics (divider dc + RC tran)
+_simb = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+                    "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\nsim vcc VIN 9\n")
+assert abs(cast(float, cast(dict[str, object], _simb.simulate()["nets"])["VO"]) - 2.878) < 0.01
+_simb2 = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                     "net VIN: R1.1\nnet VO: R1.2 C1.1\nnet GND: C1.2\n"
+                     "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n")
+_w = cast(list[float], cast(dict[str, object], _simb2.simulate(what="tran")["waves"])["VO"])
+assert abs(_w[-1] - 5.0) < 0.05 and all(a <= c + 1e-9 for a, c in zip(_w, _w[1:]))
 print("ALL OK")

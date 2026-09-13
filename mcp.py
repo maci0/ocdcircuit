@@ -121,6 +121,30 @@ def t_render(a: dict[str, object]) -> dict[str, object]:
     return {"svg": b.render(key)}
 
 
+def t_import(a: dict[str, object]) -> dict[str, object]:
+    b = _board()
+    key = a.get("key")
+    assert key is None or isinstance(key, str)
+    path = str(a.get("path", ""))
+    return b.import_fp(key, path=path)
+
+
+def t_calc(a: dict[str, object]) -> dict[str, object]:
+    b = _board()
+    key = a.get("key")
+    assert key is None or isinstance(key, str)
+    args = {k: v for k, v in a.items() if k != "key"}
+    return b.calc(key, **args)
+
+
+def t_sim(a: dict[str, object]) -> dict[str, object]:
+    b = _board()
+    key = a.get("key")
+    assert key is None or isinstance(key, str)
+    args = {k: v for k, v in a.items() if k != "key"}
+    return b.simulate(key, **args)
+
+
 def t_use(a: dict[str, object]) -> dict[str, object]:
     _board().use(str(a["kind"]), str(a["key"]))
     return {"active": str(a["key"])}
@@ -154,6 +178,9 @@ TOOLS: dict[str, object] = {
     "check": (t_check, {"key": "drc?"}),
     "export": (t_export, {"key": "exporter?", "outdir": "out"}),
     "render": (t_render, {"key": "renderer?"}),
+    "import_footprint": (t_import, {"key": "fp|kicad|eagle|tscircuit|pcb", "path": "file"}),
+    "calc": (t_calc, {"what": "trace|via|divider", "amps": 1.0}),
+    "simulate": (t_sim, {"what": "dc|tran"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
     "solve": (t_solve, {"placer?": "key", "router?": "key"}),
