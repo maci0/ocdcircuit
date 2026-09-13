@@ -265,7 +265,7 @@ print("MCP OK")
 from ocdcircuit import footprint as _fp
 name, meta = _fp.load_file(os.path.join(EX, "usb_c_edge.fp"))
 assert name == "USB_C_EDGE_GCT" and meta.get("edge") is True
-assert len(meta["pads"]) == 26  # 2x12 + 2 shell  # type: ignore[index]
+assert len(cast(dict[str, object], meta["pads"])) == 26  # 2x12 + 2 shell
 try:
     _fp.loads("pad A1 0 0\n")
     raise AssertionError("should have raised")
