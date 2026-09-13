@@ -5,7 +5,7 @@ from the built .kicad_pcb.
 `~` union-find over (instance.pin ∪ signal) gives nets directly — the .ato
 IS the netlist, no JSON needed. Footprints import via our kicad importer.
 
-Usage: python ports/atopile.py <atopile-projdir> <outdir>
+Usage: python tools/atopile.py <atopile-projdir> <outdir>
 """
 from __future__ import annotations
 import os
@@ -13,7 +13,7 @@ import re
 import sys
 from typing import cast
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # repo root (ports/ lives in-package)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
 
 def _strip_comments(src: str) -> str:
@@ -234,7 +234,7 @@ def convert(projdir: str, outdir: str) -> str:
 
 def main() -> None:
     if len(sys.argv) != 3:
-        print("usage: python ports/atopile.py <atopile-projdir> <outdir>", file=sys.stderr)
+        print("usage: python tools/atopile.py <atopile-projdir> <outdir>", file=sys.stderr)
         raise SystemExit(1)
     try:
         print(convert(sys.argv[1], sys.argv[2]))

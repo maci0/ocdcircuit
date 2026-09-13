@@ -8,7 +8,7 @@ tsx supplierPartNumbers) → .ocd references them via `fp` lines.
 Also ports: testpoints (→ plated-hole footprints), keepouts, cutout, holes,
 pours, pre-route <trace> (→ keep constraints), LCSC attrs, rotations.
 
-Usage: python ports/mitox.py <mitox-projdir> <outdir>
+Usage: python tools/mitox.py <mitox-projdir> <outdir>
 """
 from __future__ import annotations
 import json
@@ -17,7 +17,7 @@ import re
 import sys
 from typing import cast
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # repo root (ports/ lives in-package)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
 
 def _f(v: object, default: float = 0.0) -> float:
@@ -323,7 +323,7 @@ def _std_fallback(name: str) -> str:
 
 def main() -> None:
     if len(sys.argv) != 3:
-        print("usage: python ports/mitox.py <mitox-projdir> <outdir>", file=sys.stderr)
+        print("usage: python tools/mitox.py <mitox-projdir> <outdir>", file=sys.stderr)
         raise SystemExit(1)
     try:
         print(convert(sys.argv[1], sys.argv[2]))

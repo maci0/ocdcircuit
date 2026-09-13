@@ -67,6 +67,9 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
                 paste.append((x, y))  # SMD only — PTH gets no paste
     for t in board.traces:
         draws[t.layer % board.layers].append((t.x1, t.y1, t.x2, t.y2))
+    for ll in draws:
+        draws[ll] = sorted(draws[ll])
+        flashes[ll] = sorted(flashes[ll])
     for ll, nm in enumerate(layer_names(board.layers)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
         open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4))
@@ -179,20 +182,20 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for i, n in enumerate(sorted(board.nets), 1):
         net_ids[n] = i
         A(f"  (net {i} {_sexp_str(n)})")
-    for p in board.parts.values():
+    pin_net: dict[tuple[str, str], int] = {}
+    for n, net in board.nets.items():
+        for r, q in net.pins:
+            pin_net[(r, str(q))] = net_ids[n]
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
         A(f'  (footprint {_sexp_str(p.fp)} (layer "F.Cu")')
         A(f"    (at {p.x:.4f} {p.y:.4f})")
         A(f'    (descr {_sexp_str(p.value or p.fp)})')
         _pw, _ph = p.wh()
         A(f'    (fp_text user {p.ref} (at 0 {-_ph / 2 - 1:.4f}) (layer "F.SilkS"))')
-        for pin in pads_of(p.fp, lib):
+        for pin in sorted(pads_of(p.fp, lib)):
             dx, dy = board.pad_pos(p.ref, pin)
             dr = hole_drill(p.fp, pin, lib)
-            nid = 0
-            for n, net in board.nets.items():
-                if (p.ref, str(pin)) in [(r, str(q)) for r, q in net.pins]:
-                    nid = net_ids[n]
-                    break
+            nid = pin_net.get((p.ref, str(pin)), 0)
             if dr > 0:
                 A(f'    (pad {pin} thru_hole circle (at {dx:.4f} {dy:.4f}) '
                   f"(size {dr + 0.7:.4f} {dr + 0.7:.4f}) (drill {dr:.4f}) (layers *.Cu *.Mask) (net {nid}))")
@@ -201,7 +204,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
                 A(f'    (pad {pin} smd rect (at {dx:.4f} {dy:.4f}) '
                   f"(size {pw:.4f} {ph:.4f}) (layers F.Cu F.Mask) (net {nid}))")
         A("  )")
-    for t in board.traces:
+    for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         ln = layers[t.layer] if t.layer < len(layers) else layers[0]
         nid = net_ids.get(t.net, 0)
         A(f'  (segment (start {t.x1:.4f} {t.y1:.4f}) (end {t.x2:.4f} {t.y2:.4f}) '

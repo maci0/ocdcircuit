@@ -80,14 +80,15 @@ report; motion is the product; one concept, one hue.
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.
 
-Ports: `ocdcircuit/ports/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
+Ports: `tools/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
 to `.ocd` — see `boards/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).
-`ocdcircuit/ports/mitox.py` ports LCSC-footprint boards, harvesting exact pad geometry
+`tools/mitox.py` ports LCSC-footprint boards, harvesting exact pad geometry
 into `.fp` files — see `boards/mitox/` (43 parts, 4L, full fab output).
-`ocdcircuit/ports/atopile.py` ports atopile projects (`~` wiring, kicad_mod footprints,
+`tools/atopile.py` ports atopile projects (`~` wiring, kicad_mod footprints,
 LCSC) — see `boards/bme690/` (BME690 carrier, verify-then-pin).
 
 Layout: `ocdcircuit/` (core, circuit, parts, solver, maze, drc, fab, silk,
-export, agent, score, diff, plugins, `ports/`), `studio.py`, `ocd.py`,
+export, agent, score, diff, plugins), `tools/` (importers),
+`studio.py`, `ocd.py`,
 `mcp.py`, `docs/` (ADRs, research), `boards/` (one dir per board),
 `benches/`, `tests/`.

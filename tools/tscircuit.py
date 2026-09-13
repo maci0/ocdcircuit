@@ -5,7 +5,7 @@ values + board size.
 Maps: qfn28/pinrow4/dip40/0805/1206/1210 → our lib; tscircuit centered
 coords → .ocd origin; author positions kept as fix (re-solve freely).
 
-Usage: python ports/tscircuit.py <project-dir> > out.ocd
+Usage: python tools/tscircuit.py <project-dir> > out.ocd
 """
 from __future__ import annotations
 import json
@@ -14,7 +14,7 @@ import re
 import sys
 from typing import cast
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # repo root (ports/ lives in-package)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
 FP_MAP = {
     "qfn28": "QFN28", "0805": "C0805", "1206": "R1206", "1210": "C1210",
@@ -260,7 +260,7 @@ def _guess_fp(cname: str) -> str:
 
 def main() -> None:
     if len(sys.argv) != 2:
-        print("usage: python ports/tscircuit.py <project-dir>", file=sys.stderr)
+        print("usage: python tools/tscircuit.py <project-dir>", file=sys.stderr)
         raise SystemExit(1)
     try:
         print(convert(sys.argv[1]), end="")

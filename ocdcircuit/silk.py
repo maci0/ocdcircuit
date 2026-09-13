@@ -74,4 +74,8 @@ def labels(board: Board, level: int | None = None) -> Silk:
     if lv >= 3:
         for t in board.traces:
             texts.append(Text((t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2, t.net, "silk-net"))
+    # sorted: stable diffs, tidy output regardless of insertion order
+    texts.sort(key=lambda t: (t.cls, t.s))
+    dots.sort(key=lambda d: (d.x, d.y))
+    boxes.sort(key=lambda b: (b.x0, b.y0, b.x1, b.y1))
     return Silk(texts, dots, boxes)

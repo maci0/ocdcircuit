@@ -74,7 +74,10 @@ def main() -> None:
     seeds = int(sys.argv[1]) if len(sys.argv) > 1 else BASE_SEEDS
     iters = int(sys.argv[2]) if len(sys.argv) > 2 else BASE_ITERS
     placer = sys.argv[3] if len(sys.argv) > 3 else "diffusion"
-    b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
+    try:
+        b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
+    except OSError:
+        raise SystemExit("monster6502.ocd missing (generated, gitignored) — run: python3 convert.py")
     g = golden(b)
     # golden baselines first (same WL model + same overlap counter both sides)
     apply_golden(b, g)

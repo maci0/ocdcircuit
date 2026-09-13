@@ -15,6 +15,6 @@ is, why it's here.
 - [KiCad footprint libs](https://gitlab.com/kicad/libraries/kicad-footprints) —
   thousands of .pretty footprints, directly importable via `fp`.
 - [pico_tmc2209-tscircuit](../boards/pico_tmc2209/pico_tmc2209.ocd) —
-  our first port: Pico + 3×TMC2209 via `ocdcircuit/ports/tscircuit.py`.
-- [atopile](https://atopile.io) — Python HDL for PCBs; our `ocdcircuit/ports/atopile.py`
+  our first port: Pico + 3×TMC2209 via `tools/tscircuit.py`.
+- [atopile](https://atopile.io) — Python HDL for PCBs; our `tools/atopile.py`
   converts `.ato` + `.kicad_mod` to `.ocd`.

@@ -17,7 +17,6 @@ import http.server
 import json
 import os
 import sys
-import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE) if os.path.basename(HERE) != "ocdcircuit" else HERE)
@@ -38,7 +37,7 @@ def _i(v: object, default: int) -> int:
     assert isinstance(v, (int, str))
     return int(v)
 
-SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "examples", "blinky_555.ocd")
+SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "boards", "blinky_555.ocd")
 SRC = os.path.abspath(SRC)
 BASE = os.path.dirname(SRC)
 
@@ -121,7 +120,7 @@ const schEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 // parse net lines: {name, idx, pins:[{tok, li}]} (li = line index)
 function schNets(){
   const lines=schLines(),out=[];
-  lines.forEach((l,li)=>{const m=l.match(/^net\s+(\S+?)(?:\s+[LW][\d.]+)*\s*:\s*(.*)$/);
+  lines.forEach((l,li)=>{const m=l.match(/^net\s+(\S+?)(?:\s+[LWlw][\d.]+)*\s*:\s*(.*)$/);
     if(m)out.push({name:m[1],li,pins:m[2].split(/\s+/).filter(Boolean)});});
   return out;
 }
@@ -234,7 +233,7 @@ async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'
 function highlight(){
   const ed=$('ed');if(document.activeElement===ed)return; // don't clobber caret
   const t=ed.innerText;let h=t.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  h=h.replace(/(^|\n)(board|part|net|use|fix|keep|route|trace|power|silk|join|as|on|at|near|x|board)(?=[\\s]|$)/g,'$1<span class=tok-k>$2</span>');
+  h=h.replace(/(^|\n)(board|part|net|use|fix|keep|route|trace|power|silk|join|as|on|at|near|match|diff|pour|keepout|cutout|hole|bend|stiffener|block|instance|end|nc|sim|x|board)(?=[\\s]|$)/g,'$1<span class=tok-k>$2</span>');
   h=h.replace(/(#[^\n]*)/g,'<span class=tok-c>$1</span>');
   // note: lightweight; full tokenize on load only
   ed.innerHTML=h;
@@ -305,7 +304,6 @@ c.addEventListener('mousemove',e=>{if(!S||drag)return;const R=c.getBoundingClien
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value});applyState(r,true);};
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
-let undoDepth=0;
 async function hist(op){
   const r=await api(op,{});
   if(r.error){$('stat').textContent=r.error;$('stat').className='err';return;}
@@ -362,13 +360,19 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 h3d = max(h3d, bh)
                 bds.append({"w": r * 2, "h": r * 2, "z": 1.6 + _f(body.get("z", 0)),
                             "hgt": bh, "dx": 0.0, "dy": 0.0})
-        # dominant material = tallest body (what you actually see)
+        # dominant material = tallest body (what you actually see).
+        # bodies pre-rotated into board frame (mirrors geom3d.build).
         rot = 0
         try:
             rot = int(p.attrs.get("rot", "0")) % 360
         except ValueError:
             rot = 0
         pw, ph = (p.h, p.w) if rot in (90, 270) else (p.w, p.h)
+        if rot in (90, 270):
+            for bd in bds:
+                bd["w"], bd["h"] = bd["h"], bd["w"]
+                bd["dx"], bd["dy"] = p.rot_xy(cast(float, bd["dx"]),
+                                              cast(float, bd["dy"]))
         parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
                       "value": p.value, "h3d": h3d,
                       "mat": mats[-1] if mats else "chip", "bodies": bds}

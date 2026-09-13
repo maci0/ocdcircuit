@@ -200,9 +200,9 @@ def dumps(board: Board) -> str:
     dump `use` lines + local content only; reload re-merges identically."""
     owned = {p.ref for p in board.parts.values() if p.owner}
     L = [f"board {board.name} {board.width:g}x{board.height:g} {board.layers}L"]
-    for bname, block in board.blocks.items():
+    for bname in sorted(board.blocks):
         L.append(f"block {bname}")
-        L.extend(f"  {ln}" for ln in block.lines)
+        L.extend(f"  {ln}" for ln in board.blocks[bname].lines)
         L.append("end")
     for inc in board.includes:
         L.append(f"use {inc['path']}" + (f" as {inc['prefix']}" if inc.get("prefix") else "") +
@@ -210,16 +210,17 @@ def dumps(board: Board) -> str:
     for ins in board.instances:
         L.append(f"instance {ins['block']} as {ins['prefix']}" +
                  (f" join {' '.join(cast(list[str], ins['join']))}" if ins.get("join") else ""))
-    for p in board.parts.values():
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
         if p.owner:
             continue  # owned by an include/instance — dumped as use/instance
         attrs = "".join(f" {k}={v}" for k, v in sorted(p.attrs.items()))
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
     # fp lines up front: footprints must exist before parts use them
-    fps = [f"fp {board.fp_src[name]}" for name in board.custom_fp if name in board.fp_src]
+    fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
     L[1:1] = fps
-    for n, net in board.nets.items():
-        pins = [(r, pin) for r, pin in net.pins if r not in owned]
+    for n in sorted(board.nets):
+        net = board.nets[n]
+        pins = sorted((r, str(pin)) for r, pin in net.pins if r not in owned)
         if not pins and any(net.pins):
             continue  # fully owned by an include — comes back via `use`
         attrs = ""

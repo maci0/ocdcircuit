@@ -3,4 +3,5 @@ __pycache__/
 boards/out/
 boards/*/out/
 benches/monster6502/baseline_*.txt
+benches/monster6502/monster6502.ocd
 .mypy_cache/
