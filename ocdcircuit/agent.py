@@ -245,14 +245,19 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err("want: fp PATH/to/part.fp")
             import os as _os
             from .footprint import load_file
+            from .foreign import load_foreign
             fn = _os.path.normpath(_os.path.join(base, toks[1]))
             if fn in stack:
                 raise err(f"footprint cycle: {toks[1]!r}")
             try:
-                name, meta = load_file(fn)
+                ext = _os.path.splitext(fn)[1].lower()
+                pairs = load_foreign(fn) if ext != ".fp" else [load_file(fn)]
             except (OSError, ValueError) as e:
                 raise err(e)
-            b.add_footprint(name, meta, toks[1])
+            for name, meta in pairs:
+                if name in b._lib() and name not in b.custom_fp:
+                    raise err(f"footprint {name!r} shadows std lib (rename it)")
+                b.add_footprint(name, meta, toks[1])
         elif kw == "part":
             toks = line.split(None, 3)
             if len(toks) < 3:

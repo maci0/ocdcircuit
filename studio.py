@@ -113,16 +113,34 @@ function draw3D(st,rot){
     const rx=dx*Math.cos(a)-dy*Math.sin(a),ry=(dx*Math.sin(a)+dy*Math.cos(a))*0.5-z*0.9;
     return [cx+rx*s,cy+ry*s];};
   const faces=[];
-  const slab=[[0,0],[st.bw,0],[st.bw,st.bh],[0,st.bh]].map(p=>P(p[0],p[1],0));
-  const top=slab.map(p=>P(p[0],p[1],0)); // computed below properly
-  function box(x0,y0,z0,x1,y1,z1,col){const c000=P(x0,y0,z0),c100=P(x1,y0,z0),c110=P(x1,y1,z0),c010=P(x0,y1,z0),c001=P(x0,y0,z1),c101=P(x1,y0,z1),c111=P(x1,y1,z1),c011=P(x0,y1,z1);
-    faces.push({z:(z0+z1)/2,p:[c101,c111,c011,c001],c:col});faces.push({z:z0,p:[c000,c100,c110,c010],c:'#0a2a0a'});
-    faces.push({z:(z0+z1)/2,p:[c000,c100,c101,c001],c:col});faces.push({z:(z0+z1)/2,p:[c100,c110,c111,c101],c:col});}
-  box(0,0,0,st.bw,st.bh,1.6,'#0d5c0d');
-  for(const r in st.parts){const p=st.parts[r];const h=p.h3d||1;
-    box(p.x-p.w/2+0.3,p.y-p.h/2+0.3,1.6,p.x+p.w/2-0.3,p.y+p.h/2-0.3,1.6+h,'#1a1a1a');}
+  // lambert-ish: top faces full color, sides shaded by facing
+  function shade(hex,k){const n=parseInt(hex.slice(1),16);
+    const r=Math.min(255,((n>>16)&255)*k)|0,g=Math.min(255,((n>>8)&255)*k)|0,b=Math.min(255,(n&255)*k)|0;
+    return `rgb(${r},${g},${b})`;}
+  function box(x0,y0,z0,x1,y1,z1,cols){const c000=P(x0,y0,z0),c100=P(x1,y0,z0),c110=P(x1,y1,z0),c010=P(x0,y1,z0),c001=P(x0,y0,z1),c101=P(x1,y0,z1),c111=P(x1,y1,z1),c011=P(x0,y1,z1);
+    // cols: {top, front, side} — top brightest (tmog: brightest = live data)
+    faces.push({z:z1,p:[c001,c101,c111,c011],c:cols.top});
+    faces.push({z:z0,p:[c000,c100,c110,c010],c:shade(cols.top,0.35)});
+    faces.push({z:(z0+z1)/2,p:[c000,c100,c101,c001],c:cols.front});
+    faces.push({z:(z0+z1)/2,p:[c100,c110,c111,c101],c:cols.side});
+    faces.push({z:(z0+z1)/2,p:[c110,c010,c011,c111],c:shade(cols.front,0.8)});
+    faces.push({z:(z0+z1)/2,p:[c010,c000,c001,c011],c:shade(cols.side,0.8)});}
+  const MASK={top:'#0f6b0f',front:'#0a4a0a',side:'#0d5c0d'};
+  box(0,0,0,st.bw,st.bh,1.6,MASK);
+  // copper traces on top layer shimmer gold
+  for(const t of st.traces.slice(0,400)){if(t.layer!==0)continue;
+    const w=Math.max(0.15,t.w/2);
+    faces.push({z:1.75,p:[P(t.x1-w,t.y1-w,1.7),P(t.x2+w,t.y1-w,1.7),P(t.x2+w,t.y2+w,1.7),P(t.x1-w,t.y2+w,1.7)],c:'#c9962e'});}
+  const MATS={chip:{top:'#232327',front:'#141416',side:'#1b1b1e'},tant:{top:'#d9a419',front:'#8a6a0a',side:'#b8890f'},
+    elec:{top:'#9aa3b5',front:'#5a6270',side:'#767f92'},led:{top:'#e02020',front:'#801010',side:'#b01414'},
+    steel:{top:'#c8ccd2',front:'#7a7e85',side:'#9ea3ab'},plastic:{top:'#1e1e22',front:'#101012',side:'#161618'},
+    copper:{top:'#d9a832',front:'#8a6a1a',side:'#b8891f'}};
+  for(const r in st.parts){const p=st.parts[r];
+    const cols=MATS[p.mat]||MATS.chip;
+    for(const bd of (p.bodies||[{w:p.w-0.6,h:p.h-0.6,z:1.6,hgt:p.h3d||1,dx:0,dy:0}])){
+      box(p.x+bd.dx-bd.w/2,p.y+bd.dy-bd.h/2,bd.z,p.x+bd.dx+bd.w/2,p.y+bd.dy+bd.h/2,bd.z+bd.hgt,cols);}}
   faces.sort((a,b)=>a.z-b.z);
-  for(const f of faces){ctx.fillStyle=f.c;ctx.beginPath();ctx.moveTo(f.p[0][0],f.p[0][1]);for(let i=1;i<f.p.length;i++)ctx.lineTo(f.p[i][0],f.p[i][1]);ctx.closePath();ctx.fill();ctx.strokeStyle='#000';ctx.stroke();}
+  for(const f of faces){ctx.fillStyle=f.c;ctx.beginPath();ctx.moveTo(f.p[0][0],f.p[0][1]);for(let i=1;i<f.p.length;i++)ctx.lineTo(f.p[i][0],f.p[i][1]);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(0,0,0,.35)';ctx.stroke();}
 }
 function renderAll(){if(!S)return;view=drawPCB(S.cur,1);drawSCH(S);rot+=0.003;draw3D(S.cur,rot);}
 let rot=0.6;setInterval(renderAll,50);
@@ -205,23 +223,40 @@ $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=p
 def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 traces: list[dict[str, object]], cost: float,
                 drc: dict[str, object]) -> dict[str, object]:
+    from ocdcircuit.geom3d import body_material
     from ocdcircuit.parts import bodies_of
     from typing import cast
     parts: dict[str, dict[str, object]] = {}
     lib = b._lib()
     for ref, p in b.parts.items():
         h3d = 1.0
+        mats: list[str] = []
+        bds: list[dict[str, object]] = []
         for body in bodies_of(p.fp, lib):
+            mat = body_material(p.fp, body)
+            mats.append(mat)
             if "box" in body:
                 box3 = body["box"]
                 assert isinstance(box3, (list, tuple))
-                h3d = max(h3d, _f(box3[2]))
+                w2, h2, bh = _f(box3[0]), _f(box3[1]), _f(box3[2])
+                h3d = max(h3d, bh)
+                ats = body.get("at", [(0.0, 0.0)])
+                assert isinstance(ats, list)
+                for at in ats:
+                    assert isinstance(at, (list, tuple))
+                    bds.append({"w": w2, "h": h2, "z": 1.6 + _f(body.get("z", 0)),
+                                "hgt": bh, "dx": _f(at[0]), "dy": _f(at[1])})
             elif "cyl" in body:
                 cyl2 = body["cyl"]
                 assert isinstance(cyl2, (list, tuple))
-                h3d = max(h3d, _f(cyl2[1]))
+                r, bh = _f(cyl2[0]), _f(cyl2[1])
+                h3d = max(h3d, bh)
+                bds.append({"w": r * 2, "h": r * 2, "z": 1.6 + _f(body.get("z", 0)),
+                            "hgt": bh, "dx": 0.0, "dy": 0.0})
+        # dominant material = tallest body (what you actually see)
         parts[ref] = {"x": p.x, "y": p.y, "w": p.w, "h": p.h,
-                      "value": p.value, "h3d": h3d}
+                      "value": p.value, "h3d": h3d,
+                      "mat": mats[-1] if mats else "chip", "bodies": bds}
     nets = {n: [f"{r}.{pin}" for r, pin in net.pins] for n, net in b.nets.items()}
     fixed = {str(c["ref"]): True for c in b.constraints if c.get("t") == "fixed"}
     return {"text": text, "parts": parts, "nets": nets, "fixed": fixed,

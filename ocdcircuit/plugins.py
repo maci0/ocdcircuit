@@ -254,6 +254,9 @@ def from_ir(doc: dict[str, object]) -> Board:
     fab = bb.get("fab")
     if isinstance(fab, str):
         b.fab = fab
+    for fn, meta in cast(dict[str, dict[str, object]], doc.get("_imported_fp", {})).items():
+        if fn not in b._lib():
+            b.add_footprint(fn, meta)
     for p in cast(list[dict[str, object]], doc.get("parts", [])):
         x = p.get("x")
         y = p.get("y")
@@ -364,51 +367,10 @@ class StlRenderer(Plugin[str]):
     kind, key = "renderer", "stl"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
-        from .parts import bodies_of
-        thick = float(k.get("thick", 1.6))  # type: ignore[arg-type]
-        Tri = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
-        tri: list[Tri] = []
-
-        def box(x0: float, y0: float, z0: float,
-                x1: float, y1: float, z1: float) -> None:
-            v = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
-                 (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
-            for ai, bi, ci, di in [(0, 1, 2, 3), (4, 6, 5, 4), (0, 4, 5, 1),
-                                   (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]:
-                tri.append((v[ai], v[bi], v[ci]))
-                tri.append((v[ai], v[ci], v[di]))
-
-        def cyl(cx: float, cy: float, z0: float, r: float, h: float,
-                seg: int = 12) -> None:
-            import math
-            for i in range(seg):
-                a0 = 2 * math.pi * i / seg
-                a1 = 2 * math.pi * (i + 1) / seg
-                p0 = (cx + r * math.cos(a0), cy + r * math.sin(a0))
-                p1 = (cx + r * math.cos(a1), cy + r * math.sin(a1))
-                cc = (cx, cy)
-                tri.append(((cc[0], cc[1], z0), (p0[0], p0[1], z0), (p1[0], p1[1], z0)))
-                tri.append(((cc[0], cc[1], z0 + h), (p1[0], p1[1], z0 + h), (p0[0], p0[1], z0 + h)))
-                tri.append(((p0[0], p0[1], z0), (p0[0], p0[1], z0 + h), (p1[0], p1[1], z0 + h)))
-                tri.append(((p0[0], p0[1], z0 + h), (p1[0], p1[1], z0), (p1[0], p1[1], z0 + h)))
-
-        lib = board._lib()
-        box(0, 0, 0, board.width, board.height, thick)
-        for p in board.parts.values():
-            for body in bodies_of(p.fp, lib):
-                z0 = thick + _f(body.get("z", 0))
-                if "box" in body:
-                    w2, h2, bh = (_f(v) for v in cast(list[object], body["box"]))
-                    ats = cast(list[object], body.get("at", [(0.0, 0.0)]))
-                    for at in ats:
-                        ax, ay = (_f(v) for v in cast(list[object], at))
-                        box(p.x + ax - w2 / 2, p.y + ay - h2 / 2, z0,
-                            p.x + ax + w2 / 2, p.y + ay + h2 / 2, z0 + bh)
-                elif "cyl" in body:
-                    r, bh = (_f(v) for v in cast(list[object], body["cyl"]))
-                    cyl(p.x, p.y, z0, r, bh)
+        from .geom3d import build
+        thick = _f(k.get("thick", 1.6))
         out = [f"solid {board.name}"]
-        for ta, tb, tc in tri:
+        for ta, tb, tc, _mat in build(board, thick):
             out.append("facet normal 0 0 0")
             out.append("outer loop")
             out += [f"vertex {x:.3f} {y:.3f} {z:.3f}" for x, y, z in (ta, tb, tc)]
@@ -416,6 +378,17 @@ class StlRenderer(Plugin[str]):
             out.append("endfacet")
         out.append(f"endsolid {board.name}")
         return "\n".join(out)
+
+
+class GltfRenderer(Plugin[str]):
+    """3D exporter: glTF 2.0 with PBR materials (mask/copper/silk/parts).
+    Textured 3D for viewers + mechanical checks. No deps."""
+    kind, key = "renderer", "gltf"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        from .geom3d import to_gltf
+        thick = _f(k.get("thick", 1.6))
+        return to_gltf(board, thick)
 
 
 class RefSilk(Plugin[dict[str, object]]):
@@ -452,7 +425,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
              JlcDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
-             SvgRenderer, SchRenderer, StlRenderer)
+             SvgRenderer, SchRenderer, StlRenderer, GltfRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:

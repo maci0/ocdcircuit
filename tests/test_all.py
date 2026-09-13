@@ -283,4 +283,26 @@ from ocdcircuit import calc
 assert abs(calc.trace_width(1.0) - 0.3) < 0.05
 assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
+
+# foreign footprints: kicad_mod + eagle + tscircuit JSON
+from ocdcircuit import foreign
+_kmod = '''(footprint "T1" (layer "F.Cu") (at 0 0)
+  (pad "1" smd rect (at -1 0) (size 1 1.5) (layers "F.Cu"))
+  (pad "2" smd rect (at 1 0) (size 1 1.5) (layers "F.Cu"))
+  (model "x.stp"))'''
+_fn, _fm = foreign.kicad_mod(_kmod)
+assert _fn == "T1" and set(_fm["pads"]) == {"1", "2"}
+assert _fm["models"] == ["x.stp"]
+_lbr = '''<eagle><drawing><library><packages><package name="P1">
+<smd name="1" x="0" y="0" dx="1" dy="1"/><pad name="2" x="2" y="0" drill="0.8"/>
+</package></packages></library></drawing></eagle>'''
+assert foreign.eagle_lbr(_lbr)[0][0] == "P1"
+_tj = [{"type": "pcb_smtpad", "footprint": "C1", "port_hints": ["1"], "x": 0, "y": 0}]
+assert foreign.tscircuit_json(_tj)[0][0] == "C1"
+
+# textured 3D: glTF materials + shared mesh builder
+import json as _jj
+_g = _jj.loads(bo.render("gltf"))
+assert {m["name"] for m in _g["materials"]} >= {"mask", "copper", "chip"}
+assert len(_g["meshes"]) == len(_g["materials"])
 print("ALL OK")

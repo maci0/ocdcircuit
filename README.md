@@ -62,6 +62,10 @@ report; motion is the product; one concept, one hue.
   `nc` marks intentional no-connects (USB-C demo has 14).
 - **One-zip fab bundle** (`export:bundle`), **snapshot golden tests**,
   **embedded calculators** (IPC-2221 trace width, via current, divider).
+- **Foreign footprints**: `fp` loads KiCad `.kicad_mod`, Eagle `.lbr`,
+  tscircuit JSON, or native `.fp` — plus `.kicad_pcb` netlist import.
+- **Textured 3D**: `render("gltf")` with PBR materials (mask/copper/silk/
+  chip/tantalum/electrolytic/LED/steel); studio canvas shades faces live.
 - **Agents are first-class**: `mcp.py` is an MCP stdio server (12 tools:
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.

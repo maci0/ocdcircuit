@@ -12,3 +12,5 @@ is, why it's here.
 - [pcb-edge-usb-c](https://github.com/AnasMalas/pcb-edge-usb-c) — use the PCB
   itself as a USB-C plug (10/14/24-pin). Zero-cost connector; footprint idea
   for our lib.
+- [KiCad footprint libs](https://gitlab.com/kicad/libraries/kicad-footprints) —
+  thousands of .pretty footprints, directly importable via `fp`.
