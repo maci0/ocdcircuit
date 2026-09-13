@@ -27,9 +27,11 @@ class Part:
         return (self.x - self.w / 2, self.y - self.h / 2,
                 self.x + self.w / 2, self.y + self.h / 2)
 
-    def pins_of(self) -> list[str]:
+    def pins_of(self, lib: object = None) -> list[str]:
+        from typing import cast
         from .parts import pads_of
-        return list(pads_of(self.fp))
+        from .types import Footprint
+        return list(pads_of(self.fp, cast(dict[str, Footprint] | None, lib)))
 
 
 class Net:
@@ -60,6 +62,7 @@ class Board(Component):
         self.traces: list[Seg] = []
         self.constraints: list[Constraint] = []
         self.includes: list[dict[str, object]] = []  # {path, prefix, join}
+        self.custom_fp: dict[str, dict[str, object]] = {}  # from `fp` lines
         self.ctx.services["plugins"] = Registry()
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)
@@ -127,24 +130,43 @@ class Board(Component):
     # -- parts library via plugin, stdlib fallback --
     def _lib(self) -> dict[str, dict[str, object]]:
         from .parts import FOOTPRINTS as STD
+        merged: dict[str, dict[str, object]] = dict(STD)
+        merged.update(self.custom_fp)
         try:
             plug = self.plugins().get("parts")
             assert isinstance(plug, Plugin)
             out = plug.run(self)
             assert isinstance(out, dict)
-            return out
+            merged.update(out)
         except KeyError:
-            return STD
+            pass
+        return merged
+
+    def add_footprint(self, name: str, fp: dict[str, object]) -> None:
+        """Register a custom (.fp) footprint. Undoable like everything."""
+        had = name in self.custom_fp
+        old = self.custom_fp.get(name)
+
+        def _do() -> None:
+            self.custom_fp[name] = fp
+
+        def _undo() -> None:
+            if had and old is not None:
+                self.custom_fp[name] = old
+            else:
+                self.custom_fp.pop(name, None)
+
+        self.ctx.emit(_do, _undo)
 
     def _pin_offset(self, fp: str, pin: PinLike) -> XY:
         try:
             plug = self.plugins().get("parts")
             assert isinstance(plug, Plugin)
             meth = getattr(plug, "pin_offset")
-            out: XY = meth(fp, pin)
+            out: XY = meth(fp, pin, self._lib())
             return out
-        except KeyError:
-            return _std_pin_offset(fp, pin)
+        except (KeyError, TypeError):
+            return _std_pin_offset(fp, pin, self._lib())
 
     # -- parts --
     def add_part(self, ref: str, fp: str, value: str = "",

@@ -218,6 +218,19 @@ def usb_c(h3d: float = 3.3) -> Footprint:
             "bodies": [{"box": (8.9, 7.5, h3d)}]}
 
 
+def usb_c_edge(h3d: float = 2.9) -> Footprint:
+    """GCT edge-mount USB-C plug (USB4515 style): the PCB tongue IS the
+    plug — 2×12 SMD pads on 0.5 pitch at the board edge + shell legs.
+    Origin = tongue tip edge; part sits OFF-board (negative-y courtyard
+    allowed). Verify against the exact GCT datasheet before ordering."""
+    pads = {f"A{i + 1}": (-2.75 + i * 0.5, 1.2, 0.3, 1.6) for i in range(12)}
+    pads.update({f"B{i + 1}": (-2.75 + i * 0.5, -1.2, 0.3, 1.6) for i in range(12)})
+    pads.update({"S1": (-4.45, 0, 0.9, 3.2), "S2": (4.45, 0, 0.9, 3.2)})
+    return {"w": 10.2, "h": 6.0, "pads": pads, "holes": {},
+            "edge": True,  # may overhang the board outline
+            "bodies": [{"box": (8.94, 5.0, h3d), "at": [(0, -1.0)]}]}
+
+
 def crystal(h3d: float = 0.6) -> Footprint:
     return {"w": 3.2 + 1.2, "h": 2.5 + 0.6,
             "pads": {"1": (-1.1, 0, 1.0, 1.2), "2": (1.1, 0, 1.0, 1.2)},
@@ -292,7 +305,7 @@ FOOTPRINTS = {
     "PINHD2X4": pinheader2x(4), "PINHD2X5": pinheader2x(5),
     "PINHD2X10": pinheader2x(10),
     "JST2": jst(2), "JST3": jst(3), "JST4": jst(4),
-    "USB_C": usb_c(), "USB_MICRO": usb_micro(), "USB_MINI": usb_mini(),
+    "USB_C": usb_c(), "USB_C_EDGE": usb_c_edge(), "USB_MICRO": usb_micro(), "USB_MINI": usb_mini(),
     "BARREL": barrel_jack(), "TERMINAL2": terminal2(),
     "TERMINAL3": {"w": 2 * 5.08 + 4.0, "h": 9.0,
                   "holes": {"1": (-5.08, 0, 1.3), "2": (0, 0, 1.3), "3": (5.08, 0, 1.3)},
@@ -322,10 +335,10 @@ _LEGACY_PINS: dict[str, dict[str, XY]] = {
 }
 
 
-def pads_of(fp: str) -> dict[str, XY]:
+def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
     """{pin: (dx, dy)} pad centers — what solver/DRC/export need."""
     from typing import cast
-    meta = FOOTPRINTS[fp]
+    meta = (lib or FOOTPRINTS)[fp]
     if "pads" in meta:
         pads = cast(dict[str, PadSpec], meta["pads"])
         return {k: (v[0], v[1]) for k, v in pads.items()}
@@ -335,34 +348,34 @@ def pads_of(fp: str) -> dict[str, XY]:
     return {}
 
 
-def pad_size(fp: str, pin: PinLike) -> tuple[float, float]:
+def pad_size(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> tuple[float, float]:
     from typing import cast
-    meta = FOOTPRINTS[fp]
+    meta = (lib or FOOTPRINTS)[fp]
     pads = cast(dict[str, PadSpec], meta.get("pads", {}))
     if str(pin) in pads:
         return (pads[str(pin)][2], pads[str(pin)][3])
     return (1.0, 1.0)
 
 
-def hole_drill(fp: str, pin: PinLike) -> float:
+def hole_drill(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> float:
     from typing import cast
-    meta = FOOTPRINTS[fp]
+    meta = (lib or FOOTPRINTS)[fp]
     holes = cast(dict[str, HoleSpec], meta.get("holes", {}))
     if str(pin) in holes:
         return holes[str(pin)][2]
     return 0.0
 
 
-def pin_offset(fp: str, pin: PinLike) -> XY:
+def pin_offset(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> XY:
     """Legacy (dx, dy) API — exact old values for the 6 legacy footprints."""
     if fp in _LEGACY_PINS and str(pin) in _LEGACY_PINS[fp]:
         return _LEGACY_PINS[fp][str(pin)]
-    return pads_of(fp)[str(pin)]
+    return pads_of(fp, lib)[str(pin)]
 
 
-def bodies_of(fp: str) -> list[Footprint]:
+def bodies_of(fp: str, lib: dict[str, Footprint] | None = None) -> list[Footprint]:
     from typing import cast
-    return cast(list[Footprint], FOOTPRINTS[fp].get("bodies", []))
+    return cast(list[Footprint], (lib or FOOTPRINTS)[fp].get("bodies", []))
 
 
 def courtyard(fp: str) -> tuple[float, float]:

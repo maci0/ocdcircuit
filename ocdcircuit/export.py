@@ -33,8 +33,9 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     files: list[str] = []
     flashes: dict[int, list[Flash]] = {ll: [] for ll in range(board.layers)}
     draws: dict[int, list[Draw]] = {ll: [] for ll in range(board.layers)}
+    lib = {k: v for k, v in board._lib().items()}
     for p in board.parts.values():
-        for pin in pads_of(p.fp):
+        for pin in pads_of(p.fp, lib):
             x, y = board.pad_pos(p.ref, pin)
             flashes[0].append((x, y))  # SMD pads on top
     for t in board.traces:
@@ -85,6 +86,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     from hole_drill; segments per trace; silk refs via fp_text user."""
     from .parts import hole_drill, pad_size, pads_of
     os.makedirs(outdir, exist_ok=True)
+    lib = board._lib()
     L: list[str] = []
     A = L.append
     A("(kicad_pcb (version 20221018) (generator ocdcircuit)")
@@ -105,9 +107,9 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
         A(f"    (at {p.x:.4f} {p.y:.4f})")
         A(f'    (descr {_sexp_str(p.value or p.fp)})')
         A(f'    (fp_text user {p.ref} (at 0 {-p.h / 2 - 1:.4f}) (layer "F.SilkS"))')
-        for pin in pads_of(p.fp):
+        for pin in pads_of(p.fp, lib):
             dx, dy = board.pad_pos(p.ref, pin)
-            dr = hole_drill(p.fp, pin)
+            dr = hole_drill(p.fp, pin, lib)
             nid = 0
             for n, net in board.nets.items():
                 if (p.ref, str(pin)) in [(r, str(q)) for r, q in net.pins]:
@@ -117,7 +119,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
                 A(f'    (pad {pin} thru_hole circle (at {dx:.4f} {dy:.4f}) '
                   f"(size {dr + 0.7:.4f} {dr + 0.7:.4f}) (drill {dr:.4f}) (layers *.Cu *.Mask) (net {nid}))")
             else:
-                pw, ph = pad_size(p.fp, pin)
+                pw, ph = pad_size(p.fp, pin, lib)
                 A(f'    (pad {pin} smd rect (at {dx:.4f} {dy:.4f}) '
                   f"(size {pw:.4f} {ph:.4f}) (layers F.Cu F.Mask) (net {nid}))")
         A("  )")

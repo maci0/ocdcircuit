@@ -29,9 +29,12 @@ class StdParts(Plugin[dict[str, Footprint]]):
         from .parts import FOOTPRINTS
         return FOOTPRINTS
 
-    def pin_offset(self, fp: str, pin: PinLike) -> XY:
+    def pin_offset(self, fp: str, pin: PinLike, lib: object = None) -> XY:
+        from typing import cast
         from .parts import pin_offset
-        return pin_offset(fp, pin)
+        from .types import Footprint
+        assert lib is None or isinstance(lib, dict)
+        return pin_offset(fp, pin, cast(dict[str, Footprint] | None, lib))
 
 
 class DiffusionPlacer(Plugin[float]):
@@ -369,9 +372,10 @@ class StlRenderer(Plugin[str]):
                 tri.append(((p0[0], p0[1], z0), (p0[0], p0[1], z0 + h), (p1[0], p1[1], z0 + h)))
                 tri.append(((p0[0], p0[1], z0 + h), (p1[0], p1[1], z0), (p1[0], p1[1], z0 + h)))
 
+        lib = board._lib()
         box(0, 0, 0, board.width, board.height, thick)
         for p in board.parts.values():
-            for body in bodies_of(p.fp):
+            for body in bodies_of(p.fp, lib):
                 z0 = thick + _f(body.get("z", 0))
                 if "box" in body:
                     w2, h2, bh = (_f(v) for v in cast(list[object], body["box"]))

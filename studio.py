@@ -208,9 +208,10 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
     from ocdcircuit.parts import bodies_of
     from typing import cast
     parts: dict[str, dict[str, object]] = {}
+    lib = b._lib()
     for ref, p in b.parts.items():
         h3d = 1.0
-        for body in bodies_of(p.fp):
+        for body in bodies_of(p.fp, lib):
             if "box" in body:
                 box3 = body["box"]
                 assert isinstance(box3, (list, tuple))

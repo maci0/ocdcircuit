@@ -19,6 +19,7 @@ diff DP DN gap 0.3           # diff pair: equal length + 0.3mm coupling gap
 silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
+fp exotic.fp                 # custom footprint file (pads/holes/3D bodies)
 board 40x30                  # resize (bare form, no name)
 ```
 

@@ -231,7 +231,21 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             # else: bare "board WxH" resize form → handled as constraint below
         if b is None:
             raise err("board header first")
-        if kw == "part":
+        if kw == "fp":
+            toks = line.split(None, 1)
+            if len(toks) != 2:
+                raise err("want: fp PATH/to/part.fp")
+            import os as _os
+            from .footprint import load_file
+            fn = _os.path.normpath(_os.path.join(base, toks[1]))
+            if fn in stack:
+                raise err(f"footprint cycle: {toks[1]!r}")
+            try:
+                name, meta = load_file(fn)
+            except (OSError, ValueError) as e:
+                raise err(e)
+            b.add_footprint(name, meta)
+        elif kw == "part":
             toks = line.split(None, 3)
             if len(toks) < 3:
                 raise err("want: part REF FOOTPRINT [value]")
@@ -281,11 +295,12 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
 
 def _validate(b: Board) -> None:
     from .parts import pads_of
+    lib = b._lib()
     for n, net in b.nets.items():
         for ref, pin in net.pins:
             if ref not in b.parts:
                 raise ValueError(f"net {n}: unknown part {ref!r}")
-            if str(pin) not in pads_of(b.parts[ref].fp):
+            if str(pin) not in pads_of(b.parts[ref].fp, lib):
                 raise ValueError(f"net {n}: {ref} has no pin {pin!r}")
 
 

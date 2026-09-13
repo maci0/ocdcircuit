@@ -56,13 +56,14 @@ def labels(board: Board, level: int | None = None) -> Silk:
     texts: list[Text] = []
     dots: list[Dot] = []
     boxes: list[Box] = []
+    lib = board._lib()
     for p in board.parts.values():
         texts.append(Text(p.x, p.y + p.h / 2 + 0.8, p.ref, "silk-ref"))
         if lv >= 1 and p.value:
             texts.append(Text(p.x, p.y - p.h / 2 - 1.0, p.value, "silk-val"))
         if lv >= 2:
             from .parts import pads_of
-            pads = pads_of(p.fp)
+            pads = pads_of(p.fp, lib)
             if "1" in pads:
                 dx, dy = pads["1"]
                 dots.append(Dot(p.x + dx, p.y + dy))

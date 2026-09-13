@@ -54,14 +54,18 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             if (abs(a.x - b.x) < (a.w + b.w) / 2 + 0.1 and
                     abs(a.y - b.y) < (a.h + b.h) / 2 + 0.1):
                 errors.append(f"overlap {a.ref}-{b.ref}")
+    lib = board._lib()
     for p in parts:
+        if lib.get(p.fp, {}).get("edge"):
+            continue  # edge-mount: overhang is the point (USB-C plug etc.)
         if not (p.w / 2 + edge <= p.x <= board.width - p.w / 2 - edge and
                 p.h / 2 + edge <= p.y <= board.height - p.h / 2 - edge):
             errors.append(f"edge {p.ref}")
     from .parts import hole_drill
+    lib = board._lib()
     for p in parts:
-        for pin in p.pins_of():
-            dr = hole_drill(p.fp, pin)
+        for pin in p.pins_of(lib):
+            dr = hole_drill(p.fp, pin, lib)
             if dr and dr < min_drill:
                 errors.append(f"drill {p.ref}.{pin}={dr} < {min_drill}")
     for net in board.nets.values():

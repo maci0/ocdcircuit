@@ -62,7 +62,10 @@ def cost(board: Board) -> float:
                     abs(a.y - b.y) < (a.h + b.h) / 2 + 0.4):
                 c += 1e6
     m = edge_margin(board)
+    lib = board._lib()
     for p in parts:
+        if lib.get(p.fp, {}).get("edge"):
+            continue  # edge-mount hangs off-board by design
         if not (p.w / 2 + m <= p.x <= board.width - p.w / 2 - m and
                 p.h / 2 + m <= p.y <= board.height - p.h / 2 - m):
             c += 1e5
@@ -203,14 +206,21 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                         Fx += push if dx >= 0 else -push
                     else:
                         Fy += push if dy >= 0 else -push
-            # edge push
-            Fx += max(0, (m + p.w / 2 + 1 - p.x)) * 2 - max(0, (p.x - (board.width - m - p.w / 2 - 1))) * 2
-            Fy += max(0, (m + p.h / 2 + 1 - p.y)) * 2 - max(0, (p.y - (board.height - m - p.h / 2 - 1))) * 2
+            # edge push (skipped for edge-mount parts: they live off-board)
+            is_edge = bool(board._lib().get(p.fp, {}).get("edge"))
+            if not is_edge:
+                Fx += max(0, (m + p.w / 2 + 1 - p.x)) * 2 - max(0, (p.x - (board.width - m - p.w / 2 - 1))) * 2
+                Fy += max(0, (m + p.h / 2 + 1 - p.y)) * 2 - max(0, (p.y - (board.height - m - p.h / 2 - 1))) * 2
             # Langevin noise
             Fx += rng.gauss(0, 1) * 1.4 * T
             Fy += rng.gauss(0, 1) * 1.4 * T
-            p.x = min(max(p.x + step * Fx, p.w / 2 + m), board.width - p.w / 2 - m)
-            p.y = min(max(p.y + step * Fy, p.h / 2 + m), board.height - p.h / 2 - m)
+            if is_edge:
+                # clamp x on-board, let y hang off the bottom edge (tongue out)
+                p.x = min(max(p.x + step * Fx, p.w / 2 + m), board.width - p.w / 2 - m)
+                p.y = min(p.y + step * Fy, board.height - 1.0)
+            else:
+                p.x = min(max(p.x + step * Fx, p.w / 2 + m), board.width - p.w / 2 - m)
+                p.y = min(max(p.y + step * Fy, p.h / 2 + m), board.height - p.h / 2 - m)
         if frames is not None and (t % every == 0 or t == iters - 1):
             frames.append(_snap(board))
 

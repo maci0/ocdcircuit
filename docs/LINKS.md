@@ -3,6 +3,11 @@
 Stuff worth stealing, learning, or just admiring. One line each: what it
 is, why it's here.
 
+## Exotic parts (custom .fp + edge-mount)
+- [GCT USB-C edge-mount plug](https://www.digikey.com/en/product-highlight/g/gct/usb-type-c-edge-mount-pcb-plug) —
+  PCB tongue as USB-C plug. Shipped as `examples/usb_c_edge.fp` +
+  `examples/usb_breakout.ocd`; `edge` flag exempts overhang in DRC/placer.
+
 ## Edge connectors & clever footprints
 - [pcb-edge-usb-c](https://github.com/AnasMalas/pcb-edge-usb-c) — use the PCB
   itself as a USB-C plug (10/14/24-pin). Zero-cost connector; footprint idea

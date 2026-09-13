@@ -260,4 +260,22 @@ assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"
 assert "error" in _rpc("tools/call", {"name": "nope", "arguments": {}})
 mcp.kill()
 print("MCP OK")
+
+# custom .fp footprints + edge-mount: exotic parts without Python
+from ocdcircuit import footprint as _fp
+name, meta = _fp.load_file(os.path.join(EX, "usb_c_edge.fp"))
+assert name == "USB_C_EDGE_GCT" and meta.get("edge") is True
+assert len(meta["pads"]) == 26  # 2x12 + 2 shell  # type: ignore[index]
+try:
+    _fp.loads("pad A1 0 0\n")
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+bu = agent.loads(open(os.path.join(EX, "usb_breakout.ocd")).read(), base=EX)
+assert "J1" in bu.parts and bu.parts["J1"].fp == "USB_C_EDGE_GCT"
+assert "A5" in bu.parts["J1"].pins_of(bu._lib())
+bu.place(seeds=2, iters=100)
+bu.route_board()
+assert bu.check()["errors"] == [], bu.check()["errors"]  # edge overhang exempt
+assert any(f.endswith(".kicad_pcb") for f in bu.export("kicad", outdir=tempfile.mkdtemp()))
 print("ALL OK")
