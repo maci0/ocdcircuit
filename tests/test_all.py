@@ -145,7 +145,7 @@ import shutil
 shutil.rmtree(os.path.join(EX, "tmp_inc"))
 
 # CLI builds the committed file (exit 0 = DRC clean)
-proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "ocd.py"),
+proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "apps", "ocd.py"),
                        os.path.join(EX, "blinky_555.ocd")],
                       capture_output=True, text=True)
 assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -248,7 +248,7 @@ with tempfile.TemporaryDirectory() as d:
 
 # MCP stdio server: initialize → list → load → solve → patch → check
 import json as _json
-mcp = subprocess.Popen([sys.executable, os.path.join(HERE, "..", "mcp.py")],
+mcp = subprocess.Popen([sys.executable, os.path.join(HERE, "..", "apps", "mcp.py")],
                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 _mid = [0]
 

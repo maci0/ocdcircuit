@@ -15,7 +15,9 @@ import os
 import sys
 from typing import Callable, cast
 
-from ocdcircuit.circuit import Board
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ocdcircuit.circuit import Board  # noqa: E402
 
 USAGE = """usage:
   ocd new <dir>                 scaffold a board project
@@ -29,7 +31,6 @@ USAGE = """usage:
 
 
 def _boot() -> object:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from ocdcircuit import agent as _a
     return _a
 

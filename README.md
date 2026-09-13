@@ -8,12 +8,12 @@ commit it, build the rest. If a line is off by a space, `ocd` tells you
 which line. You knew which line. Now you can fix it.
 
 ```bash
-python ocd.py --placer compact --router maze boards/blinky_555.ocd  # cleanest
-python ocd.py boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
-python ocd.py --fab oshpark boards/psu.ocd # same board, stricter fab
-python studio.py boards/blinky_555.ocd     # visual editor → localhost:8077
+python apps/ocd.py --placer compact --router maze boards/blinky_555.ocd  # cleanest
+python apps/ocd.py boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
+python apps/ocd.py --fab oshpark boards/psu.ocd # same board, stricter fab
+python apps/studio.py boards/blinky_555.ocd     # visual editor → localhost:8077
 python tests/test_all.py                     # one self-check for everything
-mypy ocdcircuit/ ocd.py studio.py tests/     # strict, zero errors
+mypy     # strict, zero errors
 ```
 
 ## The language (full spec: `docs/OCD.md`)
@@ -78,7 +78,7 @@ report; motion is the product; one concept, one hue.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `mcp.py` is an MCP stdio server (12 tools:
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (12 tools:
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.
 
@@ -91,6 +91,5 @@ LCSC) — see `boards/bme690/` (BME690 carrier, verify-then-pin).
 
 Layout: `ocdcircuit/` (core, circuit, parts, solver, maze, drc, fab, silk,
 export, agent, score, diff, plugins), `tools/` (importers),
-`studio.py`, `ocd.py`,
-`mcp.py`, `docs/` (ADRs, research), `boards/` (one dir per board),
+`apps/` (ocd, studio, mcp), `docs/` (ADRs, research), `boards/` (one dir per board),
 `benches/`, `tests/`.

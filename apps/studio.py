@@ -18,8 +18,9 @@ import json
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE) if os.path.basename(HERE) != "ocdcircuit" else HERE)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+HERE = ROOT
 
 from ocdcircuit import agent  # noqa: E402
 from ocdcircuit import fab as _fab  # noqa: E402
