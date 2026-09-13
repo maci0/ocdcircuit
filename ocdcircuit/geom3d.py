@@ -57,8 +57,9 @@ def _box(tris: list[Tri], x0: float, y0: float, z0: float,
          x1: float, y1: float, z1: float, mat: str) -> None:
     v: list[V3] = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
                    (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
-    for ai, bi, ci, di in [(0, 1, 2, 3), (4, 6, 5, 4), (0, 4, 5, 1),
-                           (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]:
+    # outward-facing (CCW from outside): bottom -z, top +z, sides out
+    for ai, bi, ci, di in [(0, 2, 1, 3), (4, 5, 6, 7), (0, 1, 5, 4),
+                           (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]:
         tris.append((v[ai], v[bi], v[ci], mat))
         tris.append((v[ai], v[ci], v[di], mat))
 
@@ -142,21 +143,44 @@ def to_gltf(board: Board, thick: float = 1.6) -> str:
     views: list[dict[str, object]] = []
     accessors: list[dict[str, object]] = []
     meshes: list[dict[str, object]] = []
+    def _normal(a: V3, b: V3, c: V3) -> V3:
+        ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+        vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+        nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+        ln = (nx * nx + ny * ny + nz * nz) ** 0.5 or 1.0
+        return (nx / ln, ny / ln, nz / ln)
+
     buf = io.BytesIO()
     off = 0
     for mi, mat in enumerate(materials):
         pos: list[float] = []
+        nrm: list[float] = []
+        lo = [1e9, 1e9, 1e9]
+        hi = [-1e9, -1e9, -1e9]
         for a, b, c, _m in by_mat[mat]:
-            pos += [a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]]
-        raw = struct.pack(f"<{len(pos)}f", *pos)
-        views.append({"buffer": 0, "byteOffset": off, "byteLength": len(raw)})
-        off += len(raw)
-        buf.write(raw)
-        accessors.append({"bufferView": mi, "componentType": 5126,
+            n = _normal(a, b, c)
+            for v in (a, b, c):
+                pos += [v[0], v[1], v[2]]
+                nrm += [n[0], n[1], n[2]]
+                for i in range(3):
+                    lo[i] = min(lo[i], v[i])
+                    hi[i] = max(hi[i], v[i])
+        praw = struct.pack(f"<{len(pos)}f", *pos)
+        nraw = struct.pack(f"<{len(nrm)}f", *nrm)
+        views.append({"buffer": 0, "byteOffset": off, "byteLength": len(praw)})
+        off += len(praw)
+        buf.write(praw)
+        views.append({"buffer": 0, "byteOffset": off, "byteLength": len(nraw)})
+        off += len(nraw)
+        buf.write(nraw)
+        accessors.append({"bufferView": 2 * mi, "componentType": 5126,
                           "count": len(pos) // 3, "type": "VEC3",
-                          "max": [board.width, board.height, 12.0],
-                          "min": [0.0, 0.0, 0.0]})
-        meshes.append({"primitives": [{"attributes": {"POSITION": mi},
+                          "max": hi, "min": lo})
+        accessors.append({"bufferView": 2 * mi + 1, "componentType": 5126,
+                          "count": len(nrm) // 3, "type": "VEC3",
+                          "max": [1.0, 1.0, 1.0], "min": [-1.0, -1.0, -1.0]})
+        meshes.append({"primitives": [{"attributes": {"POSITION": 2 * mi,
+                                                      "NORMAL": 2 * mi + 1},
                                        "material": mi}]})
     doc = {
         "asset": {"version": "2.0", "generator": "ocdcircuit"},
