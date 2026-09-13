@@ -66,7 +66,7 @@ body.light .tok-k{color:#0050a0}body.light .tok-net{color:#b9770e}
 <header><b>OCD</b><span>studio</span><span id=cost></span>
 <select id=placer title=placer></select><select id=router title=router></select>
 <select id=fab title=fab></select><select id=silk title=silk></select>
-<button id=theme>light</button><button id=solve>solve ▶</button><span id=stat></span></header>
+<button id=theme>light</button><button id=solve>solve ▶</button><button id=undo title="undo (Ctrl+Z)">↩</button><button id=redo title="redo (Ctrl+Y)">↪</button><span id=stat></span></header>
 <main>
 <section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3><div id=ed contenteditable spellcheck=false></div></section>
 <section id=pcbwrap><h3>PCB — DRAG PARTS, THEY STAY WHERE DROPPED</h3><canvas id=pcb></canvas><div id=drc></div></section>
@@ -304,6 +304,19 @@ c.addEventListener('mousemove',e=>{if(!S||drag)return;const R=c.getBoundingClien
     if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4){S.cur.hover=r;break;}}});
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value});applyState(r,true);};
+// undo/redo: server keeps text history (git-style log); undo restores + rebuilds
+let undoDepth=0;
+async function hist(op){
+  const r=await api(op,{});
+  if(r.error){$('stat').textContent=r.error;$('stat').className='err';return;}
+  $('stat').textContent='';setEditor(r.text);applyState(r,false);
+}
+$('undo').onclick=()=>hist('/undo');
+$('redo').onclick=()=>hist('/redo');
+$('ed').addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();hist('/undo');}
+  else if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey))){e.preventDefault();hist('/redo');}
+});
 $('theme').onclick=()=>{theme=theme==='dark'?'light':'dark';document.body.className=theme==='light'?'light':'';$('theme').textContent=theme==='dark'?'light':'dark';};
 $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=push;
 (async()=>{const r=await api('/init',{});
@@ -380,6 +393,17 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
 
 class H(http.server.BaseHTTPRequestHandler):
     src_text: str = ""
+    # git-style text history: every good build commits; undo/redo check out.
+    # text-level (not Context undo — each build parses fresh). Cap 100.
+    hist: list[str] = []
+    redo: list[str] = []
+
+    @staticmethod
+    def commit(text: str) -> None:
+        if not H.hist or H.hist[-1] != text:
+            H.hist.append(text)
+            H.hist = H.hist[-100:]
+        H.redo.clear()
 
     @staticmethod
     def save() -> None:
@@ -420,13 +444,31 @@ class H(http.server.BaseHTTPRequestHandler):
                 text = str(req.get("text", H.src_text))
                 st = self._build(text, False, req)
                 H.src_text = str(st["text"])  # only keep good builds
+                H.commit(H.src_text)
                 H.save()
                 self._send(st)
             elif self.path == "/solve":
                 st = self._build(H.src_text, True, req)
                 H.src_text = str(st["text"])
+                H.commit(H.src_text)
                 H.save()
                 self._send(st)
+            elif self.path == "/undo":
+                if len(H.hist) < 2:
+                    self._send({"error": "nothing to undo"})
+                else:
+                    H.redo.append(H.hist.pop())
+                    H.src_text = H.hist[-1]
+                    H.save()
+                    self._send(self._build(H.src_text, False))
+            elif self.path == "/redo":
+                if not H.redo:
+                    self._send({"error": "nothing to redo"})
+                else:
+                    H.src_text = H.redo.pop()
+                    H.commit(H.src_text)
+                    H.save()
+                    self._send(self._build(H.src_text, False))
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -477,6 +519,7 @@ def main() -> None:
     H.src_text = open(SRC).read() if os.path.isfile(SRC) else (
         "board demo 40x30\npart R1 R0805 1k\npart C1 C0805 100n\n"
         "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
+    H.commit(H.src_text)  # genesis commit — undo floor
     srv = http.server.HTTPServer(("127.0.0.1", 8077), H)
     print(f"OCD Studio: http://localhost:8077  ({SRC})")
     srv.serve_forever()
