@@ -169,7 +169,8 @@ class Board(Component):
         return out
 
     def import_fp(self, key: str | None = None, **k: object) -> dict[str, object]:
-        """Footprint import: fp (native) / kicad / eagle / tscircuit / pcb."""
+        """Import: fp / kicad / eagle (.lbr) / eagle-brd (.brd) /
+        tscircuit / pcb (.kicad_pcb or .brd, sniffed) / easyeda (Std JSON)."""
         plug = self.plugins().get("importer", key)
         assert isinstance(plug, Plugin)
         out = plug.run(self, **k)

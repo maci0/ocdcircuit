@@ -674,13 +674,29 @@ class EagleImporter(Plugin[dict[str, object]]):
 
 
 class TscircuitImporter(Plugin[dict[str, object]]):
-    """Footprint importer: tscircuit Circuit-JSON pad soups."""
+    """tscircuit Circuit-JSON pad soups; EasyEDA Std JSON (sniffed) → board."""
     kind, key = "importer", "tscircuit"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
-        from .foreign import load_foreign
+        import json
+        from .foreign import easyeda_doc, load_foreign
         path = k.get("path", "")
         assert isinstance(path, str) and path
+        with open(path) as f:
+            text = f.read()
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            doc = None
+        if isinstance(doc, dict) and "shape" in doc:
+            out = easyeda_doc(doc)
+            if isinstance(out, dict):
+                return _board_ir_into(board, out)
+            assert isinstance(out, list)
+            pairs = [(str(n), m) for n, m in out]
+            for name, meta in pairs:
+                _guarded_add(board, name, meta, path)
+            return {"names": [n for n, _ in pairs]}
         names = []
         for name, meta in load_foreign(path):
             _guarded_add(board, name, meta, path)
@@ -689,22 +705,75 @@ class TscircuitImporter(Plugin[dict[str, object]]):
 
 
 class PcbImporter(Plugin[dict[str, object]]):
-    """Netlist importer: .kicad_pcb → parts/nets/positions on THIS board."""
+    """Board importer: .kicad_pcb (sniffed) or Eagle .brd → parts/nets."""
     kind, key = "importer", "pcb"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
-        from .foreign import kicad_pcb_netlist
+        from .foreign import eagle_brd, kicad_pcb_netlist
         path = k.get("path", "")
         assert isinstance(path, str) and path
         with open(path) as f:
-            ir = kicad_pcb_netlist(f.read())
-        nb = from_ir(ir)
-        for ref, p in nb.parts.items():
-            board.add_part(ref, p.fp, p.value, p.x, p.y)
-        for n, net in nb.nets.items():
-            for ref, pin in net.pins:
-                board.connect(n, ref, pin)
-        return {"parts": len(nb.parts), "nets": len(nb.nets)}
+            text = f.read()
+        s = text.lstrip()
+        ir = eagle_brd(text) if s.startswith("<eagle") else kicad_pcb_netlist(text)
+        return _board_ir_into(board, ir)
+
+
+class EagleBoardImporter(Plugin[dict[str, object]]):
+    """Board importer: Eagle .brd (elements + signals) onto THIS board."""
+    kind, key = "importer", "eagle-brd"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import eagle_brd
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        with open(path) as f:
+            ir = eagle_brd(f.read())
+        return _board_ir_into(board, ir)
+
+
+class EasyedaImporter(Plugin[dict[str, object]]):
+    """Board importer: EasyEDA Std JSON (footprint or PCB doc)."""
+    kind, key = "importer", "easyeda"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import json
+        from .foreign import easyeda_doc
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        with open(path) as f:
+            out = easyeda_doc(json.load(f))
+        if isinstance(out, list):  # footprint doc → fp import
+            for name, meta in out:
+                _guarded_add(board, name, meta, path)
+            return {"names": [n for n, _ in out]}
+        assert isinstance(out, dict)
+        return _board_ir_into(board, out)
+
+
+def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
+    """IR (from_ir already loaded _imported_fp) → footprints + parts + nets."""
+    nb = from_ir(ir)
+    for fn, meta in nb.custom_fp.items():
+        if fn not in board._lib():
+            board.add_footprint(fn, meta)
+    for ref, p in nb.parts.items():
+        board.add_part(ref, p.fp, p.value, p.x, p.y)
+    for n, net in nb.nets.items():
+        for ref, pin in net.pins:
+            board.connect(n, ref, pin)
+    return {"parts": len(nb.parts), "nets": len(nb.nets)}
+
+
+class EasyedaExporter(Plugin[list[str]]):
+    """EasyEDA Std PCB JSON (opens in EasyEDA/JLCEDA import)."""
+    kind, key = "exporter", "easyeda"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_easyeda(board, outdir)
 
 
 class LintPlugin(Plugin[dict[str, object]]):
@@ -794,9 +863,11 @@ class NgspicePlugin(Plugin[dict[str, object]]):
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer,
              GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
-             FlexDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
+             FlexDrc, JlcExporter, KicadExporter, EasyedaExporter,
+             BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
-             FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
+             FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
+             TscircuitImporter, PcbImporter, EasyedaImporter,
              CalcPlugin, SimPlugin, NgspicePlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,

@@ -299,6 +299,9 @@ assert _call("check", {})["errors"] == []
 assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:fp" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "simulate:mna" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "importer:eagle-brd" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "importer:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "exporter:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "simulate:ngspice" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert cast(float, _call("calc", {"what": "divider", "vin": 9, "rtop": 10000,
                                   "rbot": 4700})["vout"]) > 2.8
@@ -329,7 +332,7 @@ assert abs(calc.trace_width(1.0) - 0.3) < 0.05
 assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
 
-# foreign footprints: kicad_mod + eagle + tscircuit JSON
+# foreign: kicad_mod + eagle lbr/brd + tscircuit JSON + easyeda Std
 from ocdcircuit import foreign
 _kmod = '''(footprint "T1" (layer "F.Cu") (at 0 0)
   (pad "1" smd rect (at -1 0) (size 1 1.5) (layers "F.Cu"))
@@ -342,8 +345,31 @@ _lbr = '''<eagle><drawing><library><packages><package name="P1">
 <smd name="1" x="0" y="0" dx="1" dy="1"/><pad name="2" x="2" y="0" drill="0.8"/>
 </package></packages></library></drawing></eagle>'''
 assert foreign.eagle_lbr(_lbr)[0][0] == "P1"
+_brd = '''<eagle><drawing><board>
+<plain><wire x1="0" y1="0" x2="20" y2="0" layer="20"/><wire x1="20" y1="0" x2="20" y2="15" layer="20"/><wire x1="20" y1="15" x2="0" y2="15" layer="20"/><wire x1="0" y1="15" x2="0" y2="0" layer="20"/></plain>
+<libraries><library><packages><package name="P1">
+<smd name="1" x="-0.95" y="0" dx="1" dy="1.2"/><smd name="2" x="0.95" y="0" dx="1" dy="1.2"/>
+</package></packages></library></libraries><elements/><signals/></board></drawing></eagle>'''
+assert foreign.eagle_lbr(_brd)[0][0] == "P1"
+_ebr = cast(dict[str, object], foreign.eagle_brd(_brd)["board"])
+assert _ebr["w"] == 20.0
 _tj = [{"type": "pcb_smtpad", "footprint": "C1", "port_hints": ["1"], "x": 0, "y": 0}]
 assert foreign.tscircuit_json(_tj)[0][0] == "C1"
+_ezfp: dict[str, object] = {"head": "4~1.7.5", "title": "EZ1",
+                            "shape": ["PAD~RECT~0~0~9~5~1~~1~~0~g1",
+                                      "PAD~RECT~20~0~9~5~1~~2~~0~g2"]}
+assert cast(list[tuple[str, object]], foreign.easyeda_doc(_ezfp))[0][0] == "EZ1"
+_ebb = agent.loads("board t 20x20\npart R1 R0805 1k\npart R2 R0805 1k\n"
+                   "net N: R1.2 R2.1\nnet GND: R1.1 R2.2\n")
+_ebb.place()
+_ebb.route_board()
+_ezf = _ebb.export("easyeda", outdir=tempfile.mkdtemp())[0]
+assert _ezf.endswith(".easyeda.json")
+import json as _jj
+_ezrt = foreign.easyeda_doc(_jj.loads(open(_ezf).read()))
+assert isinstance(_ezrt, dict)
+assert {p["ref"] for p in cast(list[dict[str, object]], _ezrt["parts"])} == {"R1", "R2"}
+assert set(cast(dict[str, object], _ezrt["nets"])) == {"N", "GND"}
 
 # textured 3D: glTF materials + shared mesh builder
 import json as _jj

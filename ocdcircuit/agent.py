@@ -407,7 +407,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err(f"footprint cycle: {toks[1]!r}")
             ext = _os.path.splitext(fn)[1].lower()
             key = {".fp": "fp", ".kicad_mod": "kicad", ".pretty": "kicad",
-                   ".lbr": "eagle", ".json": "tscircuit"}.get(ext)
+                   ".lbr": "eagle", ".brd": "pcb", ".json": "tscircuit"}.get(ext)
             if key is None:
                 raise err(f"unknown footprint format {ext!r}")
             try:

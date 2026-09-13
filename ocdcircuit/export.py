@@ -144,6 +144,53 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     return files
 
 
+def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
+    """EasyEDA Std PCB JSON (docType 3): LIB footprints (PAD children) +
+    TRACK/VIA shapes, 10-mil units. Opens in EasyEDA/JLCEDA import."""
+    import json
+    from .parts import hole_drill, pad_size, pads_of
+    os.makedirs(outdir, exist_ok=True)
+    lib = board._lib()
+    mm = 1 / 0.254  # mm → 10-mil units
+    shape: list[str] = []
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        kids: list[str] = [f"TEXT~P~0~0~0.7~0~~3~~4.5~{p.ref}~~g{p.ref}"]
+        for pin in sorted(pads_of(p.fp, lib)):
+            dx, dy = board.pad_pos(p.ref, pin)
+            rx, ry = (dx - p.x) * mm, (dy - p.y) * mm
+            dr = hole_drill(p.fp, pin, lib)
+            if dr > 0:
+                kids.append(f"PAD~OVAL~{rx:.1f}~{ry:.1f}~6~6~11~"
+                            f"{_enet(board, p.ref, pin)}~{pin}~{dr / 2 / 0.254:.1f}~~0~g{p.ref}{pin}")
+            else:
+                pw, ph = pad_size(p.fp, pin, lib)
+                kids.append(f"PAD~RECT~{rx:.1f}~{ry:.1f}~{pw / 0.254:.1f}~{ph / 0.254:.1f}~1~"
+                            f"{_enet(board, p.ref, pin)}~{pin}~~0~g{p.ref}{pin}")
+        shape.append(f"LIB~{p.x * mm:.1f}~{p.y * mm:.1f}~package`{p.fp}`name`{p.ref}`~~g{p.ref}~1"
+                     + "".join("#@$" + k for k in kids))
+    for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
+        pts = f"{t.x1 * mm:.1f} {t.y1 * mm:.1f} {t.x2 * mm:.1f} {t.y2 * mm:.1f}"
+        if getattr(t, "via", False):
+            shape.append(f"VIA~{t.x1 * mm:.1f}~{t.y1 * mm:.1f}~3.2~{t.net}~0.8~gvia")
+        else:
+            shape.append(f"TRACK~{t.width / 0.254:.1f}~{t.layer + 1}~{t.net}~{pts}~gt{t.layer}")
+    doc = {"head": "3~1.7.5", "canvas": "CA~2400~2400~#000000~yes~#FFFFFF~10~1200~1200~line~1~mil~1~45~visible~0.5~400~300",
+           "shape": shape, "title": board.name,
+           "dataStr": {"layers": ["1~TopLayer~#FF0000~true~true~true",
+                                  "2~BottomLayer~#0000FF~true~false~true",
+                                  "10~BoardOutline~#FF00FF~true~false~true"]}}
+    fn = os.path.join(outdir, f"{board.name}.easyeda.json")
+    open(fn, "w").write(json.dumps(doc))
+    return [fn]
+
+
+def _enet(board: Board, ref: str, pin: object) -> str:
+    for n, net in board.nets.items():
+        if (ref, str(pin)) in [(r, str(q)) for r, q in net.pins]:
+            return n
+    return ""
+
+
 def export_bundle(board: Board, outdir: str = "out") -> list[str]:
     """One-zip fab bundle: Gerbers + drill + BOM + CPL + .ocd source.
     Download → upload → boards. Returns [zip path]."""

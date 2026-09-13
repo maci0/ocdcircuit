@@ -1,6 +1,8 @@
-"""Import foreign footprints: KiCad .pretty/.kicad_mod + .kicad_pcb,
-Eagle .lbr/.brd (XML), tscircuit Circuit-JSON. Rect/circle/oval SMD pads,
-PTH holes, courtyard → w/h, 3D model refs kept as texture hints.
+"""Import foreign footprints + boards: KiCad .pretty/.kicad_mod + .kicad_pcb,
+Eagle .lbr (packages) + .brd (full board: elements/signals/plain),
+EasyEDA Std JSON (footprint + PCB docs: PAD/TRACK/VIA/LIB shapes),
+tscircuit Circuit-JSON. Rect/circle/oval SMD pads, PTH holes,
+courtyard → w/h, 3D model refs kept as texture hints.
 
 Usage: `fp path/to/part.kicad_mod` in .ocd — same as .fp files.
 Also: Board.import_foreign(path) for whole-board netlist import (.kicad_pcb).
@@ -75,6 +77,20 @@ def _kids(node: list[object], tag: str) -> list[list[object]]:
     return [c for c in node[1:] if isinstance(c, list) and c and c[0] == tag]
 
 
+def _at(el: object, key: str, default: str = "") -> str:
+    """Untrusted-XML attr read: never trust Element.get typing."""
+    get = getattr(el, "get", None)
+    v = get(key, default) if callable(get) else default
+    return v if isinstance(v, str) else default
+
+
+def _fl(el: object, key: str, default: float = 0.0) -> float:
+    try:
+        return float(_at(el, key, ""))
+    except ValueError:
+        return default
+
+
 def kicad_mod(text: str) -> tuple[str, Footprint]:
     """Parse .kicad_mod (`footprint`; KiCad 6+ only)."""
     root = sexpr(text)
@@ -139,7 +155,7 @@ def eagle_lbr(text: str) -> list[tuple[str, Footprint]]:
     root = ET.fromstring(text)
     out: list[tuple[str, Footprint]] = []
     for pkg in root.iter("package"):
-        name = str(pkg.get("name", "unknown"))
+        name = _at(pkg, "name", "unknown")
         pads: dict[str, tuple[float, float, float, float]] = {}
         holes: dict[str, tuple[float, float, float]] = {}
         minx = miny = float("inf")
@@ -151,21 +167,19 @@ def eagle_lbr(text: str) -> list[tuple[str, Footprint]]:
             maxx, maxy = max(maxx, x + w / 2), max(maxy, y + h / 2)
 
         for smd in pkg.iter("smd"):
-            n = str(smd.get("name", "?"))
-            x, y = float(smd.get("x", 0)), float(smd.get("y", 0))
-            w, h = float(smd.get("dx", 1)), float(smd.get("dy", 1))
+            n = _at(smd, "name", "?")
+            x, y, w, h = (_fl(smd, "x"), _fl(smd, "y"),
+                          _fl(smd, "dx", 1.0), _fl(smd, "dy", 1.0))
             pads[n] = (x, y, w, h)
             box(x, y, w, h)
         for pad in pkg.iter("pad"):
-            n = str(pad.get("name", "?"))
-            x, y = float(pad.get("x", 0)), float(pad.get("y", 0))
-            d = float(pad.get("drill", 0.8))
+            n = _at(pad, "name", "?")
+            x, y, d = _fl(pad, "x"), _fl(pad, "y"), _fl(pad, "drill", 0.8)
             holes[n] = (x, y, d)
             box(x, y, d + 0.7, d + 0.7)
         for hole in pkg.iter("hole"):
             n = f"H{len(holes) + 1}"
-            x, y = float(hole.get("x", 0)), float(hole.get("y", 0))
-            d = float(hole.get("drill", 1.0))
+            x, y, d = _fl(hole, "x"), _fl(hole, "y"), _fl(hole, "drill", 1.0)
             holes[n] = (x, y, d)
             box(x, y, d + 0.7, d + 0.7)
         if minx == float("inf"):
@@ -179,6 +193,75 @@ def eagle_lbr(text: str) -> list[tuple[str, Footprint]]:
     if not out:
         raise ValueError("no <package> in Eagle library")
     return out
+
+
+def eagle_brd(text: str) -> dict[str, object]:
+    """Eagle .brd XML → IR dict (agent.from_ir): elements + signals + wires.
+    Footprints rebuilt per element from the library packages (relative pads
+    recentered on the element); board size from the Dimension layer bbox."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(text)
+    drawing = root.find("drawing")
+    assert drawing is not None, "not an Eagle .brd (no <drawing>)"
+    board_el = drawing.find("board")
+    assert board_el is not None, "not an Eagle .brd (no <board>)"
+    # library packages: {name: (pads, holes)} in package frame
+    pkgs: dict[str, tuple[dict[str, tuple[float, float, float, float]],
+                          dict[str, tuple[float, float, float]]]] = {}
+    for pkg in root.iter("package"):
+        name = _at(pkg, "name", "unknown")
+        pads: dict[str, tuple[float, float, float, float]] = {}
+        holes: dict[str, tuple[float, float, float]] = {}
+        for smd in pkg.iter("smd"):
+            n = _at(smd, "name", "?")
+            pads[n] = (_fl(smd, "x"), _fl(smd, "y"),
+                       _fl(smd, "dx", 1.0), _fl(smd, "dy", 1.0))
+        for pad in pkg.iter("pad"):
+            n = _at(pad, "name", "?")
+            holes[n] = (_fl(pad, "x"), _fl(pad, "y"), _fl(pad, "drill", 0.8))
+        pkgs[name] = (pads, holes)
+    plains = board_el.find("plain")
+    wires = list(plains.iter("wire")) if plains is not None else []
+    xs: list[float] = []
+    ys: list[float] = []
+    for w in wires:
+        if _at(w, "layer") == "20":
+            xs += [_fl(w, "x1"), _fl(w, "x2")]
+            ys += [_fl(w, "y1"), _fl(w, "y2")]
+    wdt = max(xs) - min(xs) if xs else 40.0
+    hgt = max(ys) - min(ys) if ys else 30.0
+    parts: list[dict[str, object]] = []
+    nets: dict[str, dict[str, object]] = {}
+    fps: dict[str, Footprint] = {}
+    elements = board_el.find("elements")
+    for el in elements.iter("element") if elements is not None else []:
+        ref = _at(el, "name") or f"U{len(parts) + 1}"
+        pkgname = _at(el, "package", "unknown")
+        x, y = _fl(el, "x"), _fl(el, "y")
+        pads, holes = pkgs.get(pkgname, ({}, {}))
+        if pads or holes:
+            xs2 = [v[0] for v in pads.values()] + [v[0] for v in holes.values()]
+            ys2 = [v[1] for v in pads.values()] + [v[1] for v in holes.values()]
+            fw = max(1.0, (max(xs2) - min(xs2) + 2.0)) if xs2 else 2.0
+            fh = max(1.0, (max(ys2) - min(ys2) + 2.0)) if ys2 else 2.0
+        else:
+            fw, fh = 2.0, 2.0
+        fps.setdefault(pkgname, {"w": fw, "h": fh, "pads": pads, "holes": holes,
+                             "bodies": []})
+        parts.append({"ref": ref, "fp": pkgname,
+                      "value": _at(el, "value", pkgname),
+                      "x": x, "y": y})
+    signals = board_el.find("signals")
+    for sig in signals.iter("signal") if signals is not None else []:
+        nn = _at(sig, "name") or f"N{len(nets) + 1}"
+        entry = nets.setdefault(nn, {"pins": [], "layer": None, "width": 0.3})
+        pins = entry["pins"]
+        assert isinstance(pins, list)
+        for c in sig.iter("contactref"):
+            pins.append([_at(c, "element", "?"), _at(c, "pad", "?")])
+    return {"board": {"name": "imported", "w": wdt, "h": hgt, "layers": 2},
+            "parts": parts, "nets": nets, "constraints": [],
+            "_imported_fp": fps}
 
 
 def tscircuit_json(doc: object) -> list[tuple[str, Footprint]]:
@@ -242,6 +325,135 @@ def tscircuit_json(doc: object) -> list[tuple[str, Footprint]]:
     return out
 
 
+def easyeda_doc(doc: dict[str, object]) -> object:
+    """EasyEDA Std JSON → footprints (docType 4) or board IR (docType 3).
+    Shape strings are `~`-delimited; PCB units are 10-mil (×0.254 = mm)."""
+    shape = doc.get("shape", [])
+    assert isinstance(shape, list)
+    head = str(doc.get("head", ""))
+    dtype = head.split("~")[0] if head else ""
+    # LIB compounds join children with #@$ — split those first, then ~.
+    lines: list[list[str]] = []
+    for s in shape:
+        if not isinstance(s, str):
+            continue
+        for seg in s.split("#@$"):
+            lines.append(seg.split("~"))
+    mm = 0.254
+    if dtype == "4":  # footprint: PAD shapes in package frame
+        pads: dict[str, tuple[float, float, float, float]] = {}
+        holes: dict[str, tuple[float, float, float]] = {}
+        xs: list[float] = []
+        ys: list[float] = []
+        for f in lines:
+            if f[0] != "PAD" or len(f) < 11:
+                continue
+            try:
+                _sh, px, py, pw, ph = f[1], float(f[2]), float(f[3]), float(f[4]), float(f[5])
+                num = f[8] or str(len(pads) + len(holes) + 1)
+                hole = float(f[9]) if len(f) > 9 and f[9] else 0.0
+            except ValueError:
+                continue
+            if f[1] == "OVAL" and abs(pw - ph) < 1e-9 and hole > 0:
+                holes[num] = (px * mm, py * mm, hole * 2 * mm)
+            elif hole > 0 or (len(f) > 6 and f[6] == "11"):
+                holes[num] = (px * mm, py * mm, max(hole * 2, 0.8) * mm)
+            else:
+                pads[num] = (px * mm, py * mm, pw * mm, ph * mm)
+            xs.append(px * mm)
+            ys.append(py * mm)
+        cx = (max(xs) + min(xs)) / 2 if xs else 0.0
+        cy = (max(ys) + min(ys)) / 2 if ys else 0.0
+        pads = {k: (v[0] - cx, v[1] - cy, v[2], v[3]) for k, v in pads.items()}
+        holes = {k: (v[0] - cx, v[1] - cy, v[2]) for k, v in holes.items()}
+        wdt = max(2.0, (max(xs) - min(xs) + 2.0)) if xs else 2.0
+        hgt = max(2.0, (max(ys) - min(ys) + 2.0)) if ys else 2.0
+        title = str(doc.get("title", "easyeda"))
+        return [(title, {"w": wdt, "h": hgt, "pads": pads, "holes": holes,
+                         "bodies": []})]
+    # PCB doc: LIB footprints (children joined with #@$) + TRACK/VIA
+    parts: list[dict[str, object]] = []
+    nets: dict[str, dict[str, object]] = {}
+    fps: dict[str, Footprint] = {}
+    minx = miny = float("inf")
+    maxx = maxy = float("-inf")
+
+    def _pin(net: str, ref: str, num: str) -> None:
+        if not net:
+            return
+        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
+        pins = entry["pins"]
+        assert isinstance(pins, list)
+        pins.append([ref, num])
+
+    # PAD lines following a LIB belong to it (children were joined with #@$)
+    cur: tuple[str, str, float, float,
+               dict[str, tuple[float, float, float, float]],
+               dict[str, tuple[float, float, float]]] | None = None
+
+    def _flush() -> None:
+        if cur is None:
+            return
+        _, pkg, _, _, pads, holes = cur
+        if pkg not in fps:
+            xs = [v[0] for v in list(pads.values()) + list(holes.values())]
+            ys = [v[1] for v in list(pads.values()) + list(holes.values())]
+            fw = max(2.0, (max(xs) - min(xs) + 2.0)) if xs else 2.0
+            fh = max(2.0, (max(ys) - min(ys) + 2.0)) if ys else 2.0
+            fps[pkg] = {"w": fw, "h": fh, "pads": dict(pads),
+                        "holes": dict(holes), "bodies": []}
+        else:
+            fp = fps[pkg]
+            assert isinstance(fp, dict)
+            fp_pads = fp.setdefault("pads", {})
+            fp_holes = fp.setdefault("holes", {})
+            assert isinstance(fp_pads, dict) and isinstance(fp_holes, dict)
+            fp_pads.update(pads)
+            fp_holes.update(holes)
+
+    for f in lines:
+        if f[0] == "LIB" and len(f) >= 4:
+            _flush()
+            try:
+                lx, ly = float(f[1]), float(f[2])
+            except ValueError:
+                cur = None
+                continue
+            params = f[3] if len(f) > 3 else ""
+            kv = params.split("`")
+            meta = dict(zip(kv[::2], kv[1::2])) if len(kv) >= 2 else {}
+            ref = meta.get("name", f"U{len(parts) + 1}")
+            pkg = meta.get("package", ref)
+            cur = (ref, pkg, lx, ly, {}, {})
+            parts.append({"ref": ref, "fp": pkg, "value": meta.get("name", pkg),
+                          "x": lx * mm, "y": ly * mm})
+            minx, miny = min(minx, lx * mm), min(miny, ly * mm)
+            maxx, maxy = max(maxx, lx * mm), max(maxy, ly * mm)
+            continue
+        if cur is None or f[0] != "PAD" or len(f) < 11:
+            continue  # TRACK copper re-routes; nets come from PAD assigns
+        ref, _, lx, ly, pads, holes = cur
+        try:
+            px, py, pw, ph = float(f[2]), float(f[3]), float(f[4]), float(f[5])
+            num = f[8] or str(len(pads) + len(holes) + 1)
+            hole = float(f[9]) if len(f) > 9 and f[9] else 0.0
+        except ValueError:
+            continue
+        if hole > 0 or (len(f) > 6 and f[6] == "11"):
+            holes[num] = (px * mm - lx * mm, py * mm - ly * mm,
+                          max(hole * 2, 0.8) * mm)
+        else:
+            pads[num] = (px * mm - lx * mm, py * mm - ly * mm, pw * mm, ph * mm)
+        _pin(f[7] if len(f) > 7 else "", ref, num)
+    _flush()
+    wdt = max(10.0, maxx - minx + 5.0) if parts else 40.0
+    hgt = max(10.0, maxy - miny + 5.0) if parts else 30.0
+    return {"board": {"name": str(doc.get("title", "imported")),
+                      "w": wdt, "h": hgt, "layers": 2},
+            "parts": parts, "nets": nets, "constraints": [],
+            "_imported_fp": fps}
+
+
 def load_foreign(path: str) -> list[tuple[str, Footprint]]:
     """Dispatch by extension: .kicad_mod/.pretty, .lbr, .json."""
     ext = os.path.splitext(path)[1].lower()
@@ -253,7 +465,12 @@ def load_foreign(path: str) -> list[tuple[str, Footprint]]:
         return eagle_lbr(text)
     if ext == ".json":
         import json
-        return tscircuit_json(json.loads(text))
+        doc = json.loads(text)
+        if isinstance(doc, dict) and "shape" in doc:
+            out = easyeda_doc(doc)
+            assert isinstance(out, list)
+            return out
+        return tscircuit_json(doc)
     # fall back to native .fp
     from .footprint import loads
     name, fp = loads(text)
