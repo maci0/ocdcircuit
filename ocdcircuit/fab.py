@@ -15,14 +15,14 @@ FabProfile = dict[str, object]
 
 PROFILES: dict[str, FabProfile] = {
     "jlc": {
-        "name": "JLCPCB standard", "layers": (1, 2, 4, 6, 8, 10, 12, 14, 16),
+        "name": "JLCPCB standard", "layers": (1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32),
         "min_trace": 0.09, "min_space": 0.09, "min_drill": 0.2,
         "annular": 0.15, "edge": 0.3, "max_w": 400, "max_h": 500,
         "thickness": (0.4, 2.0), "finishes": ("HASL", "HASL-LF", "ENIG", "OSP"),
         "url": "https://jlcpcb.com/capabilities/Capabilities",
     },
     "pcbway": {
-        "name": "PCBWay standard", "layers": (1, 2, 4, 6, 8, 10, 12, 14),
+        "name": "PCBWay standard", "layers": (1, 2, 4, 6, 8, 10),
         "min_trace": 0.09, "min_space": 0.09, "min_drill": 0.2,
         "annular": 0.15, "edge": 0.3, "max_w": 500, "max_h": 1100,
         "thickness": (0.4, 2.4), "finishes": ("HASL", "HASL-LF", "ENIG", "OSP"),
