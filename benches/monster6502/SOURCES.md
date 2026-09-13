@@ -41,9 +41,13 @@
    FETs at identical x/y. ocd placement is 2D single-side → ~957 residual
    `overlap` errors at golden positions. Placement scoring must use
    wirelength/benchmark metrics, not DRC-zero.
-2. **Baseline** (flat diffusion, seeds=1 iters=5, 2026-09-14):
-   243.6 s, cost 3647492514, placed WL 1492514, mean displacement 151.90 mm,
-   2548 overlaps. The headroom to beat.
+2. **Baseline** (flat diffusion, seeds=1 iters=5, fixed harness):
+   320.9 s, cost 3647492514 (deterministic — same cost across runs;
+   wall-clock varies by machine), placed WL 1492514 vs golden 1075333
+   (ratio 1.39 — flat diffusion *loses* to die-true hierarchy),
+   mean displacement 151.90 mm (similarity, secondary),
+   overlaps 2548 vs golden floor 957 (above_floor 1591). The headroom
+   to beat: close the WL ratio toward 1.0 and the 1591 avoidable overlaps.
 3. **Rotations ignored** (layout.json has rot 0/90/180 + B-side parts);
    ocd parts are axis-aligned.
 4. Single-pin TP nets and DNP ballast excluded from strictness.
