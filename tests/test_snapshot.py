@@ -19,6 +19,7 @@ def fingerprint() -> dict[str, dict[str, object]]:
     for f, pl, rt, ex, nl, seeds in [("blinky_555.ocd", "diffusion", "lroute", EX, None, 3),
                       ("blinky_555.ocd", "compact", "maze", EX, None, 3),
                       ("psu.ocd", "diffusion", "lroute", EX, None, 3),
+                      ("usb_breakout.ocd", "diffusion", "lroute", EX, None, 3),
                       ("pico_tmc2209.ocd", "hierarchical", "maze",
                        os.path.join(EX, "pico_tmc2209"), None, 3),
                       ("mitox.ocd", "compact", "maze",
