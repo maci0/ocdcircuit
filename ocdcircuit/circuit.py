@@ -192,6 +192,14 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
+    def lint(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Static lint: source hygiene, no place/route. DRC owns geometry."""
+        plug = self.plugins().get("lint", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
     # -- parts library via plugin, stdlib fallback --
     def _lib(self) -> dict[str, dict[str, object]]:
         from .parts import FOOTPRINTS as STD

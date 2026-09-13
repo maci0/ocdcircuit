@@ -508,6 +508,8 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
     if len(toks) < 3:
         raise err(f"{ctx}want: part REF FOOTPRINT [value] [k=v ...]")
     _, ref, fp, *val = toks
+    if ref in b.parts:
+        raise err(f"{ctx}duplicate part {ref}")
     value: str = ""
     attrs: dict[str, str] = {}
     if val:

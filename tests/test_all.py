@@ -98,6 +98,7 @@ for bad, frag in [
     ("board t 40x30\npart R1 R0805\nnet N: R1.9\n", "no pin"),
     ("board t 40x30\npart R1 R0805\nnet N: R9.1\n", "unknown part"),
     ("board t 40x30\nboard q 10x10\n", "duplicate board"),
+    ("board t 40x30\npart R1 R0805\npart R1 R0805\n", "duplicate part R1"),
     ("board t 40x30\nfrobnicate\n", "unknown statement"),
 ]:
     try:
@@ -270,8 +271,10 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 16
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 18
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+assert _call("lint", {})["errors"] == []
+assert _call("doctor", {})["ok"] is True
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
 assert _call("apply_patch", {"ops": [{"op": "constrain",
@@ -449,4 +452,23 @@ if _sh.which("ngspice") is not None:
     _ngg = agent.loads("board t 40x30\npart D1 D_SOD323\nnet A: D1.1\nnet B: D1.2\n"
                        "sim d D1 BAT54\nsim ac 10 1e6 20\n")
     assert agent.dumps(agent.loads(agent.dumps(_ngg))) == agent.dumps(_ngg)
+# lint: clean board passes, dirty board reports (no place/route needed)
+_lb = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
+assert _lb.lint() == {"errors": [], "warnings": []}, _lb.lint()
+_ld = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.2\nfix ZZ at 5 5\nkeep R1 near ZZ\n"
+                  "trace NONET 0.5\n")
+_lr = _ld.lint()
+assert any("ZZ" in e for e in cast(list[str], _lr["errors"])), _lr
+assert any("single-pin net N" in w for w in cast(list[str], _lr["warnings"])), _lr
+assert any("C1" in w for w in cast(list[str], _lr["warnings"])), _lr
+assert any("NONET" in w for w in cast(list[str], _lr["warnings"])), _lr
+# doctor: registry healthy on a live board
+_doc = _lb.plugins().get("doctor", "std")
+assert isinstance(_doc, Plugin)
+_docr = cast(dict[str, object], _doc.run(_lb))
+assert _docr["ok"] is True, _docr
+assert any(str(c.get("name")) == "plugin:lint"
+           and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
 print("ALL OK")

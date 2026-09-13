@@ -5,6 +5,8 @@
     ocd status <circuit.ocd> refresh STATUS.md (score, DRC, ERC, sim)
     ocd diff <a.ocd> <b.ocd> what changed: parts, nets, size, constraints
     ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
+    ocd lint <circuit.ocd>   static source lint, no place/route
+    ocd doctor               tooling self-check (no file needed)
 
 Global flags (run/score): --fab --placer --router --sim. `ocd <file>` = run.
 """
@@ -21,6 +23,8 @@ USAGE = """usage:
   ocd status <circuit.ocd>      refresh STATUS.md next to the file
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
   ocd score <circuit.ocd>        OCD neatness 0-100 (read-only)
+  ocd lint <circuit.ocd>         static source lint, no place/route
+  ocd doctor                     tooling self-check (no file needed)
   ocd <circuit.ocd>              shorthand for run"""
 
 
@@ -283,6 +287,46 @@ def cmd_score(agent: object, args: list[str]) -> int:
     return 0
 
 
+def cmd_lint(agent: object, args: list[str]) -> int:
+    if len(args) != 1 or args[0] in ("-h", "--help"):
+        print("usage: ocd lint <circuit.ocd>")
+        return 1
+    try:
+        b = _load(agent, args[0])
+    except (OSError, ValueError, KeyError) as e:
+        _out().print(f"[red]ocd: {e}[/red]")
+        return 1
+    r = b.lint()
+    errors = cast(list[object], r["errors"])
+    warnings = cast(list[object], r["warnings"])
+    for item in errors:
+        _out().print(f"  [red]✗ {item}[/red]")
+    for w in warnings:
+        _out().print(f"  [yellow]~ {w}[/yellow]")
+    if not errors and not warnings:
+        _out().print("[green]✓ lint clean[/green]")
+    else:
+        _out().print(f"[red]{len(errors)} errors[/red], "
+                      f"[yellow]{len(warnings)} warnings[/yellow]")
+    return 2 if errors else 0
+
+
+def cmd_doctor() -> int:
+    from ocdcircuit.circuit import Board as _B
+    from ocdcircuit import doctor as _doctor
+    r = _doctor.doctor(_B("doctor"))
+    rows = []
+    for c in cast(list[dict[str, object]], r["checks"]):
+        mark = "[green]✓[/green]" if c["ok"] else "[red]✗[/red]"
+        rows.append((f"{mark} {c['name']}", str(c.get("detail", ""))))
+    _table("doctor", rows)
+    if not r["ok"]:
+        _out().print("[yellow]degraded: see ✗ rows (features fall back, nothing crashes)[/yellow]")
+        return 1
+    _out().print("[green]✓ all systems[/green]")
+    return 0
+
+
 def _tidy_md(v: object) -> str:
     if v is None:
         return "n/a"
@@ -319,6 +363,10 @@ def main(argv: list[str]) -> int:
         return cmd_diff(agent, args[1:])
     if args[0] == "score":
         return cmd_score(agent, args[1:])
+    if args[0] == "lint":
+        return cmd_lint(agent, args[1:])
+    if args[0] == "doctor":
+        return cmd_doctor()
     if args[0].startswith("-"):
         print(USAGE)
         return 1

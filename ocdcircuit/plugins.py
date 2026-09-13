@@ -688,6 +688,24 @@ class PcbImporter(Plugin[dict[str, object]]):
         return {"parts": len(nb.parts), "nets": len(nb.nets)}
 
 
+class LintPlugin(Plugin[dict[str, object]]):
+    """Static source lint: hygiene without place/route."""
+    kind, key = "lint", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import lint as _lint
+        return _lint.lint(board)
+
+
+class DoctorPlugin(Plugin[dict[str, object]]):
+    """Tooling self-check: python, optional deps, registry health."""
+    kind, key = "doctor", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import doctor as _doctor
+        return _doctor.doctor(board)
+
+
 class CalcPlugin(Plugin[dict[str, object]]):
     """Embedded calculators: trace width, via current, divider."""
     kind, key = "calc", "std"
@@ -737,7 +755,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              JlcDrc, FlexDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
-             CalcPlugin, SimPlugin, NgspicePlugin,
+             CalcPlugin, SimPlugin, NgspicePlugin, LintPlugin, DoctorPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer)
 
 

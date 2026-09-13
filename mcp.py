@@ -159,6 +159,15 @@ def t_sim(a: dict[str, object]) -> dict[str, object]:
     return b.simulate(key, **args)
 
 
+def t_lint(a: dict[str, object]) -> dict[str, object]:
+    return _board().lint()
+
+
+def t_doctor(a: dict[str, object]) -> dict[str, object]:
+    from ocdcircuit import doctor as _doctor
+    return _doctor.doctor(_board())
+
+
 def t_use(a: dict[str, object]) -> dict[str, object]:
     _board().use(str(a["kind"]), str(a["key"]))
     return {"active": str(a["key"])}
@@ -193,6 +202,8 @@ TOOLS: dict[str, object] = {
     "place": (t_place, {"key": "placer?", "seeds": 4, "iters": 400, "frames?": True}),
     "route": (t_route, {"key": "router?", "frames?": True}),
     "check": (t_check, {"key": "drc?"}),
+    "lint": (t_lint, {}),
+    "doctor": (t_doctor, {}),
     "export": (t_export, {"key": "exporter?", "outdir": "out"}),
     "render": (t_render, {"key": "renderer?"}),
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|tscircuit|pcb", "path": "file"}),
