@@ -85,6 +85,52 @@ class Component:
         self._mounted = False
 
 
+class UiSlots:
+    """Named UI slots (harness SlotCore shape, sync python): the shell
+    declares slot names, plugins register (slot, id, order, render). One
+    lifecycle axis — dispose removes the contribution. A crashing entry
+    abdicates to the next survivor (report=True keeps ledger row)."""
+    slots = ("toolbar", "panel-left", "panel-right", "view", "status")
+
+    def __init__(self) -> None:
+        self.cells: dict[str, list[dict[str, object]]] = {}
+        self.crashed: set[tuple[str, str]] = set()
+
+    def register(self, slot: str, id: str, render: object,
+                 order: float = 0.0) -> Callable[[], None]:
+        """Contribute render (fn(state) -> html str) into slot. Returns disposer."""
+        assert slot in self.slots, f"unknown slot {slot} (have {self.slots})"
+        cell = {"id": id, "order": order, "render": render}
+        cells = self.cells.setdefault(slot, [])
+        assert all(c["id"] != id for c in cells), f"dup {slot}:{id}"
+        cells.append(cell)
+        cells.sort(key=lambda c: (float(str(c["order"])), str(c["id"])))
+
+        def _dispose() -> None:
+            if cell in self.cells.get(slot, []):
+                self.cells[slot].remove(cell)
+
+        return _dispose
+
+    def render(self, slot: str, state: object) -> str:
+        """All live entries in order; a raising entry abdicates to the next."""
+        out: list[str] = []
+        for cell in list(self.cells.get(slot, [])):
+            if (slot, str(cell["id"])) in self.crashed:
+                continue
+            try:
+                r = cell["render"]
+                assert callable(r)
+                out.append(str(r(state)))
+            except Exception:
+                self.crashed.add((slot, str(cell["id"])))
+        return "".join(out)
+
+    def report(self, slot: str) -> list[str]:
+        """Ledger rows (ids in order) — the plugin-inventory surface."""
+        return [str(c["id"]) for c in self.cells.get(slot, [])]
+
+
 class Registry:
     """All plugins live here, itself a service. kind: placer/router/layers/
     drc/exporter/parts/renderer. One active key per kind — hot-swap = use().

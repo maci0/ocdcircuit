@@ -24,6 +24,33 @@ sys.path.insert(0, os.path.dirname(HERE) if os.path.basename(HERE) != "ocdcircui
 from ocdcircuit import agent  # noqa: E402
 from ocdcircuit import fab as _fab  # noqa: E402
 from ocdcircuit.circuit import Board  # noqa: E402
+from ocdcircuit.core import UiSlots  # noqa: E402
+
+SLOTS = UiSlots()
+# Built-in views (harness-slot shape: shell declares, entries contribute).
+# A UI plugin = SLOTS.register(slot, id, fn) + optional /api route.
+SLOTS.register("toolbar", "solver-selects",
+               lambda s: ("<select id=placer title=placer></select>"
+                          "<select id=router title=router></select>"
+                          "<select id=fab title=fab></select>"
+                          "<select id=silk title=silk></select>"))
+SLOTS.register("toolbar", "actions",
+               lambda s: ('<button id=theme>light</button><button id=solve>solve ▶</button>'
+                          '<button id=undo title="undo (Ctrl+Z)">↩</button>'
+                          '<button id=redo title="redo (Ctrl+Y)">↪</button><span id=stat></span>'))
+SLOTS.register("view", "editor",
+               lambda s: '<section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3>'
+                         '<div id=ed contenteditable spellcheck=false></div></section>')
+SLOTS.register("view", "pcb",
+               lambda s: '<section id=pcbwrap><h3>PCB — DRAG PARTS, THEY STAY WHERE DROPPED</h3>'
+                         '<canvas id=pcb></canvas><div id=drc></div></section>')
+SLOTS.register("view", "sch",
+               lambda s: '<section id=schwrap><h3>SCHEMATIC — CLICK PIN, CLICK NET TO REWIRE · '
+                         'ALT-CLICK DROPS PIN · DOUBLE-CLICK LABEL RENAMES</h3>'
+                         '<canvas id=sch></canvas></section>')
+SLOTS.register("view", "inspector",
+               lambda s: '<section id=wrap3d><h3>3D</h3><canvas id=t3d></canvas>'
+                         '<h3>TIDY <span id=tidycov></span></h3><div id=tidy></div></section>')
 
 
 def _f(v: object) -> float:
@@ -63,14 +90,10 @@ body.light .tok-k{color:#0050a0}body.light .tok-net{color:#b9770e}
 #cost{color:var(--dim)}
 </style></head><body>
 <header><b>OCD</b><span>studio</span><span id=cost></span>
-<select id=placer title=placer></select><select id=router title=router></select>
-<select id=fab title=fab></select><select id=silk title=silk></select>
-<button id=theme>light</button><button id=solve>solve ▶</button><button id=undo title="undo (Ctrl+Z)">↩</button><button id=redo title="redo (Ctrl+Y)">↪</button><span id=stat></span></header>
+/*__TOOLBAR__*/
+</header>
 <main>
-<section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3><div id=ed contenteditable spellcheck=false></div></section>
-<section id=pcbwrap><h3>PCB — DRAG PARTS, THEY STAY WHERE DROPPED</h3><canvas id=pcb></canvas><div id=drc></div></section>
-<section id=schwrap><h3>SCHEMATIC — CLICK PIN, CLICK NET TO REWIRE · ALT-CLICK DROPS PIN · DOUBLE-CLICK LABEL RENAMES</h3><canvas id=sch></canvas></section>
-<section id=wrap3d><h3>3D</h3><canvas id=t3d></canvas><h3>TIDY <span id=tidycov></span></h3><div id=tidy></div></section>
+/*__VIEWS__*/
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -428,11 +451,18 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if self.path == "/slots":
+            # plugin-inventory surface: slot → [ids] (harness inventory shape)
+            inv = {s: SLOTS.report(s) for s in UiSlots.slots}
+            self._send(inv)
+            return
         if self.path != "/":
             self.send_response(404)
             self.end_headers()
             return
-        body = PAGE.encode()
+        page = PAGE.replace("/*__TOOLBAR__*/", SLOTS.render("toolbar", None))
+        page = page.replace("/*__VIEWS__*/", SLOTS.render("view", None))
+        body = page.encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
