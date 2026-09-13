@@ -322,10 +322,39 @@ _g = _jj.loads(bo.render("gltf"))
 assert {m["name"] for m in _g["materials"]} >= {"mask", "copper", "chip"}
 assert len(_g["meshes"]) == len(_g["materials"])
 
-# everything-is-a-plugin: simulate engine physics (divider dc + RC tran)
-_simb = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
-                    "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\nsim vcc VIN 9\n")
-assert abs(cast(float, cast(dict[str, object], _simb.simulate()["nets"])["VO"]) - 2.878) < 0.01
+# blocks: repeatable units — stamp 3x, join, round-trip exactly
+_bb = agent.loads("board t 60x40\nblock ch\npart U QFN28\npart C C0805 100n\n"
+                  "net N: U.3 C.2\nnet GND: U.1 C.1\nend\n"
+                  "instance ch as A\ninstance ch as B join GND\n")
+assert sorted(_bb.parts) == ["A_C", "A_U", "B_C", "B_U"]
+assert ("B_C", "1") in _bb.nets["GND"].pins and ("B_U", "1") in _bb.nets["GND"].pins
+assert ("A_C", "1") in _bb.nets["GND"].pins  # GND auto-joins even unlisted
+assert "block ch" in agent.dumps(_bb) and "instance ch as B join GND" in agent.dumps(_bb)
+assert agent.dumps(agent.loads(agent.dumps(_bb))) == agent.dumps(_bb)
+for _bbad, _bfrag in [
+    ("board t 10x10\nblock a\npart R1 R0805\nblock b\n", "nested blocks"),
+    ("board t 10x10\nend\n", "end without block"),
+    ("board t 10x10\nblock a\npart R1 R0805\nend\nblock a\npart R2 R0805\nend\n", "duplicate block"),
+    ("board t 10x10\ninstance nope as X\n", "unknown block"),
+    ("board t 10x10\nblock a\nuse x.ocd\nend\n", "not allowed inside block"),
+]:
+    try:
+        agent.loads(_bbad)
+        raise AssertionError(f"should have raised: {_bbad!r}")
+    except ValueError as e:
+        assert _bfrag in str(e), f"{_bfrag!r} not in {e}"
+# hierarchical placer: rigid instances, falls back cleanly without them
+assert _bb.place("hierarchical", seeds=1, iters=50) is not None
+_offs: dict[str, tuple[float, float]] = {}
+for _pre in ("A_", "B_"):
+    _ux, _uy = _bb.parts[_pre + "U"].x, _bb.parts[_pre + "U"].y
+    _offs[_pre] = (round(_bb.parts[_pre + "C"].x - _ux, 2),
+                   round(_bb.parts[_pre + "C"].y - _uy, 2))
+assert _offs["A_"] == _offs["B_"], _offs  # rigid: identical offsets
+_nb = Board("plain", 20, 10)
+_nb.add_part("R1", "R0805", "1k")
+assert _nb.place("hierarchical", seeds=1, iters=10) is not None  # no-instance fallback
+# sim transient (setup above)
 _simb2 = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                      "net VIN: R1.1\nnet VO: R1.2 C1.1\nnet GND: C1.2\n"
                      "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n")

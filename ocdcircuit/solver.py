@@ -273,6 +273,203 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
     return best
 
 
+def hierarchical(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
+                 frames: list[Frame] | None = None, every: int = 10,
+                 pull: float = 0.08, spread: float = 1.0,
+                 edge: float | None = None, thermal: bool = False) -> float:
+    """Two-level placement for repeated blocks (instances).
+    Level 1: solve ONE prototype per block (relative part offsets) with the
+    normal engine on a scratch board. Level 2: stamp offsets to every
+    instance, then rigid-body diffusion (translate whole instances, never
+    deform them). Boards without instances == plain optimize()."""
+    groups: dict[str, list[str]] = {}
+    for ref, p in board.parts.items():
+        if p.owner:
+            groups.setdefault(p.owner, []).append(ref)
+    if not groups:
+        return optimize(board, seeds=seeds, iters=iters, seed=seed,
+                        frames=frames, every=every, pull=pull, spread=spread,
+                        edge=edge, thermal=thermal)
+    snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
+    old_traces = list(board.traces)
+    best: float = 0.0
+    best_pos: dict[str, XY] = {}
+    first = True
+    for s in range(seeds):
+        if frames is not None:
+            frames.append({"seed": s})
+        _hier_once(board, groups, iters, seed + s, frames, every,
+                   pull, spread, edge, thermal)
+        c = cost(board)
+        if first or c < best:
+            first = False
+            best, best_pos = c, {r: (q.x, q.y) for r, q in board.parts.items()}
+    for r, (x, y) in best_pos.items():
+        board.parts[r].x, board.parts[r].y = x, y
+    board.traces = old_traces
+    final = {r: (p.x, p.y) for r, p in board.parts.items()}
+
+    def _do() -> None:
+        for r, (x, y) in final.items():
+            board.parts[r].x, board.parts[r].y = x, y
+
+    def _undo() -> None:
+        for r, (x, y) in snap_pos.items():
+            board.parts[r].x, board.parts[r].y = x, y
+
+    board.ctx.emit(_do, _undo)
+    return best
+
+
+def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int,
+               frames: list[Frame] | None, every: int,
+               pull: float, spread: float, edge: float | None, thermal: bool) -> None:
+    """One seed: solve prototype internals, stamp, rigid-body global."""
+    import random
+    from .circuit import Board as _Board
+    rng = random.Random(seed)
+    # --- level 1: prototype = first instance of each owner, solved alone ---
+    offsets: dict[str, dict[str, XY]] = {}  # owner → {ref: (dx, dy)}
+    anchors: dict[str, XY] = {}  # owner → prototype centroid after solve
+    for owner, refs in groups.items():
+        proto = _Board("proto", board.width, board.height, board.layers)
+        for ref in refs:
+            p = board.parts[ref]
+            lib = board._lib()
+            meta = lib[p.fp]
+            w = meta["w"]
+            h = meta["h"]
+            assert isinstance(w, float) and isinstance(h, float)
+            from .circuit import Part as _Part
+            proto.parts[ref] = _Part(ref, p.fp, p.value, p.x, p.y, w, h)
+        # internal nets only (both ends inside the group)
+        for n, net in board.nets.items():
+            pins = [(r, q) for r, q in net.pins if r in board.parts and board.parts[r].owner == owner]
+            if len(pins) >= 2:
+                for r, q in pins:
+                    proto.net(n).pins.append((r, q))
+        for c in board.constraints:
+            if c.get("owner") == owner and c.get("t") == "near":
+                proto.constraints.append(dict(c))
+        _diffuse_once(proto, max(50, iters // 2), seed, frames=None, every=every,
+                      pull=pull, spread=spread, edge=edge, thermal=thermal)
+        cx = sum(proto.parts[r].x for r in refs) / len(refs)
+        cy = sum(proto.parts[r].y for r in refs) / len(refs)
+        anchors[owner] = (cx, cy)
+        offsets[owner] = {r: (proto.parts[r].x - cx, proto.parts[r].y - cy) for r in refs}
+    # --- stamp: every instance gets prototype offsets around a random center ---
+    m = edge if edge is not None else edge_margin(board)
+    centers: dict[str, XY] = {}
+    for owner, refs in groups.items():
+        if owner not in centers:
+            # spread instance centers across the board
+            centers[owner] = (rng.uniform(10, board.width - 10),
+                              rng.uniform(10, board.height - 10))
+        ox, oy = centers[owner]
+        for ref in refs:
+            dx, dy = offsets[owner][ref]
+            board.parts[ref].x, board.parts[ref].y = ox + dx, oy + dy
+    # free parts random-init like normal
+    for ref, p in board.parts.items():
+        if not p.owner:
+            pw, ph = p.wh()
+            p.x = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
+            p.y = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
+    # --- level 2: rigid-body diffusion (translate instances, deform nothing) ---
+    fx = _fixed(board)
+    for r, (x, y) in fx.items():
+        if r in board.parts:
+            board.parts[r].x, board.parts[r].y = x, y
+    for t in range(iters):
+        T = 1 - t / iters
+        step = (0.25 + 0.65 * T) * (0.3 + 0.7 * T)
+        # move whole owners by centroid force
+        for owner, refs in groups.items():
+            if any(r in fx for r in refs):
+                continue  # pinned instance stays
+            cx = sum(board.parts[r].x for r in refs) / len(refs)
+            cy = sum(board.parts[r].y for r in refs) / len(refs)
+            Fx = Fy = 0.0
+            for ref in refs:
+                p = board.parts[ref]
+                # net springs toward external (non-group) pins
+                for n, net in board.nets.items():
+                    mypins = [(r, q) for r, q in net.pins if r == ref]
+                    if not mypins:
+                        continue
+                    ext = [board.pad_pos(r, q) for r, q in net.pins
+                           if r in board.parts and board.parts[r].owner != owner]
+                    if ext:
+                        ex = sum(q[0] for q in ext) / len(ext)
+                        ey = sum(q[1] for q in ext) / len(ext)
+                        Fx += pull * (ex - p.x) / max(1, len(refs))
+                        Fy += pull * (ey - p.y) / max(1, len(refs))
+                # repulsion vs everything outside the instance
+                for o in board.parts.values():
+                    if o.owner == owner:
+                        continue
+                    dx, dy = p.x - o.x, p.y - o.y
+                    d = (dx * dx + dy * dy) ** 0.5
+                    pw, ph = p.wh()
+                    qw, qh = o.wh()
+                    need = ((pw + qw) / 2 + 0.6 + (ph + qh) / 2 + 0.6) / 2
+                    if d < 1e-6:
+                        dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
+                    if d < need * 2.2:
+                        f = spread * (3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0))
+                        Fx += f * dx / d
+                        Fy += f * dy / d
+            # instance-vs-instance centroid push (joined power nets attract
+            # all instances to one spot; this keeps them apart as units)
+            cx = sum(board.parts[r].x for r in refs) / len(refs)
+            cy = sum(board.parts[r].y for r in refs) / len(refs)
+            for other, orefs in groups.items():
+                if other == owner:
+                    continue
+                ox = sum(board.parts[r].x for r in orefs) / len(orefs)
+                oy = sum(board.parts[r].y for r in orefs) / len(orefs)
+                dx, dy = cx - ox, cy - oy
+                d = (dx * dx + dy * dy) ** 0.5 or 1.0
+                if d < 25.0:
+                    push = spread * 6.0 * (1 - d / 25.0)
+                    Fx += push * dx / d
+                    Fy += push * dy / d
+            Fx += rng.gauss(0, 1) * 1.4 * T
+            Fy += rng.gauss(0, 1) * 1.4 * T
+            # rigid translate with INSTANCE-level clamp (per-part clamp would
+            # deform the block when one part touches the edge first)
+            dx0, dy0 = step * Fx, step * Fy
+            lo_x = max(-(board.parts[r].x - board.parts[r].wh()[0] / 2 - m) for r in refs)
+            hi_x = min((board.width - board.parts[r].wh()[0] / 2 - m) - board.parts[r].x for r in refs)
+            lo_y = max(-(board.parts[r].y - board.parts[r].wh()[1] / 2 - m) for r in refs)
+            hi_y = min((board.height - board.parts[r].wh()[1] / 2 - m) - board.parts[r].y for r in refs)
+            dx0 = min(max(dx0, lo_x), hi_x) if lo_x <= hi_x else 0.0
+            dy0 = min(max(dy0, lo_y), hi_y) if lo_y <= hi_y else 0.0
+            for ref in refs:
+                p = board.parts[ref]
+                p.x += dx0
+                p.y += dy0
+        # free parts move normally (single diffusion step each)
+        for ref, p in board.parts.items():
+            if p.owner or ref in fx:
+                continue
+            Fx = Fy = 0.0
+            for n, net in board.nets.items():
+                if not any(r == ref for r, _ in net.pins):
+                    continue
+                pts = [board.pad_pos(r, q) for r, q in net.pins if r in board.parts]
+                if len(pts) > 1:
+                    Fx += pull * (sum(q[0] for q in pts) / len(pts) - p.x)
+                    Fy += pull * (sum(q[1] for q in pts) / len(pts) - p.y)
+            Fx += rng.gauss(0, 1) * 1.4 * T
+            Fy += rng.gauss(0, 1) * 1.4 * T
+            pw, ph = p.wh()
+            p.x = min(max(p.x + step * Fx, pw / 2 + m), board.width - pw / 2 - m)
+            p.y = min(max(p.y + step * Fy, ph / 2 + m), board.height - ph / 2 - m)
+        if frames is not None and (t % every == 0 or t == iters - 1):
+            frames.append(_snap(board))
+
+
 def assign_layers(board: Board) -> None:
     """Greedy: constrained nets keep layers; rest pick layer with fewer
     bbox crossings. Power nets default wide; GND goes to the last layer

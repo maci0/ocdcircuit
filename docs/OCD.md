@@ -26,6 +26,11 @@ silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
 fp exotic.fp                 # custom footprint file (pads/holes/3D bodies)
+block driver               # reusable unit: local refs, stamped per instance
+  part U QFN28             #   (indented lines: part/net/constraints only)
+end
+instance driver as Z1      # stamp with PREFIX_; repeat as needed
+instance driver as Z2 join VCC GND  # joined nets merge, rest stay local
 part C1 C0402 100n lcsc=C1525 rot=90  # trailing k=v attrs (LCSC, rotation)
 pour GND on 0                # copper pour (top=0, bottom=layers-1)
 keepout 11.5 47 15.7x1.9     # rect keepout, center x y WxH [+ on layers]

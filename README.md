@@ -54,6 +54,8 @@ report; motion is the product; one concept, one hue.
   your board against the factory you actually ordered from
   ([inventory](docs/FAB.md)).
 - **mypy strict**, zero `Any`, zero errors. The code is aligned too.
+- **`block`/`instance` + hierarchical placer**: repeat a channel 3×, solve
+  it once, stamp rigidly (`placer:hierarchical`). Pico demo does exactly this.
 - **1–16 layers**: placer, maze router (any-layer vias + rip-up retry),
   DRC, Gerber (`GTL/G1..Gn/GBL`) and KiCad (`F.Cu/In1..Bn`) exports all
   handle 1–16 layers. 1-layer boards report `jumper` wire bridges.

@@ -171,12 +171,19 @@ def dumps(board: Board) -> str:
     dump `use` lines + local content only; reload re-merges identically."""
     owned = {p.ref for p in board.parts.values() if p.owner}
     L = [f"board {board.name} {board.width:g}x{board.height:g} {board.layers}L"]
+    for bname, block in board.blocks.items():
+        L.append(f"block {bname}")
+        L.extend(f"  {ln}" for ln in block.lines)
+        L.append("end")
     for inc in board.includes:
         L.append(f"use {inc['path']}" + (f" as {inc['prefix']}" if inc.get("prefix") else "") +
                  (f" join {' '.join(cast(list[str], inc['join']))}" if inc.get("join") else ""))
+    for ins in board.instances:
+        L.append(f"instance {ins['block']} as {ins['prefix']}" +
+                 (f" join {' '.join(cast(list[str], ins['join']))}" if ins.get("join") else ""))
     for p in board.parts.values():
         if p.owner:
-            continue  # owned by an include — parent dumps the `use` line instead
+            continue  # owned by an include/instance — dumped as use/instance
         attrs = "".join(f" {k}={v}" for k, v in sorted(p.attrs.items()))
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
     # fp lines up front: footprints must exist before parts use them
@@ -288,6 +295,14 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
 
         toks0 = line.split(None, 1)
         kw = toks0[0].lower() if toks0 else ""
+        if b is not None and b._block_open is not None and kw != "end":
+            if kw == "block":
+                raise err("nested blocks not supported (flatten it)")
+            if kw in ("board", "use", "fp", "instance"):
+                raise err(f"{kw} not allowed inside block (keep blocks portable)")
+            assert b._block_lines is not None
+            b._block_lines.append(line)
+            continue
         if kw == "use":
             if b is None:
                 raise err("board header first")
@@ -309,6 +324,33 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             # else: bare "board WxH" resize form → handled as constraint below
         if b is None:
             raise err("board header first")
+        if kw == "block":
+            m = re.match(r"^block\s+(\S+)$", line, re.I)
+            if not m:
+                raise err("want: block NAME")
+            if b is not None and b._block_open is not None:
+                raise err("nested blocks not supported (flatten it)")
+            b._block_open = m.group(1)
+            b._block_lines = []
+            continue
+        if kw == "end":
+            if b._block_open is None:
+                raise err("end without block")
+            from .circuit import Block as _Block
+            name = b._block_open
+            if name in b.blocks:
+                raise err(f"duplicate block {name!r}")
+            b.blocks[name] = _Block(name, b._block_lines or [])
+            b._block_open = None
+            b._block_lines = None
+            continue
+        if kw == "instance":
+            m = re.match(r"^instance\s+(\S+)\s+as\s+(\S+)(?:\s+join\s+(.+))?$",
+                         line, re.I)
+            if not m:
+                raise err("want: instance BLOCK as PREFIX [join NET ...]")
+            _instance(b, m.group(1), m.group(2), m.group(3), err)
+            continue
         if kw == "fp":
             toks = line.split(None, 1)
             if len(toks) != 2:
@@ -329,48 +371,9 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                     raise err(f"footprint {name!r} shadows std lib (rename it)")
                 b.add_footprint(name, meta, toks[1])
         elif kw == "part":
-            toks = line.split(None, 3)
-            if len(toks) < 3:
-                raise err("want: part REF FOOTPRINT [value] [k=v ...]")
-            _, ref, fp, *val = toks
-            value, attrs = "", {}
-            if val:
-                words = []
-                for tok in val[0].split():
-                    if "=" in tok:
-                        k, _, v = tok.partition("=")
-                        attrs[k] = v
-                    else:
-                        words.append(tok)
-                value = " ".join(words)
-            try:
-                b.add_part(ref, fp, value, attrs=attrs or None)
-            except (KeyError, ValueError) as e:
-                raise err(e)
+            _exec_part(b, line, err)
         elif kw == "net":
-            head, _, pins = line.partition(":")
-            htoks = head.split()
-            if len(htoks) < 2:
-                raise err("want: net NAME [L<n> w<n>]: REF.PIN ...")
-            name = htoks[1]
-            for a in htoks[2:]:
-                if a[0] in "Ll" and a[1:].isdigit():
-                    b.constrain({"t": "layer", "net": name, "layer": int(a[1:])})
-                else:
-                    w: float | None = None
-                    if a[0] in "Ww":
-                        try:
-                            w = float(a[1:])
-                        except ValueError:
-                            w = None
-                    if w is None:
-                        raise err(f"bad net attribute {a!r} (want L<n> or w<n>)")
-                    b.constrain({"t": "width", "net": name, "width": w})
-            for tok in pins.split():
-                ref, dot, pin = tok.partition(".")
-                if not dot or not ref or not pin:
-                    raise err(f"bad pin {tok!r} (want REF.PIN)")
-                b.connect(name, ref, pin)
+            _exec_net(b, line, err)
         else:
             c = parse_constraint(line)
             if c is None:
@@ -451,6 +454,109 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
                 parent.constrain({"t": "power", "nets": merged, "owner": pre})
     parent.includes.append({"path": path, "prefix": prefix or child.name,
                             "join": sorted(joins)})
+    parent.constrain({"t": "near-group", "prefix": pre, "owner": pre})
+
+
+def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
+    """Shared part-line executor (top level + block stamping)."""
+    toks = line.split(None, 3)
+    if len(toks) < 3:
+        raise err(f"{ctx}want: part REF FOOTPRINT [value] [k=v ...]")
+    _, ref, fp, *val = toks
+    value: str = ""
+    attrs: dict[str, str] = {}
+    if val:
+        words = []
+        for tok in val[0].split():
+            if "=" in tok:
+                k, _, v = tok.partition("=")
+                attrs[k] = v
+            else:
+                words.append(tok)
+        value = " ".join(words)
+    try:
+        b.add_part(ref, fp, value, attrs=attrs or None)
+    except (KeyError, ValueError) as e:
+        raise err(f"{ctx}{e}")
+
+
+def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
+    """Shared net-line executor (top level + block stamping)."""
+    head, _, pins = line.partition(":")
+    htoks = head.split()
+    if len(htoks) < 2:
+        raise err(f"{ctx}want: net NAME [L<n> w<n>]: REF.PIN ...")
+    name = htoks[1]
+    for a in htoks[2:]:
+        if a[0] in "Ll" and a[1:].isdigit():
+            b.constrain({"t": "layer", "net": name, "layer": int(a[1:])})
+        else:
+            w: float | None = None
+            if a[0] in "Ww":
+                try:
+                    w = float(a[1:])
+                except ValueError:
+                    w = None
+            if w is None:
+                raise err(f"{ctx}bad net attribute {a!r} (want L<n> or w<n>)")
+            b.constrain({"t": "width", "net": name, "width": w})
+    for tok in pins.split():
+        ref, dot, pin = tok.partition(".")
+        if not dot or not ref or not pin:
+            raise err(f"{ctx}bad pin {tok!r} (want REF.PIN)")
+        b.connect(name, ref, pin)
+
+
+def _instance(parent: Board, block: str, prefix: str, join: str | None,
+              err: ErrFn) -> None:
+    """Stamp a block template N times (repeatable units, logisim-style).
+    Same merge rules as _include; parts get owner=prefix for rigid-body
+    placement. Blocks keep no placement: parent places everything."""
+    from .circuit import Board as _Board
+    if block not in parent.blocks:
+        raise err(f"unknown block {block!r}")
+    joins = set(join.split()) if join else set()
+    pre = prefix + "_"
+    # parse block lines into a throwaway board, then merge like _include
+    child = _Board("__block__")
+    for raw in parent.blocks[block].lines:
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        kw = line.split(None, 1)[0].lower()
+        if kw == "part":
+            _exec_part(child, line, err, ctx=f"in block {block}: ")
+        elif kw == "net":
+            _exec_net(child, line, err, ctx=f"in block {block}: ")
+        else:
+            c = parse_constraint(line)
+            if c is None:
+                raise err(f"in block {block}: unknown statement: {line!r}")
+            child.constrain(c)
+    for ref, p in child.parts.items():
+        new = pre + ref
+        if new in parent.parts:
+            raise err(f"ref clash: {new!r} (instance prefixes must differ)")
+        parent.add_part(new, p.fp, p.value, attrs=dict(p.attrs) or None)
+        parent.parts[new].owner = pre
+    for n, net in child.nets.items():
+        target = (n if (joins and n in joins) or (join is None and n in AUTO_JOIN)
+                  else pre + n)
+        for ref, pin in net.pins:
+            parent.connect(target, pre + ref, pin)
+    for c in child.constraints:
+        t = c.get("t")
+        if t == "fixed":
+            continue  # block-local placement ignored — two-level placer owns it
+        if t == "near":
+            parent.constrain({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
+                              "w": _f(c.get("w", 2.0)), "owner": pre})
+        elif t == "power":
+            nets = cast(list[str], c["nets"])
+            merged = [x if (joins and x in joins) or (join is None and x in AUTO_JOIN)
+                      else pre + x for x in nets]
+            parent.constrain({"t": "power", "nets": merged, "owner": pre})
+    parent.instances.append({"block": block, "prefix": prefix, "join": sorted(joins)})
     parent.constrain({"t": "near-group", "prefix": pre, "owner": pre})
 
 

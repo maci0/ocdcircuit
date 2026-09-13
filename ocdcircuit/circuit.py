@@ -77,6 +77,15 @@ class Seg:
         self.layer, self.width = layer, width
 
 
+class Block:
+    """Reusable subcircuit template: raw .ocd lines with LOCAL refs.
+    Stamped per `instance` (see agent._instance). Never placed directly."""
+
+    def __init__(self, name: str, lines: list[str]) -> None:
+        self.name = name
+        self.lines = list(lines)
+
+
 class Board(Component):
     def __init__(self, name: str = "board", width: float = 40.0,
                  height: float = 30.0, layers: int = 2) -> None:
@@ -91,6 +100,10 @@ class Board(Component):
         self.includes: list[dict[str, object]] = []  # {path, prefix, join}
         self.custom_fp: dict[str, dict[str, object]] = {}  # from `fp` lines
         self.fp_src: dict[str, str] = {}  # fp name -> source path
+        self.blocks: dict[str, Block] = {}  # block templates
+        self.instances: list[dict[str, object]] = []  # {block, prefix, join}
+        self._block_open: str | None = None  # parser scratch (not dumped)
+        self._block_lines: list[str] | None = None
         self.ctx.services["plugins"] = Registry()
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)

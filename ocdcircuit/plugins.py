@@ -53,6 +53,24 @@ class DiffusionPlacer(Plugin[float]):
                         frames=frames, every=every)
 
 
+class HierarchicalPlacer(Plugin[float]):
+    """Two-level placer for repeated blocks: solve once per block, stamp,
+    then move instances as rigid bodies. Falls back to diffusion when the
+    board has no instances."""
+    kind, key = "placer", "hierarchical"
+
+    def run(self, board: Board, *a: object, **k: object) -> float:
+        from typing import cast
+        from .solver import hierarchical
+        seeds = _i(k.get("seeds"), 4)
+        iters = _i(k.get("iters"), 400)
+        seed = _i(k.get("seed"), 0)
+        every = _i(k.get("every"), 10)
+        frames = cast(list[Frame] | None, k.get("frames"))
+        return hierarchical(board, seeds=seeds, iters=iters, seed=seed,
+                            frames=frames, every=every)
+
+
 class CompactPlacer(Plugin[float]):
     """Optimize board AREA: same diffusion, tighter edge margin + stronger
     net pull, weaker spread. Mix with `edge` constraint for target size."""
@@ -570,6 +588,7 @@ class SimPlugin(Plugin[dict[str, object]]):
 
 
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
+             HierarchicalPlacer,
              GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
              JlcDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
