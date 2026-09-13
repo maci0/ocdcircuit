@@ -100,7 +100,7 @@ def cmd_new(args: list[str]) -> int:
         with open(board, "w") as f:
             f.write(f"board {name} 40x30 2L\n"
                     f"part R1 R0805 10k\npart C1 C0805 100n\n"
-                    f"net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\n")
+                    f"N :: R1.2 <--> C1.2\nGND :: R1.1 <--> C1.1\nfix R1 at 3 5\n")
     readme = os.path.join(d, "README.md")
     if not os.path.exists(readme):
         with open(readme, "w") as f:
