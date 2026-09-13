@@ -27,6 +27,24 @@ def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float) -> str:
     return "\n".join(out)
 
 
+def layer_names(n: int) -> list[str]:
+    """Gerber copper extensions: GTL/GBL, GTL/G1/G2/GBL, GTL/G1..Gn/GBL."""
+    if n == 1:
+        return ["GTL"]
+    if n == 2:
+        return ["GTL", "GBL"]
+    return ["GTL"] + [f"G{i}" for i in range(1, n - 1)] + ["GBL"]
+
+
+def kicad_layers(n: int) -> list[str]:
+    """KiCad layer names: F.Cu/B.Cu, F.Cu/In1.Cu/.../B.Cu."""
+    if n == 1:
+        return ["F.Cu"]
+    if n == 2:
+        return ["F.Cu", "B.Cu"]
+    return ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
+
+
 def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     from .parts import pads_of
     os.makedirs(outdir, exist_ok=True)
@@ -39,9 +57,8 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             x, y = board.pad_pos(p.ref, pin)
             flashes[0].append((x, y))  # SMD pads on top
     for t in board.traces:
-        draws[t.layer].append((t.x1, t.y1, t.x2, t.y2))
-    names = ["GTL", "GBL"] if board.layers == 2 else [f"G{i}" for i in range(board.layers)]
-    for ll, nm in enumerate(names):
+        draws[t.layer % board.layers].append((t.x1, t.y1, t.x2, t.y2))
+    for ll, nm in enumerate(layer_names(board.layers)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
         open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4))
         files.append(fn)
@@ -105,7 +122,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     A("(kicad_pcb (version 20221018) (generator ocdcircuit)")
     A('  (general (thickness 1.6))')
     A('  (paper "A4")')
-    layers = ["F.Cu", "B.Cu"] if board.layers == 2 else [f"In{i}.Cu" for i in range(board.layers)]
+    layers = kicad_layers(board.layers)
     A("  (layers")
     for i, ln in enumerate(layers):
         A(f'    ({i} {ln} signal)')

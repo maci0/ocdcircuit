@@ -15,7 +15,7 @@ Lead-owned with 4-way fan-out (one prompt per angle below), then lead synthesize
 
 ## Task ledger
 - [x] Write this plan
-- [ ] Fan out 4 subagent angles (a–d)
-- [ ] Direct-verify anchor claims
-- [ ] Write `outputs/tidy-metrics-brief.md` (Summary/Background/Findings incl. metric table/Open Questions/References)
-- [ ] Copy to `docs/tidy-metrics.md` + cross-link from solver/methods briefs
+- [x] Fan out 4 subagent angles (a–d) — (b) delivered late, folded in
+- [x] Direct-verify anchor claims
+- [x] Write `outputs/tidy-metrics-brief.md` (Summary/Background/Findings incl. metric table/Open Questions/References)
+- [x] Copy to `docs/tidy-metrics.md` + cross-link from solver/methods briefs

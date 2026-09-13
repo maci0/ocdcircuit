@@ -270,7 +270,8 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
 
 def assign_layers(board: Board) -> None:
     """Greedy: constrained nets keep layers; rest pick layer with fewer
-    bbox crossings. Power nets default wide + bottom for GND."""
+    bbox crossings. Power nets default wide; GND goes to the last layer
+    (bottom on 2L, first inner plane on 4L+). 1-layer boards: all → 0."""
     for c in board.constraints:
         if c.get("t") == "layer" and c["net"] in board.nets:
             board.nets[str(c["net"])].layer = int(cast(int, c["layer"]))
@@ -282,6 +283,10 @@ def assign_layers(board: Board) -> None:
             for n in nets:
                 if n in board.nets:
                     board.nets[n].width = max(board.nets[n].width, 0.5)
+    if board.layers == 1:
+        for net in board.nets.values():
+            net.layer = 0
+        return
     order = sorted(board.nets.values(), key=lambda n: -len(n.pins))
     boxes: dict[int, list[BBox]] = {ll: [] for ll in range(board.layers)}
     for net in order:

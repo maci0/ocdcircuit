@@ -5,7 +5,7 @@ CP-SAT basics, SA, force-directed, Lee/A*/Pathfinder, Langevin). This brief
 covers everything else: exact layout backends, floorplan/packing, continuous
 constrained optimization + interactive solvers, local-search/population
 metaheuristics, and structure/graph methods (Steiner, assignment, schematic,
-analog). NN/GA verdict: `nn-ga.md`.
+analog). NN/GA verdict: `nn-ga.md`. Tidy-layout metrics: `tidy-metrics.md`.
 
 ## Summary
 

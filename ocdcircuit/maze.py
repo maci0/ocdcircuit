@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 from typing import TYPE_CHECKING, cast
 
-from .circuit import Seg
+from .circuit import Net, Seg
 from .types import Frame, XY
 
 if TYPE_CHECKING:
@@ -44,6 +44,8 @@ def _blocked(board: Board, grid: float) -> set[tuple[int, int]]:
             for gy in range(y0, y1 + 1):
                 cells.add((gx, gy))
     return cells
+
+
 
 
 def _astar(start: tuple[int, int, int], goal: tuple[int, int],
@@ -83,18 +85,36 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
             if not (0 <= nx2 < nx and 0 <= ny2 < ny):
                 continue
             step = 1.0 + (bend if dd != ndir and ndir != -1 else 0.0)
-            for l2 in (ll, 1 - ll) if nl == 2 else (ll,):
+            # any-layer vias: stay, or jump to an adjacent layer (stacked)
+            alts = [ll] if nl == 1 else [ll, ll - 1, ll + 1]
+            for l2 in alts:
+                if not (0 <= l2 < nl):
+                    continue
                 if (nx2, ny2) in blocked and (nx2, ny2, l2) not in own and (nx2, ny2) != (gx, gy):
                     continue
+                st = step
                 if (nx2, ny2) in soft and (nx2, ny2, l2) not in own:
-                    step += 15.0
-                ng = g + step + (via if l2 != ll else 0.0)
+                    st += 15.0
+                ng = g + st + (via if l2 != ll else 0.0)
                 key = (nx2, ny2, l2)
                 if ng < best.get(key, INF):
                     best[key] = ng
                     prev[key] = node
                     heapq.heappush(openh, (ng + h(nx2, ny2), ng, key, dd))
     return None
+
+
+from .circuit import Net, Seg
+
+
+def _net_span(board: Board, net: Net) -> float:
+    """BBox diagonal of a net's pads (big nets route later)."""
+    pts = [board.pad_pos(r, q) for r, q in net.pins if r in board.parts]
+    if len(pts) < 2:
+        return 0.0
+    dx: float = max(p[0] for p in pts) - min(p[0] for p in pts)
+    dy: float = max(p[1] for p in pts) - min(p[1] for p in pts)
+    return float((dx * dx + dy * dy) ** 0.5)
 
 
 def maze(board: Board, frames: list[Frame] | None = None) -> int:
@@ -117,59 +137,132 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     old = list(board.traces)
     new: list[Seg] = []
     copper: set[tuple[int, int]] = set()  # foreign-net routed cells (never freed)
-    for net in board.nets.values():
-        pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
-        if len(pts) < 2:
+    halo: set[tuple[int, int]] = set()  # 1-ring around copper (freed near own pads)
+    cells_of: dict[str, set[tuple[int, int, int]]] = {}
+
+    # small nets first: short point-to-point wires grab direct paths before
+    # wide power busses wall off regions (completion beats convention here)
+    order = sorted(board.nets.values(), key=lambda n: (len(n.pins), -_net_span(board, n)))
+    failed: list[str] = []
+    for net in order:
+        if not _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
+                          pad_cells, copper, halo, cells_of, new, frames):
+            failed.append(net.name)
+    # rip-up retry: drop the blocker crowding each failed net's corridor,
+    # re-route failed-first, then re-route the ripped net. One bounded round.
+    for fname in failed:
+        fnet = board.nets[fname]
+        fpts = [(r, board.pad_pos(r, q)) for r, q in fnet.pins if r in board.parts]
+        if len(fpts) < 2:
             continue
-        layer = net.layer if net.layer is not None else 0
-        # pads need exits: part courtyards are soft (costly) terrain, but
-        # foreign copper + foreign pads stay hard (else nets short)
-        blocked = set(copper)
-        blocked.update(c for c, owner in pad_cells.items() if owner != net.name)
-        soft = set(base_blocked)
-        for _, (px, py) in pts:
-            r = 1.0
-            for gx in range(int((px - r) / grid), int((px + r) / grid) + 1):
-                for gy in range(int((py - r) / grid), int((py + r) / grid) + 1):
-                    if (gx, gy) not in copper and pad_cells.get((gx, gy), net.name) == net.name:
-                        soft.discard((gx, gy))
-        own: set[tuple[int, int, int]] = set()
-        ok = True
-        for i in range(1, len(pts)):
-            a, b = pts[i - 1][1], pts[i][1]
-            s = (min(nx - 1, max(0, int(a[0] / grid))),
-                 min(ny - 1, max(0, int(a[1] / grid))), layer)
-            g = (min(nx - 1, max(0, int(b[0] / grid))),
-                 min(ny - 1, max(0, int(b[1] / grid))))
-            path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via)
-            if path is None:
-                ok = False
-                break
-            new.extend(_path_segs(board, net.name, path, grid, net.width))
-            own.update(path)
-        if not ok:
-            # fall back to straight L for this net (never fail a build)
-            hub = pts[0][1]
-            for _, pt in pts[1:]:
-                mid: XY = (pt[0], hub[1]) if abs(pt[0] - hub[0]) > abs(pt[1] - hub[1]) else (hub[0], pt[1])
-                if mid != hub:
-                    new.append(Seg(net.name, hub[0], hub[1], mid[0], mid[1], layer, net.width))
-                if mid != pt:
-                    new.append(Seg(net.name, mid[0], mid[1], pt[0], pt[1], layer, net.width))
-        # foreign copper: block routed cells + 1-ring halo for later nets
-        # (cell grid can't resolve sub-cell clearance, so exclusion wins)
-        for (gx, gy, _ll) in own:
-            for hx in (gx - 1, gx, gx + 1):
-                for hy in (gy - 1, gy, gy + 1):
-                    blocked.add((hx, hy))
-                    copper.add((hx, hy))
-        if frames is not None:
-            frames.append({"net": net.name, "layer": layer,
-                           "segs": [(s.x1, s.y1, s.x2, s.y2) for s in new
-                                    if s.net == net.name]})
+        best, best_hit = "", -1
+        for oname, cells in cells_of.items():
+            if oname == fname:
+                continue
+            hit = sum(1 for (gx, gy, _ll) in cells
+                      for (px, py) in (fpts[0][1], fpts[-1][1])
+                      if abs(gx * grid - px) + abs(gy * grid - py) < 4.0)
+            if hit > best_hit:
+                best, best_hit = oname, hit
+        if best_hit <= 0:
+            _fallback(board, fnet, fpts, new)
+            continue
+        ripped = [s for s in new if s.net == best]
+        new[:] = [s for s in new if s.net != best]
+        del cells_of[best]
+        _rebuild_blocked(copper, halo, cells_of)
+        if _route_one(board, fnet, grid, bend, via, nx, ny, base_blocked,
+                      pad_cells, copper, halo, cells_of, new, frames):
+            bnet = board.nets[best]
+            bpts = [(r, board.pad_pos(r, q)) for r, q in bnet.pins if r in board.parts]
+            if len(bpts) >= 2 and not _route_one(
+                    board, bnet, grid, bend, via, nx, ny, base_blocked,
+                    pad_cells, copper, halo, cells_of, new, frames):
+                _fallback(board, bnet, bpts, new)
+        else:
+            _fallback(board, fnet, fpts, new)
+            for s in ripped:  # restore ripped net as flagged fallback
+                j = Seg(s.net, s.x1, s.y1, s.x2, s.y2, s.layer, s.width)
+                j.jumper = True  # type: ignore[attr-defined]
+                new.append(j)
     board.ctx.emit(lambda: board.traces.__setitem__(slice(None), new),
                    lambda: board.traces.__setitem__(slice(None), old))
     return len(new)
+
+
+def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
+               nx: int, ny: int, base_blocked: set[tuple[int, int]],
+               pad_cells: dict[tuple[int, int], str],
+               copper: set[tuple[int, int]], halo: set[tuple[int, int]],
+               cells_of: dict[str, set[tuple[int, int, int]]],
+               new: list[Seg], frames: list[Frame] | None) -> bool:
+    """Route one net with current blockage. Returns True if maze-succeeded."""
+    pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
+    if len(pts) < 2:
+        return True
+    layer = net.layer if net.layer is not None else 0
+    blocked = set(copper) | halo
+    blocked.update(c for c, owner in pad_cells.items() if owner != net.name)
+    soft = set(base_blocked)
+    for _, (px, py) in pts:
+        r = 1.0
+        for gx in range(int((px - r) / grid), int((px + r) / grid) + 1):
+            for gy in range(int((py - r) / grid), int((py + r) / grid) + 1):
+                if (gx, gy) not in copper and pad_cells.get((gx, gy), net.name) == net.name:
+                    soft.discard((gx, gy))
+                    blocked.discard((gx, gy))
+    own: set[tuple[int, int, int]] = set()
+    for i in range(1, len(pts)):
+        a, b = pts[i - 1][1], pts[i][1]
+        s = (min(nx - 1, max(0, int(a[0] / grid))),
+             min(ny - 1, max(0, int(a[1] / grid))), layer)
+        g = (min(nx - 1, max(0, int(b[0] / grid))),
+             min(ny - 1, max(0, int(b[1] / grid))))
+        path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via)
+        if path is None:
+            return False
+        new.extend(_path_segs(board, net.name, path, grid, net.width))
+        own.update(path)
+    cells_of[net.name] = set(own)
+    for (gx, gy, _ll) in own:
+        copper.add((gx, gy))
+        for hx in (gx - 1, gx, gx + 1):
+            for hy in (gy - 1, gy, gy + 1):
+                if (hx, hy) not in copper:
+                    halo.add((hx, hy))
+    if frames is not None:
+        frames.append({"net": net.name, "layer": layer,
+                       "segs": [(s.x1, s.y1, s.x2, s.y2) for s in new
+                                if s.net == net.name]})
+    return True
+
+
+def _fallback(board: Board, net: Net, pts: list[tuple[str, XY]], new: list[Seg]) -> None:
+    """Straight-L fallback (never fail a build). Flagged jumper for DRC."""
+    from .circuit import Seg as S
+    layer = net.layer if net.layer is not None else 0
+    hub = pts[0][1]
+    for _, pt in pts[1:]:
+        mid: XY = (pt[0], hub[1]) if abs(pt[0] - hub[0]) > abs(pt[1] - hub[1]) else (hub[0], pt[1])
+        for aa, bb in ((hub, mid), (mid, pt)):
+            if aa != bb:
+                j = S(net.name, aa[0], aa[1], bb[0], bb[1], layer, net.width)
+                j.jumper = True  # type: ignore[attr-defined]
+                new.append(j)
+
+
+def _rebuild_blocked(copper: set[tuple[int, int]], halo: set[tuple[int, int]],
+                     cells_of: dict[str, set[tuple[int, int, int]]]) -> None:
+    """After ripping a net, rebuild copper+halo from surviving cells."""
+    copper.clear()
+    halo.clear()
+    for cells in cells_of.values():
+        for (gx, gy, _ll) in cells:
+            copper.add((gx, gy))
+            for hx in (gx - 1, gx, gx + 1):
+                for hy in (gy - 1, gy, gy + 1):
+                    if (hx, hy) not in copper:
+                        halo.add((hx, hy))
 
 
 def _path_segs(board: Board, net: str, path: list[tuple[int, int, int]],

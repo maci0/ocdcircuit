@@ -5,7 +5,7 @@ blank lines ignored. Units are mm. First non-blank line must be `board`.
 Build with `python ocd.py <file.ocd>` — errors name the line number.
 
 ```ocd
-board blinky555 40x30 2L     # board NAME WxH [NL]   (default 2 layers)
+board blinky555 40x30 2L     # board NAME WxH [NL] — 1..16 layers (default 2)
 part U1 SOIC8 NE555          # part REF FOOTPRINT [value...]
 net VCC: J1.1 U1.8 R1.1      # net NAME [attrs]: REF.PIN ...
 net GND L1 w0.5: J1.2 U1.1   #   L<n> = layer, w<n> = width mm

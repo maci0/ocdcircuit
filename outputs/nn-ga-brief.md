@@ -90,7 +90,94 @@ bottom line.
 | NSGA-II Pareto fronts | Conditional — only if 3 presets fail users |
 | Min-conflicts / LNS (evolution-adjacent) | **Yes — already ranked #2 adoption** |
 
-## References
+## Scale appendix: what breaks at 1000 parts (measured on this codebase)
+
+Your largest example is 20 parts (`examples/pico_tmc2209/`); "not at this
+scale" meant that. I benchmarked synthetic boards to find the real ceilings:
+
+| n | place (seeds=1, iters=50) | DRC (no traces) | DRC (routed) | dense-net overlaps |
+|---|---|---|---|---|
+| 20 | 0.02 s | ~0 | — | 0 |
+| 100 | 0.25 s | 0.01 s | — | 0 |
+| 300 | 1.9 s | 0.05 s | 0.24 s | 7 |
+| 1000 | 18.8 s | 0.47 s | 2.1 s | 396 |
+
+Default settings multiply place by ~30× (seeds=4, iters=400): ~10 min at
+n=1000. Scaling is ~quadratic (9.9× time for 3.3× parts) — the O(n²) pairwise
+repulsion, exactly as the `ponytail:` comment warns. Maze router: 1.26 s at
+n=50 on 100×100 mm (grid cells grow with board area, not just parts).
+
+Two separate failures: **speed** (quadratic placer, grid-size router, O(n²)
+DRC) and **quality** (396 overlaps at n=1000 on dense nets while sparse chains
+stay clean — diffusion can't resolve contention it was never designed for).
+
+What flips at that scale, in order:
+1. **Spatial hashing / bin-density repulsion** replaces O(n²) pairwise loop
+   (OpenROAD does RUDY-style congested-tile inflation;
+   [docs](https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html)).
+   Biggest speed win, still zero-dep.
+2. **VPSC-style legalizer + min-conflicts/LNS repair** (`constraint-methods.md`
+   §§3–4) stop being optional and become the quality backbone — the benchmarks
+   above show overlap count exploding while sparse boards stay clean.
+3. **WireMask-EA becomes interesting**: WireMask-BBO with plain (1+1)-EA beat
+   MaskPlace RL and DREAMPlace on 5–6/7 ISPD2005 chips (hundreds of macros)
+   — [full text](https://ar5iv.labs.arxiv.org/html/2306.16844). Key trick is
+   the wiremask-guided greedy decoder (genotype → legal phenotype), not the EA
+   itself. At n=1000 that decoder earns its keep; at n=20 it's overhead.
+4. **GPU analytical (DREAMPlace) / RL policie**s: only if boards stay at 1000+
+   AND a corpus exists. Note WireMask-EA beat both with zero training.
+5. **Multilevel coarsening** (Walshaw force-directed multilevel —
+   [PDF](https://chriswalshaw.co.uk/papers/fulltext/WalshawTR6000.pdf);
+   Harel–Koren fast multiscale —
+   [PDF](https://jgaa.info/accepted/2002/HarelKoren2002.6.3.pdf)):
+   cluster → place coarse → refine. The standard answer when O(n²) dies;
+   implement only when (1)+(2) stop being enough.
+
+Rule of thumb: n < 100 → current stack wins. 100–300 → add (1)+(2). 1000+ →
+(3) enters, (4)/(5) only with corpus or sustained pain. So: NNs still no;
+GAs graduate from "skip" to "the WireMask-flavored kind, with a decoder".
+
+## Monster6502 regime (~4000 discretes on 305×381 mm): what actually happens
+
+Reference board: the MOnSter 6502 — "huge, at 12 × 15 inches, with over 4000
+surface mount components" —
+[Evil Mad Scientist](https://www.evilmadscientist.com/2016/6502/).
+Extrapolating the measured table:
+
+- **Placer**: ~5 min for the toy run (seeds=1, iters=50), **~2.5 h at default
+  settings** — and quality is the real wall, not time: dense nets already show
+  396 overlaps at n=1000. Diffusion alone will not produce a legal 4000-part
+  board, however long you anneal.
+- **Maze router**: 1221×1525×2 ≈ **3.7 M states per A\* search**, per pin pair,
+  thousands of pairs. Not slow — infeasible. The fixed 0.25 mm grid is the
+  `ponytail:` ceiling firing (`maze.py`: "coarser when boards grow").
+- **DRC**: ~34 s routed (O(n²) trace-pair checks) — annoying but survivable;
+  fix last.
+
+Honest architecture for that regime (all in existing briefs, now load-bearing
+instead of optional):
+
+1. **Hierarchy first** — the actual MOnSter 6502 is not 4000 free parts; it's
+   repeated functional blocks (gates, latches, ROM rows). `use ... as` includes
+   + `near-group` already express this: place ~40 blocks of ~100 parts, never
+   4000 flat. This single modeling choice beats every solver upgrade.
+2. **Multilevel placer** (Walshaw / Harel–Koren, cited above): coarsen each
+   block → place → refine. Replaces flat O(n²) diffusion, which is both too
+   slow and too low-quality here.
+3. **Coarse grid + refinement for routing**: route on 1–2 mm grid first (or
+   L-route trunks), then refine — or partition per block and stitch. Never run
+   0.25 mm A\* over 3.7 M states × thousands of pairs.
+4. **WireMask-style EA + legalizer** as the block-level optimizer: decoder
+   guarantees legality, EA explores. This is the scale WireMask-BBO was built
+   for (hundreds of macros on ISPD2005).
+5. **NNs**: still no — same reasons (no corpus, proxy-metric trap), now joined
+   by "the classical pieces aren't built yet". A learned policy on top of a
+   broken 4000-part flow optimizes nothing.
+
+Bottom line: at Monster scale the answer isn't a better flat solver — it's
+**hierarchy + multilevel + coarser grids**, with the EA/decoder combo at block
+level. The current stack (flat diffusion + fine maze) is a <100-part tool;
+100–300 needs items (1)+(2) from the list above; 4000 needs this section.
 
 - Mirhoseini et al. 2021 — https://www.mendeley.com/catalogue/fce4bd60-9727-3598-8a2d-74a5a545c044/ · https://researchr.org/publication/MirhoseiniGYJSW21/bibtex
 - DREAMPlace (DAC'19) — http://yibolin.com/publications/papers/PLACE_DAC2019_Lin.pdf · https://ieeexplore.ieee.org/document/9122053

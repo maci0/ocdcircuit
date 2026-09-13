@@ -1,20 +1,35 @@
 {
- "blinky_555.ocd/compact/maze": {
-  "hash": "f0ea46e0d5d008a9",
+ "blinky_555.ocd/compact/maze/2L": {
+  "hash": "904164deeda5d98d",
   "parts": 10,
-  "segs": 72
+  "segs": 119
  },
- "blinky_555.ocd/diffusion/lroute": {
+ "blinky_555.ocd/compact/maze/4L": {
+  "hash": "92e32e7cb2d17cb9",
+  "parts": 10,
+  "segs": 119
+ },
+ "blinky_555.ocd/compact/maze/8L": {
+  "hash": "5c10be39d892cc75",
+  "parts": 10,
+  "segs": 119
+ },
+ "blinky_555.ocd/diffusion/lroute/2L": {
   "hash": "f18cef81203828a2",
   "parts": 10,
   "segs": 38
  },
- "pico_tmc2209.ocd/compact/maze": {
-  "hash": "63c4e3c7609b58ba",
-  "parts": 20,
-  "segs": 218
+ "blinky_555.ocd/diffusion/maze/1L": {
+  "hash": "c4201f78d9d5fd88",
+  "parts": 10,
+  "segs": 107
  },
- "psu.ocd/diffusion/lroute": {
+ "pico_tmc2209.ocd/compact/maze/2L": {
+  "hash": "fb71b6e6976f324b",
+  "parts": 20,
+  "segs": 282
+ },
+ "psu.ocd/diffusion/lroute/2L": {
   "hash": "b94bcd099f0fe457",
   "parts": 3,
   "segs": 8

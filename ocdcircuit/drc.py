@@ -76,6 +76,11 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     for t in board.traces:
         if t.width < min_trace:
             errors.append(f"trace-width {t.net}")
+        if getattr(t, "jumper", False):
+            if board.layers == 1:
+                warnings.append(f"jumper {t.net} (wire bridge needed)")
+            else:
+                warnings.append(f"airwire {t.net} (maze fallback — re-route?)")
     from .solver import _diff_cost, _match_cost
     mc = _match_cost(board)
     if mc > 5.0:
