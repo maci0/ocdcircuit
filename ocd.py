@@ -201,8 +201,9 @@ def cmd_status(agent: object, args: list[str]) -> int:
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
-    from ocdcircuit.score import score as _score
+    from ocdcircuit.score import score as _score, tidy as _tidy
     s = _score(b)
+    t = _tidy(b)
     drc = b.check()
     erc = b.check("erc")
     simline = ""
@@ -219,8 +220,12 @@ def cmd_status(agent: object, args: list[str]) -> int:
     dwarn = cast(list[object], drc["warnings"])
     eerr = cast(list[object], erc["errors"])
     ewarn = cast(list[object], erc["warnings"])
+    trows = "\n".join(f"| {k} | {_tidy_md(v)} |" for k, v in t.items()
+                        if k not in ("coverage", "routed_segs"))
     doc = (f"# STATUS — {b.name}\n\n"
            f"OCD score: {s['total']}/100 ({s['grade']})\n\n"
+           f"## tidy ({t['coverage']} metrics defined)\n\n"
+           f"| metric | value |\n|---|---|\n{trows}\n\n"
            f"| check | errors | warnings |\n|---|---|---|\n"
            f"| DRC ({drc.get('fab')}) | {len(derr)} | {len(dwarn)} |\n"
            f"| ERC | {len(eerr)} | {len(ewarn)} |\n\n"
@@ -260,17 +265,42 @@ def cmd_score(agent: object, args: list[str]) -> int:
     try:
         b = _load(agent, rest[0])
         b.fab = fab
+        b.place()
+        b.route_board()
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
-    from ocdcircuit.score import score as _score
+    from ocdcircuit.score import score as _score, tidy as _tidy
     s = _score(b)
+    t = _tidy(b)
     sparts = cast(dict[str, float], s["parts"])
     total = cast(float, s["total"])
     color = "green" if total >= 75 else "yellow" if total >= 40 else "red"
     _out().print(f"OCD [{color}]{total}/100 ({s['grade']})[/{color}]")
     _table("neatness", [(k, str(v)) for k, v in sparts.items()])
+    _table("tidy " + str(t["coverage"]), [_tidy_row(k, v) for k, v in t.items()
+                                          if k not in ("coverage", "routed_segs")])
     return 0
+
+
+def _tidy_md(v: object) -> str:
+    if v is None:
+        return "n/a"
+    if isinstance(v, float):
+        return f"{v:.3f}"
+    if isinstance(v, dict):
+        return ", ".join(f"{a}={c}" for a, c in sorted(v.items()))
+    return str(v)
+
+
+def _tidy_row(k: str, v: object) -> tuple[str, str]:
+    if v is None:
+        return (k, "n/a")
+    if isinstance(v, float):
+        return (k, f"{v:.3f}")
+    if isinstance(v, dict):
+        return (k, ", ".join(f"{a}={c}" for a, c in sorted(v.items())))
+    return (k, str(v))
 
 
 def main(argv: list[str]) -> int:

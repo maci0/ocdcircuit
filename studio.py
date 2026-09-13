@@ -53,7 +53,9 @@ main{flex:1;display:grid;grid-template-columns:minmax(300px,420px) 1fr 1fr;grid-
 section{background:var(--bg);position:relative;min-height:0;display:flex;flex-direction:column}
 section h3{margin:0;padding:4px 10px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);letter-spacing:1px}
 #ed{grid-row:1/3;overflow:auto;white-space:pre;padding:8px;outline:none;font:inherit;flex:1}
-#pcbwrap{grid-column:2;grid-row:1/3;position:relative}#schwrap{grid-column:3;grid-row:1}#wrap3d{grid-column:3;grid-row:2}
+#pcbwrap{grid-column:2;grid-row:1/3;position:relative}#schwrap{grid-column:3;grid-row:1}#wrap3d{grid-column:3;grid-row:2;overflow:auto}
+#tidy{padding:6px 10px;font-size:12px;overflow:auto}
+#tidy div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 canvas{width:100%;height:100%;display:block;cursor:grab}
 #drc{position:absolute;bottom:0;left:0;right:0;max-height:38%;overflow:auto;background:color-mix(in srgb,var(--panel) 92%,transparent);border-top:1px solid var(--line);padding:6px 10px;font-size:12px}
 .err{color:var(--bad)}.warn{color:var(--acc)}.ok{color:var(--ok)}
@@ -69,7 +71,7 @@ body.light .tok-k{color:#0050a0}body.light .tok-net{color:#b9770e}
 <section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3><div id=ed contenteditable spellcheck=false></div></section>
 <section id=pcbwrap><h3>PCB — DRAG PARTS, THEY STAY WHERE DROPPED</h3><canvas id=pcb></canvas><div id=drc></div></section>
 <section id=schwrap><h3>SCHEMATIC — CLICK PIN, CLICK NET TO REWIRE · ALT-CLICK DROPS PIN · DOUBLE-CLICK LABEL RENAMES</h3><canvas id=sch></canvas></section>
-<section id=wrap3d><h3>3D</h3><canvas id=t3d></canvas></section>
+<section id=wrap3d><h3>3D</h3><canvas id=t3d></canvas><h3>TIDY <span id=tidycov></span></h3><div id=tidy></div></section>
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -258,6 +260,20 @@ function drawDRC(r){
   h+=r.warnings.slice(0,5).map(w=>`<div class=warn>~ ${w}</div>`).join('');
   if(r.sim&&Object.keys(r.sim).length)h+='<div class=ok>⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')+'</div>';
   d.innerHTML=h;
+  drawTidy(r);
+}
+function tidyVal(v){
+  if(v===null||v===undefined)return '<span class=dim>n/a</span>';
+  if(typeof v==='number')return Number.isInteger(v)?String(v):v.toFixed(3);
+  if(typeof v==='object')return Object.entries(v).map(([a,c])=>`${a}=${c}`).join(', ');
+  return String(v);
+}
+function drawTidy(r){
+  const t=r.tidy||{};
+  $('tidycov').textContent=t.coverage?`(${t.coverage})`:'';
+  const rows=Object.entries(t).filter(([k])=>k!=='coverage'&&k!=='routed_segs')
+    .map(([k,v])=>`<div><span class=dim>${k}</span> ${tidyVal(v)}</div>`).join('');
+  $('tidy').innerHTML=rows;
 }
 function setEditor(t){$('ed').innerText=t;}
 // drag parts on pcb
@@ -438,10 +454,13 @@ class H(http.server.BaseHTTPRequestHandler):
         assert isinstance(n, int)
         drc = b.check()
         assert isinstance(drc, dict)
+        from ocdcircuit.score import tidy as _tidy
+        st_tidy = _tidy(b)
         traces = [{"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
                    "y2": t.y2, "layer": t.layer, "w": t.width}
                   for t in b.traces]
         st = board_state(b, agent.dumps(b), frames, traces, cost, drc)
+        st["tidy"] = st_tidy
         st["placers"] = placers
         st["routers"] = routers
         st["fabs"] = _fab.list_fabs()

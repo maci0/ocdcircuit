@@ -352,6 +352,20 @@ _stot = _ss["total"]
 assert isinstance(_stot, (int, float)) and 0 <= _stot <= 100
 assert _ss["grade"] in ("A", "B", "C", "D", "F")
 assert set(cast(dict[str, float], _ss["parts"])) == {"grid", "orientation", "spacing", "edge", "compact"}
+# tidy scorecard: components + coverage, None for undefined inputs
+_sb.place(seeds=1, iters=50)
+_sb.route_board()
+_tt = _sc.tidy(_sb)
+assert _tt["T1_crossings"] == 0 and _tt["T3_orthogonality"] == 1.0
+assert _tt["T4_vias"] == {"total": 0, "per_net": {}}
+assert _tt["T7_alignment"] == 1.0
+assert cast(dict[str, object], _tt["T10_orientation"])["cardinal"] == 1.0
+assert _tt["T11_copper_balance"] is None and _tt["T12_acid_traps"] is None
+assert _tt["T13_schematic"] is None and _tt["T15_silk_consistency"] == 1.0
+assert isinstance(_tt["coverage"], str)
+_tu = _sc.tidy(agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.2\n"))
+assert _tu["T1_crossings"] is None and _tu["T3_orthogonality"] is None
+assert _tu["T4_vias"] is None and _tu["T5_headroom"] is None
 assert _df.diff(_sb, _sb) == ""
 _drep = _df.diff(_sb, agent.loads("board t 40x30\npart R1 R0805 10k\n"
                                   "net N: R1.2\nnet GND: R1.1\n"))

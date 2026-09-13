@@ -1,28 +1,303 @@
-"""OCD neatness score 0-100 (knoll-style). Read-only: never mutates the board."""
+"""tidy(board): OCD-compatible layout scorecard (docs/tidy-metrics.md).
+
+Report-only: component vector + coverage, never a bare cross-board scalar.
+Every metric returns 0..1 (higher = tidier), RAW (physical units), or None
+(undefined input — aggregators skip it). Stdlib only.
+"""
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .circuit import Board
 
+EPS = 0.1  # T7 alignment tolerance, mm (placeholder per doc — uncalibrated)
+
+
+def _routed(board: Board) -> bool:
+    return any(not getattr(s, "jumper", False) for s in board.traces)
+
+
+def _t1_crossings(board: Board) -> int | None:
+    """Same-layer foreign-net crossings, RAW count. Vias exempt (own layer)."""
+    if not _routed(board):
+        return None
+    from .drc import _seg_dist
+    segs = [s for s in board.traces if not getattr(s, "jumper", False)]
+    n = 0
+    for i in range(len(segs)):
+        for j in range(i + 1, len(segs)):
+            a, b = segs[i], segs[j]
+            if a.layer != b.layer or a.net == b.net:
+                continue
+            d = _seg_dist((a.x1, a.y1, a.x2, a.y2), (b.x1, b.y1, b.x2, b.y2))
+            if d < 1e-9 and _cross(a, b):
+                n += 1
+    return n
+
+
+def _cross(a: object, b: object) -> bool:
+    """Proper segment intersection (touching at shared endpoints excluded)."""
+    ax1, ay1, ax2, ay2 = a.x1, a.y1, a.x2, a.y2  # type: ignore[attr-defined]
+    bx1, by1, bx2, by2 = b.x1, b.y1, b.x2, b.y2  # type: ignore[attr-defined]
+    if len({(ax1, ay1), (ax2, ay2), (bx1, by1), (bx2, by2)}) < 4:
+        return False
+
+    def side(px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
+        return (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+
+    s1, s2 = side(bx1, by1, ax1, ay1, ax2, ay2), side(bx2, by2, ax1, ay1, ax2, ay2)
+    s3, s4 = side(ax1, ay1, bx1, by1, bx2, by2), side(ax2, ay2, bx1, by1, bx2, by2)
+    return s1 * s2 < 0 and s3 * s4 < 0
+
+
+def _t2_bends(board: Board) -> float | None:
+    """Bends per mm, RAW. Zero-length via segs excluded."""
+    if not _routed(board):
+        return None
+    segs = [s for s in board.traces
+            if not getattr(s, "jumper", False) and (s.x1, s.y1) != (s.x2, s.y2)]
+    if not segs:
+        return None
+    bends = 0
+    for net in {s.net for s in segs}:
+        run = [s for s in segs if s.net == net]
+        for p, q in zip(run, run[1:]):
+            d1 = (p.x2 - p.x1, p.y2 - p.y1)
+            d2 = (q.x2 - q.x1, q.y2 - q.y1)
+            if (d1[0] == 0) != (d2[0] == 0) or (d1[1] == 0) != (d2[1] == 0):
+                if d1 != (0, 0) and d2 != (0, 0):
+                    bends += 1
+    length = sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)
+    return bends / length if length > 0 else None
+
+
+def _t3_ortho(board: Board) -> float | None:
+    """Axis-aligned length / total. Regression tripwire: routers emit
+    Manhattan by construction, so <1.0 means something leaked in."""
+    if not _routed(board):
+        return None
+    segs = [s for s in board.traces
+            if not getattr(s, "jumper", False) and (s.x1, s.y1) != (s.x2, s.y2)]
+    if not segs:
+        return None
+    tot = sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)
+    ax = sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs
+             if s.x1 == s.x2 or s.y1 == s.y2)
+    return ax / tot if tot > 0 else None
+
+
+def _t4_vias(board: Board) -> dict[str, object] | None:
+    """Via discipline, RAW: per-net via counts + board total. Maze-only
+    (L-router emits no vias)."""
+    if not _routed(board):
+        return None
+    per: dict[str, int] = {}
+    for s in board.traces:
+        if getattr(s, "via", False):
+            per[s.net] = per.get(s.net, 0) + 1
+    if not per:
+        return {"total": 0, "per_net": {}}
+    return {"total": sum(per.values()), "per_net": per}
+
+
+def _t5_headroom(board: Board) -> float | None:
+    """Clearance headroom: min(actual/min_space) over foreign pairs.
+    Single global min_space — no net-class split (future work)."""
+    if not _routed(board):
+        return None
+    from .fab import get
+    from .drc import _seg_dist
+    P = get(board.fab or "jlc")
+    ms = float(P["min_space"])  # type: ignore[arg-type]
+    segs = [s for s in board.traces if not getattr(s, "jumper", False)]
+    best = float("inf")
+    for i in range(len(segs)):
+        for j in range(i + 1, len(segs)):
+            a, b = segs[i], segs[j]
+            if a.layer != b.layer or a.net == b.net:
+                continue
+            d = _seg_dist((a.x1, a.y1, a.x2, a.y2), (b.x1, b.y1, b.x2, b.y2))
+            if d < best:
+                best = d
+    return best / ms if best != float("inf") else None
+
+
+def _t6_skew(board: Board) -> dict[str, object]:
+    """Length skew RAW mm per match group + diff gap info. Uses _net_length
+    (routed length, else Manhattan pad estimate — flagged via 'estimated')."""
+    from .solver import _net_length
+    out: dict[str, object] = {}
+    from typing import cast
+    for c in board.constraints:
+        t = c.get("t")
+        if t == "match":
+            nets = [n for n in cast(list[str], c.get("nets", [])) if n in board.nets]
+            if len(nets) >= 2:
+                lens = [_net_length(board, str(n)) for n in nets]
+                est = not any(s.net in nets for s in board.traces)
+                out[f"match:{'+'.join(str(n) for n in nets)}"] = {
+                    "skew_mm": round(max(lens) - min(lens), 3), "estimated": est}
+        elif t == "diff":
+            p, n = str(c.get("p")), str(c.get("n"))
+            if p in board.nets and n in board.nets:
+                est = not any(s.net in (p, n) for s in board.traces)
+                out[f"diff:{p}/{n}"] = {
+                    "skew_mm": round(abs(_net_length(board, p) - _net_length(board, n)), 3),
+                    "estimated": est}
+    return out
+
+
+def _t7_align(board: Board) -> float | None:
+    """Shared-x/y fraction @ EPS. <2 parts → None."""
+    parts = list(board.parts.values())
+    if len(parts) < 2:
+        return None
+    hit = sum(1 for i, p in enumerate(parts)
+              if any(abs(p.x - q.x) < EPS or abs(p.y - q.y) < EPS
+                     for j, q in enumerate(parts) if j != i))
+    return hit / len(parts)
+
+
+def _t8_gridsnap(board: Board) -> float | None:
+    """Mean residual to the board's route-grid multiple (RAW mm)."""
+    from .maze import GRID
+    grid = GRID
+    for c in board.constraints:
+        if c.get("t") == "route-grid":
+            grid = float(c.get("grid", GRID))  # type: ignore[arg-type]
+    parts = list(board.parts.values())
+    if not parts:
+        return None
+    res = sum(min(p.x % grid, grid - p.x % grid) + min(p.y % grid, grid - p.y % grid)
+              for p in parts) / len(parts)
+    return round(res, 4)
+
+
+def _t9_spacing(board: Board) -> float | None:
+    """1 − CV of nearest-neighbor gaps. None if <2 parts or mean gap 0."""
+    parts = list(board.parts.values())
+    if len(parts) < 2:
+        return None
+    gaps: list[float] = []
+    for i, p in enumerate(parts):
+        d = min(float(((p.x - q.x) ** 2 + (p.y - q.y) ** 2) ** 0.5)
+                for j, q in enumerate(parts) if j != i)
+        gaps.append(d)
+    mean = sum(gaps) / len(gaps)
+    if mean == 0:
+        return None
+    var = sum((g - mean) ** 2 for g in gaps) / len(gaps)
+    return float(max(0.0, 1 - (var ** 0.5) / mean))
+
+
+def _t10_orient(board: Board) -> dict[str, object]:
+    """0/90/180/270 fraction + entropy over p.rot."""
+    import math
+    rots = [p.rot for p in board.parts.values()]
+    if not rots:
+        return {"cardinal": None, "entropy": None}
+    card = sum(r in (0, 90, 180, 270) for r in rots) / len(rots)
+    ent = 0.0
+    for r in set(rots):
+        f = rots.count(r) / len(rots)
+        ent -= f * math.log2(f)
+    return {"cardinal": round(card, 3), "entropy": round(ent, 3)}
+
+
+def _t14_silk(board: Board) -> dict[str, object] | None:
+    """Silk overlap RAW counts (text–text, text–copper). Scored, never veto.
+    Text extents from the SVG renderer's font metric (fs=4·S/10 at S=10 →
+    4px/mm units, ~0.6 aspect): box = len·2.4 × 4.0 board-mm centered."""
+    from .silk import labels
+    texts = labels(board).texts
+    if not texts:
+        return None
+    # silk text ~1.0mm tall (AtlasPCB rule), ~0.6 aspect, centered on Text.xy
+    boxes = [(t.x - len(t.s) * 0.3, t.y - 0.5, t.x + len(t.s) * 0.3, t.y + 0.5)
+             for t in texts]
+    tt = sum(1 for i in range(len(boxes)) for j in range(i + 1, len(boxes))
+             if _ov(boxes[i], boxes[j]))
+    lib = board._lib()
+    from .parts import pads_of
+    copper = []
+    for p in board.parts.values():
+        for dx, dy in pads_of(p.fp, lib).values():
+            copper.append((p.x + dx, p.y + dy))
+    copper += [(s.x1, s.y1) for s in board.traces] + [(s.x2, s.y2) for s in board.traces]
+    tc = sum(1 for b in boxes for cx, cy in copper
+             if b[0] <= cx <= b[2] and b[1] <= cy <= b[3])
+    return {"text_text": tt, "text_copper": tc}
+
+
+def _ov(a: tuple[float, float, float, float],
+        b: tuple[float, float, float, float]) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _t15_silk_consistency(board: Board) -> float | None:
+    """Modal ref-label offset direction %. None if no labels."""
+    from .silk import labels
+    texts = [t for t in labels(board).texts if t.cls == "silk-ref"]
+    if not texts:
+        return None
+    by_ref: dict[str, tuple[float, float]] = {}
+    for t in texts:
+        by_ref.setdefault(t.s, (t.x, t.y))
+    dirs = []
+    for t in texts:
+        p = board.parts.get(t.s)
+        if p is None:
+            continue
+        dx, dy = t.x - p.x, t.y - p.y
+        dirs.append("N" if dy > 0 and abs(dy) >= abs(dx)
+                    else "S" if dy < 0 and abs(dy) >= abs(dx)
+                    else "E" if dx > 0 else "W")
+    if not dirs:
+        return None
+    return max(dirs.count(d) for d in set(dirs)) / len(dirs)
+
+
+def tidy(board: Board) -> dict[str, object]:
+    """Full scorecard: {metric: value|None} + coverage. No scalar."""
+    nets = len(board.traces)
+    m: dict[str, object] = {
+        "T1_crossings": _t1_crossings(board),
+        "T2_bends_per_mm": _t2_bends(board),
+        "T3_orthogonality": _t3_ortho(board),
+        "T4_vias": _t4_vias(board),
+        "T5_headroom": _t5_headroom(board),
+        "T6_skew": _t6_skew(board),
+        "T7_alignment": _t7_align(board),
+        "T8_gridsnap_mm": _t8_gridsnap(board),
+        "T9_spacing": _t9_spacing(board),
+        "T10_orientation": _t10_orient(board),
+        # T11/T12/T13: geometry-engine tier — reported as None (unmeasurable)
+        "T11_copper_balance": None,
+        "T12_acid_traps": None,
+        "T13_schematic": None,
+        "T14_silk_overlap": _t14_silk(board),
+        "T15_silk_consistency": _t15_silk_consistency(board),
+        "routed_segs": nets,
+    }
+    defined = sum(1 for k, v in m.items()
+                  if k != "routed_segs" and v is not None and v != {})
+    m["coverage"] = f"{defined}/15"
+    return m
+
 
 def score(board: Board) -> dict[str, object]:
+    """Legacy 0-100 aggregate (CLI/UI compat). Prefer tidy() components."""
+    t = tidy(board)
+    subs: dict[str, float] = {}
+    from typing import cast
+    ta = t["T7_alignment"]
+    assert ta is None or isinstance(ta, float)
+    subs["grid"] = round(ta * 100, 1) if ta is not None else 50.0
+    to = cast(dict[str, object], t["T10_orientation"])
+    card = to["cardinal"]
+    assert card is None or isinstance(card, float)
+    subs["orientation"] = round(card * 100, 1) if card is not None else 50.0
     parts = list(board.parts.values())
-    sub: dict[str, float] = {}
-    if not parts:
-        return {"total": 0, "grade": "F", "parts": sub}
-    # grid alignment: share x/y with another part (±0.25)
-    xs = [p.x for p in parts]
-    ys = [p.y for p in parts]
-    aligned = sum(1 for i, p in enumerate(parts)
-                  if any(abs(p.x - q) < 0.25 for j, q in enumerate(xs) if j != i)
-                  or any(abs(p.y - q) < 0.25 for j, q in enumerate(ys) if j != i))
-    sub["grid"] = round(100 * aligned / len(parts), 1)
-    # orientation: share rot with the majority
-    rots = [p.rot for p in parts]
-    maj = max(set(rots), key=rots.count)
-    sub["orientation"] = round(100 * sum(r == maj for r in rots) / len(rots), 1)
-    # spacing: no overlap pairs (uses DRC boxes)
     bad = 0
     for i in range(len(parts)):
         for j in range(i + 1, len(parts)):
@@ -32,16 +307,14 @@ def score(board: Board) -> dict[str, object]:
             if (abs(a.x - b.x) < (aw + bw) / 2 and
                     abs(a.y - b.y) < (ah + bh) / 2):
                 bad += 1
-    sub["spacing"] = round(max(0, 100 - 25 * bad), 1)
-    # edge discipline: all inside with 0.3 margin
+    subs["spacing"] = round(max(0, 100 - 25 * bad), 1)
     out = sum(1 for p in parts
               if not (p.wh()[0] / 2 + 0.3 <= p.x <= board.width - p.wh()[0] / 2 - 0.3
                       and p.wh()[1] / 2 + 0.3 <= p.y <= board.height - p.wh()[1] / 2 - 0.3))
-    sub["edge"] = round(max(0, 100 - 25 * out), 1)
-    # compactness: courtyard fill vs board area (target 15-60% → 100)
+    subs["edge"] = round(max(0, 100 - 25 * out), 1)
     fill = sum(p.wh()[0] * p.wh()[1] for p in parts) / max(1, board.width * board.height)
-    sub["compact"] = round(100 * min(fill / 0.15, (0.9 - fill) / 0.3) if fill < 0.9 else 0, 1)
-    sub["compact"] = max(0, min(100, sub["compact"]))
-    total = round(sum(sub.values()) / len(sub), 1)
+    subs["compact"] = round(100 * min(fill / 0.15, (0.9 - fill) / 0.3) if fill < 0.9 else 0, 1)
+    subs["compact"] = max(0, min(100, subs["compact"]))
+    total = round(sum(subs.values()) / len(subs), 1)
     grade = "A" if total >= 90 else "B" if total >= 75 else "C" if total >= 60 else "D" if total >= 40 else "F"
-    return {"total": total, "grade": grade, "parts": sub}
+    return {"total": total, "grade": grade, "parts": subs, "tidy": t}
