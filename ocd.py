@@ -208,9 +208,8 @@ def cmd_status(agent: object, args: list[str]) -> int:
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
-    from ocdcircuit.score import score as _score, tidy as _tidy
-    s = _score(b)
-    t = _tidy(b)
+    s = b.score()
+    t = b.score(tidy=True)
     drc = b.check()
     erc = b.check("erc")
     simline = ""
@@ -258,9 +257,7 @@ def cmd_diff(agent: object, args: list[str]) -> int:
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
-    from ocdcircuit import diff as _diff
-    report = _diff.diff(a, b)
-    print(report or "identical")
+    print(a.diff(b) or "identical")
     return 0
 
 
@@ -277,9 +274,8 @@ def cmd_score(agent: object, args: list[str]) -> int:
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
-    from ocdcircuit.score import score as _score, tidy as _tidy
-    s = _score(b)
-    t = _tidy(b)
+    s = b.score()
+    t = b.score(tidy=True)
     sparts = cast(dict[str, float], s["parts"])
     total = cast(float, s["total"])
     color = "green" if total >= 75 else "yellow" if total >= 40 else "red"

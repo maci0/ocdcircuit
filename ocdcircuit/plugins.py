@@ -631,6 +631,16 @@ class FabSilk(Plugin[dict[str, object]]):
         return {"texts": list(s.texts), "dots": list(s.dots), "boxes": list(s.boxes)}
 
 
+def _guarded_add(board: Board, name: str, meta: object, path: str) -> None:
+    """Strict shadowing: custom footprints may override each other, never
+    the std lib (rename it). Shared by file importers (fp-line semantics)."""
+    from typing import cast
+    from .types import Footprint
+    if name in board._lib() and name not in board.custom_fp:
+        raise ValueError(f"footprint {name!r} shadows std lib (rename it)")
+    board.add_footprint(name, cast(Footprint, meta), path)
+
+
 class FpImporter(Plugin[dict[str, object]]):
     """Footprint importer: native .fp (re-exported for plugin listing)."""
     kind, key = "importer", "fp"
@@ -640,7 +650,7 @@ class FpImporter(Plugin[dict[str, object]]):
         path = k.get("path", "")
         assert isinstance(path, str) and path
         name, meta = load_file(path)
-        board.add_footprint(name, meta, path)
+        _guarded_add(board, name, meta, path)
         return {"name": name}
 
 
@@ -654,8 +664,7 @@ class KicadImporter(Plugin[dict[str, object]]):
         assert isinstance(path, str) and path
         names = []
         for name, meta in load_foreign(path):
-            if name not in board._lib() or name in board.custom_fp:
-                board.add_footprint(name, meta, path)
+            _guarded_add(board, name, meta, path)
             names.append(name)
         return {"names": names}
 
@@ -670,7 +679,7 @@ class EagleImporter(Plugin[dict[str, object]]):
         assert isinstance(path, str) and path
         names = []
         for name, meta in load_foreign(path):
-            board.add_footprint(name, meta, path)
+            _guarded_add(board, name, meta, path)
             names.append(name)
         return {"names": names}
 
@@ -685,7 +694,7 @@ class TscircuitImporter(Plugin[dict[str, object]]):
         assert isinstance(path, str) and path
         names = []
         for name, meta in load_foreign(path):
-            board.add_footprint(name, meta, path)
+            _guarded_add(board, name, meta, path)
             names.append(name)
         return {"names": names}
 
@@ -716,6 +725,29 @@ class LintPlugin(Plugin[dict[str, object]]):
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from . import lint as _lint
         return _lint.lint(board)
+
+
+class ScorePlugin(Plugin[dict[str, object]]):
+    """Neatness scorecard: tidy components + legacy scalar."""
+    kind, key = "score", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import score as _score
+        if k.get("tidy"):
+            return _score.tidy(board)
+        return _score.score(board)
+
+
+class DiffPlugin(Plugin[str]):
+    """Board diff vs another board."""
+    kind, key = "diff", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        from . import diff as _diff
+        from .circuit import Board as _B
+        other = k.get("other")
+        assert isinstance(other, _B)
+        return _diff.diff(board, other)
 
 
 class DoctorPlugin(Plugin[dict[str, object]]):
@@ -777,6 +809,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
              CalcPlugin, SimPlugin, NgspicePlugin, LintPlugin, DoctorPlugin,
+             ScorePlugin, DiffPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
              PngRenderer, Html3dRenderer)
 

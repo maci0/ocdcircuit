@@ -164,8 +164,7 @@ def t_lint(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_doctor(a: dict[str, object]) -> dict[str, object]:
-    from ocdcircuit import doctor as _doctor
-    return _doctor.doctor(_board())
+    return _board().doctor()
 
 
 def t_use(a: dict[str, object]) -> dict[str, object]:

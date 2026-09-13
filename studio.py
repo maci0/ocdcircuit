@@ -500,8 +500,7 @@ class H(http.server.BaseHTTPRequestHandler):
         assert isinstance(n, int)
         drc = b.check()
         assert isinstance(drc, dict)
-        from ocdcircuit.score import tidy as _tidy
-        st_tidy = _tidy(b)
+        st_tidy = b.score(tidy=True)
         traces = [{"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
                    "y2": t.y2, "layer": t.layer, "w": t.width}
                   for t in b.traces]

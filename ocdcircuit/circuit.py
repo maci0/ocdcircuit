@@ -200,6 +200,30 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
+    def score(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Neatness scorecard. Prefer tidy components over the scalar."""
+        plug = self.plugins().get("score", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def doctor(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Tooling self-check via the registry (this board proves mounting)."""
+        plug = self.plugins().get("doctor", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def diff(self, other: Board, key: str | None = None, **k: object) -> str:
+        """What changed vs another board (knoll diff style)."""
+        plug = self.plugins().get("diff", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, other=other, **k)
+        assert isinstance(out, str)
+        return out
+
     # -- parts library via plugin, stdlib fallback --
     def _lib(self) -> dict[str, dict[str, object]]:
         from .parts import FOOTPRINTS as STD

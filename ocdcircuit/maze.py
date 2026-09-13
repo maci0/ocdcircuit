@@ -129,8 +129,14 @@ def _net_span(board: Board, net: Net) -> float:
 
 def maze(board: Board, frames: list[Frame] | None = None) -> int:
     """Route every net on the grid, avoiding parts + foreign copper."""
-    from .solver import assign_layers
-    assign_layers(board)
+    from .core import Plugin
+    try:
+        plug = board.plugins().get("layers", None)
+        assert isinstance(plug, Plugin)
+        plug.run(board)
+    except (KeyError, AssertionError):
+        from .solver import assign_layers
+        assign_layers(board)
     P = _constraints(board)
     grid, bend, via = P["grid"], P["bend"], P["via"]
     nx, ny = max(1, int(board.width / grid) + 1), max(1, int(board.height / grid) + 1)
