@@ -126,16 +126,23 @@ let schSel=null; // selected "REF.PIN"
 function drawSCH(st){
   const c=$('sch'),ctx=c.getContext('2d'),R=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   c.width=R.width*dpr;c.height=R.height*dpr;ctx.scale(dpr,dpr);
-  const nets=Object.keys(st.nets),cw=110;ctx.clearRect(0,0,R.width,R.height);
+  ctx.clearRect(0,0,R.width,R.height);
   st._schmap={pins:[],nets:[]};
-  nets.forEach((n,i)=>{const x=30+i*cw;ctx.strokeStyle=['#e74c3c','#3498db','#2ecc71','#9b59b6'][i%4];ctx.beginPath();ctx.moveTo(x,24);ctx.lineTo(x,R.height-8);ctx.stroke();
-    ctx.fillStyle='#e8e8e8';ctx.textAlign='center';ctx.fillText(n,x,16);
-    st._schmap.nets.push({n,x});
-    st.nets[n].forEach((pp,j)=>{const y=44+j*30;
+  const sch=st.sch||{order:[],px:{},rail_y:{},top:70},cols=['#e74c3c','#3498db','#2ecc71','#9b59b6'];
+  sch.order.forEach(r=>{ctx.fillStyle='#111';ctx.fillRect(sch.px[r]-50,sch.top-34,100,30);
+    ctx.strokeStyle='#e8e8e8';ctx.strokeRect(sch.px[r]-50,sch.top-34,100,30);
+    ctx.fillStyle='#e8e8e8';ctx.textAlign='center';ctx.fillText(r,sch.px[r],sch.top-20);});
+  Object.keys(st.nets).forEach((n,i)=>{const y=sch.rail_y[n];if(y===undefined)return;
+    const xs=st.nets[n].map(pp=>sch.px[pp.split('.')[0]]).filter(x=>x!==undefined);
+    if(!xs.length)return;
+    ctx.strokeStyle=cols[i%4];ctx.lineWidth=2;ctx.beginPath();
+    ctx.moveTo(Math.min(...xs),y);ctx.lineTo(Math.max(...xs),y);ctx.stroke();ctx.lineWidth=1;
+    ctx.fillStyle='#e8e8e8';ctx.fillText(n,Math.min(...xs)-8,y+4);
+    st._schmap.nets.push({n,x:(Math.min(...xs)+Math.max(...xs))/2,y});
+    st.nets[n].forEach(pp=>{const x=sch.px[pp.split('.')[0]];if(x===undefined)return;
+      ctx.strokeStyle=cols[i%4];ctx.beginPath();ctx.moveTo(x,sch.top-4);ctx.lineTo(x,y);ctx.stroke();
       const sel=schSel===pp;
-      ctx.fillStyle=sel?'#3a2f00':'#111';ctx.fillRect(x-42,y-10,84,20);
-      ctx.strokeStyle=sel?'#f1c40f':'#888';ctx.strokeRect(x-42,y-10,84,20);
-      ctx.fillStyle='#e8e8e8';ctx.fillText(pp,x,y+4);
+      ctx.fillStyle=sel?'#f1c40f':cols[i%4];ctx.beginPath();ctx.arc(x,y,4,0,7);ctx.fill();
       st._schmap.pins.push({pp,net:n,x,y});});});
 }
 // --- schematic edits → .ocd text (two-way binding) ---
@@ -190,15 +197,15 @@ function schRename(net){
 (()=>{const c=$('sch');
 c.addEventListener('mousedown',e=>{if(!S||!S._schmap)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
   for(const p of S._schmap.pins){
-    if(Math.abs(mx-p.x)<42&&Math.abs(my-p.y)<10){
+    if(Math.abs(mx-p.x)<7&&Math.abs(my-p.y)<7){
       if(e.altKey){schDropPin(p.pp);schSel=null;return;}
       schSel=(schSel===p.pp)?null:p.pp;return;}}
   for(const n of S._schmap.nets){
-    if(Math.abs(mx-n.x)<50&&my<26){
+    if(Math.abs(mx-n.x)<60&&Math.abs(my-n.y)<9){
       if(schSel){schMovePin(schSel,n.n);schSel=null;}return;}}
   schSel=null;});
 c.addEventListener('dblclick',e=>{if(!S||!S._schmap)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
-  for(const n of S._schmap.nets)if(Math.abs(mx-n.x)<50&&my<26){schRename(n.n);return;}});
+  for(const n of S._schmap.nets)if(Math.abs(mx-n.x)<60&&Math.abs(my-n.y)<9){schRename(n.n);return;}});
 })();
 function draw3D(st,rot){
   const c=$('t3d'),ctx=c.getContext('2d'),R=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
@@ -352,6 +359,15 @@ $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=p
 """
 
 
+def _sch_state(b: Board) -> dict[str, object]:
+    """Schematic geometry for the canvas: same sch_layout() the SVG
+    renderer uses, so both pictures always agree."""
+    from ocdcircuit.plugins import sch_layout
+    lay = sch_layout(b)
+    return {"order": lay["order"], "px": lay["px"], "rail_y": lay["rail_y"],
+            "top": lay["top"], "W": lay["W"]}
+
+
 def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 traces: list[dict[str, object]], cost: float,
                 drc: dict[str, object]) -> dict[str, object]:
@@ -417,7 +433,7 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
             "bw": b.width, "bh": b.height, "frames": frames,
             "traces": traces, "cost": round(cost, 1), "sim": sim_nets,
             "errors": drc["errors"], "warnings": drc["warnings"],
-            "fab": drc.get("fab", "jlc"), "silk": 1}
+            "fab": drc.get("fab", "jlc"), "silk": 1, "sch": _sch_state(b)}
 
 
 class H(http.server.BaseHTTPRequestHandler):

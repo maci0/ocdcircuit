@@ -511,6 +511,34 @@ class AssemblyRenderer(Plugin[str]):
         return "\n".join(el)
 
 
+def sch_layout(board: Board) -> dict[str, object]:
+    """Shared schematic geometry (renderer + studio canvas draw the same
+    picture): barycenter-ordered part columns, one rail row per net."""
+    refs = sorted(board.parts)
+    nets = sorted(board.nets)
+    pin_nets: dict[str, set[str]] = {r: set() for r in refs}
+    for n, net in board.nets.items():
+        for r, _ in net.pins:
+            if r in pin_nets:
+                pin_nets[r].add(n)
+    # barycenter sweeps: order parts so shared-net neighbors sit close
+    order = list(refs)
+    pos = {r: float(i) for i, r in enumerate(order)}
+    for _ in range(6):
+        for r in order:
+            nb = [q for q in refs if q != r and pin_nets[r] & pin_nets[q]]
+            if nb:
+                pos[r] = sum(pos[q] for q in nb) / len(nb)
+        order.sort(key=lambda r: pos[r])
+    col_w, top = 120, 70
+    return {"order": order, "nets": nets,
+            "px": {r: 10 + i * col_w + col_w / 2 for i, r in enumerate(order)},
+            "rail_y": {n: top + 20 + i * 26 for i, n in enumerate(nets)},
+            "col_w": col_w, "top": top,
+            "W": max(1, len(order)) * col_w + 20,
+            "H": top + len(nets) * 26 + 30 + 40}
+
+
 class SchRenderer(Plugin[str]):
     """Schematic SVG, Sugiyama-lite (research §5): parts as nodes in one
     barycenter-ordered row (shared nets pull together), nets as vertical
@@ -521,30 +549,18 @@ class SchRenderer(Plugin[str]):
         theme = str(k.get("theme", "dark"))
         th = THEMES.get(theme, THEMES["dark"])
         layers = cast(list[str], th["layers"])
-        refs = sorted(board.parts)
-        nets = sorted(board.nets)
-        pin_nets: dict[str, set[str]] = {r: set() for r in refs}
-        for n, net in board.nets.items():
-            for r, _ in net.pins:
-                if r in pin_nets:
-                    pin_nets[r].add(n)
-        # barycenter sweeps: order parts so shared-net neighbors sit close
-        order = list(refs)
-        pos = {r: float(i) for i, r in enumerate(order)}
-        for _ in range(6):
-            for r in order:
-                nb = [q for q in refs if q != r and pin_nets[r] & pin_nets[q]]
-                if nb:
-                    pos[r] = sum(pos[q] for q in nb) / len(nb)
-            order.sort(key=lambda r: pos[r])
-        col_w, top, bot = 120, 70, 30
-        W = max(1, len(order)) * col_w + 20
-        H = top + len(nets) * 26 + bot + 40
+        lay = sch_layout(board)
+        order = cast(list[str], lay["order"])
+        nets = cast(list[str], lay["nets"])
+        px = cast(dict[str, float], lay["px"])
+        rail_y = cast(dict[str, float], lay["rail_y"])
+        top = int(cast(int, lay["top"]))
+        W = int(cast(int, lay["W"]))
+        H = int(cast(int, lay["H"]))
         el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
               f'viewBox="0 0 {W} {H}">',
               f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["panel"]}"/>']
         text = str(th["text"])
-        px = {r: 10 + i * col_w + col_w / 2 for i, r in enumerate(order)}
         for r in order:
             p = board.parts[r]
             el.append(f'<rect x="{px[r] - 50}" y="{top - 34}" width="100" height="30" '
@@ -554,7 +570,7 @@ class SchRenderer(Plugin[str]):
             el.append(f'<text x="{px[r]}" y="{top - 8}" fill="{text}" font-size="9" '
                       f'text-anchor="middle">{p.fp}</text>')
         for i, n in enumerate(nets):
-            y = top + 20 + i * 26
+            y = rail_y[n]
             xs = sorted(px[r] for r, _ in board.nets[n].pins if r in px)
             if not xs:
                 continue
