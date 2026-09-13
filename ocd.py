@@ -312,8 +312,7 @@ def cmd_lint(agent: object, args: list[str]) -> int:
 
 def cmd_doctor() -> int:
     from ocdcircuit.circuit import Board as _B
-    from ocdcircuit import doctor as _doctor
-    r = _doctor.doctor(_B("doctor"))
+    r = _B("doctor").doctor()
     rows = []
     for c in cast(list[dict[str, object]], r["checks"]):
         mark = "[green]✓[/green]" if c["ok"] else "[red]✗[/red]"
