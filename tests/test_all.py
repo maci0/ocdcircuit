@@ -540,6 +540,18 @@ assert any("ZZ" in e for e in cast(list[str], _lr["errors"])), _lr
 assert any("single-pin net N" in w for w in cast(list[str], _lr["warnings"])), _lr
 assert any("C1" in w for w in cast(list[str], _lr["warnings"])), _lr
 assert any("NONET" in w for w in cast(list[str], _lr["warnings"])), _lr
+# lint covers the whole constraint grammar, dedupes, never crashes on junk
+_l2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n"
+                  "match NZZZ\ndiff A B gap 0.01\npour NONET on 0\nsim probe GHOST\n"
+                  "trace TINY 0.01\nroute N on 9\nkeep R1 near R1\n", base=EX)
+_l2r = _l2.lint()
+assert any("layer 9" in e for e in cast(list[str], _l2r["errors"])), _l2r
+for frag in ("match on unknown net NZZZ", "pour on unknown net NONET",
+             "sim probe on unknown net GHOST", "width on unknown net TINY",
+             "outside sane range"):
+    assert any(frag in w for w in cast(list[str], _l2r["warnings"])), (_l2r, frag)
+assert len(cast(list[str], _l2r["warnings"])) == len(set(cast(list[str], _l2r["warnings"])))
 # doctor: registry healthy on a live board
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)
