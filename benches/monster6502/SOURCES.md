@@ -39,9 +39,9 @@
    FETs at identical x/y. ocd placement is 2D single-side → ~957 residual
    `overlap` errors at golden positions. Placement scoring must use
    wirelength/benchmark metrics, not DRC-zero.
-2. **6 layers → modeled as 6L board**, but ocd routing targets 2-layer
-   discipline; use as *placement* benchmark (netlist + scale + hierarchy),
-   not routing proof.
+2. **Baseline** (flat diffusion, seeds=1 iters=5, 2026-09-14):
+   243.6 s, cost 3647492514, placed WL 1492514, mean displacement 151.90 mm,
+   2548 overlaps. The headroom to beat.
 3. **Rotations ignored** (layout.json has rot 0/90/180 + B-side parts);
    ocd parts are axis-aligned.
 4. Single-pin TP nets and DNP ballast excluded from strictness.
