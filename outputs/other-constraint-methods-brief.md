@@ -52,7 +52,8 @@ dense BGA.
   "SMT-based PCB routing placement" query returned mostly false positives
   (decoupling-capacitor papers), confirming thinness.
 - **Relevance**: clean maps — fixed→domain fixing, keepout/edge→forbidden
-  regions, overlap→`diffn`/`AddNoOverlap2D`, match/diff→equality/symmetry.
+  regions (keepout already exists as maze walls + DRC warnings),
+  overlap→`diffn`/`AddNoOverlap2D`, match/diff→equality/symmetry.
   Exactness pays for **INFEASIBLE proofs / unsat cores** ("why doesn't it
   fit"), as an optional verifier on tens-of-parts boards — not the default
   placer. Dependency + integer-scaling cost violates zero-dep until then.

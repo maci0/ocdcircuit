@@ -337,16 +337,18 @@ _LEGACY_PINS: dict[str, dict[str, XY]] = {
 
 
 def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
-    """{pin: (dx, dy)} pad centers — what solver/DRC/export need."""
+    """{pin: (dx, dy)} pad centers — what solver/DRC/export need.
+    Merges SMD pads AND PTH holes (mixed footprints like USB-C exist)."""
     from typing import cast
     meta = (lib or FOOTPRINTS)[fp]
+    out: dict[str, XY] = {}
     if "pads" in meta:
         pads = cast(dict[str, PadSpec], meta["pads"])
-        return {k: (v[0], v[1]) for k, v in pads.items()}
+        out.update({k: (v[0], v[1]) for k, v in pads.items()})
     if "holes" in meta:
         holes = cast(dict[str, HoleSpec], meta["holes"])
-        return {k: (v[0], v[1]) for k, v in holes.items()}
-    return {}
+        out.update({k: (v[0], v[1]) for k, v in holes.items()})
+    return out
 
 
 def pad_size(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> tuple[float, float]:

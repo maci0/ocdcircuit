@@ -16,25 +16,27 @@ GOLD = os.path.join(HERE, "golden.json")
 
 def fingerprint() -> dict[str, dict[str, object]]:
     out: dict[str, dict[str, object]] = {}
-    for f, pl, rt, ex, nl in [("blinky_555.ocd", "diffusion", "lroute", EX, None),
-                      ("blinky_555.ocd", "compact", "maze", EX, None),
-                      ("psu.ocd", "diffusion", "lroute", EX, None),
+    for f, pl, rt, ex, nl, seeds in [("blinky_555.ocd", "diffusion", "lroute", EX, None, 3),
+                      ("blinky_555.ocd", "compact", "maze", EX, None, 3),
+                      ("psu.ocd", "diffusion", "lroute", EX, None, 3),
                       ("pico_tmc2209.ocd", "compact", "maze",
-                       os.path.join(EX, "pico_tmc2209"), None),
-                      ("blinky_555.ocd", "diffusion", "maze", EX, 1),
-                      ("blinky_555.ocd", "compact", "maze", EX, 4),
-                      ("blinky_555.ocd", "compact", "maze", EX, 8)]:
+                       os.path.join(EX, "pico_tmc2209"), None, 3),
+                      ("mitox.ocd", "compact", "maze",
+                       os.path.join(EX, "mitox"), None, 2),
+                      ("blinky_555.ocd", "diffusion", "maze", EX, 1, 3),
+                      ("blinky_555.ocd", "compact", "maze", EX, 4, 3),
+                      ("blinky_555.ocd", "compact", "maze", EX, 8, 3)]:
         text = open(os.path.join(ex, f)).read()
         if nl is not None:
             import re
             text = re.sub(r"^board (\S+) [\d.]+x[\d.]+ \d+L$",
                           rf"board \1 40x30 {nl}L", text, flags=re.M)
         b = agent.loads(text, base=ex)
-        b.place(pl, seeds=3, iters=200)
+        b.place(pl, seeds=seeds, iters=200)
         b.route_board(rt)
         r = b.check()
         assert r["errors"] == [], (f, nl, r["errors"])
-        assert all(0 <= s.layer < (nl or 2) for s in b.traces), (f, nl)
+        assert all(0 <= s.layer < b.layers for s in b.traces), (f, b.layers)
         snap = {
             "parts": {r: [round(p.x, 3), round(p.y, 3)] for r, p in b.parts.items()},
             "segs": [[s.net, round(s.x1, 3), round(s.y1, 3), round(s.x2, 3),

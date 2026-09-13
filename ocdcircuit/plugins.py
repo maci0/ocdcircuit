@@ -300,10 +300,11 @@ class SvgRenderer(Plugin[str]):
             el.append(f'<line x1="{t.x1 * S}" y1="{H - t.y1 * S}" x2="{t.x2 * S}" '
                       f'y2="{H - t.y2 * S}" stroke="{c}" stroke-width="{max(1, t.width * S)}"/>')
         for p in board.parts.values():
-            x, y = (p.x - p.w / 2) * S, (H - (p.y + p.h / 2) * S)
+            pw, ph = p.wh()
+            x, y = (p.x - pw / 2) * S, (H - (p.y + ph / 2) * S)
             part, court = str(th["part"]), str(th["courtyard"])
-            el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{p.w * S:.1f}" '
-                      f'height="{p.h * S:.1f}" fill="{part}" stroke="{court}"/>')
+            el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{pw * S:.1f}" '
+                      f'height="{ph * S:.1f}" fill="{part}" stroke="{court}"/>')
         sk = board.silk(silk_key if isinstance(silk_key, str) else None)
         if isinstance(silk_key, int):
             from . import silk as _silk
@@ -325,6 +326,44 @@ class SvgRenderer(Plugin[str]):
             el.append(f'<rect x="{bx.x0 * S:.1f}" y="{(H - bx.y1 * S):.1f}" '
                       f'width="{(bx.x1 - bx.x0) * S:.1f}" height="{(bx.y1 - bx.y0) * S:.1f}" '
                       f'fill="none" stroke="{silk_dim}" stroke-width="0.5"/>')
+        el.append("</svg>")
+        return "\n".join(el)
+
+
+class AssemblyRenderer(Plugin[str]):
+    """Assembly drawing: white page, part outlines + REF + value + pin-1
+    dots. For hand-assembly and inspection (replaces assembly-top/bottom)."""
+    kind, key = "renderer", "assembly"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        S = _f(k.get("scale", 12))
+        W, H = board.width * S, board.height * S
+        el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+              f'viewBox="0 0 {W} {H}">',
+              f'<rect x="0" y="0" width="{W}" height="{H}" fill="white"/>',
+              f'<text x="8" y="16" font-size="14" font-family="monospace" fill="black">'
+              f'{board.name} assembly — {len(board.parts)} parts</text>']
+        el.append(f'<rect x="0" y="0" width="{W}" height="{H}" fill="none" '
+                  f'stroke="black" stroke-width="2"/>')
+        lib = board._lib()
+        from .parts import pads_of
+        for p in board.parts.values():
+            pw, ph = p.wh()
+            x, y = (p.x - pw / 2) * S, (H - (p.y + ph / 2) * S)
+            el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{pw * S:.1f}" '
+                      f'height="{ph * S:.1f}" fill="#eee" stroke="black"/>')
+            el.append(f'<text x="{p.x * S:.1f}" y="{(H - p.y * S):.1f}" fill="black" '
+                      f'font-size="{max(8, p.wh()[1] * S * 0.35):.1f}" text-anchor="middle" '
+                      f'font-family="monospace">{p.ref}</text>')
+            if p.value:
+                el.append(f'<text x="{p.x * S:.1f}" y="{(H - p.y * S + p.wh()[1] * S / 2 + 9):.1f}" '
+                          f'fill="#333" font-size="8" text-anchor="middle" '
+                          f'font-family="monospace">{p.value}</text>')
+            pads = pads_of(p.fp, lib)
+            if "1" in pads:
+                dx, dy = pads["1"]
+                el.append(f'<circle cx="{(p.x + dx) * S:.1f}" cy="{(H - (p.y + dy) * S):.1f}" '
+                          f'r="2" fill="black"/>')
         el.append("</svg>")
         return "\n".join(el)
 
@@ -536,7 +575,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
              CalcPlugin, SimPlugin,
-             SvgRenderer, SchRenderer, StlRenderer, GltfRenderer)
+             SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:

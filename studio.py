@@ -334,7 +334,13 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 bds.append({"w": r * 2, "h": r * 2, "z": 1.6 + _f(body.get("z", 0)),
                             "hgt": bh, "dx": 0.0, "dy": 0.0})
         # dominant material = tallest body (what you actually see)
-        parts[ref] = {"x": p.x, "y": p.y, "w": p.w, "h": p.h,
+        rot = 0
+        try:
+            rot = int(p.attrs.get("rot", "0")) % 360
+        except ValueError:
+            rot = 0
+        pw, ph = (p.h, p.w) if rot in (90, 270) else (p.w, p.h)
+        parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
                       "value": p.value, "h3d": h3d,
                       "mat": mats[-1] if mats else "chip", "bodies": bds}
     nets = {n: [f"{r}.{pin}" for r, pin in net.pins] for n, net in b.nets.items()}

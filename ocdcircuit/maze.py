@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING, cast
 from .circuit import Net, Seg
 from .types import Frame, XY
 
+
+def _f(v: object) -> float:
+    assert isinstance(v, (int, float, str))
+    return float(v)
+
 if TYPE_CHECKING:
     from .circuit import Board
 
@@ -36,10 +41,11 @@ def _blocked(board: Board, grid: float) -> set[tuple[int, int]]:
     cells: set[tuple[int, int]] = set()
     gap = 0.35
     for p in board.parts.values():
-        x0 = int((p.x - p.w / 2 - gap) / grid)
-        x1 = int((p.x + p.w / 2 + gap) / grid)
-        y0 = int((p.y - p.h / 2 - gap) / grid)
-        y1 = int((p.y + p.h / 2 + gap) / grid)
+        pw, ph = p.wh()
+        x0 = int((p.x - pw / 2 - gap) / grid)
+        x1 = int((p.x + pw / 2 + gap) / grid)
+        y0 = int((p.y - ph / 2 - gap) / grid)
+        y1 = int((p.y + ph / 2 + gap) / grid)
         for gx in range(x0, x1 + 1):
             for gy in range(y0, y1 + 1):
                 cells.add((gx, gy))
@@ -125,6 +131,14 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     grid, bend, via = P["grid"], P["bend"], P["via"]
     nx, ny = max(1, int(board.width / grid) + 1), max(1, int(board.height / grid) + 1)
     base_blocked = _blocked(board, grid)
+    # keepout/cutout rects are hard walls (all layers — conservative)
+    for c in board.constraints:
+        if c.get("t") in ("keepout", "cutout"):
+            cx, cy = _f(c["x"]), _f(c["y"])
+            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            for gx in range(int((cx - hw) / grid), int((cx + hw) / grid) + 1):
+                for gy in range(int((cy - hh) / grid), int((cy + hh) / grid) + 1):
+                    base_blocked.add((gx, gy))
     # foreign pads are obstacles too (routing over them shorts the net)
     pad_cells: dict[tuple[int, int], str] = {}
     for n, net in board.nets.items():

@@ -108,16 +108,18 @@ def build(board: Board, thick: float = 1.6) -> list[Tri]:
     for tx in sk.texts:
         _box(tris, tx.x - 0.4, tx.y - 0.1, thick + 0.02,
              tx.x + 0.4, tx.y + 0.1, thick + 0.04, SILK)
-    # part bodies with family materials
+    # part bodies with family materials (rotated into board frame)
     for p in board.parts.values():
         for body in bodies_of(p.fp, lib):
             z0 = thick + _f(body.get("z", 0))
             mat = body_material(p.fp, body)
             if "box" in body:
                 w2, h2, bh = (_f(v) for v in cast(list[object], body["box"]))
-                ats = cast(list[object], body.get("at", [(0.0, 0.0)]))
+                if p.rot in (90, 270):
+                    w2, h2 = h2, w2
+                ats = cast(list[list[object]], body.get("at", [[0.0, 0.0]]))
                 for at in ats:
-                    ax, ay = (_f(v) for v in cast(list[object], at))
+                    ax, ay = p.rot_xy(_f(at[0]), _f(at[1])) if len(at) >= 2 else (0.0, 0.0)
                     _box(tris, p.x + ax - w2 / 2, p.y + ay - h2 / 2, z0,
                          p.x + ax + w2 / 2, p.y + ay + h2 / 2, z0 + bh, mat)
             elif "cyl" in body:

@@ -1,0 +1,165 @@
+board mitox 24x56 4L
+fp fp/FP_BT1.fp
+fp fp/FP_C1525.fp
+fp fp/FP_C19702.fp
+fp fp/FP_C52923.fp
+fp fp/FP_C23733.fp
+fp fp/FP_C375569.fp
+fp fp/FP_C8598.fp
+fp fp/FP_DS1.fp
+fp fp/FP_C36402.fp
+fp fp/FP_C15127.fp
+fp fp/FP_C20917.fp
+fp fp/FP_C25905.fp
+fp fp/FP_C25741.fp
+fp fp/FP_C25764.fp
+fp fp/FP_C25792.fp
+fp fp/FP_C25117.fp
+fp fp/FP_C25765.fp
+fp fp/FP_C11702.fp
+fp fp/FP_C25900.fp
+fp fp/FP_C720477.fp
+fp fp/FP_TP1.fp
+fp fp/FP_TP2.fp
+fp fp/FP_TP3.fp
+fp fp/FP_TP4.fp
+fp fp/FP_TP5.fp
+fp fp/FP_C42431867.fp
+fp fp/FP_C382138.fp
+fp fp/FP_C141836.fp
+fp fp/FP_C356849.fp
+fp fp/FP_C558442.fp
+fp fp/FP_C2765186.fp
+part BT1 FP_BT1
+part C1 FP_C1525 100nF lcsc=C1525
+part C10 FP_C1525 100nF lcsc=C1525
+part C2 FP_C1525 100nF lcsc=C1525
+part C3 FP_C19702 10uF lcsc=C19702
+part C4 FP_C1525 100nF lcsc=C1525
+part C5 FP_C52923 1uF lcsc=C52923
+part C6 FP_C19702 10uF lcsc=C19702
+part C7 FP_C52923 1uF lcsc=C52923
+part C8 FP_C23733 4.7uF lcsc=C23733
+part C9 FP_C23733 4.7uF lcsc=C23733
+part D1 FP_C375569 lcsc=C375569
+part D2 FP_C8598 lcsc=C8598
+part DS1 FP_DS1
+part L1 FP_C36402 2.2uH lcsc=C36402 rot=180
+part Q1 FP_C15127 lcsc=C15127
+part Q2 FP_C20917 lcsc=C20917
+part Q3 FP_C15127 lcsc=C15127
+part R1 FP_C25905 5.1k lcsc=C25905
+part R10 FP_C25741 100k lcsc=C25741
+part R11 FP_C25764 200k lcsc=C25764
+part R12 FP_C25792 47k lcsc=C25792
+part R2 FP_C25905 5.1k lcsc=C25905
+part R3 FP_C25117 470 lcsc=C25117
+part R4 FP_C25117 470 lcsc=C25117
+part R5 FP_C25765 20k lcsc=C25765 rot=90
+part R6 FP_C11702 1k lcsc=C11702
+part R7 FP_C25900 4.7k lcsc=C25900
+part R8 FP_C25900 4.7k lcsc=C25900
+part R9 FP_C25741 100k lcsc=C25741
+part SW1 FP_C720477 lcsc=C720477
+part TP1 FP_TP1
+part TP2 FP_TP2
+part TP3 FP_TP3
+part TP4 FP_TP4
+part TP5 FP_TP5
+part U1 FP_C42431867 lcsc=C42431867
+part U2 FP_C382138 lcsc=C382138
+part U3 FP_C141836 lcsc=C141836
+part U4 FP_C356849 lcsc=C356849 rot=270
+part U5 FP_C558442 lcsc=C558442
+part U6 FP_C558442 lcsc=C558442 rot=90
+part USBC1 FP_C2765186 lcsc=C2765186
+net BTN L0: U4.7 SW1.1
+net CC1 L3: USBC1.4 R1.1 U6.1 U6.6
+net CC2 L1: USBC1.10 R2.1 U6.3 U6.4
+net FB L1: U3.5 R11.2 R12.1
+net GND L0 w0.5: USBC1.1 USBC1.12 USBC1.13 USBC1.14 USBC1.15 USBC1.16 R1.2 R2.2 U5.2 U6.2 C9.2 C10.2 U2.2 R5.2 Q3.1 R9.2 C8.2 BT1.2 U3.2 R12.2 C6.2 C7.2 C3.2 U4.5 U4.21 U4.24 C4.2 C5.2 U1.1 U1.7 C1.2 C2.2 Q2.2 R10.2 SW1.2 DS1.2 TP5.1
+net LED_B L2: U4.9 R3.2
+net LED_G L3: U4.8 R4.2
+net LED_R L3: U4.2 Q2.1 R10.1
+net LED_R_K L1: Q2.3 R6.2
+net NRST L0: U4.26 TP4.1
+net PROG L0: U2.5 R5.1
+net R3_pin1 L1: D1.1 R3.1
+net R4_pin1 L1: D1.3 R4.1
+net R6_pin1 L0: D1.4 R6.1
+net SCL L2: U4.35 U1.4 R7.1 DS1.3
+net SDA L3: U4.33 U1.3 R8.1 DS1.4
+net STAT L2: U2.1 U4.3
+net SW L0: U3.3 L1.1
+net SWDCLK L3: U4.39 TP3.1
+net SWDIO L0: U4.37 TP2.1
+net USB_DM L0: USBC1.5 USBC1.7 U5.3 U5.4 U4.29
+net USB_DP L1: USBC1.6 USBC1.8 U5.1 U5.6 U4.31
+net V3V3 L1 w0.5: L1.2 R11.1 C7.1 C3.1 U4.19 U4.23 C4.1 C5.1 U1.2 U1.5 U1.6 U1.8 R8.2 R7.2 C1.1 C2.1 DS1.1 TP1.1
+net VBAT L2 w0.5: U2.3 Q1.3 Q3.2 C8.1
+net VBAT_CELL L2: Q3.3 BT1.1
+net VBUS L2 w0.5: USBC1.2 USBC1.11 U5.5 U6.5 C9.1 C10.1 U2.4 D2.2 Q1.1 R9.1 U4.27
+net VSYS L3 w0.5: D2.1 Q1.2 U3.1 U3.4 C6.1 D1.2
+fix BT1 at 17.2 10.5
+fix C1 at 8.8 50.5
+fix C10 at 19.8 42.2
+fix C2 at 15.2 50.5
+fix C3 at 21.9 16
+fix C4 at 21.5 36
+fix C5 at 21.5 32
+fix C6 at 13.8 19.5
+fix C7 at 12 22
+fix C8 at 2 18.5
+fix C9 at 2.8 23
+fix D1 at 3.5 44
+fix D2 at 6 19.2
+fix DS1 at 12 44
+fix L1 at 21.4 19.45
+fix Q1 at 18 23
+fix Q2 at 3.8 15.4
+fix Q3 at 11.7 11
+fix R1 at 20 14.5
+fix R10 at 7.5 15.4
+fix R11 at 13.2 17.2
+fix R12 at 17 15.8
+fix R2 at 18 14.5
+fix R3 at 10 14.5
+fix R4 at 14 14.5
+fix R5 at 6 14.5
+fix R6 at 1.2 14
+fix R7 at 9.4 48.5
+fix R8 at 14.6 48.5
+fix R9 at 22 22
+fix SW1 at 20.5 44
+fix TP1 at 3.11 8.4
+fix TP2 at 5.65 8.4
+fix TP3 at 8.19 8.4
+fix TP4 at 10.73 8.4
+fix TP5 at 13.27 8.4
+fix U1 at 12 51
+fix U2 at 6 23
+fix U3 at 17.2 18.5
+fix U4 at 12.3 33.8
+fix U5 at 7 11.1
+fix U6 at 22.1 10
+fix USBC1 at 12 4.5
+pour GND on 0
+pour GND on 3
+cutout 11.5 47 15x1.2
+keepout 11.5 47 15.7x1.9
+keepout 3.8 33.8 6x16
+keepout 0.175 28 0.35x56
+keepout 23.825 28 0.35x56
+keepout 12 55.825 24x0.35
+keepout 12 0.175 24x0.35
+keepout 9.11 5.8 0.95x0.95
+keepout 14.89 5.8 0.95x0.95
+keepout 3 6.5 2.8x2.8
+keepout 21 6.5 2.8x2.8
+keepout 3 49.5 2.8x2.8
+hole 15.2 12.9 1.3
+hole 19.2 12.9 1.3
+nc U4.1 U4.10 U4.11 U4.12 U4.13 U4.14 U4.15 U4.16 U4.17 U4.18 U4.20 U4.22
+nc U4.25 U4.28 U4.30 U4.32 U4.34 U4.36 U4.38 U4.4 U4.40 U4.41 U4.42 U4.43
+nc U4.6 USBC1.3 USBC1.9
+power VBUS VBAT VSYS V3V3 GND

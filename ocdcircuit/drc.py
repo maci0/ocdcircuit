@@ -4,6 +4,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 from .fab import DEFAULT, get
 
+
+def _f(v: object) -> float:
+    assert isinstance(v, (int, float, str))
+    return float(v)
+
+
 if TYPE_CHECKING:
     from .circuit import Board
 
@@ -51,15 +57,18 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     for i in range(len(parts)):
         for j in range(i + 1, len(parts)):
             a, b = parts[i], parts[j]
-            if (abs(a.x - b.x) < (a.w + b.w) / 2 + 0.1 and
-                    abs(a.y - b.y) < (a.h + b.h) / 2 + 0.1):
+            aw, ah = a.wh()
+            bw, bh = b.wh()
+            if (abs(a.x - b.x) < (aw + bw) / 2 + 0.1 and
+                    abs(a.y - b.y) < (ah + bh) / 2 + 0.1):
                 errors.append(f"overlap {a.ref}-{b.ref}")
     lib = board._lib()
     for p in parts:
         if lib.get(p.fp, {}).get("edge"):
             continue  # edge-mount: overhang is the point (USB-C plug etc.)
-        if not (p.w / 2 + edge <= p.x <= board.width - p.w / 2 - edge and
-                p.h / 2 + edge <= p.y <= board.height - p.h / 2 - edge):
+        pw, ph = p.wh()
+        if not (pw / 2 + edge <= p.x <= board.width - pw / 2 - edge and
+                ph / 2 + edge <= p.y <= board.height - ph / 2 - edge):
             errors.append(f"edge {p.ref}")
     from .parts import hole_drill
     lib = board._lib()
@@ -81,6 +90,23 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 warnings.append(f"jumper {t.net} (wire bridge needed)")
             else:
                 warnings.append(f"airwire {t.net} (maze fallback — re-route?)")
+    for c in board.constraints:
+        if c.get("t") == "keepout":
+            cx, cy = _f(c["x"]), _f(c["y"])
+            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            for p in parts:
+                pw, ph = p.wh()
+                if abs(p.x - cx) < hw + pw / 2 and abs(p.y - cy) < hh + ph / 2:
+                    # warning, not error: modules sit in antenna keepouts by
+                    # design (mitox U4); review, don't block
+                    warnings.append(f"keepout {p.ref}")
+            for t in board.traces:
+                mx, my = (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2
+                if abs(mx - cx) < hw and abs(my - cy) < hh:
+                    warnings.append(f"keepout-trace {t.net}")
+        elif c.get("t") == "hole":
+            if _f(c["d"]) < min_drill:
+                errors.append(f"hole-drill {c['d']} < {min_drill}")
     from .solver import _diff_cost, _match_cost
     mc = _match_cost(board)
     if mc > 5.0:

@@ -1,8 +1,12 @@
 """Monster6502-class placement benchmark harness (stdlib only).
 
-Compares placer output against die-true golden positions:
-  wirelength (placed vs golden), displacement (mean mm from golden),
-  overlap count, runtime. Run: python3 bench.py [seeds] [iters]
+Scores placer output against die-true golden positions:
+  wirelength placed vs golden (same star-model WL both sides),
+  displacement (similarity to golden, secondary — die-true is human
+  2-sided hierarchy-aware, NOT wirelength-optimal),
+  overlaps above the golden floor (golden itself scores GOLDEN_OV via
+  front/back stacking; 0 is NOT the target),
+  runtime. Run: python3 bench.py [seeds] [iters]  (defaults reproduce SOURCES baseline)
 
 # ponytail: single-scale harness, no cli framework — argparse when reused.
 """
@@ -16,6 +20,7 @@ from ocdcircuit import agent
 from ocdcircuit import solver
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+BASE_SEEDS, BASE_ITERS = 1, 5  # SOURCES.md baseline config
 
 
 def golden(b: object) -> dict[str, tuple[float, float]]:
@@ -25,11 +30,29 @@ def golden(b: object) -> dict[str, tuple[float, float]]:
             for c in b.constraints if c.get("t") == "fixed"}
 
 
+def apply_golden(b: object, g: dict[str, tuple[float, float]]) -> None:
+    from ocdcircuit.circuit import Board
+    assert isinstance(b, Board)
+    for r, (x, y) in g.items():
+        if r in b.parts:
+            b.parts[r].x, b.parts[r].y = x, y
+
+
+def overlaps(b: object) -> int:
+    from ocdcircuit.circuit import Board
+    assert isinstance(b, Board)
+    return sum(1 for e in b.check()["errors"] if str(e).startswith("overlap"))
+
+
 def main() -> None:
-    seeds, iters = int(sys.argv[1]) if len(sys.argv) > 1 else 1, \
-        int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    seeds = int(sys.argv[1]) if len(sys.argv) > 1 else BASE_SEEDS
+    iters = int(sys.argv[2]) if len(sys.argv) > 2 else BASE_ITERS
     b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
     g = golden(b)
+    # golden baselines first (same WL model + same overlap counter both sides)
+    apply_golden(b, g)
+    golden_wl = solver.wirelength(b)
+    golden_ov = overlaps(b)
     # release fixed parts so the placer actually works (golden kept for scoring)
     b.constraints = [c for c in b.constraints if c.get("t") != "fixed"]
     t = time.perf_counter()
@@ -38,11 +61,13 @@ def main() -> None:
     placed_wl = solver.wirelength(b)
     disp = sum(abs(p.x - g[r][0]) + abs(p.y - g[r][1])
                for r, p in b.parts.items() if r in g) / max(1, len(g))
-    errs = b.check()["errors"]
-    ov = sum(1 for e in errs if str(e).startswith("overlap"))
+    ov = overlaps(b)
     print(f"seeds={seeds} iters={iters} time={dt:.1f}s cost={cost:.0f}")
-    print(f"placed_wirelength={placed_wl:.0f} mean_displacement={disp:.2f}mm "
-          f"overlaps={ov} errors={len(errs)}")
+    print(f"wirelength placed={placed_wl:.0f} golden={golden_wl:.0f} "
+          f"ratio={placed_wl / max(1.0, golden_wl):.2f}")
+    print(f"mean_displacement={disp:.2f}mm (similarity, secondary)")
+    print(f"overlaps placed={ov} golden_floor={golden_ov} "
+          f"above_floor={ov - golden_ov} errors={len(b.check()['errors'])}")
 
 
 if __name__ == "__main__":

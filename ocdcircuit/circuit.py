@@ -13,19 +13,46 @@ from .types import BBox, Constraint, PinLike, XY
 class Part:
     def __init__(self, ref: str, fp: str, value: str = "", x: float = 0.0,
                  y: float = 0.0, w: float | None = None, h: float | None = None,
-                 owner: str | None = None) -> None:
+                 owner: str | None = None, attrs: dict[str, str] | None = None) -> None:
         self.ref, self.fp, self.value = ref, fp, value
         self.x, self.y = x, y
         self.owner = owner  # include prefix that owns it (None = local)
+        self.attrs: dict[str, str] = dict(attrs or {})  # lcsc, rot, mpn...
         if w is None or h is None:
             meta = FOOTPRINTS[fp]
             assert isinstance(meta["w"], float) and isinstance(meta["h"], float)
             w, h = meta["w"], meta["h"]
         self.w, self.h = w, h
 
+    @property
+    def rot(self) -> int:
+        """Rotation degrees (0/90/180/270). 90/270 swap the bbox axes."""
+        try:
+            return int(self.attrs.get("rot", "0")) % 360
+        except ValueError:
+            return 0
+
+    def wh(self) -> tuple[float, float]:
+        """Effective (w, h) after rotation."""
+        if self.rot in (90, 270):
+            return (self.h, self.w)
+        return (self.w, self.h)
+
+    def rot_xy(self, dx: float, dy: float) -> tuple[float, float]:
+        """Rotate a footprint-frame offset into board frame."""
+        r = self.rot
+        if r == 90:
+            return (-dy, dx)
+        if r == 180:
+            return (-dx, -dy)
+        if r == 270:
+            return (dy, -dx)
+        return (dx, dy)
+
     def bbox(self) -> BBox:
-        return (self.x - self.w / 2, self.y - self.h / 2,
-                self.x + self.w / 2, self.y + self.h / 2)
+        w, h = self.wh()
+        return (self.x - w / 2, self.y - h / 2,
+                self.x + w / 2, self.y + h / 2)
 
     def pins_of(self, lib: object = None) -> list[str]:
         from typing import cast
@@ -203,7 +230,8 @@ class Board(Component):
 
     # -- parts --
     def add_part(self, ref: str, fp: str, value: str = "",
-                 x: float | None = None, y: float | None = None) -> None:
+                 x: float | None = None, y: float | None = None,
+                 attrs: dict[str, str] | None = None) -> None:
         lib = self._lib()
         if fp not in lib:
             raise KeyError(f"unknown footprint {fp}")
@@ -213,7 +241,7 @@ class Board(Component):
         w = meta["w"]
         h = meta["h"]
         assert isinstance(w, float) and isinstance(h, float)
-        p = Part(ref, fp, value, px, py, w, h)
+        p = Part(ref, fp, value, px, py, w, h, attrs=attrs)
 
         def _add() -> None:
             self.parts[ref] = p
@@ -417,7 +445,8 @@ class Board(Component):
     def pad_pos(self, ref: str, pin: PinLike) -> XY:
         p = self.parts[ref]
         dx, dy = self._pin_offset(p.fp, pin)
-        return (p.x + dx, p.y + dy)
+        rx, ry = p.rot_xy(dx, dy)
+        return (p.x + rx, p.y + ry)
 
 
 class Module(Component):

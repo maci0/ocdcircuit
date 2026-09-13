@@ -58,16 +58,18 @@ def cost(board: Board) -> float:
     for i in range(len(parts)):
         for j in range(i + 1, len(parts)):
             a, b = parts[i], parts[j]
-            if (abs(a.x - b.x) < (a.w + b.w) / 2 + 0.4 and
-                    abs(a.y - b.y) < (a.h + b.h) / 2 + 0.4):
+            aw, ah, bw, bh = (*a.wh(), *b.wh())
+            if (abs(a.x - b.x) < (aw + bw) / 2 + 0.4 and
+                    abs(a.y - b.y) < (ah + bh) / 2 + 0.4):
                 c += 1e6
     m = edge_margin(board)
     lib = board._lib()
     for p in parts:
         if lib.get(p.fp, {}).get("edge"):
             continue  # edge-mount hangs off-board by design
-        if not (p.w / 2 + m <= p.x <= board.width - p.w / 2 - m and
-                p.h / 2 + m <= p.y <= board.height - p.h / 2 - m):
+        pw, ph = p.wh()
+        if not (pw / 2 + m <= p.x <= board.width - pw / 2 - m and
+                ph / 2 + m <= p.y <= board.height - ph / 2 - m):
             c += 1e5
     for na, nb, wgt in _near(board):
         if na in board.parts and nb in board.parts:
@@ -146,8 +148,9 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
     if frames is not None:
         frames.append(_snap(board))
     for p in parts:  # random init inside board
-        p.x = rng.uniform(p.w / 2 + m, board.width - p.w / 2 - m)
-        p.y = rng.uniform(p.h / 2 + m, board.height - p.h / 2 - m)
+        pw, ph = p.wh()
+        p.x = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
+        p.y = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
     # net membership
     mem: dict[str, list[str]] = {p.ref: [] for p in parts}
     for net in board.nets.values():
@@ -191,15 +194,16 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                     Fy += 0.02 * (p.y - edge_cy) * (p.w * p.h) / 25.0
                 dx, dy = p.x - q.x, p.y - q.y
                 d = (dx * dx + dy * dy) ** 0.5
-                need = ((p.w + q.w) / 2 + 0.6 + (p.h + q.h) / 2 + 0.6) / 2
+                pw, ph, qw, qh = (*p.wh(), *q.wh())
+                need = ((pw + qw) / 2 + 0.6 + (ph + qh) / 2 + 0.6) / 2
                 if d < 1e-6:
                     dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
                 if d < need * 2.2:
                     f = spread * area_k * (3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0))
                     Fx += f * dx / d
                     Fy += f * dy / d
-                pen_x = (p.w + q.w) / 2 + 0.4 - abs(dx)
-                pen_y = (p.h + q.h) / 2 + 0.4 - abs(dy)
+                pen_x = (pw + qw) / 2 + 0.4 - abs(dx)
+                pen_y = (ph + qh) / 2 + 0.4 - abs(dy)
                 if pen_x > 0 and pen_y > 0:
                     push = spread * (4.0 + 8.0 * min(pen_x, pen_y))
                     if pen_x < pen_y:
@@ -208,19 +212,20 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                         Fy += push if dy >= 0 else -push
             # edge push (skipped for edge-mount parts: they live off-board)
             is_edge = bool(board._lib().get(p.fp, {}).get("edge"))
+            pw, ph = p.wh()
             if not is_edge:
-                Fx += max(0, (m + p.w / 2 + 1 - p.x)) * 2 - max(0, (p.x - (board.width - m - p.w / 2 - 1))) * 2
-                Fy += max(0, (m + p.h / 2 + 1 - p.y)) * 2 - max(0, (p.y - (board.height - m - p.h / 2 - 1))) * 2
+                Fx += max(0, (m + pw / 2 + 1 - p.x)) * 2 - max(0, (p.x - (board.width - m - pw / 2 - 1))) * 2
+                Fy += max(0, (m + ph / 2 + 1 - p.y)) * 2 - max(0, (p.y - (board.height - m - ph / 2 - 1))) * 2
             # Langevin noise
             Fx += rng.gauss(0, 1) * 1.4 * T
             Fy += rng.gauss(0, 1) * 1.4 * T
             if is_edge:
                 # clamp x on-board, let y hang off the bottom edge (tongue out)
-                p.x = min(max(p.x + step * Fx, p.w / 2 + m), board.width - p.w / 2 - m)
+                p.x = min(max(p.x + step * Fx, pw / 2 + m), board.width - pw / 2 - m)
                 p.y = min(p.y + step * Fy, board.height - 1.0)
             else:
-                p.x = min(max(p.x + step * Fx, p.w / 2 + m), board.width - p.w / 2 - m)
-                p.y = min(max(p.y + step * Fy, p.h / 2 + m), board.height - p.h / 2 - m)
+                p.x = min(max(p.x + step * Fx, pw / 2 + m), board.width - pw / 2 - m)
+                p.y = min(max(p.y + step * Fy, ph / 2 + m), board.height - ph / 2 - m)
         if frames is not None and (t % every == 0 or t == iters - 1):
             frames.append(_snap(board))
 

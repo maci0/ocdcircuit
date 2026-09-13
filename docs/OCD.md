@@ -26,6 +26,11 @@ silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
 fp exotic.fp                 # custom footprint file (pads/holes/3D bodies)
+part C1 C0402 100n lcsc=C1525 rot=90  # trailing k=v attrs (LCSC, rotation)
+pour GND on 0                # copper pour (top=0, bottom=layers-1)
+keepout 11.5 47 15.7x1.9     # rect keepout, center x y WxH [+ on layers]
+cutout 11.5 47 15x1.2        # board cutout (slot)
+hole 15.2 12.9 1.3           # bare mounting hole (x y drill)
                                # also: .kicad_mod/.pretty, .lbr (Eagle), .json (tscircuit)
 board 40x30                  # resize (bare form, no name)
 ```

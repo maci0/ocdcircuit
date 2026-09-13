@@ -24,6 +24,11 @@
   "parts": 10,
   "segs": 107
  },
+ "mitox.ocd/compact/maze/2L": {
+  "hash": "b346c1c027dae4ae",
+  "parts": 43,
+  "segs": 554
+ },
  "pico_tmc2209.ocd/compact/maze/2L": {
   "hash": "fb71b6e6976f324b",
   "parts": 20,

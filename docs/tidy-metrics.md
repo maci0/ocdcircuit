@@ -10,8 +10,10 @@
 evidence anchor is Purchase 1997: crossings dominate comprehension, bends and
 symmetry matter less, grid-fixing was non-significant
 ([record](https://eprints.gla.ac.uk/35804/), 493 cites). Draft `tidy(board)`
-scorecard below: 6 metrics already computable (~0 lines), 6 at ~10 lines each,
-rest behind a geometry engine. Report the component vector + weights, never a
+scorecard below: 1 metric already computable (~0 lines, T3 orthogonality),
+11 at ~10 lines each (T10 included — `Part.rot` exists), rest behind a
+geometry engine (T13 included — the schematic renderer can't cross
+by construction). Report the component vector + weights, never a
 bare scalar; never compare scalars across boards.
 
 ## Background
@@ -167,21 +169,21 @@ literature-backed (L) and fab-verified (F).
 
 | # | Metric | Formula | Target | Cost |
 |---|---|---|---|---|
-| T1 | Same-layer crossings | count + per routed cm | 0 (L) | ✅ |
-| T2 | Bends per mm | Σ direction-changes / Σ length | min (L) | ✅ |
+| T1 | Same-layer crossings | count + per routed cm | 0 (L) | 🔧 |
+| T2 | Bends per mm | Σ direction-changes / Σ length | min (L) | 🔧 |
 | T3 | Orthogonality fraction | axis-aligned length / total | 1.0 (J) | ✅ |
-| T4 | Via count / layer changes | per net + board total | min (J) | ✅ |
-| T5 | Clearance headroom | min(actual/min) per net class | ≥1.2 (J) | ✅ |
-| T6 | Length skew + gap σ | max intra-pair ΔL, gap stdev | spec-dep (F-table) | ✅ |
+| T4 | Via count / layer changes | per net + board total (maze routes only — L-router emits no vias) | min (J) | 🔧 |
+| T5 | Clearance headroom | min(actual/min) per net class | ≥1.2 (J) | 🔧 |
+| T6 | Length skew + gap σ | max intra-pair ΔL (from `_net_length`), gap stdev (new code — `_diff_cost` only checks pad-pair distance) | spec-dep (fab-blog table, not interface spec) | 🔧 |
 | T7 | Placement alignment | shared-x/y fraction @ ε=0.1mm | →1 (J) | 🔧 |
-| T8 | Grid-snap residual | mean dist to 0.25mm multiple | 0 (J) | 🔧 |
+| T8 | Grid-snap residual | mean dist to 0.25mm multiple (= maze GRID) | 0 (J) | 🔧 |
 | T9 | Spacing uniformity | 1 − CV of neighbor gaps | →1 (J) | 🔧 |
-| T10 | Orientation consistency | 0°/90° fraction | 1.0 (J) | ✅ |
+| T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | 🔧 |
 | T11 | Copper tile variance | σ of tile density + layer Δ | Δ≤20% (F) | 🏗️ |
 | T12 | Acid-trap scan | # acute <90° copper wedges | 0 (F) | 🏗️ |
-| T13 | Schematic crossings/jogs | column crossings + jogs/net | min (L) | 🔧 |
-| T14 | Silk overlap veto | text–text + text–copper count | 0 (F) | 🔧 |
-| T15 | Silk consistency | modal-offset % + sizes ≤ levels | →1 (J) | 🔧 |
+| T13 | Schematic crossings/jogs | N/A until a real schematic placer lands (current renderer is one-column-per-net parallel lines — trivially 0) | min (L) | 🏗️ |
+| T14 | Silk overlap veto | text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents) | 0 (F) | 🔧 |
+| T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field) | →1 (J) | 🔧 |
 
 Suggested default weights (shown, overridable): traces 0.35 (T1–T4),
 placement 0.25 (T7–T10), DFM 0.25 (T5–T6, T11–T12), readability 0.15
@@ -197,9 +199,8 @@ placement 0.25 (T7–T10), DFM 0.25 (T5–T6, T11–T12), readability 0.15
 3. Should `tidy` feed back into `cost()` (optimize neatness) or stay a
    report-only scorecard? Recommendation: report-only first; promote T1/T2
    terms into cost only if diffusion boards score badly.
-4. Angle-b gaps: 45°-article EN content, Johnson original, orientation
-   primaries — partially closed (ES mirror + DFA + cola + J-STAGE); IPC 45°
-   clause confirmed absent (practitioner-only).
+4. Angle-b gaps: orientation primaries — partially closed (ES mirror + DFA +
+   cola + J-STAGE); IPC 45° clause confirmed absent (practitioner-only).
 
 ## Verification notes
 
@@ -210,9 +211,9 @@ placement 0.25 (T7–T10), DFM 0.25 (T5–T6, T11–T12), readability 0.15
 - OpenAlex full-text search misfired again (ForceAtlas2 for Purchase query;
   unrelated records for Tamassia query) — those records NOT cited.
 - Angle-b agent delivered late (after synthesis) — §2 rewritten with its full
-  findings; remaining flags: 45°-article EN content, Johnson original,
-  "%-orthogonal" named metric, Dunnart specifics, 0°/90° mandate, symmetry
-  internals.
+  findings; remaining flags: "%-orthogonal" named metric, Dunnart specifics,
+  0°/90° mandate, symmetry internals. (45°-article ES mirror + Johnson
+  original since confirmed via direct fetch.)
 - Blocked/partial, never inferred: Purchase 2000/2001 follow-ups (503/blocked);
   symmetry-measurement paper (503); schematic-metric papers
   (paywalled/metadata-only).
@@ -225,7 +226,7 @@ placement 0.25 (T7–T10), DFM 0.25 (T5–T6, T11–T12), readability 0.15
 - Graph-drawing bibliography — https://www.csd.uoc.gr/~hy583/papers/1994-CG.pdf
 - Stress: Chen & Buja — https://doi.org/10.1198/jasa.2009.0111 · Brandes & Pich — https://doi.org/10.1007/978-3-540-70904-6_6
 - Dunnart — https://doi.org/10.1007/978-3-642-00219-9_41
-- 45° routing (unverified content) — https://resources.altium.com.cn/p/pcb-routing-angle-myths-45-degree-angle-versus-90-degree-angle
+- 45° routing (ES mirror fetched; Johnson original confirmed via direct fetch) — https://resources.altium.com/es/p/pcb-routing-angle-myths-45-degree-angle-versus-90-degree-angle · https://www.sigcon.com/Pubs/edn/bigbadbend.htm
 - IPC-2221 summaries — https://www.atlaspcb.com/tools/conductor-spacing-calculator/ · https://resources.altium.com/p/pcb-trace-and-pad-clearance-low-vs-high-voltage
 - DFM guide (vias, acid traps, dam, balance) — https://www.atlaspcb.com/blog/pcb-dfm-check-pre-order-verification-guide/
 - Copper balancing — https://jlcpcb.com/blog/pcb-copper-balancing

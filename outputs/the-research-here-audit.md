@@ -157,3 +157,23 @@ overstate `keepout`/R&R status, the tidy scorecard tiers don't survive contact
 with the codebase (T10/T5/T6/T13), and the benchmark table can't be
 reproduced from the brief alone. Recommended: apply the 12 mismatch fixes
 above (all doc-only, ~30 lines total), then treat the briefs as verified.
+
+## Fix log (applied post-audit)
+
+All 12 mismatches fixed in `docs/` + synced to `outputs/` (byte-identical
+re-verified). Two audit claims revised against the moved tree:
+
+- M1 (`keepout` absent): **stale at fix time** — uncommitted tree work had
+  since added `keepout` syntax (`agent.py`), maze hard walls (`maze.py`),
+  DRC warnings (`drc.py`), export (`export.py`). Briefs updated to describe
+  the real coverage (maze walls + DRC warnings, no placer term) instead of
+  removing the mentions.
+- M10 (overlap column): methodology footnote added (synthetic R0805, seed 7,
+  lroute-routed DRC, machine-specific absolutes, suspect 300-row "7") +
+  pointer to `benches/monster6502/` as the superseding bench.
+- Tidy tiers corrected per audit (T1/T2/T4→🔧, T5→🔧, T6 split, T10→🏗️ with
+  no-rotation-state note, T13→🏗️ with renderer note, T14/T15 caveats);
+  Summary counts fixed (1×✅ + 10×🔧); refs unified on ES-mirror URL; Johnson
+  flag marked confirmed.
+- Solvers brief: rip-up reframed as 2nd-pass upgrade (ordering + one bounded
+  retry exist); edge wording corrected (penalty + push + clamp).

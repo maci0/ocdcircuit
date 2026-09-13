@@ -102,6 +102,13 @@ scale" meant that. I benchmarked synthetic boards to find the real ceilings:
 | 300 | 1.9 s | 0.05 s | 0.24 s | 7 |
 | 1000 | 18.8 s | 0.47 s | 2.1 s | 396 |
 
+Methodology footnote (audit-driven): synthetic R0805 boards, sparse-chain nets
+for timing columns, dense 4-random-parts-per-net (seed 7) for the overlap
+column; routed-DRC via lroute; machine-specific absolutes (±25% on re-run —
+only the ~quadratic ratios are machine-independent); overlap column's 300-row
+"7" coincides with the sparse-chain value and is suspect (see audit). The
+`benches/monster6502/` bench supersedes this table for serious work.
+
 Default settings multiply place by ~30× (seeds=4, iters=400): ~10 min at
 n=1000. Scaling is ~quadratic (9.9× time for 3.3× parts) — the O(n²) pairwise
 repulsion, exactly as the `ponytail:` comment warns. Maze router: 1.26 s at

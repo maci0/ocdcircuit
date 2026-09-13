@@ -119,6 +119,23 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"nc ((?:\w+\.\w+ ?)+)$", t, re.I)
     if m:
         return {"t": "nc", "pins": m.group(1).split()}
+    m = re.match(r"pour (\w+) on (top|bottom|\d+)$", t, re.I)
+    if m:
+        layer = {"top": 0, "bottom": 1}[m.group(2).lower()] if m.group(2).lower() in ("top", "bottom") else int(m.group(2))
+        return {"t": "pour", "net": m.group(1), "layer": layer}
+    m = re.match(r"keepout ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+)(?: on ([\w,]+))?$", t, re.I)
+    if m:
+        return {"t": "keepout", "x": float(m.group(1)), "y": float(m.group(2)),
+                "w": float(m.group(3)), "h": float(m.group(4)),
+                "layers": m.group(5).split(",") if m.group(5) else []}
+    m = re.match(r"cutout ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+)$", t, re.I)
+    if m:
+        return {"t": "cutout", "x": float(m.group(1)), "y": float(m.group(2)),
+                "w": float(m.group(3)), "h": float(m.group(4))}
+    m = re.match(r"hole ([\d.\-]+) ([\d.\-]+) ([\d.]+)$", t, re.I)
+    if m:
+        return {"t": "hole", "x": float(m.group(1)), "y": float(m.group(2)),
+                "d": float(m.group(3))}
     m = re.match(r"sim\s+vcc\s+(\w+)\s+([\d.]+)(?:\s+([\d.]+))?$", t, re.I)
     if m:
         c: Constraint = {"t": "sim", "kind": "vcc", "net": m.group(1), "v0": float(m.group(2))}
@@ -160,7 +177,8 @@ def dumps(board: Board) -> str:
     for p in board.parts.values():
         if p.owner:
             continue  # owned by an include — parent dumps the `use` line instead
-        L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}")
+        attrs = "".join(f" {k}={v}" for k, v in sorted(p.attrs.items()))
+        L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
     # fp lines up front: footprints must exist before parts use them
     fps = [f"fp {board.fp_src[name]}" for name in board.custom_fp if name in board.fp_src]
     L[1:1] = fps
@@ -197,6 +215,15 @@ def dumps(board: Board) -> str:
             L.append(f"silk {c['level']}")
         elif t == "nc":
             L.append(f"nc {' '.join(cast(list[str], c['pins']))}")
+        elif t == "pour":
+            L.append(f"pour {c['net']} on {c['layer']}")
+        elif t == "keepout":
+            ly = f" on {','.join(cast(list[str], c['layers']))}" if c.get("layers") else ""
+            L.append(f"keepout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}{ly}")
+        elif t == "cutout":
+            L.append(f"cutout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}")
+        elif t == "hole":
+            L.append(f"hole {_f(c['x']):g} {_f(c['y']):g} {_f(c['d']):g}")
         elif t == "sim":
             L.append(_dump_sim(c))
         elif t == "match":
@@ -304,10 +331,20 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
         elif kw == "part":
             toks = line.split(None, 3)
             if len(toks) < 3:
-                raise err("want: part REF FOOTPRINT [value]")
+                raise err("want: part REF FOOTPRINT [value] [k=v ...]")
             _, ref, fp, *val = toks
+            value, attrs = "", {}
+            if val:
+                words = []
+                for tok in val[0].split():
+                    if "=" in tok:
+                        k, _, v = tok.partition("=")
+                        attrs[k] = v
+                    else:
+                        words.append(tok)
+                value = " ".join(words)
             try:
-                b.add_part(ref, fp, val[0] if val else "")
+                b.add_part(ref, fp, value, attrs=attrs or None)
             except (KeyError, ValueError) as e:
                 raise err(e)
         elif kw == "net":

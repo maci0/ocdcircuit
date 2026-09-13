@@ -8,6 +8,11 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+
+def _f(v: object) -> float:
+    assert isinstance(v, (int, float, str))
+    return float(v)
+
 if TYPE_CHECKING:
     from .circuit import Board
 
@@ -52,16 +57,24 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     flashes: dict[int, list[Flash]] = {ll: [] for ll in range(board.layers)}
     draws: dict[int, list[Draw]] = {ll: [] for ll in range(board.layers)}
     lib = {k: v for k, v in board._lib().items()}
+    paste: list[Flash] = []
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
             x, y = board.pad_pos(p.ref, pin)
             flashes[0].append((x, y))  # SMD pads on top
+            from .parts import hole_drill
+            if not hole_drill(p.fp, pin, lib):
+                paste.append((x, y))  # SMD only — PTH gets no paste
     for t in board.traces:
         draws[t.layer % board.layers].append((t.x1, t.y1, t.x2, t.y2))
     for ll, nm in enumerate(layer_names(board.layers)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
         open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4))
         files.append(fn)
+    # paste (top only — single-sided SMT like the mitox board)
+    fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
+    open(fn, "w").write(_gerber(paste, [], 0.4))
+    files.append(fn)
     # mask / silk / outline (minimal but present)
     for nm, ap in (("GTS", 0.5), ("GBS", 0.5), ("GTO", 0.2), ("GBO", 0.2)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
@@ -84,12 +97,26 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     open(fn, "w").write("\n".join(d))
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.BOM.csv")
-    open(fn, "w").write("Designator,Footprint,Value\n" + "".join(
-        f"{p.ref},{p.fp},{p.value}\n" for p in board.parts.values()))
+    # JLC format: Comment,Designator,Footprint,LCSC — grouped by value,
+    # LCSC from `lcsc` part attr
+    groups: dict[tuple[str, str], list[str]] = {}
+    for p in board.parts.values():
+        groups.setdefault((p.value, p.fp), []).append(p.ref)
+    lines = ["Comment,Designator,Footprint,LCSC"]
+    for (value, fp), refs in sorted(groups.items()):
+        lcsc = ""
+        for r in refs:
+            a = board.parts[r].attrs.get("lcsc", "")
+            if a:
+                lcsc = str(a)
+                break
+        lines.append(f"{value},\"{','.join(sorted(refs))}\",{fp},{lcsc}")
+    open(fn, "w").write("\n".join(lines) + "\n")
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
     open(fn, "w").write("Designator,Mid X,Mid Y,Layer,Rotation\n" + "".join(
-        f"{p.ref},{p.x:.3f},{p.y:.3f},Top,0\n" for p in board.parts.values()))
+        f"{p.ref},{p.x:.3f}mm,{p.y:.3f}mm,Top,{int(p.attrs.get('rot', 0))}\n"
+        for p in board.parts.values()))
     files.append(fn)
     return files
 
@@ -136,7 +163,8 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
         A(f'  (footprint {_sexp_str(p.fp)} (layer "F.Cu")')
         A(f"    (at {p.x:.4f} {p.y:.4f})")
         A(f'    (descr {_sexp_str(p.value or p.fp)})')
-        A(f'    (fp_text user {p.ref} (at 0 {-p.h / 2 - 1:.4f}) (layer "F.SilkS"))')
+        _pw, _ph = p.wh()
+        A(f'    (fp_text user {p.ref} (at 0 {-_ph / 2 - 1:.4f}) (layer "F.SilkS"))')
         for pin in pads_of(p.fp, lib):
             dx, dy = board.pad_pos(p.ref, pin)
             dr = hole_drill(p.fp, pin, lib)
@@ -162,6 +190,21 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for x1, y1, x2, y2 in [(0, 0, W, 0), (W, 0, W, H), (W, H, 0, H), (0, H, 0, 0)]:
         A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
           f'(layer "Edge.Cuts") (width 0.1))')
+    for con in board.constraints:
+        kind = con.get("t")
+        if kind == "keepout":
+            cx, cy = _f(con["x"]), _f(con["y"])
+            hw, hh = _f(con["w"]) / 2, _f(con["h"]) / 2
+            for x1, y1, x2, y2 in [(cx - hw, cy - hh, cx + hw, cy - hh),
+                                   (cx + hw, cy - hh, cx + hw, cy + hh),
+                                   (cx + hw, cy + hh, cx - hw, cy + hh),
+                                   (cx - hw, cy + hh, cx - hw, cy - hh)]:
+                A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
+                  f'(layer "Cmts.User") (width 0.05))')
+        elif kind == "hole":
+            A(f'  (pad HOLE thru_hole circle (at {_f(con["x"]):.4f} {_f(con["y"]):.4f}) '
+              f'(size {_f(con["d"]) + 0.6:.4f} {_f(con["d"]) + 0.6:.4f}) '
+              f'(drill {_f(con["d"]):.4f}) (layers *.Cu *.Mask) (net 0))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
     open(fn, "w").write("\n".join(L) + "\n")

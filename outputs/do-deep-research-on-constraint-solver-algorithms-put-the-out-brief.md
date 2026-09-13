@@ -10,8 +10,8 @@ supports the current architecture: a force-directed / Langevin-style stochastic
 placer plus A* maze routing, with multi-seed best-of as cheap insurance. Exact
 methods (CP-SAT, ILP/MILP) buy optimality proofs but cost a dependency plus a
 linearized/disjunctive formulation the true objective doesn't need yet. The
-cheapest upgrades, in order: (1) net-ordering + 1–2 rip-up & reroute passes in
-the maze router; (2) a greedy legalization/overlap-removal pass after diffusion;
+cheapest upgrades, in order: (1) second rip-up & reroute pass in
+the maze router (ordering + one bounded retry already exist); (2) a greedy legalization/overlap-removal pass after diffusion;
 (3) cooling-schedule tuning. Skip: ILP dependency, ePlace/RePlAce
 reimplementation, ML placers, push-and-shove.
 
@@ -23,9 +23,11 @@ net-centroid spring forces plus pairwise radial/box repulsion with decaying
 temperature/noise; multi-seed best-of (Quilter-style candidates). Layer
 assignment = greedy bbox-overlap minimization. Routing = ordered L-routes plus
 an A* maze router (0.25 mm grid, bend + via penalties, soft courtyard terrain,
-own-net copper reuse). Constraints: `fixed`/`near` (+`near-group`)/`keepout`/
+own-net copper reuse, small-nets-first ordering + one bounded rip-up retry +
+jumper fallback). Constraints: `fixed`/`near` (+`near-group`)/`keepout`/
 `edge`/`layer`/`width`/`power`/`match`/`diff` (`docs/OCD.md`,
-`docs/RFC-0001-constraints-agent.md`). Cost = Manhattan wirelength + 1e6 overlap
+`docs/RFC-0001-constraints-agent.md`; `keepout` = maze hard walls + DRC
+warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
 + 1e5 edge + near/match/diff penalties.
 
 ## Key findings (by theme)
@@ -162,8 +164,9 @@ own-net copper reuse). Constraints: `fixed`/`near` (+`near-group`)/`keepout`/
   [shove](https://docs.kicad.org/doxygen/classPNS_1_1SHOVE.html),
   [diff-pair](https://docs.kicad.org/doxygen/pns__diff__pair__placer_8cpp_source.html)).
 - Relevance: current A* + bend/via + soft terrain already covers the basics.
-  Upgrades in order: (a) net-ordering heuristic + 1–2 rip-up & reroute passes
-  (~20 lines, biggest completion gain); (b) negotiated-congestion-lite
+  Upgrades in order: (a) second rip-up & reroute pass (ordering + one bounded
+  retry already exist in `maze.py`; biggest remaining completion gain is a 2nd
+  pass); (b) negotiated-congestion-lite
   (per-cell history + present-usage adder across iterations); (c) skip Hadlock
   re-tuning while the heuristic is admissible. Length meanders only if
   skew-driven routing is required; else keep reporting skew via DRC warnings.
@@ -174,8 +177,9 @@ own-net copper reuse). Constraints: `fixed`/`near` (+`near-group`)/`keepout`/
   then a separate legalization pass removes residual overlap
   ([Bonn thesis PDF](https://bonndoc.ulb.uni-bonn.de/xmlui/bitstream/handle/20.500.11811/4667/2299.pdf?sequence=1&isAllowed=y)).
 - Mapping: fixed = skip integration (hard clamp, already done via `_fixed`);
-  near/group = extra spring (already done); keepout/edge = one-sided penalty
-  force. Penalty trade-off (textbook, NOT fetch-verified — flagged): too weak →
+  near/group = extra spring (already done); edge = penalty (1e5) + repulsive
+  push + hard clamp; keepout = maze hard walls + DRC warnings (no placer
+  term). Penalty trade-off (textbook, NOT fetch-verified — flagged): too weak →
   violations survive; too strong → stiff/oscillatory without smaller steps or
   weight ramps. Standard compromise: penalties for exploration + hard
   projection/legalization at the end.
