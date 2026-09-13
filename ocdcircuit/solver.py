@@ -3,22 +3,44 @@
 Placement = Langevin diffusion: parts drift along net-spring forces and
 pairwise repulsion with decaying temperature/noise. Run N seeds, keep best
 (Quilter-style candidates for free).
+
+Animation: optimize(..., frames=True) records per-seed snapshots
+[{cost, pos:{ref:(x,y)}}]; route(..., frames=True) records per-net segment
+batches. The studio UI tweens between snapshots (ease-out cubic) — parts
+glide, traces grow. Headless callers pay nothing (default off).
 # ponytail: O(n^2) forces, L-router only — push-and-shove when warnings annoy.
 """
 from __future__ import annotations
 import random
-from .circuit import Seg
+from typing import TYPE_CHECKING, cast
+from .circuit import Part, Seg
+from .types import BBox, Frame, XY
+
+if TYPE_CHECKING:
+    from .circuit import Board
 
 
-def _fixed(board):
-    return {c["ref"]: (c["x"], c["y"]) for c in board.constraints if c.get("t") == "fixed"}
+def _fixed(board: Board) -> dict[str, XY]:
+    out: dict[str, XY] = {}
+    for c in board.constraints:
+        if c.get("t") == "fixed":
+            out[str(c["ref"])] = (float(cast(float, c["x"])), float(cast(float, c["y"])))
+    return out
 
 
-def _near(board):
-    return [(c["a"], c["b"], c.get("w", 2.0)) for c in board.constraints if c.get("t") == "near"]
+def _near(board: Board) -> list[tuple[str, str, float]]:
+    out: list[tuple[str, str, float]] = []
+    for c in board.constraints:
+        if c.get("t") == "near":
+            w = c.get("w", 2.0)
+            out.append((str(c["a"]), str(c["b"]), float(cast(float, w))))
+        elif c.get("t") == "near-group":  # keep an include's parts together
+            refs = [r for r, q in board.parts.items() if q.owner == c["prefix"]]
+            out += [(refs[i], refs[i + 1], 1.5) for i in range(len(refs) - 1)]
+    return out
 
 
-def wirelength(board) -> float:
+def wirelength(board: Board) -> float:
     tot = 0.0
     for net in board.nets.values():
         pts = []
@@ -30,7 +52,7 @@ def wirelength(board) -> float:
     return tot
 
 
-def cost(board) -> float:
+def cost(board: Board) -> float:
     parts = list(board.parts.values())
     c = wirelength(board)
     for i in range(len(parts)):
@@ -44,21 +66,22 @@ def cost(board) -> float:
         if not (p.w / 2 + m <= p.x <= board.width - p.w / 2 - m and
                 p.h / 2 + m <= p.y <= board.height - p.h / 2 - m):
             c += 1e5
-    for a, b, w in _near(board):
-        if a in board.parts and b in board.parts:
-            pa, pb = board.parts[a], board.parts[b]
-            c += w * (abs(pa.x - pb.x) + abs(pa.y - pb.y))
+    for na, nb, wgt in _near(board):
+        if na in board.parts and nb in board.parts:
+            qa, qb = board.parts[na], board.parts[nb]
+            c += wgt * (abs(qa.x - qb.x) + abs(qa.y - qb.y))
     return c
 
 
-def edge_margin(board):
+def edge_margin(board: Board) -> float:
     for c in board.constraints:
         if c.get("t") == "edge":
-            return c.get("margin", 0.5)
+            return float(cast(float, c.get("margin", 0.5)))
     return 0.5
 
 
-def _diffuse_once(board, iters=400, seed=0):
+def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
+                   frames: list[Frame] | None = None, every: int = 10) -> None:
     rng = random.Random(seed)
     fx = _fixed(board)
     near = _near(board)
@@ -69,11 +92,13 @@ def _diffuse_once(board, iters=400, seed=0):
             board.parts[r].x, board.parts[r].y = x, y
     if not parts:
         return
+    if frames is not None:
+        frames.append(_snap(board))
     for p in parts:  # random init inside board
         p.x = rng.uniform(p.w / 2 + m, board.width - p.w / 2 - m)
         p.y = rng.uniform(p.h / 2 + m, board.height - p.h / 2 - m)
     # net membership
-    mem = {p.ref: [] for p in parts}
+    mem: dict[str, list[str]] = {p.ref: [] for p in parts}
     for net in board.nets.values():
         for ref, _ in net.pins:
             if ref in mem:
@@ -111,7 +136,7 @@ def _diffuse_once(board, iters=400, seed=0):
                 if d < 1e-6:
                     dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
                 if d < need * 2.2:
-                    f = 1.6 * (1 - d / (need * 2.2)) + (0.8 if d < need else 0)
+                    f = 3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0)
                     Fx += f * dx / d
                     Fy += f * dy / d
             # edge push
@@ -122,28 +147,42 @@ def _diffuse_once(board, iters=400, seed=0):
             Fy += rng.gauss(0, 1) * 1.4 * T
             p.x = min(max(p.x + step * Fx, p.w / 2 + m), board.width - p.w / 2 - m)
             p.y = min(max(p.y + step * Fy, p.h / 2 + m), board.height - p.h / 2 - m)
+        if frames is not None and (t % every == 0 or t == iters - 1):
+            frames.append(_snap(board))
 
 
-def optimize(board, seeds=4, iters=400, seed=0) -> float:
-    """Multi-seed diffusion; whole run is one undoable effect. Returns cost."""
+def _snap(board: Board) -> Frame:
+    return {"cost": round(cost(board), 1),
+            "pos": {r: (round(q.x, 2), round(q.y, 2)) for r, q in board.parts.items()}}
+
+
+def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
+             frames: list[Frame] | None = None, every: int = 10) -> float:
+    """Multi-seed diffusion; whole run is one undoable effect. Returns cost.
+    frames: optional list to append animation snapshots to."""
     snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
     old_traces = list(board.traces)
-    best, best_pos = None, None
+    best: float = 0.0
+    best_pos: dict[str, XY] = {}
+    first = True
     for s in range(seeds):
-        _diffuse_once(board, iters, seed + s)
+        if frames is not None:
+            frames.append({"seed": s})
+        _diffuse_once(board, iters, seed + s, frames=frames, every=every)
         c = cost(board)
-        if best is None or c < best:
-            best, best_pos = c, {r: (p.x, p.y) for r, p in board.parts.items()}
+        if first or c < best:
+            first = False
+            best, best_pos = c, {r: (q.x, q.y) for r, q in board.parts.items()}
     for r, (x, y) in best_pos.items():
         board.parts[r].x, board.parts[r].y = x, y
     board.traces = old_traces
     final = {r: (p.x, p.y) for r, p in board.parts.items()}
 
-    def _do():
+    def _do() -> None:
         for r, (x, y) in final.items():
             board.parts[r].x, board.parts[r].y = x, y
 
-    def _undo():
+    def _undo() -> None:
         for r, (x, y) in snap_pos.items():
             board.parts[r].x, board.parts[r].y = x, y
 
@@ -151,50 +190,53 @@ def optimize(board, seeds=4, iters=400, seed=0) -> float:
     return best
 
 
-def assign_layers(board):
+def assign_layers(board: Board) -> None:
     """Greedy: constrained nets keep layers; rest pick layer with fewer
     bbox crossings. Power nets default wide + bottom for GND."""
     for c in board.constraints:
         if c.get("t") == "layer" and c["net"] in board.nets:
-            board.nets[c["net"]].layer = c["layer"]
+            board.nets[str(c["net"])].layer = int(cast(int, c["layer"]))
         if c.get("t") == "width" and c["net"] in board.nets:
-            board.nets[c["net"]].width = c["width"]
+            board.nets[str(c["net"])].width = float(cast(float, c["width"]))
     for c in board.constraints:
         if c.get("t") == "power":
-            for n in c.get("nets", []):
+            nets = cast(list[str], c.get("nets", []))
+            for n in nets:
                 if n in board.nets:
                     board.nets[n].width = max(board.nets[n].width, 0.5)
     order = sorted(board.nets.values(), key=lambda n: -len(n.pins))
-    boxes: dict[int, list] = {l: [] for l in range(board.layers)}
+    boxes: dict[int, list[BBox]] = {ll: [] for ll in range(board.layers)}
     for net in order:
-        pts = [board.pad_pos(r, p) for r, p in net.pins if r in board.parts]
+        pts = [board.pad_pos(r, q) for r, q in net.pins if r in board.parts]
         if not pts:
             continue
-        box = (min(q[0] for q in pts), min(q[1] for q in pts),
-               max(q[0] for q in pts), max(q[1] for q in pts))
+        bx: BBox = (min(q[0] for q in pts), min(q[1] for q in pts),
+                    max(q[0] for q in pts), max(q[1] for q in pts))
         if net.layer is None:
-            def hits(l):
-                return sum(1 for b in boxes[l] if not (
-                    box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]))
+            def hits(ll: int) -> int:
+                return sum(1 for bb in boxes[ll] if not (
+                    bx[2] < bb[0] or bx[0] > bb[2] or bx[3] < bb[1] or bx[1] > bb[3]))
             net.layer = min(boxes, key=hits)
-        boxes[net.layer].append(box)
+        boxes[net.layer].append(bx)
     if "GND" in board.nets and board.nets["GND"].layer is None:
         board.nets["GND"].layer = board.layers - 1
 
 
-def route(board):
-    """Ordered star L-routes on assigned layers. One undoable effect."""
+def route(board: Board, frames: list[Frame] | None = None) -> int:
+    """Ordered star L-routes on assigned layers. One undoable effect.
+    frames: optional list; one snapshot per routed net for trace animation."""
     assign_layers(board)
     old = list(board.traces)
     new: list[Seg] = []
     for net in board.nets.values():
-        pts = [(r, board.pad_pos(r, p)) for r, p in net.pins if r in board.parts]
+        pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
         if len(pts) < 2:
             continue
         layer = net.layer if net.layer is not None else 0
         hub = pts[0][1]
         for _, pt in pts[1:]:
             # L via mid: pick orientation with shorter stub to hub-x first
+            mid: XY
             if abs(pt[0] - hub[0]) > abs(pt[1] - hub[1]):
                 mid = (pt[0], hub[1])
             else:
@@ -203,6 +245,16 @@ def route(board):
                 new.append(Seg(net.name, hub[0], hub[1], mid[0], mid[1], layer, net.width))
             if mid != pt:
                 new.append(Seg(net.name, mid[0], mid[1], pt[0], pt[1], layer, net.width))
-    board.ctx.emit(lambda: board.traces.__setitem__(slice(None), new),
-                   lambda: board.traces.__setitem__(slice(None), old))
+        if frames is not None:
+            frames.append({"net": net.name, "layer": layer,
+                           "segs": [(s.x1, s.y1, s.x2, s.y2) for s in new
+                                    if s.net == net.name]})
+
+    def _do() -> None:
+        board.traces[:] = new
+
+    def _undo() -> None:
+        board.traces[:] = old
+
+    board.ctx.emit(_do, _undo)
     return len(new)

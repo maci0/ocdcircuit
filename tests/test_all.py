@@ -1,13 +1,23 @@
-"""One self-check for everything (asserts only, no framework)."""
-import os, sys, tempfile
+"""One self-check for everything (asserts only, no framework). Typed strict."""
+from __future__ import annotations
+import os
+import subprocess
+import sys
+import tempfile
+from typing import cast
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ocdcircuit import Board, Loader, Module
 from ocdcircuit import agent
 from ocdcircuit.core import Context, Plugin
+from ocdcircuit.types import Constraint
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+EX = os.path.join(HERE, "..", "examples")
 
 
 class PSU(Module):
-    def build(self, b):
+    def build(self, b: Board) -> None:
         self.add(b, "J1", "PINHD2", "9V", x=3, y=15)
         b.connect("VCC", "J1", "1")
         b.connect("GND", "J1", "2")
@@ -44,25 +54,31 @@ b.ctx.rollback(s)
 assert "R1" not in b.parts
 
 # NL constraints
-assert agent.parse_constraint("keep U1 near C1")["t"] == "near"
-assert agent.parse_constraint("fix J1 at 3 10")["t"] == "fixed"
+c0 = agent.parse_constraint("keep U1 near C1")
+assert c0 is not None and c0["t"] == "near"
+c1 = agent.parse_constraint("fix J1 at 3 10")
+assert c1 is not None and c1["t"] == "fixed"
 assert agent.parse_constraint("route GND on bottom") == {"t": "layer", "net": "GND", "layer": 1}
-assert agent.parse_constraint("trace VCC 0.5")["width"] == 0.5
+wc = agent.parse_constraint("trace VCC 0.5")
+assert wc is not None and wc["width"] == 0.5
 
 # hot-swap: mount alt plugin, use(), undo → back to default
-class AltPlacer(Plugin):
+class AltPlacer(Plugin[float]):
     kind, key = "placer", "alt"
-    def run(self, board):
+
+    def run(self, board: Board, *a: object, **k: object) -> float:
         return -1.0
 
 b = Board("swap", 40, 30)
-assert b.plugins().get("placer").key == "diffusion"
+aplug = b.plugins().get("placer")
+assert isinstance(aplug, Plugin) and aplug.key == "diffusion"
 AltPlacer("placer:alt").mount(b.ctx)
 s = b.ctx.snapshot()
 b.use("placer", "alt")
 assert b.place() == -1.0
 b.ctx.rollback(s)
-assert b.plugins().get("placer").key == "diffusion"
+dplug = b.plugins().get("placer")
+assert isinstance(dplug, Plugin) and dplug.key == "diffusion"
 assert b.place(seeds=1, iters=5) is not None  # still works after swap-back
 
 # use() on unmounted key fails loudly
@@ -89,20 +105,17 @@ for bad, frag in [
         raise AssertionError(f"doc example should fail: {bad!r}")
     except ValueError as e:
         assert frag in str(e), f"{frag!r} not in {e}"
-here = os.path.dirname(os.path.abspath(__file__))
-ocd = open(os.path.join(here, "..", "examples", "blinky_555.ocd")).read()
-bo = agent.loads(ocd)
-# CLI builds the same file with zero Python (exit 0 = DRC clean)
-import subprocess
-r = subprocess.run([sys.executable, os.path.join(here, "..", "ocd.py"),
-                    os.path.join(here, "..", "examples", "blinky_555.ocd")],
-                   capture_output=True, text=True)
-assert r.returncode == 0, r.stdout + r.stderr
-assert {p.ref for p in bo.parts.values()} == {"U1", "R1", "R2", "R3", "C1", "C2", "D1", "J1"}
-assert len(bo.nets["GND"].pins) == 5
+
+# committed board (with psu include) loads, merges, round-trips
+ocd = open(os.path.join(EX, "blinky_555.ocd")).read()
+bo = agent.loads(ocd, base=EX)
+assert {p.ref for p in bo.parts.values()} == {"U1", "R1", "R2", "R3", "C1", "C2", "D1",
+                                              "PSU_J1", "PSU_C1", "PSU_C2"}
+assert len(bo.nets["GND"].pins) == 7  # 4 local + J1.2/C1.2/C2.- via auto-join
 assert any(c == {"t": "layer", "net": "GND", "layer": 1} for c in bo.constraints)
-assert "fix J1 at 3 15" in agent.dumps(bo)
-b2 = agent.loads(agent.dumps(bo))
+assert "fix PSU_J1 at 3 15" in agent.dumps(bo)
+assert "use psu.ocd as PSU" in agent.dumps(bo)
+b2 = agent.loads(agent.dumps(bo), base=EX)
 assert agent.dumps(b2) == agent.dumps(bo)
 try:
     agent.loads("part R1 R0805\n")
@@ -110,13 +123,55 @@ try:
 except ValueError:
     pass
 
-# JSON is the wire IR: round-trips the committed .ocd board exactly
+# include errors: cycle + missing file
+os.makedirs(os.path.join(EX, "tmp_inc"), exist_ok=True)
+open(os.path.join(EX, "tmp_inc", "a.ocd"), "w").write(
+    "board a 10x10\nuse b.ocd\npart R1 R0805\nnet N: R1.1\n")
+open(os.path.join(EX, "tmp_inc", "b.ocd"), "w").write(
+    "board b 10x10\nuse a.ocd\npart R2 R0805\nnet N: R2.1\n")
+try:
+    agent.loads(open(os.path.join(EX, "tmp_inc", "a.ocd")).read(),
+                base=os.path.join(EX, "tmp_inc"))
+    raise AssertionError("cycle should fail")
+except ValueError as e:
+    assert "cycle" in str(e)
+try:
+    agent.loads("board t 10x10\nuse nope.ocd\npart R1 R0805\nnet N: R1.1\n", base=EX)
+    raise AssertionError("missing should fail")
+except ValueError as e:
+    assert "no such file" in str(e)
+import shutil
+shutil.rmtree(os.path.join(EX, "tmp_inc"))
+
+# CLI builds the committed file (exit 0 = DRC clean)
+proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "ocd.py"),
+                       os.path.join(EX, "blinky_555.ocd")],
+                      capture_output=True, text=True)
+assert proc.returncode == 0, proc.stdout + proc.stderr
+
+# solver frames stream (animation API)
+pf: list[dict[str, object]] = []
+rf: list[dict[str, object]] = []
+bo.place(seeds=1, iters=30, frames=pf, every=10)
+bo.route_board(frames=rf)
+assert len(pf) >= 2 and "pos" in pf[-1]
+assert len(rf) >= 1 and "segs" in rf[0]
+
+# JSON wire IR round-trips
 bj = agent.from_json(agent.to_json(bo))
-assert {p.ref for p in bj.parts.values()} == {"U1", "R1", "R2", "R3", "C1", "C2", "D1", "J1"}
-assert len(bj.nets["GND"].pins) == 5
+assert {p.ref for p in bj.parts.values()} == set(bo.parts)
 assert agent.to_json(bj).startswith("{")
 assert bj.render("svg").startswith("<svg")
 assert bj.render("stl").startswith("solid")
+
+# fab profiles: oshpark is stricter than jlc on drills
+from ocdcircuit import fab
+assert fab.get("oshpark")["min_drill"] == 0.508
+bo.fab = "oshpark"
+ro = bo.check()
+assert ro["fab"] == "oshpark"
+bo.fab = "jlc"
+assert not cast(list[str], bo.check()["errors"])
 
 # full flow on 555-ish mini board, plugin-dispatched
 b = Board("mini", 40, 30)
@@ -124,21 +179,26 @@ b.add_part("U1", "SOIC8", "NE555")
 b.add_part("R1", "R0805", "1k")
 b.add_part("C1", "C0805", "10u")
 b.add_part("J1", "PINHD2", "9V")
-for net, pins in {"VCC": [("J1", "1"), ("U1", "8")], "GND": [("J1", "2"), ("U1", "1"), ("C1", "1")],
-                  "N1": [("U1", "3"), ("R1", "1")], "N2": [("R1", "2"), ("C1", "2")]}.items():
+nets: dict[str, list[tuple[str, str]]] = {
+    "VCC": [("J1", "1"), ("U1", "8")], "GND": [("J1", "2"), ("U1", "1"), ("C1", "1")],
+    "N1": [("U1", "3"), ("R1", "1")], "N2": [("R1", "2"), ("C1", "2")]}
+for net, pins in nets.items():
     for ref, pin in pins:
         b.connect(net, ref, pin)
-b.constrain({"t": "fixed", "ref": "J1", "x": 3.0, "y": 15.0})
+b.constrain(cast(Constraint, {"t": "fixed", "ref": "J1", "x": 3.0, "y": 15.0}))
 b.place(seeds=3, iters=200)
 b.route_board()
-r = b.check()
-assert not r["errors"], r["errors"]
+chk = b.check()
+assert not cast(list[str], chk["errors"]), chk["errors"]
 with tempfile.TemporaryDirectory() as d:
-    files = b.export("jlc", outdir=d) + b.export("json", outdir=d) + b.export("ocd", outdir=d)
-    assert len(files) == 12, files
+    files = (b.export("jlc", outdir=d) + b.export("kicad", outdir=d)
+             + b.export("json", outdir=d) + b.export("ocd", outdir=d))
     assert any(f.endswith(".GTL.gbr") for f in files)
+    assert any(f.endswith(".kicad_pcb") for f in files)
     assert any(f.endswith(".TXT") for f in files)
     assert any(f.endswith("BOM.csv") for f in files)
     assert any(f.endswith(".json") for f in files)
     assert any(f.endswith(".ocd") for f in files)
+    kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
+    assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
 print("ALL OK")

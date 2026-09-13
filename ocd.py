@@ -1,19 +1,26 @@
 """ocd CLI: build any .ocd file with zero Python. Stdlib only."""
-import os, sys
+from __future__ import annotations
+import os
+import sys
+from typing import cast
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from ocdcircuit import agent
-    if len(argv) != 2 or argv[1] in ("-h", "--help"):
-        print("usage: ocd <circuit.ocd>  # places, routes, DRCs, exports next to the file")
+    fab = "jlc"
+    args = argv[1:]
+    if len(args) >= 2 and args[0] == "--fab":
+        fab = args[1]
+        args = args[2:]
+    if len(args) != 1 or args[0] in ("-h", "--help"):
+        print("usage: ocd [--fab jlc|pcbway|oshpark|seeed|aisler] <circuit.ocd>")
         return 1
-    src = argv[1]
+    src = args[0]
     try:
-        b = agent.loads(open(src).read())
-        for p in b.parts.values():  # surface typos early, not mid-solve
-            if p.fp not in b._lib():
-                raise ValueError(f"{p.ref}: unknown footprint {p.fp!r}")
+        b = agent.loads(open(src).read(),
+                        base=os.path.dirname(os.path.abspath(src)))
+        b.fab = fab
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
@@ -21,15 +28,23 @@ def main(argv):
     n = b.route_board()
     r = b.check()
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
-    files = b.export("jlc", outdir=out) + b.export("ocd", outdir=out)
+    files = (b.export("jlc", outdir=out) + b.export("kicad", outdir=out)
+             + b.export("ocd", outdir=out))
     open(os.path.join(out, b.name + ".svg"), "w").write(b.render("svg"))
-    print(f"{b.name}: cost={c:.1f} segs={n} errors={r['errors']} warnings={len(r['warnings'])}")
-    print(f"{len(files)} fab files + svg in {out}/")
-    if r["errors"]:
+    open(os.path.join(out, b.name + ".stl"), "w").write(b.render("stl"))
+    errors = cast(list[object], r["errors"])
+    warnings = cast(list[object], r["warnings"])
+    print(f"{b.name}: cost={c:.1f} segs={n} errors={errors} warnings={len(warnings)}")
+    print(f"{len(files)} fab files + svg + stl in {out}/")
+    if errors:
         return 2
-    if r["warnings"]:
-        for w in sorted(set(r["warnings"]))[:5]:
-            print(f"warn: {w}")
+    seen: set[str] = set()
+    for w in warnings:
+        ws = str(w)
+        if ws not in seen:
+            seen.add(ws)
+        if len(seen) <= 5:
+            print(f"warn: {ws}")
     return 0
 
 

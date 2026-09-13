@@ -1,0 +1,11 @@
+# 9V supply module. Standalone-buildable AND includable:
+# `use psu.ocd as PSU` ignores board size + fix, prefixes refs/nets,
+# auto-joins VCC/GND into the parent.
+board psu 20x12 2L
+part J1 PINHD2 9V
+part C1 C0805 100n
+part C2 ELEC_6MM 10u
+net VCC: J1.1 C1.1 C2.+
+net GND: J1.2 C1.2 C2.-
+fix J1 at 3 6
+power VCC GND
