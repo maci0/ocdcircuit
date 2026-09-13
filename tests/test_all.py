@@ -403,11 +403,10 @@ for _bbad, _bfrag in [
         raise AssertionError(f"should have raised: {_bbad!r}")
     except ValueError as e:
         assert _bfrag in str(e), f"{_bfrag!r} not in {e}"
-# workspace: score + diff are pure functions
-from ocdcircuit import score as _sc, diff as _df
+# workspace: score + diff go through the plugin registry like prod code
 _sb = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\nfix C1 at 8 5\n")
-_ss = _sc.score(_sb)
+_ss = _sb.score()
 _stot = _ss["total"]
 assert isinstance(_stot, (int, float)) and 0 <= _stot <= 100
 assert _ss["grade"] in ("A", "B", "C", "D", "F")
@@ -415,7 +414,7 @@ assert set(cast(dict[str, float], _ss["parts"])) == {"grid", "orientation", "spa
 # tidy scorecard: components + coverage, None for undefined inputs
 _sb.place(seeds=1, iters=50)
 _sb.route_board()
-_tt = _sc.tidy(_sb)
+_tt = _sb.score(tidy=True)
 assert _tt["T1_crossings"] == 0 and _tt["T3_orthogonality"] == 1.0
 assert _tt["T4_vias"] == {"total": 0, "per_net": {}}
 assert _tt["T7_alignment"] == 1.0
@@ -423,12 +422,12 @@ assert cast(dict[str, object], _tt["T10_orientation"])["cardinal"] == 1.0
 assert _tt["T11_copper_balance"] is None and _tt["T12_acid_traps"] is None
 assert _tt["T13_schematic"] is None and _tt["T15_silk_consistency"] == 1.0
 assert isinstance(_tt["coverage"], str)
-_tu = _sc.tidy(agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.2\n"))
+_tu = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.2\n").score(tidy=True)
 assert _tu["T1_crossings"] is None and _tu["T3_orthogonality"] is None
 assert _tu["T4_vias"] is None and _tu["T5_headroom"] is None
-assert _df.diff(_sb, _sb) == ""
-_drep = _df.diff(_sb, agent.loads("board t 40x30\npart R1 R0805 10k\n"
-                                  "net N: R1.2\nnet GND: R1.1\n"))
+assert _sb.diff(_sb) == ""
+_drep = _sb.diff(agent.loads("board t 40x30\npart R1 R0805 10k\n"
+                             "net N: R1.2\nnet GND: R1.1\n"))
 assert "- part C1" in _drep
 # hierarchical placer: rigid instances, falls back cleanly without them
 assert _bb.place("hierarchical", seeds=1, iters=50) is not None
