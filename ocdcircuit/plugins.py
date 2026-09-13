@@ -130,6 +130,15 @@ class FabDrc(Plugin[dict[str, object]]):
         return drc.check(board, fab=fab)
 
 
+class Erc(Plugin[dict[str, object]]):
+    """Electrical rule check: netlist sanity (unconnected pins, shorts)."""
+    kind, key = "drc", "erc"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import drc
+        return drc.erc(board)
+
+
 # legacy alias: JlcDrc == FabDrc(fab="jlc")
 class JlcDrc(FabDrc):
     kind, key = "drc", "jlc"
@@ -159,6 +168,17 @@ class KicadExporter(Plugin[list[str]]):
         outdir = k.get("outdir", "out")
         assert isinstance(outdir, str)
         return export.export_kicad(board, outdir)
+
+
+class BundleExporter(Plugin[list[str]]):
+    """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready."""
+    kind, key = "exporter", "bundle"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_bundle(board, outdir)
 
 
 class OcdExporter(Plugin[list[str]]):
@@ -429,8 +449,8 @@ class FabSilk(Plugin[dict[str, object]]):
 
 
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
-             GreedyLayers, LRouter, MazeRouter, FabDrc,
-             JlcDrc, JlcExporter, KicadExporter, OcdExporter, JsonExporter,
+             GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
+             JlcDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              SvgRenderer, SchRenderer, StlRenderer)
 

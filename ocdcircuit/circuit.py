@@ -63,6 +63,7 @@ class Board(Component):
         self.constraints: list[Constraint] = []
         self.includes: list[dict[str, object]] = []  # {path, prefix, join}
         self.custom_fp: dict[str, dict[str, object]] = {}  # from `fp` lines
+        self.fp_src: dict[str, str] = {}  # fp name -> source path
         self.ctx.services["plugins"] = Registry()
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)
@@ -142,19 +143,27 @@ class Board(Component):
             pass
         return merged
 
-    def add_footprint(self, name: str, fp: dict[str, object]) -> None:
-        """Register a custom (.fp) footprint. Undoable like everything."""
+    def add_footprint(self, name: str, fp: dict[str, object],
+                        src: str | None = None) -> None:
+        """Register a custom (.fp) footprint. Undoable like everything.
+        src: originating file path, so dumps() can re-emit the `fp` line."""
         had = name in self.custom_fp
         old = self.custom_fp.get(name)
+        old_src = self.fp_src.get(name)
 
         def _do() -> None:
             self.custom_fp[name] = fp
+            if src is not None:
+                self.fp_src[name] = src
 
         def _undo() -> None:
             if had and old is not None:
                 self.custom_fp[name] = old
+                if old_src is not None:
+                    self.fp_src[name] = old_src
             else:
                 self.custom_fp.pop(name, None)
+                self.fp_src.pop(name, None)
 
         self.ctx.emit(_do, _undo)
 

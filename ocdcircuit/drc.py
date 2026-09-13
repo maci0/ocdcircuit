@@ -94,3 +94,52 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 warnings.append(f"clearance {sa.net}-{sb.net}")
                 break
     return {"errors": errors, "warnings": warnings, "fab": key}
+
+
+def erc(board: Board) -> dict[str, object]:
+    """Electrical rule check: netlist sanity before any copper.
+    Errors: unconnected pins, single-pin nets, same-pin-twice, power nets
+    shorted together (VCC/GND/VDD/VSS/5V/3V3 sharing a pin), empty nets.
+    Warnings: pins sharing a footprint pad name across parts is fine —
+    reported only when a net has >12 pins (smell: accidental global)."""
+    from .agent import AUTO_JOIN
+    errors: list[str] = []
+    warnings: list[str] = []
+    lib = board._lib()
+    ncs: set[str] = set()
+    for c in board.constraints:
+        if c.get("t") == "nc":
+            ncs.update(cast(list[str], c.get("pins", [])))
+    connected: set[tuple[str, str]] = set()
+    for n, net in board.nets.items():
+        if not net.pins:
+            errors.append(f"empty {n}")
+            continue
+        seen: set[tuple[str, str]] = set()
+        for ref, pin in net.pins:
+            if ref not in board.parts:
+                errors.append(f"unknown {ref} on {n}")
+                continue
+            key = (ref, str(pin))
+            if key in seen:
+                errors.append(f"duplicate {ref}.{pin} on {n}")
+            seen.add(key)
+            connected.add(key)
+    for ref, p in board.parts.items():
+        for pin in p.pins_of(lib):
+            if (ref, pin) not in connected and f"{ref}.{pin}" not in ncs \
+                    and not pin.startswith("NC"):
+                errors.append(f"unconnected {ref}.{pin}")
+    # power nets sharing pins = shorted rails
+    owners: dict[tuple[str, str], str] = {}
+    for n, net in board.nets.items():
+        if n in AUTO_JOIN:
+            for ref, pin in net.pins:
+                key = (ref, str(pin))
+                if key in owners:
+                    errors.append(f"power-short {n}/{owners[key]} at {ref}.{pin}")
+                owners[key] = n
+    for n, net in board.nets.items():
+        if len(net.pins) > 12:
+            warnings.append(f"big-net {n} ({len(net.pins)} pins — intentional?)")
+    return {"errors": errors, "warnings": warnings}

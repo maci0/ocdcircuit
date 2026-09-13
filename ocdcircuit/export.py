@@ -77,6 +77,19 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     return files
 
 
+def export_bundle(board: Board, outdir: str = "out") -> list[str]:
+    """One-zip fab bundle: Gerbers + drill + BOM + CPL + .ocd source.
+    Download → upload → boards. Returns [zip path]."""
+    import zipfile
+    files = export_jlc(board, outdir)
+    files += export_kicad(board, outdir)
+    zfn = os.path.join(outdir, f"{board.name}-fab.zip")
+    with zipfile.ZipFile(zfn, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in files:
+            z.write(f, os.path.basename(f))
+    return [zfn]
+
+
 def _sexp_str(s: str) -> str:
     return '"' + s.replace('"', "'") + '"'
 

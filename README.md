@@ -58,6 +58,10 @@ report; motion is the product; one concept, one hue.
   (area) / `thermal` (heat); routers `lroute` (fast estimate) / `maze`
   (DRC-clean A* with vias); silk `ref` / `full` / `fab`. Swap live via
   `b.use()`, CLI flags, studio dropdowns, or MCP.
+- **`nc` + ERC**: `drc:erc` flags unconnected pins, power shorts, dupes;
+  `nc` marks intentional no-connects (USB-C demo has 14).
+- **One-zip fab bundle** (`export:bundle`), **snapshot golden tests**,
+  **embedded calculators** (IPC-2221 trace width, via current, divider).
 - **Agents are first-class**: `mcp.py` is an MCP stdio server (12 tools:
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.

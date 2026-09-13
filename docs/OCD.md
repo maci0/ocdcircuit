@@ -14,6 +14,7 @@ keep U1 near C1 3            # pull parts together (weight, default 2)
 route GND on 1               # force net to layer (top/bottom also work: 0/1)
 trace VCC 0.5                # trace width mm
 power VCC GND                # widen nets to 0.5 (power)
+nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
 match A0 A1                  # length-match nets (placer cost + DRC skew report)
 diff DP DN gap 0.3           # diff pair: equal length + 0.3mm coupling gap
 silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets

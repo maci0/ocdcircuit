@@ -116,6 +116,9 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"silk ([0-3])$", t, re.I)
     if m:
         return {"t": "silk", "level": int(m.group(1))}
+    m = re.match(r"nc ((?:\w+\.\w+ ?)+)$", t, re.I)
+    if m:
+        return {"t": "nc", "pins": m.group(1).split()}
     m = re.match(r"board ([\d.]+) ?x ([\d.]+)$", t, re.I)
     if m:
         return {"t": "board", "w": float(m.group(1)), "h": float(m.group(2))}
@@ -136,6 +139,9 @@ def dumps(board: Board) -> str:
         if p.owner:
             continue  # owned by an include — parent dumps the `use` line instead
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}")
+    # fp lines up front: footprints must exist before parts use them
+    fps = [f"fp {board.fp_src[name]}" for name in board.custom_fp if name in board.fp_src]
+    L[1:1] = fps
     for n, net in board.nets.items():
         pins = [(r, pin) for r, pin in net.pins if r not in owned]
         if not pins and any(net.pins):
@@ -167,6 +173,8 @@ def dumps(board: Board) -> str:
             L.append(f"trace {c['net']} {_f(c['width']):g}")
         elif t == "silk":
             L.append(f"silk {c['level']}")
+        elif t == "nc":
+            L.append(f"nc {' '.join(cast(list[str], c['pins']))}")
         elif t == "match":
             L.append(f"match {' '.join(cast(list[str], c['nets']))}")
         elif t == "diff":
@@ -244,7 +252,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 name, meta = load_file(fn)
             except (OSError, ValueError) as e:
                 raise err(e)
-            b.add_footprint(name, meta)
+            b.add_footprint(name, meta, toks[1])
         elif kw == "part":
             toks = line.split(None, 3)
             if len(toks) < 3:
