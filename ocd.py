@@ -4,17 +4,25 @@ import os
 import sys
 from typing import cast
 
+USAGE = ("usage: ocd [--fab jlc|pcbway|oshpark|seeed|aisler] "
+         "[--placer diffusion|compact|thermal] [--router lroute|maze] <circuit.ocd>")
+
 
 def main(argv: list[str]) -> int:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from ocdcircuit import agent
-    fab = "jlc"
+    fab, placer, router = "jlc", None, None
     args = argv[1:]
-    if len(args) >= 2 and args[0] == "--fab":
-        fab = args[1]
+    while len(args) >= 2 and args[0] in ("--fab", "--placer", "--router"):
+        if args[0] == "--fab":
+            fab = args[1]
+        elif args[0] == "--placer":
+            placer = args[1]
+        else:
+            router = args[1]
         args = args[2:]
     if len(args) != 1 or args[0] in ("-h", "--help"):
-        print("usage: ocd [--fab jlc|pcbway|oshpark|seeed|aisler] <circuit.ocd>")
+        print(USAGE)
         return 1
     src = args[0]
     try:
@@ -24,8 +32,12 @@ def main(argv: list[str]) -> int:
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
-    c = b.place()
-    n = b.route_board()
+    try:
+        c = b.place(placer) if placer else b.place()
+        n = b.route_board(router) if router else b.route_board()
+    except KeyError as e:
+        print(f"ocd: {e}")
+        return 1
     r = b.check()
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
     files = (b.export("jlc", outdir=out) + b.export("kicad", outdir=out)

@@ -35,6 +35,7 @@ class StdParts(Plugin[dict[str, Footprint]]):
 
 
 class DiffusionPlacer(Plugin[float]):
+    """Optimize wirelength + spreading (general default)."""
     kind, key = "placer", "diffusion"
 
     def run(self, board: Board, *a: object, **k: object) -> float:
@@ -49,6 +50,43 @@ class DiffusionPlacer(Plugin[float]):
                         frames=frames, every=every)
 
 
+class CompactPlacer(Plugin[float]):
+    """Optimize board AREA: same diffusion, tighter edge margin + stronger
+    net pull, weaker spread. Mix with `edge` constraint for target size."""
+    kind, key = "placer", "compact"
+
+    def run(self, board: Board, *a: object, **k: object) -> float:
+        from typing import cast
+        from . import solver
+        pull = _f(k.get("pull", 0.16))
+        seeds = _i(k.get("seeds"), 4)
+        iters = _i(k.get("iters"), 400)
+        seed = _i(k.get("seed"), 0)
+        frames = cast(list[Frame] | None, k.get("frames"))
+        every = _i(k.get("every"), 10)
+        return solver.optimize(board, seeds=seeds, iters=iters, seed=seed,
+                               frames=frames, every=every,
+                               pull=pull, spread=0.8, edge=0.3)
+
+
+class ThermalPlacer(Plugin[float]):
+    """Optimize heat: big parts (regulators, power) pushed apart + toward
+    board edges. Same engine, repulsion scaled by body area."""
+    kind, key = "placer", "thermal"
+
+    def run(self, board: Board, *a: object, **k: object) -> float:
+        from typing import cast
+        from . import solver
+        seeds = _i(k.get("seeds"), 4)
+        iters = _i(k.get("iters"), 400)
+        seed = _i(k.get("seed"), 0)
+        frames = cast(list[Frame] | None, k.get("frames"))
+        every = _i(k.get("every"), 10)
+        return solver.optimize(board, seeds=seeds, iters=iters, seed=seed,
+                               frames=frames, every=every,
+                               thermal=True)
+
+
 class GreedyLayers(Plugin[None]):
     kind, key = "layers", "greedy"
 
@@ -58,12 +96,25 @@ class GreedyLayers(Plugin[None]):
 
 
 class LRouter(Plugin[int]):
+    """Fast estimate routing (no obstacle avoidance). For DRC-clean boards
+    use maze; for quick what-if, lroute is 10x faster."""
     kind, key = "router", "lroute"
 
     def run(self, board: Board, *a: object, **k: object) -> int:
         from typing import cast
         from .solver import route
         return route(board, frames=cast(list[Frame] | None, k.get("frames")))
+
+
+class MazeRouter(Plugin[int]):
+    """DRC-clean routing: A* wavefront avoiding parts, pads, copper.
+    Slower; mix with diffusion placer for the full smart flow."""
+    kind, key = "router", "maze"
+
+    def run(self, board: Board, *a: object, **k: object) -> int:
+        from typing import cast
+        from .maze import maze
+        return maze(board, frames=cast(list[Frame] | None, k.get("frames")))
 
 
 class FabDrc(Plugin[dict[str, object]]):
@@ -207,11 +258,10 @@ class SvgRenderer(Plugin[str]):
     kind, key = "renderer", "svg"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
-        from . import silk as _silk
         S = _f(k.get("scale", 10))
         theme = str(k.get("theme", "dark"))
-        silk_lv = k.get("silk")
-        assert silk_lv is None or isinstance(silk_lv, int)
+        silk_key = k.get("silk")
+        assert silk_key is None or isinstance(silk_key, (str, int))
         th = THEMES.get(theme, THEMES["dark"])
         layers = cast(list[str], th["layers"])
         W, H = board.width * S, board.height * S
@@ -228,19 +278,24 @@ class SvgRenderer(Plugin[str]):
             part, court = str(th["part"]), str(th["courtyard"])
             el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{p.w * S:.1f}" '
                       f'height="{p.h * S:.1f}" fill="{part}" stroke="{court}"/>')
-        sk = _silk.labels(board, silk_lv)
+        sk = board.silk(silk_key if isinstance(silk_key, str) else None)
+        if isinstance(silk_key, int):
+            from . import silk as _silk
+            lv = _silk.labels(board, silk_key)
+            sk = {"texts": list(lv.texts), "dots": list(lv.dots), "boxes": list(lv.boxes)}
         fs = 4 * S / 10
         silk = str(th["silk"])
         silk_dim = str(th["silk_dim"])
-        for tx in sk.texts:
+        from .silk import Box, Dot, Text
+        for tx in cast(list[Text], sk["texts"]):
             fill = {"silk-ref": silk, "silk-val": silk_dim,
                     "silk-net": silk_dim}[tx.cls]
             el.append(f'<text x="{tx.x * S:.1f}" y="{(H - tx.y * S):.1f}" fill="{fill}" '
                       f'font-size="{fs:.1f}" text-anchor="middle">{tx.s}</text>')
-        for d in sk.dots:
+        for d in cast(list[Dot], sk["dots"]):
             el.append(f'<circle cx="{d.x * S:.1f}" cy="{(H - d.y * S):.1f}" '
                       f'r="{max(1, 0.3 * S):.1f}" fill="{silk}"/>')
-        for bx in sk.boxes:
+        for bx in cast(list[Box], sk["boxes"]):
             el.append(f'<rect x="{bx.x0 * S:.1f}" y="{(H - bx.y1 * S):.1f}" '
                       f'width="{(bx.x1 - bx.x0) * S:.1f}" height="{(bx.y1 - bx.y0) * S:.1f}" '
                       f'fill="none" stroke="{silk_dim}" stroke-width="0.5"/>')
@@ -339,8 +394,40 @@ class StlRenderer(Plugin[str]):
         return "\n".join(out)
 
 
-_DEFAULTS = (StdParts, DiffusionPlacer, GreedyLayers, LRouter, FabDrc,
+class RefSilk(Plugin[dict[str, object]]):
+    """Minimal silk for dense boards: refs only, nothing else."""
+    kind, key = "silk", "ref"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import silk as _silk
+        s = _silk.labels(board, 0)
+        return {"texts": list(s.texts), "dots": [], "boxes": []}
+
+
+class FullSilk(Plugin[dict[str, object]]):
+    """Assembly-friendly silk: refs + values + pin-1 + outlines."""
+    kind, key = "silk", "full"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import silk as _silk
+        s = _silk.labels(board, 2)
+        return {"texts": list(s.texts), "dots": list(s.dots), "boxes": list(s.boxes)}
+
+
+class FabSilk(Plugin[dict[str, object]]):
+    """Fab silk: everything + net labels (debug/rework friendly)."""
+    kind, key = "silk", "fab"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import silk as _silk
+        s = _silk.labels(board, 3)
+        return {"texts": list(s.texts), "dots": list(s.dots), "boxes": list(s.boxes)}
+
+
+_DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
+             GreedyLayers, LRouter, MazeRouter, FabDrc,
              JlcDrc, JlcExporter, KicadExporter, OcdExporter, JsonExporter,
+             RefSilk, FullSilk, FabSilk,
              SvgRenderer, SchRenderer, StlRenderer)
 
 

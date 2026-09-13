@@ -11,8 +11,15 @@ if TYPE_CHECKING:
 def _seg_dist(a: tuple[float, float, float, float],
               b: tuple[float, float, float, float]) -> float:
     (x1, y1, x2, y2), (x3, y3, x4, y4) = a, b
-    if x1 == x2 == x3 == x4 or y1 == y2 == y3 == y4:
-        return 0.0  # collinear handled conservatively elsewhere
+    if x1 == x2 == x3 == x4:
+        # shared vertical: gap between y-ranges (0 if overlapping)
+        lo1, hi1 = min(y1, y2), max(y1, y2)
+        lo2, hi2 = min(y3, y4), max(y3, y4)
+        return max(0.0, max(lo1, lo2) - min(hi1, hi2))
+    if y1 == y2 == y3 == y4:
+        lo1, hi1 = min(x1, x2), max(x1, x2)
+        lo2, hi2 = min(x3, x4), max(x3, x4)
+        return max(0.0, max(lo1, lo2) - min(hi1, hi2))
 
     def d(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
         dx, dy = bx - ax, by - ay
@@ -65,6 +72,13 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     for t in board.traces:
         if t.width < min_trace:
             errors.append(f"trace-width {t.net}")
+    from .solver import _diff_cost, _match_cost
+    mc = _match_cost(board)
+    if mc > 5.0:
+        warnings.append(f"length-mismatch skew~{mc / 50.0:.1f}mm")
+    dc = _diff_cost(board)
+    if dc > 10.0:
+        warnings.append(f"diff-pair skew/gap dev~{dc / 100.0:.1f}mm")
     tr = board.traces
     for i in range(len(tr)):
         for j in range(i + 1, len(tr)):

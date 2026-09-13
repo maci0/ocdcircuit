@@ -8,6 +8,7 @@ commit it, build the rest. If a line is off by a space, `ocd` tells you
 which line. You knew which line. Now you can fix it.
 
 ```bash
+python ocd.py --placer compact --router maze examples/blinky_555.ocd  # cleanest
 python ocd.py examples/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
 python ocd.py --fab oshpark examples/psu.ocd # same board, stricter fab
 python studio.py examples/blinky_555.ocd     # visual editor → localhost:8077
@@ -53,6 +54,13 @@ report; motion is the product; one concept, one hue.
   your board against the factory you actually ordered from
   ([inventory](docs/FAB.md)).
 - **mypy strict**, zero `Any`, zero errors. The code is aligned too.
+- **Mix-and-match plugins**: placers `diffusion` (wirelength) / `compact`
+  (area) / `thermal` (heat); routers `lroute` (fast estimate) / `maze`
+  (DRC-clean A* with vias); silk `ref` / `full` / `fab`. Swap live via
+  `b.use()`, CLI flags, studio dropdowns, or MCP.
+- **Agents are first-class**: `mcp.py` is an MCP stdio server (12 tools:
+  load/solve/patch/place/route/check/export/render) — any MCP client can
+  drive boards. `match`/`diff` constraints cover length + diff pairs.
 
 Layout: `ocdcircuit/` (core, circuit, parts, solver, drc, fab, silk, export,
 agent, plugins), `studio.py`, `ocd.py`, `docs/`, `examples/`, `tests/`.

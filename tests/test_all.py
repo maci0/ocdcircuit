@@ -173,6 +173,24 @@ assert ro["fab"] == "oshpark"
 bo.fab = "jlc"
 assert not cast(list[str], bo.check()["errors"])
 
+# mix-and-match: every placer × every router × every silk resolves + runs
+for pl in ["diffusion", "compact", "thermal"]:
+    for rt in ["lroute", "maze"]:
+        bm = agent.loads(ocd, base=EX)
+        bm.place(pl, seeds=2, iters=100)
+        bm.route_board(rt)
+        assert not cast(list[str], bm.check()["errors"]), (pl, rt)
+for sk in ["ref", "full", "fab"]:
+    silks = bo.silk(sk)
+    assert isinstance(silks["texts"], list) and isinstance(silks["dots"], list)
+assert len(cast(list[object], bo.silk("ref")["texts"])) == len(bo.parts)
+assert len(cast(list[object], bo.silk("full")["texts"])) >= len(bo.parts)
+try:
+    bo.silk("nope")
+    raise AssertionError("should have raised")
+except KeyError:
+    pass
+
 # full flow on 555-ish mini board, plugin-dispatched
 b = Board("mini", 40, 30)
 b.add_part("U1", "SOIC8", "NE555")
@@ -201,4 +219,45 @@ with tempfile.TemporaryDirectory() as d:
     assert any(f.endswith(".ocd") for f in files)
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
+
+# MCP stdio server: initialize → list → load → solve → patch → check
+import json as _json
+mcp = subprocess.Popen([sys.executable, os.path.join(HERE, "..", "mcp.py")],
+                       stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+_mid = [0]
+
+def _rpc(method: str, params: dict[str, object] | None = None) -> dict[str, object]:
+    assert mcp.stdin is not None and mcp.stdout is not None
+    _mid[0] += 1
+    body = _json.dumps({"jsonrpc": "2.0", "id": _mid[0], "method": method,
+                        "params": params or {}}).encode()
+    mcp.stdin.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+    mcp.stdin.flush()
+    head = b""
+    while not head.endswith(b"\r\n\r\n"):
+        head += mcp.stdout.read(1)
+    ln = [l for l in head.decode().split("\r\n") if "content-length" in l.lower()][0]
+    return cast(dict[str, object], _json.loads(mcp.stdout.read(int(ln.split(":")[1].strip()))))
+
+def _call(name: str, args: dict[str, object]) -> dict[str, object]:
+    r = _rpc("tools/call", {"name": name, "arguments": args})
+    assert "error" not in r, r
+    content = cast(list[dict[str, object]], cast(dict[str, object], r["result"])["content"])
+    return cast(dict[str, object], _json.loads(str(content[0]["text"])))
+
+assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
+    "name": "ocd-circuit", "version": "0.2"}
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 12
+assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+solved = _call("solve", {"placer": "compact", "router": "maze"})
+assert solved["errors"] == [] and solved["warnings"] == [], solved
+assert _call("apply_patch", {"ops": [{"op": "constrain",
+        "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
+assert _call("parse_constraint", {"text": "keep U1 near C1"})["constraint"] == {
+    "t": "near", "a": "U1", "b": "C1", "w": 2.0}
+assert _call("check", {})["errors"] == []
+assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "error" in _rpc("tools/call", {"name": "nope", "arguments": {}})
+mcp.kill()
+print("MCP OK")
 print("ALL OK")

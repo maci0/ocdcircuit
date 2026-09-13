@@ -70,6 +70,52 @@ def cost(board: Board) -> float:
         if na in board.parts and nb in board.parts:
             qa, qb = board.parts[na], board.parts[nb]
             c += wgt * (abs(qa.x - qb.x) + abs(qa.y - qb.y))
+    c += _match_cost(board) + _diff_cost(board)
+    return c
+
+
+def _net_length(board: Board, net: str) -> float:
+    """Routed length if traces exist, else Manhattan estimate from pads."""
+    segs = [s for s in board.traces if s.net == net]
+    if segs:
+        return sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)
+    pts = [board.pad_pos(r, q) for r, q in board.nets[net].pins if r in board.parts]
+    if len(pts) < 2:
+        return 0.0
+    return sum(abs(p[0] - pts[0][0]) + abs(p[1] - pts[0][1]) for p in pts[1:])
+
+
+def _match_cost(board: Board) -> float:
+    """match NET... within TOL: penalize max length deviation × 50."""
+    c = 0.0
+    for con in board.constraints:
+        if con.get("t") != "match":
+            continue
+        nets = [n for n in cast(list[str], con.get("nets", [])) if n in board.nets]
+        if len(nets) < 2:
+            continue
+        lens = [_net_length(board, n) for n in nets]
+        c += 50.0 * (max(lens) - min(lens))
+    return c
+
+
+def _diff_cost(board: Board) -> float:
+    """diff P N gap G: penalize pair length mismatch × 100 + gap error × 20."""
+    c = 0.0
+    for con in board.constraints:
+        if con.get("t") != "diff":
+            continue
+        p, n = str(con.get("p")), str(con.get("n"))
+        if p not in board.nets or n not in board.nets:
+            continue
+        c += 100.0 * abs(_net_length(board, p) - _net_length(board, n))
+        gap = float(cast(float, con.get("gap", 0.3)))
+        pp = [board.pad_pos(r, q) for r, q in board.nets[p].pins if r in board.parts]
+        np_ = [board.pad_pos(r, q) for r, q in board.nets[n].pins if r in board.parts]
+        if pp and np_:
+            # closest pad-pair distance should equal gap (coupling entry)
+            d = min(abs(a[0] - b[0]) + abs(a[1] - b[1]) for a in pp for b in np_)
+            c += 20.0 * abs(d - gap)
     return c
 
 
@@ -81,11 +127,13 @@ def edge_margin(board: Board) -> float:
 
 
 def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
-                   frames: list[Frame] | None = None, every: int = 10) -> None:
+                   frames: list[Frame] | None = None, every: int = 10,
+                   pull: float = 0.08, spread: float = 1.0,
+                   edge: float | None = None, thermal: bool = False) -> None:
     rng = random.Random(seed)
     fx = _fixed(board)
     near = _near(board)
-    m = edge_margin(board)
+    m = edge if edge is not None else edge_margin(board)
     parts = [p for r, p in board.parts.items() if r not in fx]
     for r, (x, y) in fx.items():
         if r in board.parts:
@@ -115,8 +163,8 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                 if len(pts) > 1:
                     cx = sum(q[0] for q in pts) / len(pts)
                     cy = sum(q[1] for q in pts) / len(pts)
-                    Fx += 0.08 * (cx - p.x)
-                    Fy += 0.08 * (cy - p.y)
+                    Fx += pull * (cx - p.x)
+                    Fy += pull * (cy - p.y)
             for a, b, w in near:
                 if p.ref == a and b in board.parts:
                     q = board.parts[b]
@@ -127,23 +175,30 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                     Fx += 0.05 * w * (q.x - p.x)
                     Fy += 0.05 * w * (q.y - p.y)
             # pairwise repulsion: radial spread + hard box-penetration
-            # push (matches cost()'s overlap box, so dynamics feel the cliff)
+            # push (matches cost()'s overlap box, so dynamics feel the cliff).
+            # thermal: big bodies repel harder + drift to edges.
             for q in board.parts.values():
                 if q is p:
                     continue
+                area_k = 1.0
+                if thermal:
+                    area_k = 1.0 + (q.w * q.h) / 25.0
+                    edge_cx, edge_cy = board.width / 2, board.height / 2
+                    Fx += 0.02 * (p.x - edge_cx) * (p.w * p.h) / 25.0
+                    Fy += 0.02 * (p.y - edge_cy) * (p.w * p.h) / 25.0
                 dx, dy = p.x - q.x, p.y - q.y
                 d = (dx * dx + dy * dy) ** 0.5
                 need = ((p.w + q.w) / 2 + 0.6 + (p.h + q.h) / 2 + 0.6) / 2
                 if d < 1e-6:
                     dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
                 if d < need * 2.2:
-                    f = 3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0)
+                    f = spread * area_k * (3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0))
                     Fx += f * dx / d
                     Fy += f * dy / d
                 pen_x = (p.w + q.w) / 2 + 0.4 - abs(dx)
                 pen_y = (p.h + q.h) / 2 + 0.4 - abs(dy)
                 if pen_x > 0 and pen_y > 0:
-                    push = 4.0 + 8.0 * min(pen_x, pen_y)
+                    push = spread * (4.0 + 8.0 * min(pen_x, pen_y))
                     if pen_x < pen_y:
                         Fx += push if dx >= 0 else -push
                     else:
@@ -166,9 +221,12 @@ def _snap(board: Board) -> Frame:
 
 
 def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
-             frames: list[Frame] | None = None, every: int = 10) -> float:
+             frames: list[Frame] | None = None, every: int = 10,
+             pull: float = 0.08, spread: float = 1.0,
+             edge: float | None = None, thermal: bool = False) -> float:
     """Multi-seed diffusion; whole run is one undoable effect. Returns cost.
-    frames: optional list to append animation snapshots to."""
+    frames: optional list to append animation snapshots to.
+    pull/spread/edge/thermal: objective knobs (see placer plugins)."""
     snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
     old_traces = list(board.traces)
     best: float = 0.0
@@ -177,7 +235,8 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
     for s in range(seeds):
         if frames is not None:
             frames.append({"seed": s})
-        _diffuse_once(board, iters, seed + s, frames=frames, every=every)
+        _diffuse_once(board, iters, seed + s, frames=frames, every=every,
+                      pull=pull, spread=spread, edge=edge, thermal=thermal)
         c = cost(board)
         if first or c < best:
             first = False
@@ -233,7 +292,9 @@ def assign_layers(board: Board) -> None:
 
 def route(board: Board, frames: list[Frame] | None = None) -> int:
     """Ordered star L-routes on assigned layers. One undoable effect.
-    frames: optional list; one snapshot per routed net for trace animation."""
+    frames: optional list; one snapshot per routed net for trace animation.
+    # ponytail: no obstacle avoidance — maze router (router:maze) does that.
+    """
     assign_layers(board)
     old = list(board.traces)
     new: list[Seg] = []

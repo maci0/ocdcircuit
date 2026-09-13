@@ -111,6 +111,19 @@ class Board(Component):
         assert isinstance(out, str)
         return out
 
+    def silk(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Silkscreen generation, mix-and-match: ref (dense) / full
+        (assembly) / fab (debug). Default follows the `silk <n>` line."""
+        if key is None:
+            from .silk import level_of
+            key = ("ref" if level_of(self) == 0 else "fab"
+                   if level_of(self) >= 3 else "full")
+        plug = self.plugins().get("silk", key)
+        assert isinstance(plug, Plugin)
+        out = plug.run(self, **k)
+        assert isinstance(out, dict)
+        return out
+
     # -- parts library via plugin, stdlib fallback --
     def _lib(self) -> dict[str, dict[str, object]]:
         from .parts import FOOTPRINTS as STD

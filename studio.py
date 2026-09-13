@@ -63,7 +63,7 @@ body.light .tok-k{color:#0050a0}body.light .tok-net{color:#b9770e}
 </style></head><body>
 <header><b>OCD</b><span>studio</span><span id=cost></span>
 <select id=placer title=placer></select><select id=router title=router></select>
-<select id=fab title=fab></select><select id=silk title=silk><option value=0>silk0</option><option value=1 selected>silk1</option><option value=2>silk2</option><option value=3>silk3</option></select>
+<select id=fab title=fab></select><select id=silk title=silk></select>
 <button id=theme>light</button><button id=solve>solve ▶</button><span id=stat></span></header>
 <main>
 <section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3><div id=ed contenteditable spellcheck=false></div></section>
@@ -195,6 +195,7 @@ $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=p
 (async()=>{const r=await api('/init',{});
   $('placer').innerHTML=r.placers.map(p=>`<option>${p}</option>`).join('');
   $('router').innerHTML=r.routers.map(p=>`<option>${p}</option>`).join('');
+  $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
   $('fab').innerHTML=r.fabs.map(p=>`<option>${p}</option>`).join('');
   setEditor(r.text);applyState(r,false);})();
 </script></body></html>
@@ -280,10 +281,11 @@ class H(http.server.BaseHTTPRequestHandler):
         reg = b.plugins()
         placers = reg.list("placer")
         routers = reg.list("router")
+        silks = reg.list("silk")
         placer = str(req.get("placer", placers[0])) if placers else "diffusion"
         router = str(req.get("router", routers[0])) if routers else "lroute"
+        silksel = str(req.get("silk", silks[1] if len(silks) > 1 else silks[0])) if silks else "full"
         b.fab = str(req.get("fab", getattr(b, "fab", "jlc")))
-        silk = _i(req.get("silk"), 1)
         frames: list[dict[str, object]] = []
         cost = b.place(placer, seeds=5, iters=500, frames=frames if animate else None,
                        every=25)
@@ -300,7 +302,8 @@ class H(http.server.BaseHTTPRequestHandler):
         st["placers"] = placers
         st["routers"] = routers
         st["fabs"] = _fab.list_fabs()
-        st["silk"] = silk
+        st["silks"] = silks
+        st["silk"] = silksel
         H.src_text = str(st["text"])
         return st
 

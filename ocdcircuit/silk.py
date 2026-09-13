@@ -1,7 +1,7 @@
 """Auto-silkscreen at detail levels. Pure function of board state.
 
-Levels: 0 = refs only · 1 = refs + values · 2 = + pin-1 dots + courtyard
-outline · 3 = + net labels at segment midpoints.
+Levels: 0 = refs only (dense boards) · 1 = refs + values · 2 = + pin-1
+dots + courtyard outline · 3 = + net labels at segment midpoints.
 `silk <n>` statement sets the level (default 1). Renderers/exporters call
 labels() and format geometry themselves.
 """
