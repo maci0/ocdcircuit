@@ -294,6 +294,7 @@ assert _call("check", {})["errors"] == []
 assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:fp" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "simulate:mna" in cast(list[str], _call("list_plugins", {})["plugins"])
+assert "simulate:ngspice" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert cast(float, _call("calc", {"what": "divider", "vin": 9, "rtop": 10000,
                                   "rbot": 4700})["vout"]) > 2.8
 assert "error" in _rpc("tools/call", {"name": "nope", "arguments": {}})
@@ -410,4 +411,42 @@ _simb2 = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                      "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n")
 _w = cast(list[float], cast(dict[str, object], _simb2.simulate(what="tran")["waves"])["VO"])
 assert abs(_w[-1] - 5.0) < 0.05 and all(a <= c + 1e-9 for a, c in zip(_w, _w[1:]))
+# ngspice plugin: same shape as mna + analog mna cannot do (skip if no binary)
+import shutil as _sh
+if _sh.which("ngspice") is not None:
+    _ng0 = _simb2.simulate("ngspice", what="tran")
+    _ngw = cast(list[float], cast(dict[str, object], _ng0["waves"])["VO"])
+    assert abs(_ngw[-1] - 5.0) < 0.05, _ngw[-5:]
+    _ngd = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+                       "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\nsim vcc VIN 9\n")
+    assert abs(cast(dict[str, float], _ngd.simulate("ngspice")["nets"])["VO"] - 2.878) < 0.02
+    # diode clipper (no mna equivalent): clamps ±0.7
+    _ngc = agent.loads("board t 40x30\npart R1 R0805 1k\npart D1 D_SOD323\npart D2 D_SOD323\n"
+                       "net IN: R1.1\nnet VO: R1.2 D1.2 D2.1\nnet GND: D1.1 D2.2\n"
+                       "sim sine IN 0 5 1000\nsim tran 0.002 400\nsim probe VO\n")
+    _cw = cast(list[float], cast(dict[str, object], _ngc.simulate("ngspice", what="tran")["waves"])["VO"])
+    assert max(_cw) < 1.5 and min(_cw) > -1.5, (max(_cw), min(_cw))
+    # BJT saturation (no mna equivalent): Vce < 0.5
+    _ngq = agent.loads("board t 40x30\npart RB R0805 10k\npart RC R0805 1k\npart Q1 SOT23\n"
+                       "net IN: RB.1\nnet B: RB.2 Q1.1\nnet VCC: RC.1\nnet OUT: RC.2 Q1.3\nnet GND: Q1.2\n"
+                       "sim vcc VCC 5\nsim vcc IN 3\n")
+    assert cast(dict[str, float], _ngq.simulate("ngspice")["nets"])["OUT"] < 0.5
+    # RC lowpass ac: unity at LF, rolled off at HF
+    _nga = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                       "net IN: R1.1\nnet VO: R1.2 C1.1\nnet GND: C1.2\n"
+                       "sim sine IN 0 1 1000\nsim ac 10 100000 20\nsim probe VO\n")
+    _am = cast(list[float], cast(dict[str, object], _nga.simulate("ngspice", what="ac")["ac"])["VO"])
+    assert abs(_am[0] - 1.0) < 0.05 and _am[-1] < 0.1
+    # opamp x11 (no mna equivalent)
+    _ngo = agent.loads("board t 40x30\npart U1 SOIC8 X\npart R1 R0805 1k\npart Rf R0805 10k\n"
+                       "net IN: U1.3\nnet FB: U1.2 R1.2 Rf.1\nnet GND: R1.1\nnet OUT: U1.1 Rf.2\n"
+                       "net VCC: U1.7\nnet VEE: U1.4\n"
+                       "sim vcc VCC 15\nsim vcc VEE -15\nsim sine IN 0 1 100\n"
+                       "sim op U1 OPIDEAL 1 3 2 7 4\nsim tran 0.02 200\nsim probe OUT\n")
+    _ow = cast(list[float], cast(dict[str, object], _ngo.simulate("ngspice", what="tran")["waves"])["OUT"])
+    assert 10.0 < max(_ow) < 12.0, _ow[-5:]
+    # grammar round-trips
+    _ngg = agent.loads("board t 40x30\npart D1 D_SOD323\nnet A: D1.1\nnet B: D1.2\n"
+                       "sim d D1 BAT54\nsim ac 10 1e6 20\n")
+    assert agent.dumps(agent.loads(agent.dumps(_ngg))) == agent.dumps(_ngg)
 print("ALL OK")

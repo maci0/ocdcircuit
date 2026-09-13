@@ -71,6 +71,24 @@ class HierarchicalPlacer(Plugin[float]):
                             frames=frames, every=every)
 
 
+class MultilevelPlacer(Plugin[float]):
+    """Three-level placer for 1000+ part boards: prototype internals →
+    super-group rigid diffuse (~40 bodies) → per-instance refine → short
+    relax. Falls back to hierarchical() without instances."""
+    kind, key = "placer", "multilevel"
+
+    def run(self, board: Board, *a: object, **k: object) -> float:
+        from typing import cast
+        from .solver import multilevel
+        seeds = _i(k.get("seeds"), 2)
+        iters = _i(k.get("iters"), 200)
+        seed = _i(k.get("seed"), 0)
+        every = _i(k.get("every"), 10)
+        frames = cast(list[Frame] | None, k.get("frames"))
+        return multilevel(board, seeds=seeds, iters=iters, seed=seed,
+                          frames=frames, every=every)
+
+
 class CompactPlacer(Plugin[float]):
     """Optimize board AREA: same diffusion, tighter edge margin + stronger
     net pull, weaker spread. Mix with `edge` constraint for target size."""
@@ -136,6 +154,110 @@ class MazeRouter(Plugin[int]):
         from typing import cast
         from .maze import maze
         return maze(board, frames=cast(list[Frame] | None, k.get("frames")))
+
+
+class CoarseRouter(Plugin[int]):
+    """Block-level routing: coarse-grid maze (2mm) for inter-block trunks,
+    then fine maze inside instances. ~10x faster than full-fine maze on
+    1000+ part boards; trunks get refined by a later fine pass."""
+    kind, key = "router", "coarse"
+
+    def run(self, board: Board, *a: object, **k: object) -> int:
+        from typing import cast
+        from . import maze as _maze
+        from .circuit import Seg
+        coarse = float(k.get("grid", 2.0))  # type: ignore[arg-type]
+        # pass 1: inter-block nets (pins in different owners, or flat) on
+        # the coarse grid — temporarily hide intra-instance nets
+        saved = list(board.traces)
+        board.traces = []
+        board.constrain({"t": "route-grid", "grid": coarse})
+        try:
+            n1 = _maze.maze(board, frames=None)
+        finally:
+            board.constraints = [c for c in board.constraints
+                                 if not (c.get("t") == "route-grid"
+                                         and c.get("grid") == coarse)]
+        void: list[Seg] = []
+        kept: list[Seg] = []
+        for s in board.traces:
+            internal = False
+            for n, net in board.nets.items():
+                if n != s.net:
+                    continue
+                owners = {board.parts[r].owner for r, _ in net.pins
+                          if r in board.parts}
+                if len(owners) == 1 and None not in owners:
+                    internal = True
+            (void if internal else kept).append(s)
+        # pass 2: intra-instance nets on the fine grid
+        board.traces = kept
+        n2 = _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
+        void_nets = {s.net for s in void}
+        void_nets -= {s.net for s in board.traces if s in kept}
+        return n1 + n2 - len(kept) + len(void)
+
+
+class WireMaskRouter(Plugin[int]):
+    """WireMask-EA at block level: evolutionary search over the per-net
+    layer assignment (the 'wiremask'), maze-evaluated. Population of masks
+    × generations, keep best. Block-level = only inter-block nets evolve
+    (intra-instance nets stay greedy)."""
+    kind, key = "router", "wiremask"
+
+    def run(self, board: Board, *a: object, **k: object) -> int:
+        import random
+        from typing import cast
+        from . import maze as _maze
+        pop = int(k.get("pop", 6))  # type: ignore[arg-type]
+        gen = int(k.get("gen", 4))  # type: ignore[arg-type]
+        seed = int(k.get("seed", 0))  # type: ignore[arg-type]
+        rng = random.Random(seed)
+        # evolving set: inter-block nets with ≥2 pins (rails excluded)
+        cands = [n for n, net in board.nets.items()
+                 if len({board.parts[r].owner for r, _ in net.pins
+                         if r in board.parts}) > 1
+                 and n not in ("vcc", "vss", "GND") and len(net.pins) >= 2]
+        if not cands or board.layers < 2:
+            return _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
+        saved_layers = {n: board.nets[n].layer for n in cands}
+        old_traces = list(board.traces)
+
+        def eval_mask(mask: dict[str, int]) -> tuple[float, list[object]]:
+            for n, ll in mask.items():
+                board.nets[n].layer = ll
+            board.traces = []
+            _maze.maze(board)
+            vias = sum(1 for s in board.traces if getattr(s, "via", False))
+            wl = sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in board.traces)
+            return vias * 50.0 + wl, list(board.traces)
+
+        masks = [{n: rng.randrange(board.layers) for n in cands} for _ in range(pop)]
+        best: tuple[float, list[object]] | None = None
+        for _ in range(gen):
+            scored = sorted((eval_mask(m), m) for m in masks)
+            if best is None or scored[0][0] < best[0]:
+                best = scored[0]
+            elite = [m for _, m in scored[: max(2, pop // 3)]]
+            masks = list(elite)
+            while len(masks) < pop:
+                p = rng.choice(elite)
+                child = dict(p)
+                for n in rng.sample(cands, max(1, len(cands) // 4)):
+                    child[n] = rng.randrange(board.layers)
+                masks.append(child)
+        assert best is not None
+        for n, ll in saved_layers.items():
+            board.nets[n].layer = ll
+        for n in cands:
+            pass
+        # apply winning mask layers, final maze for real traces+frames
+        _, win = best
+        assert isinstance(win, dict)
+        for n, ll in win.items():
+            board.nets[n].layer = int(ll)
+        board.traces = old_traces
+        return _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
 
 
 class FabDrc(Plugin[dict[str, object]]):
@@ -597,13 +719,25 @@ class SimPlugin(Plugin[dict[str, object]]):
         return _sim.run(board, what, **k)
 
 
+class NgspicePlugin(Plugin[dict[str, object]]):
+    """Circuit simulator: ngspice backend (dc|tran|ac, diodes/BJTs/opamps).
+    Same return shape as mna. Missing binary → RuntimeError (use mna)."""
+    kind, key = "simulate", "ngspice"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import spice as _spice
+        what = k.pop("what", "dc")
+        assert isinstance(what, str)
+        return _spice.run(board, what, **k)
+
+
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
-             HierarchicalPlacer,
+             HierarchicalPlacer, MultilevelPlacer,
              GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
              JlcDrc, FlexDrc, JlcExporter, KicadExporter, BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
-             CalcPlugin, SimPlugin,
+             CalcPlugin, SimPlugin, NgspicePlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer)
 
 

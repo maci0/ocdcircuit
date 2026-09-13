@@ -147,7 +147,7 @@ def parse_constraint(text: str) -> Constraint | None:
         return {"t": "stiffener", "x": float(m.group(1)), "y": float(m.group(2)),
                 "w": float(m.group(3)), "h": float(m.group(4)),
                 "mat": m.group(5), "th": float(m.group(6))}
-    m = re.match(r"sim\s+vcc\s+(\w+)\s+([\d.]+)(?:\s+([\d.]+))?$", t, re.I)
+    m = re.match(r"sim\s+vcc\s+(\w+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?$", t, re.I)
     if m:
         c: Constraint = {"t": "sim", "kind": "vcc", "net": m.group(1), "v0": float(m.group(2))}
         if m.group(3) is not None:
@@ -166,9 +166,27 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"sim\s+probe\s+(\w+)$", t, re.I)
     if m:
         return {"t": "sim", "kind": "probe", "net": m.group(1)}
-    m = re.match(r"sim\s+([rcl])\s+(\w+)\s+(\S+)$", t, re.I)
+    m = re.match(r"sim\s+([rcldq])\s+(\w+)\s+(\S+)$", t, re.I)
     if m:
         return {"t": "sim", "kind": m.group(1), "ref": m.group(2), "value": m.group(3)}
+    m = re.match(r"sim\s+op\s+(\w+)\s+(\S+)\s+([\d ]+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "op", "ref": m.group(1),
+                "value": f"{m.group(2)} {m.group(3)}"}
+    m = re.match(r"sim\s+lib\s+(\S+)$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "lib", "path": m.group(1)}
+    m = re.match(r"sim\s+ac\s+(\S+)\s+(\S+)(?:\s+(\d+))?$", t, re.I)
+    if m:
+        from .sim import parse_value as _pv
+        try:
+            f0, f1 = _pv(m.group(1)), _pv(m.group(2))
+        except ValueError:
+            return None
+        ac: Constraint = {"t": "sim", "kind": "ac", "f0": f0, "f1": f1}
+        if m.group(3) is not None:
+            ac["npts"] = int(m.group(3))
+        return ac
     m = re.match(r"board ([\d.]+) ?x ([\d.]+)$", t, re.I)
     if m:
         return {"t": "board", "w": float(m.group(1)), "h": float(m.group(2))}
@@ -282,6 +300,15 @@ def _dump_sim(c: Constraint) -> str:
         return f"sim tran {_f(c.get('t_end', 0.01)):g} {_i(c.get('steps'), 1000)}"
     if k == "probe":
         return f"sim probe {c['net']}"
+    if k == "op":
+        return f"sim op {c.get('ref', '')} {c.get('value', '')}"
+    if k == "lib":
+        return f"sim lib {c.get('path', '')}"
+    if k == "ac":
+        s = f"sim ac {_f(c.get('f0', 1)):g} {_f(c.get('f1', 1e6)):g}"
+        if c.get("npts") is not None:
+            s += f" {_i(c.get('npts'), 50)}"
+        return s
     return f"sim {k} {c.get('ref', '')} {c.get('value', '')}"
 
 
@@ -537,6 +564,7 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
     pre = prefix + "_"
     # parse block lines into a throwaway board, then merge like _include
     child = _Board("__block__")
+    child.custom_fp.update(parent.custom_fp)  # blocks may use parent's `fp` files
     for raw in parent.blocks[block].lines:
         line = raw.split("#", 1)[0].strip()
         if not line:
