@@ -11,10 +11,11 @@ from __future__ import annotations
 from .types import Footprint, HoleSpec, PadSpec, PinLike, XY
 
 
-def chip(w: float, h: float, pw: float = 0.9, gap: float | None = None, h3d: float = 0.55) -> Footprint:
-    """2-pin chip: pads of width pw, inner gap = width-2*pw clamp."""
-    g = w - 2 * pw if gap is None else gap
-    px = (g / 2 + pw / 2)
+def chip(w: float, h: float, pw: float = 0.9, h3d: float = 0.55) -> Footprint:
+    """2-pin chip land: pad centers ±(w/2-0.05) (toe + heel fillets, IPC-ish),
+    pad width clamped so inner gap stays ≥0.25 (tiny parts)."""
+    px = w / 2 - 0.05
+    pw = min(pw, 2 * px - 0.25)
     return {"w": w + 1.2, "h": h + 0.6,
             "pads": {"1": (-px, 0, pw, h + 0.4), "2": (px, 0, pw, h + 0.4)},
             "bodies": [{"box": (w / 2, h / 2, h3d)}]}
@@ -323,19 +324,6 @@ FOOTPRINTS = {
     "MOUNT_M3": mounting_hole(), "FIDUCIAL": fiducial(),
 }
 
-# backwards-compat: pin name → (dx, dy) for the 6 legacy footprints
-_LEGACY_PINS: dict[str, dict[str, XY]] = {
-    "R0805": {"1": (-0.95, 0), "2": (0.95, 0)},
-    "C0805": {"1": (-0.95, 0), "2": (0.95, 0)},
-    "LED0805": {"1": (-0.95, 0), "2": (0.95, 0)},
-    "SOIC8": {"1": (-2.55, -1.905), "2": (-2.55, -0.635), "3": (-2.55, 0.635),
-              "4": (-2.55, 1.905), "5": (2.55, 1.905), "6": (2.55, 0.635),
-              "7": (2.55, -0.635), "8": (2.55, -1.905)},
-    "PINHD2": {"1": (-1.27, 0), "2": (1.27, 0)},
-    "SOT23": {"1": (-0.95, -0.65), "2": (-0.95, 0.65), "3": (0.95, 0)},
-}
-
-
 def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
     """{pin: (dx, dy)} pad centers — what solver/DRC/export need.
     Merges SMD pads AND PTH holes (mixed footprints like USB-C exist)."""
@@ -370,9 +358,7 @@ def hole_drill(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -
 
 
 def pin_offset(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> XY:
-    """Legacy (dx, dy) API — exact old values for the 6 legacy footprints."""
-    if fp in _LEGACY_PINS and str(pin) in _LEGACY_PINS[fp]:
-        return _LEGACY_PINS[fp][str(pin)]
+    """Pad center."""
     return pads_of(fp, lib)[str(pin)]
 
 

@@ -55,14 +55,15 @@ def _blocked(board: Board, grid: float) -> set[tuple[int, int]]:
 
 
 def _astar(start: tuple[int, int, int], goal: tuple[int, int],
-           blocked: set[tuple[int, int]], soft: set[tuple[int, int]],
+           blocked: set[tuple[int, int, int]], soft: set[tuple[int, int]],
            own: set[tuple[int, int, int]],
            nx: int, ny: int, nl: int, bend: float, via: float,
            novia: set[tuple[int, int]] | None = None,
            ) -> list[tuple[int, int, int]] | None:
     """(gx, gy, layer) search. own-net cells are free (copper reuse).
     soft (part courtyard) cells passable at +SOFT per cell — escapes work,
-    open field preferred."""
+    open field preferred. blocked is per-layer: copper on L0 never walls
+    L1 (FR4 between); PTH pads/vias arrive expanded on every layer."""
     SOFT = 15.0
     INF = float("inf")
     sx, sy, sl = start
@@ -100,7 +101,8 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
             for l2 in alts:
                 if not (0 <= l2 < nl):
                     continue
-                if (nx2, ny2) in blocked and (nx2, ny2, l2) not in own and (nx2, ny2) != (gx, gy):
+                if ((nx2, ny2, l2) in blocked and (nx2, ny2, l2) not in own
+                        and (nx2, ny2) != (gx, gy)):
                     continue
                 st = step
                 if (nx2, ny2) in soft and (nx2, ny2, l2) not in own:
@@ -160,8 +162,8 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                         pad_cells.setdefault((gx, gy), n)
     old = list(board.traces)
     new: list[Seg] = []
-    copper: set[tuple[int, int]] = set()  # foreign-net routed cells (never freed)
-    halo: set[tuple[int, int]] = set()  # 1-ring around copper (freed near own pads)
+    copper: set[tuple[int, int, int]] = set()  # per-layer routed cells
+    halo: set[tuple[int, int, int]] = set()  # per-layer 1-ring spacing
     cells_of: dict[str, set[tuple[int, int, int]]] = {}
 
     # small nets first: short point-to-point wires grab direct paths before
@@ -217,10 +219,11 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
 def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                nx: int, ny: int, base_blocked: set[tuple[int, int]],
                pad_cells: dict[tuple[int, int], str],
-               copper: set[tuple[int, int]], halo: set[tuple[int, int]],
+               copper: set[tuple[int, int, int]], halo: set[tuple[int, int, int]],
                cells_of: dict[str, set[tuple[int, int, int]]],
                new: list[Seg], frames: list[Frame] | None) -> bool:
-    """Route one net with current blockage. Returns True if maze-succeeded."""
+    """Route one net with current blockage. Returns True if maze-succeeded.
+    copper/halo are per-layer (FR4 isolates); pads expand onto all layers."""
     pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
     if len(pts) < 2:
         return True
@@ -234,16 +237,27 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
             for gx in range(int((cx - hw) / grid), int((cx + hw) / grid) + 1):
                 for gy in range(int((cy - hh) / grid), int((cy + hh) / grid) + 1):
                     novia.add((gx, gy))
+    nl = board.layers
     blocked = set(copper) | halo
-    blocked.update(c for c, owner in pad_cells.items() if owner != net.name)
+    for cell, owner in pad_cells.items():
+        if owner != net.name:
+            for ll in range(nl):  # PTH pads/vias span every layer
+                blocked.add((cell[0], cell[1], ll))
     soft = set(base_blocked)
     for _, (px, py) in pts:
         r = 1.0
         for gx in range(int((px - r) / grid), int((px + r) / grid) + 1):
             for gy in range(int((py - r) / grid), int((py + r) / grid) + 1):
-                if (gx, gy) not in copper and pad_cells.get((gx, gy), net.name) == net.name:
+                # escape frees own pads + courtyard on every layer, never
+                # foreign copper or spacing halo (squeezing there shorts —
+                # dense pile-ups must rip-up instead).
+                if (pad_cells.get((gx, gy), net.name) == net.name
+                        and all((gx, gy, ll) not in copper
+                                and (gx, gy, ll) not in halo
+                                for ll in range(nl))):
                     soft.discard((gx, gy))
-                    blocked.discard((gx, gy))
+                    for ll in range(nl):
+                        blocked.discard((gx, gy, ll))
     own: set[tuple[int, int, int]] = set()
     for i in range(1, len(pts)):
         a, b = pts[i - 1][1], pts[i][1]
@@ -257,12 +271,16 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
         new.extend(_path_segs(board, net.name, path, grid, net.width))
         own.update(path)
     cells_of[net.name] = set(own)
-    for (gx, gy, _ll) in own:
-        copper.add((gx, gy))
+    for (gx, gy, ll) in own:
+        copper.add((gx, gy, ll))
+    for (gx, gy, ll) in own:
         for hx in (gx - 1, gx, gx + 1):
             for hy in (gy - 1, gy, gy + 1):
-                if (hx, hy) not in copper:
-                    halo.add((hx, hy))
+                # same-layer copper suppresses halo (blocked anyway);
+                # other-layer copper must NOT suppress it (FR4 isolates,
+                # spacing still needed on this layer).
+                if (hx, hy, ll) not in copper:
+                    halo.add((hx, hy, ll))
     if frames is not None:
         frames.append({"net": net.name, "layer": layer,
                        "segs": [(s.x1, s.y1, s.x2, s.y2) for s in new
@@ -284,18 +302,21 @@ def _fallback(board: Board, net: Net, pts: list[tuple[str, XY]], new: list[Seg])
                 new.append(j)
 
 
-def _rebuild_blocked(copper: set[tuple[int, int]], halo: set[tuple[int, int]],
+def _rebuild_blocked(copper: set[tuple[int, int, int]],
+                     halo: set[tuple[int, int, int]],
                      cells_of: dict[str, set[tuple[int, int, int]]]) -> None:
     """After ripping a net, rebuild copper+halo from surviving cells."""
     copper.clear()
     halo.clear()
     for cells in cells_of.values():
-        for (gx, gy, _ll) in cells:
-            copper.add((gx, gy))
+        for (gx, gy, ll) in cells:
+            copper.add((gx, gy, ll))
+    for cells in cells_of.values():
+        for (gx, gy, ll) in cells:
             for hx in (gx - 1, gx, gx + 1):
                 for hy in (gy - 1, gy, gy + 1):
-                    if (hx, hy) not in copper:
-                        halo.add((hx, hy))
+                    if (hx, hy, ll) not in copper:
+                        halo.add((hx, hy, ll))
 
 
 def _path_segs(board: Board, net: str, path: list[tuple[int, int, int]],

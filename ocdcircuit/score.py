@@ -286,7 +286,7 @@ def tidy(board: Board) -> dict[str, object]:
 
 
 def score(board: Board) -> dict[str, object]:
-    """Legacy 0-100 aggregate (CLI/UI compat). Prefer tidy() components."""
+    """0-100 aggregate for CLI badges. Prefer tidy() components."""
     t = tidy(board)
     subs: dict[str, float] = {}
     from typing import cast

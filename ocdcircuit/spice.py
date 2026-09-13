@@ -110,7 +110,7 @@ def netlist(board: Board) -> str:
                     model = str(c.get("value", model))
             if len(pn) < 3:
                 continue
-            # SOT23: 1=base 2=emitter 3=collector (matches _LEGACY_PINS)
+            # SOT23: 1=base 2=emitter 3=collector
             L.append(f"Q{ref} {_norm(pn.get('3', ''))} {_norm(pn.get('1', ''))} "
                      f"{_norm(pn.get('2', ''))} {model}")
             if model == "2N3904":

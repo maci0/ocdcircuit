@@ -76,9 +76,9 @@ def _kids(node: list[object], tag: str) -> list[list[object]]:
 
 
 def kicad_mod(text: str) -> tuple[str, Footprint]:
-    """Parse .kicad_mod (v6: `footprint`, v5: `module`)."""
+    """Parse .kicad_mod (`footprint`; KiCad 6+ only)."""
     root = sexpr(text)
-    assert root and root[0] in ("footprint", "module"), f"not a footprint: {root[:1]}"
+    assert root and root[0] == "footprint", f"not a footprint: {root[:1]}"
     name = _unq(root[1]) if len(root) > 1 else "unknown"
     name = name.split(":")[-1]
     pads: dict[str, tuple[float, float, float, float]] = {}
@@ -247,7 +247,7 @@ def load_foreign(path: str) -> list[tuple[str, Footprint]]:
     ext = os.path.splitext(path)[1].lower()
     with open(path) as f:
         text = f.read()
-    if ext in (".kicad_mod", ".pretty", ".mod"):
+    if ext in (".kicad_mod", ".pretty"):
         return [kicad_mod(text)]
     if ext == ".lbr":
         return eagle_lbr(text)
@@ -261,18 +261,14 @@ def load_foreign(path: str) -> list[tuple[str, Footprint]]:
 
 
 def _footprint_ref(fpnode: list[object]) -> str:
-    """Reference designator: v5 fp_text reference, v6+ property Reference,
-    else our user text, else empty."""
-    fallback = ""
-    for t in _kids(fpnode, "fp_text"):
-        if len(t) > 2 and _unq(t[1]) in ("reference", "user"):
-            if _unq(t[1]) == "reference":
-                return _unq(t[2])
-            fallback = _unq(t[2])
+    """Reference designator: property Reference, else our user text."""
     for t in _kids(fpnode, "property"):
         if len(t) > 2 and _unq(t[1]) == "Reference":
             return _unq(t[2])
-    return fallback
+    for t in _kids(fpnode, "fp_text"):
+        if len(t) > 2 and _unq(t[1]) == "user":
+            return _unq(t[2])
+    return ""
 
 
 def kicad_pcb_netlist(text: str) -> dict[str, object]:
