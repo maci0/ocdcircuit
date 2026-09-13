@@ -92,7 +92,7 @@ bottom line.
 
 ## Scale appendix: what breaks at 1000 parts (measured on this codebase)
 
-Your largest example is 20 parts (`examples/pico_tmc2209/`); "not at this
+Your largest example is 20 parts (`boards/pico_tmc2209/`); "not at this
 scale" meant that. I benchmarked synthetic boards to find the real ceilings:
 
 | n | place (seeds=1, iters=50) | DRC (no traces) | DRC (routed) | dense-net overlaps |

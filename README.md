@@ -8,10 +8,10 @@ commit it, build the rest. If a line is off by a space, `ocd` tells you
 which line. You knew which line. Now you can fix it.
 
 ```bash
-python ocd.py --placer compact --router maze examples/blinky_555.ocd  # cleanest
-python ocd.py examples/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
-python ocd.py --fab oshpark examples/psu.ocd # same board, stricter fab
-python studio.py examples/blinky_555.ocd     # visual editor → localhost:8077
+python ocd.py --placer compact --router maze boards/blinky_555.ocd  # cleanest
+python ocd.py boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
+python ocd.py --fab oshpark boards/psu.ocd # same board, stricter fab
+python studio.py boards/blinky_555.ocd     # visual editor → localhost:8077
 python tests/test_all.py                     # one self-check for everything
 mypy ocdcircuit/ ocd.py studio.py tests/     # strict, zero errors
 ```
@@ -80,12 +80,14 @@ report; motion is the product; one concept, one hue.
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.
 
-Ports: `ports/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
-to `.ocd` — see `examples/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).
-`ports/mitox.py` ports LCSC-footprint boards, harvesting exact pad geometry
-into `.fp` files — see `examples/mitox/` (43 parts, 4L, full fab output).
-`ports/atopile.py` ports atopile projects (`~` wiring, kicad_mod footprints,
-LCSC) — see `examples/bme690/` (BME690 carrier, verify-then-pin).
+Ports: `ocdcircuit/ports/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
+to `.ocd` — see `boards/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).
+`ocdcircuit/ports/mitox.py` ports LCSC-footprint boards, harvesting exact pad geometry
+into `.fp` files — see `boards/mitox/` (43 parts, 4L, full fab output).
+`ocdcircuit/ports/atopile.py` ports atopile projects (`~` wiring, kicad_mod footprints,
+LCSC) — see `boards/bme690/` (BME690 carrier, verify-then-pin).
 
-Layout: `ocdcircuit/` (core, circuit, parts, solver, drc, fab, silk, export,
-agent, plugins), `studio.py`, `ocd.py`, `docs/`, `examples/`, `tests/`.
+Layout: `ocdcircuit/` (core, circuit, parts, solver, maze, drc, fab, silk,
+export, agent, score, diff, plugins, `ports/`), `studio.py`, `ocd.py`,
+`mcp.py`, `docs/` (ADRs, research), `boards/` (one dir per board),
+`benches/`, `tests/`.

@@ -13,7 +13,7 @@ from ocdcircuit.core import Context, Plugin
 from ocdcircuit.types import Constraint
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-EX = os.path.join(HERE, "..", "examples")
+EX = os.path.join(HERE, "..", "boards")
 
 
 class PSU(Module):

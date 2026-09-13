@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ocdcircuit import agent
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-EX = os.path.join(HERE, "..", "examples")
+EX = os.path.join(HERE, "..", "boards")
 GOLD = os.path.join(HERE, "golden.json")
 
 

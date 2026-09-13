@@ -219,7 +219,7 @@ dense BGA.
 ## Open questions
 
 1. Does VPSC-1D + min-conflicts close the overlap gap on dense demos
-   (`examples/pico_tmc2209/`) without touching diffusion?
+   (`boards/pico_tmc2209/`) without touching diffusion?
 2. MST-decomposition vs chained pin-to-pin: measured wirelength/via delta on
    multi-pin demo nets?
 3. At what density does the exact-verifier (`AddNoOverlap2D`) earn its

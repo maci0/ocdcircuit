@@ -1,4 +1,6 @@
 __pycache__/
 *.pyc
-examples/out/
+boards/out/
+boards/*/out/
 benches/monster6502/baseline_*.txt
+.mypy_cache/

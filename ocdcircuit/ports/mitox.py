@@ -17,7 +17,7 @@ import re
 import sys
 from typing import cast
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # repo root (ports/ lives in-package)
 
 
 def _f(v: object, default: float = 0.0) -> float:

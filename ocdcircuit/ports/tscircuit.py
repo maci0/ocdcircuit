@@ -14,7 +14,7 @@ import re
 import sys
 from typing import cast
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # repo root (ports/ lives in-package)
 
 FP_MAP = {
     "qfn28": "QFN28", "0805": "C0805", "1206": "R1206", "1210": "C1210",
