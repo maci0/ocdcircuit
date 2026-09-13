@@ -218,17 +218,27 @@ def dumps(board: Board) -> str:
     # fp lines up front: footprints must exist before parts use them
     fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
     L[1:1] = fps
+    # fold layer/width constraints onto the net line (first wins on dupes)
+    lay: dict[str, object] = {}
+    wid: dict[str, object] = {}
+    for c in board.constraints:
+        if c.get("t") == "layer" and c.get("net") not in lay:
+            lay[str(c["net"])] = c["layer"]
+        if c.get("t") == "width" and c.get("net") not in wid:
+            wid[str(c["net"])] = c["width"]
     for n in sorted(board.nets):
         net = board.nets[n]
         pins = sorted((r, str(pin)) for r, pin in net.pins if r not in owned)
         if not pins and any(net.pins):
             continue  # fully owned by an include — comes back via `use`
         attrs = ""
-        if net.layer is not None:
-            attrs += f" L{net.layer}"
-        if net.width != 0.3:
-            attrs += f" w{net.width:g}"
-        L.append(f"net {n}{attrs}: " + " ".join(f"{r}.{pin}" for r, pin in pins))
+        layer = net.layer if net.layer is not None else lay.get(n)
+        width = net.width if net.width != 0.3 else wid.get(n, 0.3)
+        if layer is not None:
+            attrs += f" L{layer}"
+        if isinstance(width, (int, float)) and width != 0.3:
+            attrs += f" w{width:g}"
+        L.append(f"{n}{attrs} :: " + " <--> ".join(f"{r}.{pin}" for r, pin in pins))
     seen_power: list[list[str]] = []
     for c in board.constraints:
         t = c.get("t")
@@ -238,14 +248,12 @@ def dumps(board: Board) -> str:
             L.append(f"keep {c['a']} near {c['b']} {_f(c.get('w', 2)):g}")
         elif t == "fixed":
             L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
-        elif t == "layer" and str(c["net"]) in board.nets and not any(
-                r not in owned for r, _ in board.nets[str(c["net"])].pins):
-            continue  # layer of a fully-included net — comes back via `use`
+        elif t == "layer" and str(c["net"]) in board.nets:
+            continue  # folded onto the net line above (or via `use`)
         elif t == "layer":
             L.append(f"route {c['net']} on {c['layer']}")
-        elif t == "width" and str(c["net"]) in board.nets and not any(
-                r not in owned for r, _ in board.nets[str(c["net"])].pins):
-            continue
+        elif t == "width" and str(c["net"]) in board.nets:
+            continue  # folded onto the net line above (or via `use`)
         elif t == "width":
             L.append(f"trace {c['net']} {_f(c['width']):g}")
         elif t == "silk":
@@ -416,7 +424,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err(e)
         elif kw == "part":
             _exec_part(b, line, err)
-        elif kw == "net":
+        elif kw == "net" or "::" in line:
             _exec_net(b, line, err)
         else:
             c = parse_constraint(line)
@@ -527,13 +535,21 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
 
 
 def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
-    """Shared net-line executor (top level + block stamping)."""
-    head, _, pins = line.partition(":")
+    """Shared net-line executor (top level + block stamping).
+    Mermaid-style: `NAME [attrs] :: A.1 <--> B.2` (legacy `net NAME: ...` reads)."""
+    head, sep, pins = line.partition("::")
+    if not sep:  # legacy `net NAME [attrs]: pins`
+        head, _, pins = line.partition(":")
     htoks = head.split()
-    if len(htoks) < 2:
-        raise err(f"{ctx}want: net NAME [L<n> w<n>]: REF.PIN ...")
-    name = htoks[1]
-    for a in htoks[2:]:
+    if not htoks:
+        raise err(f"{ctx}want: NAME [L<n> w<n>] :: REF.PIN <--> ...")
+    if htoks[0] == "net":  # legacy `net NAME [attrs]`
+        if len(htoks) < 2:
+            raise err(f"{ctx}want: NAME [L<n> w<n>] :: REF.PIN <--> ...")
+        name, attrs = htoks[1], htoks[2:]
+    else:
+        name, attrs = htoks[0], htoks[1:]
+    for a in attrs:
         if a[0] in "Ll" and a[1:].isdigit():
             b.constrain({"t": "layer", "net": name, "layer": int(a[1:])})
         else:
@@ -546,7 +562,7 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
             if w is None:
                 raise err(f"{ctx}bad net attribute {a!r} (want L<n> or w<n>)")
             b.constrain({"t": "width", "net": name, "width": w})
-    for tok in pins.split():
+    for tok in pins.replace("<-->", " ").split():
         ref, dot, pin = tok.partition(".")
         if not dot or not ref or not pin:
             raise err(f"{ctx}bad pin {tok!r} (want REF.PIN)")

@@ -22,7 +22,7 @@ mypy ocdcircuit/ ocd.py studio.py tests/     # strict, zero errors
 board blinky555 40x30 2L     # every board starts exactly like this
 use psu.ocd as PSU           # include another board (refs → PSU_*, VCC/GND join)
 part U1 SOIC8 NE555          # every part has a ref, a footprint, a place
-net VCC: PSU_J1.1 U1.8 R1.1  # every net lists every pin, no exceptions
+VCC :: PSU_J1.1 <--> U1.8 <--> R1.1  # every net lists every pin, no exceptions
 fix PSU_J1 at 3 15           # dragged in studio? lands here, kept forever
 keep U1 near C1 3            # related parts stay together. everything has its place
 route GND on 1               # ground goes on the bottom. obviously

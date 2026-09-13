@@ -5,14 +5,14 @@ blank lines ignored. Units are mm. First non-blank line must be `board`.
 Build with `python ocd.py <file.ocd>` — errors name the line number.
 
 ```ocd
-board blinky555 40x30 2L     # board NAME WxH [NL] — 1..16 layers (default 2)
-part U1 SOIC8 NE555          # part REF FOOTPRINT [value...]
-net VCC: J1.1 U1.8 R1.1      # net NAME [attrs]: REF.PIN ...
-net GND L1 w0.5: J1.2 U1.1   #   L<n> = layer, w<n> = width mm
-fix J1 at 3 15               # pin a part at x y
-keep U1 near C1 3            # pull parts together (weight, default 2)
-route GND on 1               # force net to layer (top/bottom also work: 0/1)
-trace VCC 0.5                # trace width mm
+board blinky555 40x30 2L       # board NAME WxH [NL] — 1..16 layers (default 2)
+part U1 SOIC8 NE555            # part REF FOOTPRINT [value...]
+VCC :: J1.1 <--> U1.8 <--> R1.1  # net flow: NAME [attrs] :: REF.PIN <--> ...
+GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> = layer, w<n> = width mm
+fix J1 at 3 15                 # pin a part at x y
+keep U1 near C1 3              # pull parts together (weight, default 2)
+route GND on 1                 # force net to layer (folds onto net line)
+trace VCC 0.5                  # trace width mm (folds onto net line)
 power VCC GND                # widen nets to 0.5 (power)
 nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
 sim vcc VIN 9                # 5V-style source net→GND (0 5 = step for tran)
@@ -67,8 +67,8 @@ board 40x30                  # resize (bare form, no name)
 board rc 20x10
 part R1 R0805 1k
 part C1 C0805 100n
-net N: R1.2 C1.2        # ocd: floating-net DRC will flag single-pin nets
-net GND: R1.1 C1.1
+N :: R1.2 <--> C1.2        # ocd: floating-net DRC will flag single-pin nets
+GND :: R1.1 <--> C1.1
 fix R1 at 3 5
 ```
 

@@ -120,8 +120,9 @@ const schEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 // parse net lines: {name, idx, pins:[{tok, li}]} (li = line index)
 function schNets(){
   const lines=schLines(),out=[];
-  lines.forEach((l,li)=>{const m=l.match(/^net\s+(\S+?)(?:\s+[LWlw][\d.]+)*\s*:\s*(.*)$/);
-    if(m)out.push({name:m[1],li,pins:m[2].split(/\s+/).filter(Boolean)});});
+  lines.forEach((l,li)=>{let m=l.match(/^(\S+?)((?:\s+[LWlw][\d.]+)*)\s*::\s*(.*)$/);
+    if(!m)m=l.match(/^net\s+(\S+?)(?:\s+[LWlw][\d.]+)*\s*:\s*(.*)$/),m=m&&[m[0],m[1],"",m[2]];
+    if(m)out.push({name:m[1],li,pins:m[3].split(/\s*<-->\s*|\s+/).filter(Boolean).filter(t=>t.includes('.'))});});
   return out;
 }
 function schCommit(lines){$('ed').innerText=lines.join('\n');push();}
