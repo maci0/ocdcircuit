@@ -1,6 +1,6 @@
 """Self-contained interactive 3D page: WebGL1, no CDN, no three.js.
-Parses our flat-shaded glTF (POSITION-only, data-URI buffer), orbit drag +
-wheel zoom. ~120 lines of JS."""
+Parses our textured glTF (POSITION+NORMAL+TEXCOORD_0, data-URI buffer),
+orbit drag + wheel zoom. ~140 lines of JS."""
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import json
@@ -12,37 +12,40 @@ JS = r"""
 const doc=GLTF_DOC, canvas=document.getElementById('v'), gl=canvas.getContext('webgl');
 function resize(){canvas.width=innerWidth;canvas.height=innerHeight-40;gl.viewport(0,0,canvas.width,canvas.height);}
 addEventListener('resize',resize);resize();
-const vs='attribute vec3 p;attribute vec3 n;uniform mat4 m;varying vec3 vN;void main(){gl_Position=m*vec4(p,1.0);vN=n;}';
-const fs='precision mediump float;uniform vec3 c;uniform vec3 l;varying vec3 vN;void main(){float d=max(dot(normalize(vN),l),0.0);gl_FragColor=vec4(c*(0.35+0.65*d),1.0);}';
+const vs='attribute vec3 p;attribute vec3 n;attribute vec2 u;uniform mat4 m;varying vec3 vN;varying vec2 vU;void main(){gl_Position=m*vec4(p,1.0);vN=n;vU=u;}';
+const fs='precision mediump float;uniform sampler2D tx;uniform vec3 l;varying vec3 vN;varying vec2 vU;void main(){vec3 c=texture2D(tx,vU).rgb;float d=max(dot(normalize(vN),l),0.0);gl_FragColor=vec4(c*(0.35+0.65*d),1.0);}';
 function sh(t,s){const h=gl.createShader(t);gl.shaderSource(h,s);gl.compileShader(h);return h;}
 const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);gl.useProgram(pr);
-const locP=gl.getAttribLocation(pr,'p'),locN=gl.getAttribLocation(pr,'n'),locM=gl.getUniformLocation(pr,'m'),locC=gl.getUniformLocation(pr,'c'),locL=gl.getUniformLocation(pr,'l');
+if(!gl.getProgramParameter(pr,gl.LINK_STATUS))document.title='LINK-FAIL:'+gl.getProgramInfoLog(pr);
+const locP=gl.getAttribLocation(pr,'p'),locN=gl.getAttribLocation(pr,'n'),locU=gl.getAttribLocation(pr,'u'),locM=gl.getUniformLocation(pr,'m'),locT=gl.getUniformLocation(pr,'tx'),locL=gl.getUniformLocation(pr,'l');
 const raw=atob(doc.buffers[0].uri.split(',')[1]);
 const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
 const dv=new DataView(bytes.buffer);
+function accData(ai){const acc=doc.accessors[ai],view=doc.bufferViews[acc.bufferView];
+  const n=acc.count*(acc.type==='VEC2'?2:3),out=new Float32Array(n);
+  for(let i=0;i<n;i++)out[i]=dv.getFloat32(view.byteOffset+i*4,true);return {out,n:acc.count};}
+function vbuf(data){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);return b;}
 const meshes=[];
 doc.meshes.forEach((mesh,mi)=>{
-  const acc=doc.accessors[mi],view=doc.bufferViews[acc.bufferView];
-  const n=acc.count,pos=new Float32Array(n*3);
-  for(let i=0;i<n*3;i++)pos[i]=dv.getFloat32(view.byteOffset+i*4,true);
-  // flat-shaded soup: face normal from first tri, replicated per vertex
-  const nrm=new Float32Array(n*3);
-  for(let t=0;t<n;t+=3){
-    const ax=pos[t*3],ay=pos[t*3+1],az=pos[t*3+2];
-    const ux=pos[t*3+3]-ax,uy=pos[t*3+4]-ay,uz=pos[t*3+5]-az;
-    const vx=pos[t*3+6]-ax,vy=pos[t*3+7]-ay,vz=pos[t*3+8]-az;
-    let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
-    const l=Math.hypot(nx,ny,nz)||1;nx/=l;ny/=l;nz/=l;
-    for(let k=0;k<3;k++){nrm[(t+k)*3]=nx;nrm[(t+k)*3+1]=ny;nrm[(t+k)*3+2]=nz;}
-  }
-  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,pos,gl.STATIC_DRAW);
-  const nbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,nbuf);gl.bufferData(gl.ARRAY_BUFFER,nrm,gl.STATIC_DRAW);
-  const mat=doc.materials[mi].pbrMetallicRoughness.baseColorFactor;
-  meshes.push({buf,nbuf,n,c:[mat[0],mat[1],mat[2]]});
+  const at=mesh.primitives[0].attributes;
+  const pos=accData(at.POSITION),nrm=accData(at.NORMAL),uv=accData(at.TEXCOORD_0);
+  const tx=doc.textures[mi],img=doc.images[tx.source],iv=doc.bufferViews[img.bufferView];
+  // image PNG lives in its own bufferView of the same buffer
+  const pngBytes=bytes.slice(iv.byteOffset,iv.byteOffset+iv.byteLength);
+  const blob=new Blob([pngBytes],{type:'image/png'});
+  const tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([200,200,200,255]));
+  const im=new Image();
+  im.onload=()=>{gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);gl.generateMipmap(gl.TEXTURE_2D);};
+  im.src=URL.createObjectURL(blob);
+  meshes.push({pbuf:vbuf(pos.out),nbuf:vbuf(nrm.out),ubuf:vbuf(uv.out),n:pos.n,tex});
 });
-// board extents for framing
-let mn=[Math.min(...doc.accessors.map(a=>a.min[0])),Math.min(...doc.accessors.map(a=>a.min[1])),Math.min(...doc.accessors.map(a=>a.min[2]))];
-let mx=[Math.max(...doc.accessors.map(a=>a.max[0])),Math.max(...doc.accessors.map(a=>a.max[1])),Math.max(...doc.accessors.map(a=>a.max[2]))];
+// board extents for framing (POSITION accessors only — UV min/max differ)
+let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
+doc.meshes.forEach((mesh)=>{const ai=mesh.primitives[0].attributes.POSITION;
+  const a=doc.accessors[ai];
+  for(let i=0;i<3;i++){mn[i]=Math.min(mn[i],a.min[i]);mx[i]=Math.max(mx[i],a.max[i]);}});
 const ctr=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2];
 const span=Math.max(mx[0]-mn[0],mx[1]-mn[1],1);
 let yaw=0.6,pitch=0.9,dist=span*2.2;
@@ -64,12 +67,15 @@ function draw(){
   const m=mul(persp(0.7,canvas.width/canvas.height,1,span*10),view);
   gl.uniformMatrix4fv(locM,false,new Float32Array(m));
   gl.uniform3f(locL,0.4,0.5,0.75);
+  gl.uniform1i(locT,0);
   for(const mesh of meshes){
-    gl.bindBuffer(gl.ARRAY_BUFFER,mesh.buf);
+    gl.bindBuffer(gl.ARRAY_BUFFER,mesh.pbuf);
     gl.enableVertexAttribArray(locP);gl.vertexAttribPointer(locP,3,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ARRAY_BUFFER,mesh.nbuf);
     gl.enableVertexAttribArray(locN);gl.vertexAttribPointer(locN,3,gl.FLOAT,false,0,0);
-    gl.uniform3f(locC,mesh.c[0],mesh.c[1],mesh.c[2]);
+    gl.bindBuffer(gl.ARRAY_BUFFER,mesh.ubuf);
+    gl.enableVertexAttribArray(locU);gl.vertexAttribPointer(locU,2,gl.FLOAT,false,0,0);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,mesh.tex);
     gl.drawArrays(gl.TRIANGLES,0,mesh.n);
   }
   requestAnimationFrame(draw);

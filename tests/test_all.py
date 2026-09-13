@@ -350,6 +350,11 @@ import json as _jj
 _g = _jj.loads(bo.render("gltf"))
 assert {m["name"] for m in _g["materials"]} >= {"mask", "copper", "chip"}
 assert len(_g["meshes"]) == len(_g["materials"])
+for _m in _g["meshes"]:
+    _at = _m["primitives"][0]["attributes"]
+    assert set(_at) >= {"POSITION", "NORMAL", "TEXCOORD_0"}, _at
+assert len(_g["images"]) == len(_g["materials"])
+assert all(_t["sampler"] == 0 for _t in _g["textures"])
 
 # blocks: repeatable units — stamp 3x, join, round-trip exactly
 _bb = agent.loads("board t 60x40\nblock ch\npart U QFN28\npart C C0805 100n\n"

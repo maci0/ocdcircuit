@@ -129,8 +129,47 @@ def build(board: Board, thick: float = 1.6) -> list[Tri]:
     return tris
 
 
+def _tex(c1: tuple[int, int, int], c2: tuple[int, int, int],
+         n: int = 64) -> str:
+    """Procedural checker PNG (base64 data URI): subtle two-tone weave so
+    PBR surfaces read as textured, not flat plastic. Stdlib (zlib)."""
+    import base64
+    import io as _io
+    import struct
+    import zlib
+    raw = bytearray()
+    for y in range(n):
+        raw.append(0)
+        for x in range(n):
+            c = c1 if (x // 8 + y // 8) % 2 == 0 else c2
+            raw += bytes(c)
+    ihdr = struct.pack(">IIBBBBB", n, n, 8, 2, 0, 0, 0)
+    def chunk(t: bytes, d: bytes) -> bytes:
+        c = t + d
+        return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c))
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+           + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b""))
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+# per-material texture tones (base, weave) — soldermask weave is the
+# visible one; metals get near-invisible grain
+TEXTEX: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+    MASK: ((13, 89, 20), (11, 75, 17)),
+    COPPER: ((217, 158, 38), (205, 148, 34)),
+    SILK: ((242, 242, 242), (232, 232, 232)),
+    CHIP: ((20, 20, 23), (16, 16, 19)),
+    TANT: ((217, 166, 26), (205, 156, 22)),
+    ELEC: ((140, 153, 179), (130, 143, 169)),
+    LEDC: ((204, 31, 31), (192, 27, 27)),
+    STEEL: ((179, 184, 191), (169, 174, 181)),
+    PLASTIC: ((30, 30, 34), (24, 24, 28)),
+}
+
+
 def to_gltf(board: Board, thick: float = 1.6) -> str:
-    """glTF 2.0 asset: one mesh per material (flat shaded)."""
+    """glTF 2.0 asset: one mesh per material (flat shaded), each with
+    procedural baseColorTexture + planar box UVs."""
     import base64
     import io
     import json
@@ -157,41 +196,74 @@ def to_gltf(board: Board, thick: float = 1.6) -> str:
         nrm: list[float] = []
         lo = [1e9, 1e9, 1e9]
         hi = [-1e9, -1e9, -1e9]
+        uv: list[float] = []
         for a, b, c, _m in by_mat[mat]:
             n = _normal(a, b, c)
             for v in (a, b, c):
                 pos += [v[0], v[1], v[2]]
                 nrm += [n[0], n[1], n[2]]
+                # planar box UV: dominant normal axis picks the projection
+                ax = abs(n[0]), abs(n[1]), abs(n[2])
+                if ax[0] >= ax[1] and ax[0] >= ax[2]:
+                    uv += [v[1] / 4.0, v[2] / 4.0]
+                elif ax[1] >= ax[2]:
+                    uv += [v[0] / 4.0, v[2] / 4.0]
+                else:
+                    uv += [v[0] / 4.0, v[1] / 4.0]
                 for i in range(3):
                     lo[i] = min(lo[i], v[i])
                     hi[i] = max(hi[i], v[i])
         praw = struct.pack(f"<{len(pos)}f", *pos)
         nraw = struct.pack(f"<{len(nrm)}f", *nrm)
+        uraw = struct.pack(f"<{len(uv)}f", *uv)
         views.append({"buffer": 0, "byteOffset": off, "byteLength": len(praw)})
         off += len(praw)
         buf.write(praw)
         views.append({"buffer": 0, "byteOffset": off, "byteLength": len(nraw)})
         off += len(nraw)
         buf.write(nraw)
-        accessors.append({"bufferView": 2 * mi, "componentType": 5126,
+        views.append({"buffer": 0, "byteOffset": off, "byteLength": len(uraw)})
+        off += len(uraw)
+        buf.write(uraw)
+        accessors.append({"bufferView": 3 * mi, "componentType": 5126,
                           "count": len(pos) // 3, "type": "VEC3",
                           "max": hi, "min": lo})
-        accessors.append({"bufferView": 2 * mi + 1, "componentType": 5126,
+        accessors.append({"bufferView": 3 * mi + 1, "componentType": 5126,
                           "count": len(nrm) // 3, "type": "VEC3",
                           "max": [1.0, 1.0, 1.0], "min": [-1.0, -1.0, -1.0]})
-        meshes.append({"primitives": [{"attributes": {"POSITION": 2 * mi,
-                                                      "NORMAL": 2 * mi + 1},
+        accessors.append({"bufferView": 3 * mi + 2, "componentType": 5126,
+                          "count": len(uv) // 2, "type": "VEC2",
+                          "max": [10.0, 10.0], "min": [0.0, 0.0]})
+        meshes.append({"primitives": [{"attributes": {"POSITION": 3 * mi,
+                                                      "NORMAL": 3 * mi + 1,
+                                                      "TEXCOORD_0": 3 * mi + 2},
                                        "material": mi}]})
+    images = []
+    textures = []
+    samplers = [{"magFilter": 9729, "minFilter": 9986, "wrapS": 10497, "wrapT": 10497}]
+    for mi, mat in enumerate(materials):
+        c1, c2 = TEXTEX.get(mat, ((128, 128, 128), (118, 118, 118)))
+        raw = base64.b64decode(_tex(c1, c2).split(",", 1)[1])
+        images.append({"name": f"{mat}_tex", "mimeType": "image/png",
+                       "bufferView": len(views)})
+        views.append({"buffer": 0, "byteOffset": off, "byteLength": len(raw)})
+        off += len(raw)
+        buf.write(raw)
+        textures.append({"source": mi, "sampler": 0})
     doc = {
         "asset": {"version": "2.0", "generator": "ocdcircuit"},
         "materials": [{"name": m, "pbrMetallicRoughness": {
             "baseColorFactor": list(COLORS[m]),
+            "baseColorTexture": {"index": mi},
             "metallicFactor": 0.9 if m == COPPER else 0.1,
-            "roughnessFactor": 0.35 if m == COPPER else 0.8}} for m in materials],
+            "roughnessFactor": 0.35 if m == COPPER else 0.8}} for mi, m in enumerate(materials)],
         "buffers": [{"byteLength": off, "uri": "data:application/octet-stream;base64," +
                      base64.b64encode(buf.getvalue()).decode()}],
         "bufferViews": views,
         "accessors": accessors,
+        "images": images,
+        "textures": textures,
+        "samplers": samplers,
         "meshes": meshes,
         "nodes": [{"mesh": i, "name": materials[i]} for i in range(len(meshes))],
         "scenes": [{"nodes": list(range(len(meshes)))}],
