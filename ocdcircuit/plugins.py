@@ -235,7 +235,8 @@ class WireMaskRouter(Plugin[int]):
         masks = [{n: rng.randrange(board.layers) for n in cands} for _ in range(pop)]
         best: tuple[tuple[float, list[object]], dict[str, int]] | None = None
         for _ in range(gen):
-            scored = sorted((eval_mask(m), m) for m in masks)
+            scored = sorted(((eval_mask(m), m) for m in masks),
+                            key=lambda t: t[0][0])
             if best is None or scored[0][0] < best[0]:
                 best = scored[0]
             elite = [m for _, m in scored[: max(2, pop // 3)]]
@@ -865,7 +866,8 @@ class NgspicePlugin(Plugin[dict[str, object]]):
 
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer,
-             GreedyLayers, LRouter, MazeRouter, FabDrc, Erc,
+             GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
+             FabDrc, Erc,
              FlexDrc, JlcExporter, KicadExporter, EasyedaExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,

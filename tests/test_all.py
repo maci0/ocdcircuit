@@ -210,10 +210,10 @@ assert not cast(list[str], bo.check()["errors"])
 
 # mix-and-match: every placer × every router × every silk resolves + runs
 for pl in ["diffusion", "compact", "thermal"]:
-    for rt in ["lroute", "maze"]:
+    for rt in ["lroute", "maze", "coarse", "wiremask"]:
         bm = agent.loads(ocd, base=EX)
         bm.place(pl, seeds=2, iters=100)
-        bm.route_board(rt)
+        bm.route_board(rt, **({"pop": 2, "gen": 1} if rt == "wiremask" else {}))
         assert not cast(list[str], bm.check()["errors"]), (pl, rt)
 for sk in ["ref", "full", "fab"]:
     silks = bo.silk(sk)
