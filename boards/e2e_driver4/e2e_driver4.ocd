@@ -1,0 +1,62 @@
+board e2e_driver4 43.17x45.37 2L
+# ported from atopile main.ato — signals + ~ wiring preserved
+fp fp/HDR-TH_2P-P2.54-V-M.kicad_mod
+fp fp/CAP-TH_BD5.0-P2.00-D0.8-FD.kicad_mod
+fp fp/R_Axial_P7.62.kicad_mod
+fp fp/TO-92-3_L4.6-W3.6-P1.27-L_1.kicad_mod
+fp fp/LED-TH_BD5.9-P2.54-RD_RED.kicad_mod
+part J1 HDR-TH_2P-P2.54-V-M lcsc=C492401
+part J2 CAP-TH_BD5.0-P2.00-D0.8-FD lcsc=C88726
+part J3 R_Axial_P7.62 lcsc=C5618323
+part J4 TO-92-3_L4.6-W3.6-P1.27-L_1 lcsc=C2874602
+part J5 R_Axial_P7.62 lcsc=C1519256
+part J6 LED-TH_BD5.9-P2.54-RD_RED lcsc=C2895492
+part J7 R_Axial_P7.62 lcsc=C5618323
+part J8 TO-92-3_L4.6-W3.6-P1.27-L_1 lcsc=C2874602
+part J9 R_Axial_P7.62 lcsc=C1519256
+part J10 LED-TH_BD5.9-P2.54-RD_RED lcsc=C2895492
+part J11 R_Axial_P7.62 lcsc=C5618323
+part J12 TO-92-3_L4.6-W3.6-P1.27-L_1 lcsc=C2874602
+part J13 R_Axial_P7.62 lcsc=C1519256
+part J14 LED-TH_BD5.9-P2.54-RD_RED lcsc=C2895492
+part J15 R_Axial_P7.62 lcsc=C5618323
+part J16 TO-92-3_L4.6-W3.6-P1.27-L_1 lcsc=C2874602
+part J17 R_Axial_P7.62 lcsc=C1519256
+part J18 LED-TH_BD5.9-P2.54-RD_RED lcsc=C2895492
+net GND: J1.2 J2.2
+net VIN: J1.1 J2.1
+net X_J10.1: J10.1 J8.1
+net X_J11.2: J11.2 J12.2
+net X_J13.2: J13.2 J14.2
+net X_J14.1: J12.1 J14.1
+net X_J15.2: J15.2 J16.2
+net X_J17.2: J17.2 J18.2
+net X_J18.1: J16.1 J18.1
+net X_J3.2: J3.2 J4.2
+net X_J5.2: J5.2 J6.2
+net X_J6.1: J4.1 J6.1
+net X_J7.2: J7.2 J8.2
+net X_J9.2: J10.2 J9.2
+net X_h1_VIN: J3.1 J5.1
+net X_h2_VIN: J7.1 J9.1
+net X_h3_VIN: J11.1 J13.1
+net X_h4_VIN: J15.1 J17.1
+# fix J1 at 2.5 22.4 — dropped: stale layout (overlap), solver places freely
+fix J10 at 39.5 35.4
+fix J11 at 12.5 35.4
+fix J12 at 21.5 35.4
+fix J13 at 30.5 35.4
+fix J14 at 39.5 24.4
+# fix J15 at 12.5 24.4 — dropped: stale layout (overlap), solver places freely
+fix J16 at 21.5 24.4
+fix J17 at 30.5 24.4
+fix J18 at 39.5 13.4
+# fix J2 at 7.5 22.4 — dropped: stale layout (overlap), solver places freely
+fix J3 at 12.5 13.4
+fix J4 at 21.5 13.4
+fix J5 at 30.5 13.4
+fix J6 at 39.5 2.4
+fix J7 at 12.5 2.4
+fix J8 at 21.5 2.4
+fix J9 at 30.5 2.4
+power GND

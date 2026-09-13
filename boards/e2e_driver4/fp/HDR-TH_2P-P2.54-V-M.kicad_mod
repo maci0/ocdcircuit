@@ -1,0 +1,128 @@
+(footprint "XFCN_PZ254V_11_02P:HDR-TH_2P-P2.54-V-M"
+	(version 20241229)
+	(generator "faebryk_convert")
+	(generator_version "v5")
+	(layer "F.Cu")
+	(tedit "5DC5F6A4")
+	(uuid "5917d506-6d41-4543-b539-afe8bd024bc2")
+	(property "Reference" "REF**"
+		(at 0 -4)
+		(layer "F.SilkS")
+		(uuid "55b3e3cb-2f3a-4e06-9329-95ae3000f9d9")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "HDR-TH_2P-P2.54-V-M"
+		(at 0 4)
+		(layer "F.Fab")
+		(uuid "497b6430-2f0c-427f-b31c-218062385934")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_circle
+		(center -2.54 1.25)
+		(end -2.51 1.25)
+		(stroke
+			(width 0.06)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(locked no)
+		(uuid "75123f86-21b1-4134-83e8-79c938d21ec9")
+	)
+	(fp_line
+		(start 2.54 -1.27)
+		(end 2.54 1.27)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "2de89e4f-4dac-497d-97c7-af01f2b53c2d")
+	)
+	(fp_line
+		(start 2.54 1.27)
+		(end -2.54 1.27)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "20956eb9-3274-4d06-990a-cf7496c0fe58")
+	)
+	(fp_line
+		(start -2.54 1.27)
+		(end -2.54 -1.27)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "25e7e16f-54e1-49c3-abe1-4116c5802899")
+	)
+	(fp_line
+		(start -2.54 -1.27)
+		(end -0.64 -1.27)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "22d4a294-a534-4893-be97-f398cca44764")
+	)
+	(fp_line
+		(start 2.54 -1.27)
+		(end -0.64 -1.27)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "3ddd99b5-e01a-4c46-b5ba-640783bf5d6d")
+	)
+	(pad "1" thru_hole rect
+		(at -1.27 0 0)
+		(size 2 2)
+		(drill 1.1999976)
+		(layers "*.Cu" "*.Mask")
+		(uuid "ad0d352b-1823-4ff4-b587-ff01897b5eee")
+	)
+	(pad "2" thru_hole circle
+		(at 1.27 0 0)
+		(size 2 2)
+		(drill 1.1999976)
+		(layers "*.Cu" "*.Mask")
+		(uuid "52736fe3-85b9-494e-a22d-3f0e6a5b979b")
+	)
+	(model "${KIPRJMOD}/../../parts/XFCN_PZ254V_11_02P/HDR2.54-M-LI-1X2P.step"
+		(offset
+			(xyz 0 -0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+	(embedded_fonts no)
+)

@@ -26,13 +26,33 @@ def _strip_comments(src: str) -> str:
     return "\n".join(out)
 
 
+def _wire_stmts(line: str) -> list[tuple[str, str, str]]:
+    """All `a ~ b` statements on a line (`;`-separated atopile style)."""
+    out: list[tuple[str, str, str]] = []
+    for stmt in line.split(";"):
+        m = re.match(r"^\s*([\w.]+)\s*(~|>)\s*([\w.\[\]]+)", stmt)
+        if m:
+            out.append((m.group(1), m.group(2), m.group(3)))
+    return out
+
+
 def parse_main(text: str) -> tuple[list[str], dict[str, str], list[tuple[str, str, str]]]:
     """→ (signals, instances {var: component}, wires [(lhs, op, rhs)]).
     lhs/rhs are dotted (j1.p1) or bare signals. Hierarchical `module M:`
     blocks elaborate inline: `x = new M` stamps prefixed copies
     (x_var, x_port signals), so the rest of the pipeline stays flat."""
+    return _parse_with(text, {})[0:3]
+
+
+_ModTab = dict[str, tuple[list[str], dict[str, str], list[tuple[str, str, str]]]]
+
+
+def _parse_with(text: str, modules: _ModTab
+                ) -> tuple[list[str], dict[str, str], list[tuple[str, str, str]],
+                           _ModTab, dict[str, tuple[str, str]]]:
+    """parse_main + module table + elaboration scope (var → (module, local)).
+    Sibling files merge their modules here."""
     src = _strip_comments(text)
-    modules: dict[str, tuple[list[str], dict[str, str], list[tuple[str, str, str]]]] = {}
     for m in re.finditer(r"^module\s+(\w+)\s*:(.*?)(?=^module\s+\w+\s*:|\Z)",
                          src, re.M | re.S):
         msig: list[str] = []
@@ -47,9 +67,7 @@ def parse_main(text: str) -> tuple[list[str], dict[str, str], list[tuple[str, st
             if im:
                 minst[im.group(1)] = im.group(2)
                 continue
-            wm = re.match(r"^\s*([\w.]+)\s*(~|>)\s*([\w.]+)", line)
-            if wm:
-                mwires.append((wm.group(1), wm.group(2), wm.group(3)))
+            mwires += _wire_stmts(line)
         modules[m.group(1)] = (msig, minst, mwires)
     pre = re.split(r"^module\s+\w+\s*:", src, flags=re.M)[0]
     signals = re.findall(r"^\s*signal\s+(\w+)", pre, re.M)
@@ -57,8 +75,8 @@ def parse_main(text: str) -> tuple[list[str], dict[str, str], list[tuple[str, st
     for m in re.finditer(r"^\s*(\w+)\s*=\s*new\s+(\w+)", pre, re.M):
         insts[m.group(1)] = m.group(2)
     wires: list[tuple[str, str, str]] = []
-    for m in re.finditer(r"^\s*([\w.]+)\s*(~|>)\s*([\w.]+)", pre, re.M):
-        wires.append((m.group(1), m.group(2), m.group(3)))
+    for line in pre.splitlines():
+        wires += _wire_stmts(line)
     # `module App:` is the root when present (flat files have no modules)
     if "App" in modules:
         _s, _i, _w = modules.pop("App")
@@ -84,24 +102,29 @@ def parse_main(text: str) -> tuple[list[str], dict[str, str], list[tuple[str, st
             return f"{var}_{rest}" if v == var else tok
         return tok
 
-    # loop: nested modules (core instantiates Indicator) expand bottom-up
+    # loop: nested modules (core instantiates Indicator) expand bottom-up.
+    # scope tracks each elaborated var's (module, localname) for .package
+    # lookup; each expansion overwrites (innermost wins, children re-expand).
+    scope: dict[str, tuple[str, str]] = {}
     for _ in range(8):  # ponytail: depth cap, atopile allows recursion
         todo = [(v, c) for v, c in insts.items() if c in modules]
         if not todo:
             break
         for var, comp in todo:
             del insts[var]
+            scope.pop(var, None)
             msig, minst, mwires = modules[comp]
             sigs = set(msig)
             for v, c in minst.items():
                 insts[f"{var}_{v}"] = c
+                scope[f"{var}_{v}"] = (comp, v)
             ivars = set(minst)
             for lhs, op, rhs in mwires:
                 wires.append((_local(lhs, var, sigs, ivars), op,
                               _local(rhs, var, sigs, ivars)))
             wires = [(_port(a, var), op, _port(b, var))
                      for a, op, b in wires]
-    return signals, insts, wires
+    return signals, insts, wires, modules, scope
 
 
 def parse_parts(text: str) -> dict[str, dict[str, object]]:
@@ -160,7 +183,15 @@ def convert(projdir: str, outdir: str) -> str:
     """Atopile project → outdir/{name.ocd, fp/*.fp}. Returns .ocd path."""
     main_f = os.path.join(projdir, "atopile", "main.ato")
     src = open(main_f).read()
-    signals, insts, wires = parse_main(src)
+    # sibling-file modules first: follow `from "x.ato" import Y` (SSSdriver)
+    _mods: dict[str, tuple[list[str], dict[str, str], list[tuple[str, str, str]]]] = {}
+    _seen_files = {os.path.abspath(main_f)}
+    for m in re.finditer(r'from\s+"([^"]+\.ato)"\s+import\s+(\w+)', src):
+        _fp = os.path.normpath(os.path.join(os.path.dirname(main_f), m.group(1)))
+        if _fp not in _seen_files and os.path.isfile(_fp):
+            _seen_files.add(_fp)
+            _, _, _, _mods, _ = _parse_with(open(_fp).read(), _mods)
+    signals, insts, wires, _, _scope = _parse_with(src, _mods)
     parts_info: dict[str, dict[str, object]] = {}
     parts_dir = os.path.join(projdir, "atopile", "parts")
     for root, _ds, fs in os.walk(parts_dir):
@@ -194,8 +225,8 @@ def convert(projdir: str, outdir: str) -> str:
 
     def _side(tok: str) -> str:
         if "." in tok:
-            v, p = tok.split(".")
-            return phys(v, p)
+            v, _, p = tok.partition(".")
+            return phys(v, re.sub(r"\[\d+\]", "", p))
         return tok
 
     for lhs, _op, rhs in wires:
@@ -205,8 +236,12 @@ def convert(projdir: str, outdir: str) -> str:
     nets: dict[str, list[str]] = {}
     for var in insts:
         ref = refs[var]
-        pinset = {w[0].split(".")[1] for w in wires if w[0].startswith(var + ".")}
-        pinset |= {w[2].split(".")[1] for w in wires if w[2].startswith(var + ".")}
+
+        def _pin_of(w: str) -> str:
+            return re.sub(r"\[\d+\]", "", w.split(".", 1)[1])
+
+        pinset = {_pin_of(w[0]) for w in wires if w[0].startswith(var + ".")}
+        pinset |= {_pin_of(w[2]) for w in wires if w[2].startswith(var + ".")}
         for pin in pinset:
             pp = pinmap.get(var, {}).get(pin, pin)
             r = find(f"{ref}.{pp}")
@@ -241,19 +276,50 @@ def convert(projdir: str, outdir: str) -> str:
     # footprints: resolve .kicad_mod files next to parts
     fps_emitted: list[str] = []
     modemap: dict[str, str] = {}  # component → fp name in our lib
+    # generics (Resistor/Capacitor/LED) take packages from `var.package`
+    # assignments, scoped per module then mapped onto elaborated var names
+    # (z1_r16 descends from instance z1 of a module declaring r16.package)
+    _varpkg: dict[str, str] = {}
+    for _f, _txt in [(main_f, src)] + [(_fp, open(_fp).read()) for _fp in _seen_files
+                                       if _fp != os.path.abspath(main_f)]:
+        _sc = _strip_comments(_txt)
+        for _m in re.finditer(r"^module\s+(\w+)\s*:(.*?)(?=^module\s+\w+\s*:|\Z)",
+                              _sc, re.M | re.S):
+            for _pm in re.finditer(r"^\s*(\w+)\.package\s*=\s*\"([^\"]+)\"",
+                                   _m.group(2), re.M):
+                _varpkg[f"{_m.group(1)}.{_pm.group(1)}"] = _pm.group(2)
+                if _m.group(1) == "App":
+                    _varpkg[_pm.group(1)] = _pm.group(2)
+        for _pm in re.finditer(r"^\s*(\w+)\.package\s*=\s*\"([^\"]+)\"",
+                               re.split(r"^module\s+\w+\s*:", _sc, flags=re.M)[0], re.M):
+            _varpkg[_pm.group(1)] = _pm.group(2)
+
+    def _pkg_of(var: str) -> str:
+        # z1_r_uart → SSSDriver.r_uart via elaboration scope; c19 → App.c19.
+        if var in _scope:
+            mod, local = _scope[var]
+            if f"{mod}.{local}" in _varpkg:
+                return _varpkg[f"{mod}.{local}"]
+        for key in (f"App.{var}", var):
+            if key in _varpkg:
+                return _varpkg[key]
+        return ""
+
     for var, comp in insts.items():
         info = parts_info.get(comp, {})
         fpfile = info.get("fp", "")
         assert isinstance(fpfile, str)
         ref = refs[var]
+        if not fpfile:
+            fpfile = _pkg_of(var)
         fpname = os.path.splitext(os.path.basename(fpfile))[0] if fpfile else f"FP_{ref}"
         src_fp = ""
         for root, _ds, fs in os.walk(parts_dir):
             if os.path.basename(fpfile) in fs:
                 src_fp = os.path.join(root, os.path.basename(fpfile))
                 break
+        from ocdcircuit.parts import FOOTPRINTS
         if src_fp:
-            from ocdcircuit.parts import FOOTPRINTS
             if fpname in FOOTPRINTS:
                 modemap[ref] = fpname  # std land pattern — no import needed
                 continue
@@ -263,8 +329,14 @@ def convert(projdir: str, outdir: str) -> str:
             if f"fp fp/{os.path.basename(fpfile)}" not in fps_emitted:
                 fps_emitted.append(f"fp fp/{os.path.basename(fpfile)}")
             modemap[ref] = fpname
+        elif fpname in FOOTPRINTS:
+            modemap[ref] = fpname  # package names a std footprint directly
         else:
-            modemap[ref] = f"FP_{ref}"
+            hint = {"Resistor": "R0805", "Capacitor": "C0805",
+                    "LED": "LED0805"}.get(comp, "R0805")
+            raise ValueError(
+                f"part {ref} ({var} = new {comp}): no footprint — add "
+                f"`{var}.package = \"{hint}\"` to the .ato")
     L += fps_emitted
     for var, comp in insts.items():
         ref = refs[var]

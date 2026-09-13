@@ -1,0 +1,125 @@
+(footprint "Rubycon_50YXF10MEFC5X11:CAP-TH_BD5.0-P2.00-D0.8-FD"
+	(version 20241229)
+	(generator "faebryk_convert")
+	(generator_version "v5")
+	(layer "F.Cu")
+	(tedit "5DC5F6A4")
+	(uuid "347bba14-5322-494d-b0b6-2df807aab633")
+	(property "Reference" "REF**"
+		(at 0 -4)
+		(layer "F.SilkS")
+		(uuid "5578935c-413a-4777-b203-e101b7c2c1b7")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "CAP-TH_BD5.0-P2.00-D0.8-FD"
+		(at 0 4)
+		(layer "F.Fab")
+		(uuid "7e3761cf-b8fd-46fd-a0cb-27422a989afc")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_circle
+		(center -2.5 2.5)
+		(end -2.47 2.5)
+		(stroke
+			(width 0.06)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(locked no)
+		(uuid "f1277838-7f1e-43ec-9c51-b52b2df32842")
+	)
+	(fp_circle
+		(center -1 0)
+		(end -0.85 0)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(locked no)
+		(uuid "67b7c549-bb62-4e8c-8953-0c2fa50c49f9")
+	)
+	(fp_circle
+		(center 1 0)
+		(end 1.15 0)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(locked no)
+		(uuid "71a66c3a-0931-472e-a039-112da1595902")
+	)
+	(fp_circle
+		(center 0 0)
+		(end 2.5 0)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(locked no)
+		(uuid "287dbc94-7004-4ca0-b5d3-d4e761664bbc")
+	)
+	(fp_line
+		(start -1.52 -1.5)
+		(end -0.5 -1.5)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "3c839609-177f-49e9-84ce-a8d61721a06b")
+	)
+	(fp_line
+		(start -1 -2)
+		(end -1 -0.98)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(layers "F.SilkS")
+		(locked no)
+		(uuid "7cfbb4ce-7b54-400a-9e21-f58d6797e47d")
+	)
+	(pad "1" thru_hole circle
+		(at -1 0 0)
+		(size 1.3 1.3)
+		(drill 0.7999984)
+		(layers "*.Cu" "*.Mask")
+		(uuid "f97e9c70-7855-4bbb-92e1-8a3b5c1e36d6")
+	)
+	(pad "2" thru_hole circle
+		(at 1 0 0)
+		(size 1.3 1.3)
+		(drill 0.7999984)
+		(layers "*.Cu" "*.Mask")
+		(uuid "34213cab-a569-4e53-bf69-2d7d1ed524b3")
+	)
+	(model "${KIPRJMOD}/../../parts/Rubycon_50YXF10MEFC5X11/CAP-TH_D5.0H7.0P2.0.step"
+		(offset
+			(xyz 0 -0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+	(embedded_fonts no)
+)
