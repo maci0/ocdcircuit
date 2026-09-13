@@ -24,10 +24,36 @@ BASE_SEEDS, BASE_ITERS = 1, 5  # SOURCES.md baseline config
 
 
 def golden(b: object) -> dict[str, tuple[float, float]]:
+    """Die-true positions. Block boards carry no fixes (placer owns
+    instances) — so read layout.json directly, mapping flat refs through
+    the converter's rename (I{i}_R/Q, P{i}_A/B)."""
+    import json
     from ocdcircuit.circuit import Board
     assert isinstance(b, Board)
-    return {str(c["ref"]): (float(c["x"]), float(c["y"]))
-            for c in b.constraints if c.get("t") == "fixed"}
+    fix = {str(c["ref"]): (float(c["x"]), float(c["y"]))
+           for c in b.constraints if c.get("t") == "fixed"}
+    if fix and len(fix) >= len(b.parts):
+        return fix
+    # block board: fixes cover stragglers only — map members via layout.json
+    sys.path.insert(0, HERE)
+    from convert import _find_blocks
+    raw = json.load(open(os.path.join(HERE, "netlist.json")))
+    lay = json.load(open(os.path.join(HERE, "layout.json")))
+    pos = {it["ref"]: (float(it["x"]), float(it["y"])) for it in lay["items"]}
+    inv, psg = _find_blocks(raw["components"])
+    for i, (r, q) in enumerate(inv):
+        if r in pos:
+            fix[f"I{i}_R"] = pos[r]
+        if q in pos:
+            fix[f"I{i}_Q"] = pos[q]
+    for i, (a, bb) in enumerate(psg):
+        if a in pos:
+            fix[f"P{i}_A"] = pos[a]
+        if bb in pos:
+            fix[f"P{i}_B"] = pos[bb]
+    for r, xy in pos.items():
+        fix.setdefault(r, xy)
+    return fix
 
 
 def apply_golden(b: object, g: dict[str, tuple[float, float]]) -> None:
@@ -47,6 +73,7 @@ def overlaps(b: object) -> int:
 def main() -> None:
     seeds = int(sys.argv[1]) if len(sys.argv) > 1 else BASE_SEEDS
     iters = int(sys.argv[2]) if len(sys.argv) > 2 else BASE_ITERS
+    placer = sys.argv[3] if len(sys.argv) > 3 else "diffusion"
     b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
     g = golden(b)
     # golden baselines first (same WL model + same overlap counter both sides)
@@ -56,7 +83,7 @@ def main() -> None:
     # release fixed parts so the placer actually works (golden kept for scoring)
     b.constraints = [c for c in b.constraints if c.get("t") != "fixed"]
     t = time.perf_counter()
-    cost = b.place(seeds=seeds, iters=iters)
+    cost = b.place(placer, seeds=seeds, iters=iters)
     dt = time.perf_counter() - t
     placed_wl = solver.wirelength(b)
     disp = sum(abs(p.x - g[r][0]) + abs(p.y - g[r][1])

@@ -150,8 +150,11 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
     files = (b.export("jlc", outdir=out) + b.export("kicad", outdir=out)
              + b.export("ocd", outdir=out))
-    open(os.path.join(out, b.name + ".svg"), "w").write(b.render("svg"))
-    open(os.path.join(out, b.name + ".stl"), "w").write(b.render("stl"))
+    open(os.path.join(out, b.name + ".svg"), "w").write(cast(str, b.render("svg")))
+    open(os.path.join(out, b.name + ".stl"), "w").write(cast(str, b.render("stl")))
+    open(os.path.join(out, b.name + ".png"), "wb").write(cast(bytes, b.render("png")))
+    open(os.path.join(out, b.name + ".3d.html"), "w").write(cast(str, b.render("html3d")))
+    open(os.path.join(out, b.name + ".gltf"), "w").write(cast(str, b.render("gltf")))
     errors = cast(list[object], r["errors"])
     warnings = cast(list[object], r["warnings"])
     ok = not errors
@@ -159,7 +162,7 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
                  f"segs=[cyan]{n}[/cyan] "
                  f"errors={'[green]0[/green]' if ok else f'[red]{len(errors)}[/red]'} "
                  f"warnings=[yellow]{len(warnings)}[/yellow]")
-    _table("fab output", [(f"{len(files)} files + svg + stl", out)])
+    _table("fab output", [(f"{len(files)} files + svg/png/3d/stl/gltf", out)])
     if simwhat:
         try:
             res = b.simulate(what=simwhat)

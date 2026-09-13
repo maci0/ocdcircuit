@@ -41,6 +41,68 @@ def _safe_net(n: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", n) or "N"
 
 
+def _find_blocks(comps: list[dict[str, object]]
+                 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Repeated units: inverter (pullup R + pulldown Q, shared node),
+    pass gate (pass_a + pass_b, shared origin). Returns (inv, passg) pairs."""
+    node2pd: dict[str, str] = {}
+    for c in comps:
+        if c.get("role") == "pulldown":
+            node2pd.setdefault(str(c["pins"]["3"]), str(c["ref"]))
+    inv: list[tuple[str, str]] = []
+    used: set[str] = set()
+    for c in comps:
+        if c.get("role") == "pullup" and str(c["ref"]) not in used:
+            q = node2pd.get(str(c["pins"]["2"]))
+            if q and q not in used:
+                inv.append((str(c["ref"]), q))
+                used.update((str(c["ref"]), q))
+    org2a: dict[str, str] = {}
+    for c in comps:
+        if c.get("role") == "pass_a":
+            org2a.setdefault(str(c["origin"]), str(c["ref"]))
+    psg: list[tuple[str, str]] = []
+    for c in comps:
+        if c.get("role") == "pass_b" and str(c["ref"]) not in used:
+            a = org2a.get(str(c["origin"]))
+            if a and a not in used:
+                psg.append((a, str(c["ref"])))
+                used.update((a, str(c["ref"])))
+    return inv, psg
+
+
+def _block_members(comps: list[dict[str, object]]
+                   ) -> tuple[dict[str, str], set[str]]:
+    """ren: flat ref -> instance-local ref. internal: flat net names fully
+    inside one instance (stamper owns them: OUT/MID/...)."""
+    raw = json.load(open(os.path.join(HERE, "netlist.json")))
+    pin2net: dict[tuple[str, str], str] = {}
+    for net, pins in raw["nets"].items():
+        for r, p in pins:
+            pin2net[(str(r), str(p))] = str(net)
+    inv, psg = _find_blocks(comps)
+    ren: dict[str, str] = {}
+    for i, (r, q) in enumerate(inv):
+        ren[r], ren[q] = f"I{i}_R", f"I{i}_Q"
+    for i, (a, b) in enumerate(psg):
+        ren[a], ren[b] = f"P{i}_A", f"P{i}_B"
+    # only suppress when the flat net is EXACTLY the instance pair —
+    # fanout nodes (R.2/Q.3 + others) stay on the board
+    netpins: dict[str, set[tuple[str, str]]] = {}
+    for net, pins in raw["nets"].items():
+        netpins[str(net)] = {(str(r), str(p)) for r, p in pins}
+    internal: set[str] = set()
+    for i, (r, q) in enumerate(inv):
+        n = pin2net.get((r, "2"))
+        if n and pin2net.get((q, "3")) == n and netpins.get(n) == {(r, "2"), (q, "3")}:
+            internal.add(_safe_net(n))
+    for i, (a, b) in enumerate(psg):
+        n = pin2net.get((a, "2"))
+        if n and pin2net.get((b, "2")) == n and netpins.get(n) == {(a, "2"), (b, "2")}:
+            internal.add(_safe_net(n))
+    return ren, internal
+
+
 def main() -> None:
     raw = json.load(open(os.path.join(HERE, "netlist.json")))
     lay = json.load(open(os.path.join(HERE, "layout.json")))
@@ -56,27 +118,45 @@ def main() -> None:
     assert set(used_fp) <= set(FP), f"unmapped: {set(used_fp) - set(FP)}"
     L = ["board monster6502 291x322 6L",
          "fp fet_sot323.fp", "fp chip0402.fp", "fp testpoint.fp"]
+    members = _block_members(comps)  # (ren, internal nets) — computed first
+    ren, internal = members
     for c in comps:
-        if str(c["ref"]) in _DROP_PARTS:
+        if str(c["ref"]) in _DROP_PARTS or str(c["ref"]) in ren:
             continue
         ref, fp = str(c["ref"]), FP[str(c["footprint"])]
         val = str(c.get("value", "") or "")
         L.append(f"part {ref} {fp} {val}".rstrip())
     n_fix = 0
     for c in comps:
-        if str(c["ref"]) in _DROP_PARTS:
-            continue
+        if str(c["ref"]) in _DROP_PARTS or str(c["ref"]) in ren:
+            continue  # block members: placer owns instances, no flat fixes
         p = pos_of.get(str(c["ref"]))
         if p is None:
             continue  # unplaced (back-side decoupling) — placer decides
         L.append(f"fix {c['ref']} at {p[0]:.2f} {p[1]:.2f}")
         n_fix += 1
+    inv, psg = _find_blocks(comps)
+    L.append("block inv")
+    L += ["part R CHIP0402 10k", "part Q FET_SOT323 BSS138K",
+          "net VCC: R.1", "net OUT: R.2 Q.3", "net GND: Q.2", "net IN: Q.1",
+          "end"]
+    L.append("block passg")
+    L += ["part A FET_SOT323 BSS138K", "part B FET_SOT323 BSS138K",
+          "net S1: A.1", "net MID: A.2 B.2", "net S2: A.3",
+          "net G: B.1", "net D: B.3", "end"]
+    for i, (r, q) in enumerate(inv):
+        L.append(f"instance inv as I{i} join vcc vss")
+    for i, (a, b) in enumerate(psg):
+        L.append(f"instance passg as P{i} join vcc vss")
     for net, pins in sorted(nets.items()):
         kept = [[r, p] for r, p in pins if r not in _DROP_PARTS]
         if len(kept) < 2:
             continue  # pico-private or orphaned single-pin net
+        if _safe_net(net) in internal:
+            continue  # instance stamper already owns it (OUT/MID/...)
         nm = _safe_net(net)
-        ps = " ".join(f"{r}.{p}" for r, p in kept)
+        ps = " ".join(f"{ren[r]}.{p}" if r in ren else f"{r}.{p}"
+                      for r, p in kept)
         L.append(f"net {nm}: {ps}")
     L.append("power vcc vss")
     open(os.path.join(HERE, "monster6502.ocd"), "w").write("\n".join(L) + "\n")

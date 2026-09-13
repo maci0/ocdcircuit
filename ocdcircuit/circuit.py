@@ -148,11 +148,11 @@ class Board(Component):
         assert isinstance(out, list)
         return out
 
-    def render(self, key: str | None = None, **k: object) -> str:
+    def render(self, key: str | None = None, **k: object) -> str | bytes:
         plug = self.plugins().get("renderer", key)
         assert isinstance(plug, Plugin)
         out = plug.run(self, **k)
-        assert isinstance(out, str)
+        assert isinstance(out, (str, bytes))
         return out
 
     def silk(self, key: str | None = None, **k: object) -> dict[str, object]:

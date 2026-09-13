@@ -162,8 +162,10 @@ assert len(rf) >= 1 and "segs" in rf[0]
 bj = agent.from_json(agent.to_json(bo))
 assert {p.ref for p in bj.parts.values()} == set(bo.parts)
 assert agent.to_json(bj).startswith("{")
-assert bj.render("svg").startswith("<svg")
-assert bj.render("stl").startswith("solid")
+assert cast(str, bj.render("svg")).startswith("<svg")
+assert cast(str, bj.render("stl")).startswith("solid")
+assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
+assert "<canvas" in cast(str, bj.render("html3d"))
 
 # fab profiles: oshpark is stricter than jlc on drills; jlc-flex is ENIG-only FPC
 from ocdcircuit import fab

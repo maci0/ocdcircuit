@@ -580,6 +580,27 @@ class GltfRenderer(Plugin[str]):
         return to_gltf(board, thick)
 
 
+class PngRenderer(Plugin[bytes]):
+    """2D raster: top-down PNG preview (mask/traces/pads/silk). Stdlib."""
+    kind, key = "renderer", "png"
+
+    def run(self, board: Board, *a: object, **k: object) -> bytes:
+        from .raster import render_top
+        return render_top(board, _f(k.get("pxmm", 10.0)))
+
+
+class Html3dRenderer(Plugin[str]):
+    """Interactive 3D: self-contained HTML page (WebGL, orbit/zoom, no CDN)
+    with the board's glTF embedded. Double-click to open, drag to orbit."""
+    kind, key = "renderer", "html3d"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        from .geom3d import to_gltf
+        from .view3d import page
+        thick = _f(k.get("thick", 1.6))
+        return page(board, to_gltf(board, thick))
+
+
 class RefSilk(Plugin[dict[str, object]]):
     """Minimal silk for dense boards: refs only, nothing else."""
     kind, key = "silk", "ref"
@@ -756,7 +777,8 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, TscircuitImporter, PcbImporter,
              CalcPlugin, SimPlugin, NgspicePlugin, LintPlugin, DoctorPlugin,
-             SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer)
+             SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
+             PngRenderer, Html3dRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:
