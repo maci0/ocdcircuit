@@ -39,7 +39,7 @@ solution with easing, traces grow net by net. Light/dark toggle. Design
 rules stolen from tmog (`~/Desktop/tmog/DESIGN_RULES.md`) — cockpit, not
 report; motion is the product; one concept, one hue.
 
-## Under the hood (authoring: `docs/PLUGINS.md`)
+## Under the hood ([architecture](docs/ARCHITECTURE.md), authoring: `docs/PLUGINS.md`)
 
 - **Context paradigm** ([the paper](https://github.com/cordiverse/paper)):
   every edit carries its inverse, every module declares its deps. Undo is

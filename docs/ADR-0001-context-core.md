@@ -14,3 +14,11 @@ one module in place. VSCode-style restart-the-world is the failure mode we avoid
 ## Consequences
 Board/Module are `Component`s; `Loader.reconcile()` diffs declarative configs.
 No direct list mutation outside `Context.emit` (undo breaks otherwise).
+
+## Update (registry failure memory, UI slots)
+- `Registry.failed`: a raising plugin is fenced, `get()` refuses it, active
+  falls back to the next healthy entry; explicit `use()` re-arms. All
+  `Board` dispatch funnels through `_run()` (harness-loader shape).
+- `UiSlots` beside the registry: shell declares slot names, plugins
+  register render fns, crash abdicates to the next survivor, `/slots`
+  exposes the ledger. Studio's page is four view registrations.

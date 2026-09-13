@@ -23,3 +23,11 @@ run N seeds, keep the best.
   diffusion (default), compact (area), thermal (heat spreading).
 - `match`/`diff` constraints feed placer cost + DRC skew warnings.
 - DRC `_seg_dist` collinear case now measures real 1D gaps (was: false 0).
+
+## Update (research items 1+3, per-layer maze)
+- Min-conflicts repair (`solver._repair`): most-overlapped part tries 12
+  local moves × 8 rounds after the seed loop, inside the undoable effect.
+- Rectilinear-MST legs (`maze._mst_pairs`): Prim's over Manhattan pad
+  distance replaces pin-order chaining (blinky 109→98 segs, mitox 1536→987).
+- Per-layer copper/halo: L0 copper no longer walls L1 (FR4 isolates); PTH
+  pads still span all layers. Pico 197→56 warnings on the same change.

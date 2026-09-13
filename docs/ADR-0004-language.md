@@ -16,3 +16,11 @@ add missing, drop stale, update changed — idempotent, order-independent,
 atomic via rollback. MCP `set_state` exposes it (prefer over `apply_patch`
 verbs for agents). Inverse ops added: `disconnect`, `drop_net`,
 `unconstrain`. Studio text→build is declare-by-construction (full reload).
+
+## Update (mermaid-style nets, meta lines, round/square zones)
+- Nets read as flows: `NAME [attrs] :: A.1 <--> B.2` (legacy `net X:` still
+  parses); layer/width constraints fold onto the net line in dumps.
+- `meta KEY value...`: board metadata (title/rev/desc), flows to KiCad
+  title_block, EasyEDA title, agent IR.
+- Zones: `keepout x y dN` (round) + `keepout near REF [dN|WxH]` (live
+  deadzone, anchor exempt); one `in_zone()` predicate serves maze/DRC/export.
