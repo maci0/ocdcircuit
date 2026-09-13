@@ -343,6 +343,17 @@ for _bbad, _bfrag in [
         raise AssertionError(f"should have raised: {_bbad!r}")
     except ValueError as e:
         assert _bfrag in str(e), f"{_bfrag!r} not in {e}"
+# workspace: score + diff are pure functions
+from ocdcircuit import score as _sc, diff as _df
+_sb = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\nfix C1 at 8 5\n")
+_ss = _sc.score(_sb)
+assert 0 <= _ss["total"] <= 100 and _ss["grade"] in "ABCDF"
+assert set(_ss["parts"]) == {"grid", "orientation", "spacing", "edge", "compact"}
+assert _df.diff(_sb, _sb) == ""
+_drep = _df.diff(_sb, agent.loads("board t 40x30\npart R1 R0805 10k\n"
+                                  "net N: R1.2\nnet GND: R1.1\n"))
+assert "- part C1" in _drep
 # hierarchical placer: rigid instances, falls back cleanly without them
 assert _bb.place("hierarchical", seeds=1, iters=50) is not None
 _offs: dict[str, tuple[float, float]] = {}
