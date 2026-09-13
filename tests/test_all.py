@@ -561,6 +561,31 @@ import json as _jm
 assert _jm.loads(agent.to_json(_mb))["board"]["meta"] == {"title": "Blinky 555", "rev": "A"}
 _kd = _mb.export("kicad", outdir=tempfile.mkdtemp())[0]
 assert '(title "Blinky 555")' in open(_kd).read()
+# placer auto-select: diffusion below 1000 parts, multilevel at/above
+_seen: dict[str, object] = {}
+_orig_run = Board._run
+
+
+def _spy_run(self: object, kind: str, key: object, **k: object) -> object:
+    _seen.update(kind=kind, key=key)
+    raise RuntimeError("stop")
+
+
+Board._run = _spy_run  # type: ignore[method-assign]
+try:
+    _lb.place()
+except RuntimeError:
+    pass
+assert _seen == {"kind": "placer", "key": None}, _seen
+_big = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+for _i in range(1000):
+    _big.parts[f"D{_i}"] = _big.parts["R1"]
+try:
+    _big.place()
+except RuntimeError:
+    pass
+assert _seen == {"kind": "placer", "key": "multilevel"}, _seen
+Board._run = _orig_run  # type: ignore[method-assign]
 # doctor: registry healthy on a live board
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)

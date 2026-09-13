@@ -48,7 +48,12 @@
    mean displacement 151.90 mm (similarity, secondary),
    overlaps 2548 vs golden floor 957 (above_floor 1591). The headroom
    to beat: close the WL ratio toward 1.0 and the 1591 avoidable overlaps.
-3. **Rotations ignored** (layout.json has rot 0/90/180 + B-side parts);
+3. **Multilevel** (`placer:multilevel`, seeds=1 iters=2, same harness):
+   10.6 s, WL ratio 1.64, overlaps 682 vs floor 957 (above_floor −275 —
+   *below* the stacking floor). 30× faster than flat diffusion at iters=5
+   with fewer overlaps; WL ratio trails because 2 rigid-body iters don't
+   spread as far. Multilevel is the default recommendation past ~1000 parts.
+4. **Rotations ignored** (layout.json has rot 0/90/180 + B-side parts);
    ocd parts are axis-aligned.
 4. Single-pin TP nets and DNP ballast excluded from strictness.
 

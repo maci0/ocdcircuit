@@ -141,6 +141,10 @@ class Board(Component):
             raise
 
     def place(self, key: str | None = None, **k: object) -> float:
+        if key is None and len(self.parts) >= 1000:
+            # ponytail: 10.6s vs 320s + fewer overlaps on monster6502;
+            # multilevel wins past ~1000 parts, diffusion below.
+            key = "multilevel"
         out = self._run("placer", key, **k)
         assert isinstance(out, float)
         return out
