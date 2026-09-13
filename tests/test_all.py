@@ -467,7 +467,9 @@ assert _tt["T4_vias"] == {"total": 0, "per_net": {}}
 assert _tt["T7_alignment"] == 1.0
 assert cast(dict[str, object], _tt["T10_orientation"])["cardinal"] == 1.0
 assert _tt["T11_copper_balance"] is None and _tt["T12_acid_traps"] is None
-assert _tt["T13_schematic"] is None and _tt["T15_silk_consistency"] == 1.0
+assert cast(dict[str, object], _tt["T13_schematic"])["jogs"] == 0
+assert isinstance(cast(dict[str, object], _tt["T13_schematic"])["crossings"], int)
+assert _tt["T15_silk_consistency"] == 1.0
 assert isinstance(_tt["coverage"], str)
 _tu = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.2\n").score(tidy=True)
 assert _tu["T1_crossings"] is None and _tu["T3_orthogonality"] is None

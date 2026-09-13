@@ -257,6 +257,40 @@ def _t15_silk_consistency(board: Board) -> float | None:
     return max(dirs.count(d) for d in set(dirs)) / len(dirs)
 
 
+def _t13_schematic(board: Board) -> dict[str, object] | None:
+    """Schematic readability (RAW): rail crossings + jogs in sch_layout
+    geometry. Drop-lines crossing foreign rails; jogs = rail direction
+    changes per net (rails are straight by construction → always 0)."""
+    from .plugins import sch_layout
+    lay = sch_layout(board)
+    px = lay["px"]
+    rail_y = lay["rail_y"]
+    assert isinstance(px, dict) and isinstance(rail_y, dict)
+    crossings = 0
+    from typing import cast
+    top = float(cast(int, lay["top"])) - 4
+    for n, net in board.nets.items():
+        if n not in rail_y:
+            continue
+        y0 = float(rail_y[n])
+        for ref, _ in net.pins:
+            if ref not in px:
+                continue
+            x0 = float(px[ref])
+            for m, y in rail_y.items():
+                if m == n:
+                    continue
+                xs = [float(px[r]) for r, _ in board.nets[m].pins if r in px]
+                if not xs:
+                    continue
+                # drop x0 spans top→y0; crosses rail m iff x0 in m's span
+                # and m's rail lies strictly between
+                yy = float(y)
+                if min(xs) <= x0 <= max(xs) and min(top, y0) < yy < max(top, y0):
+                    crossings += 1
+    return {"crossings": crossings, "jogs": 0}
+
+
 def tidy(board: Board) -> dict[str, object]:
     """Full scorecard: {metric: value|None} + coverage. No scalar."""
     nets = len(board.traces)
@@ -271,10 +305,10 @@ def tidy(board: Board) -> dict[str, object]:
         "T8_gridsnap_mm": _t8_gridsnap(board),
         "T9_spacing": _t9_spacing(board),
         "T10_orientation": _t10_orient(board),
-        # T11/T12/T13: geometry-engine tier — reported as None (unmeasurable)
+        # T11/T12: geometry-engine tier — reported as None (unmeasurable)
         "T11_copper_balance": None,
         "T12_acid_traps": None,
-        "T13_schematic": None,
+        "T13_schematic": _t13_schematic(board),
         "T14_silk_overlap": _t14_silk(board),
         "T15_silk_consistency": _t15_silk_consistency(board),
         "routed_segs": nets,

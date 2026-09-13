@@ -12,8 +12,8 @@ symmetry matter less, grid-fixing was non-significant
 ([record](https://eprints.gla.ac.uk/35804/), 493 cites). Draft `tidy(board)`
 scorecard below: 1 metric already computable (~0 lines, T3 orthogonality),
 11 at ~10 lines each (T10 included — `Part.rot` exists), rest behind a
-geometry engine (T13 included — the schematic renderer can't cross
-by construction). Report the component vector + weights, never a
+geometry engine. T13 now measures `sch_layout` drop-line × rail crossings.
+Report the component vector + weights, never a
 bare scalar; never compare scalars across boards.
 
 ## Background
@@ -196,7 +196,7 @@ Conventions (normative for any implementation — review round 1):
 | T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | 🔧 |
 | T11 | Copper tile variance | σ of tile density + layer Δ | Δ≤20% (F) | 🏗️ |
 | T12 | Acid-trap scan | RAW # acute <90° copper wedges (always 0 under Manhattan-only routing — placeholder) | 0 (F) | 🏗️ |
-| T13 | Schematic crossings/jogs | N/A until a real schematic placer lands (current renderer is one-column-per-net parallel lines — trivially 0) | min (L — the one valid Purchase transfer) | 🏗️ |
+| T13 | Schematic crossings/jogs | RAW drop-line × rail crossings + jogs in `sch_layout` geometry | min (L — the one valid Purchase transfer) | ✅ |
 | T14 | Silk overlap | RAW text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents); **scored, never veto-gated** until precision is measured | 0 (F) | 🔧 |
 | T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field; deterministic offsets → ~100% until placer changes — non-discriminative) | →1 (J) | 🔧 |
 
