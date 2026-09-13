@@ -34,6 +34,9 @@ instance driver as Z2 join VCC GND  # joined nets merge, rest stay local
 part C1 C0402 100n lcsc=C1525 rot=90  # trailing k=v attrs (LCSC, rotation)
 pour GND on 0                # copper pour (top=0, bottom=layers-1)
 keepout 11.5 47 15.7x1.9     # rect keepout, center x y WxH [+ on layers]
+keepout 20 15 d6           # round keepout, center x y dia [+ on layers]
+keepout near F1 d4         # deadzone follows part (fiducial); WxH or dN,
+                           # default d4; anchor part exempt, maze + DRC + KiCad
 cutout 11.5 47 15x1.2        # board cutout (slot)
 hole 15.2 12.9 1.3           # bare mounting hole (x y drill)
                                # also: .kicad_mod/.pretty, .lbr (Eagle), .json (tscircuit)

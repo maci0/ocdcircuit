@@ -263,8 +263,15 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for con in board.constraints:
         kind = con.get("t")
         if kind == "keepout":
-            cx, cy = _f(con["x"]), _f(con["y"])
-            hw, hh = _f(con["w"]) / 2, _f(con["h"]) / 2
+            from .drc import zone_at
+            z = zone_at(board, con)
+            cx, cy = _f(z["x"]), _f(z.get("y", 0.0))
+            if z.get("d") is not None:
+                rr = _f(z["d"]) / 2
+                A(f'  (gr_circle (center {cx:.4f} {cy:.4f}) (end {cx + rr:.4f} {cy:.4f}) '
+                  f'(layer "Cmts.User") (width 0.05))')
+                continue
+            hw, hh = _f(z.get("w", 0.0)) / 2, _f(z.get("h", 0.0)) / 2
             for x1, y1, x2, y2 in [(cx - hw, cy - hh, cx + hw, cy - hh),
                                    (cx + hw, cy - hh, cx + hw, cy + hh),
                                    (cx + hw, cy + hh, cx - hw, cy + hh),

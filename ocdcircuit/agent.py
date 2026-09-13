@@ -123,11 +123,27 @@ def parse_constraint(text: str) -> Constraint | None:
     if m:
         layer = {"top": 0, "bottom": 1}[m.group(2).lower()] if m.group(2).lower() in ("top", "bottom") else int(m.group(2))
         return {"t": "pour", "net": m.group(1), "layer": layer}
-    m = re.match(r"keepout ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+)(?: on ([\w,]+))?$", t, re.I)
+    m = re.match(r"keepout ([\d.\-]+) ([\d.\-]+) (?:([\d.]+)x([\d.]+)|d([\d.]+))(?: on ([\w,]+))?$", t, re.I)
     if m:
-        return {"t": "keepout", "x": float(m.group(1)), "y": float(m.group(2)),
-                "w": float(m.group(3)), "h": float(m.group(4)),
-                "layers": m.group(5).split(",") if m.group(5) else []}
+        kd: Constraint = {"t": "keepout", "x": float(m.group(1)), "y": float(m.group(2)),
+                          "layers": m.group(6).split(",") if m.group(6) else []}
+        if m.group(5) is not None:
+            kd["d"] = float(m.group(5))  # round: keepout x y dN
+        else:
+            kd["w"], kd["h"] = float(m.group(3)), float(m.group(4))
+        return kd
+    # deadzone follows a part: keepout near REF [dN | WxH] (fiducials et al.)
+    m = re.match(r"keepout near (\S+)(?: (?:([\d.]+)x([\d.]+)|d([\d.]+)))?(?: on ([\w,]+))?$", t, re.I)
+    if m:
+        z: Constraint = {"t": "keepout", "ref": m.group(1),
+                         "layers": m.group(5).split(",") if m.group(5) else []}
+        if m.group(4) is not None:
+            z["d"] = float(m.group(4))
+        elif m.group(2) is not None:
+            z["w"], z["h"] = float(m.group(2)), float(m.group(3))
+        else:
+            z["d"] = 4.0  # fiducial default: 4mm clear circle
+        return z
     m = re.match(r"cutout ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+)$", t, re.I)
     if m:
         return {"t": "cutout", "x": float(m.group(1)), "y": float(m.group(2)),
@@ -264,7 +280,13 @@ def dumps(board: Board) -> str:
             L.append(f"pour {c['net']} on {c['layer']}")
         elif t == "keepout":
             ly = f" on {','.join(cast(list[str], c['layers']))}" if c.get("layers") else ""
-            L.append(f"keepout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}{ly}")
+            if c.get("ref") is not None:
+                sh = f"d{_f(c['d']):g}" if c.get("d") is not None else f"{_f(c['w']):g}x{_f(c['h']):g}"
+                L.append(f"keepout near {c['ref']} {sh}{ly}")
+            elif c.get("d") is not None:
+                L.append(f"keepout {_f(c['x']):g} {_f(c['y']):g} d{_f(c['d']):g}{ly}")
+            else:
+                L.append(f"keepout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}{ly}")
         elif t == "cutout":
             L.append(f"cutout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}")
         elif t == "hole":

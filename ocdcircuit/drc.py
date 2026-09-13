@@ -14,6 +14,33 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 
+def zone_at(board: Board, c: object) -> dict[str, object]:
+    """Resolve a keepout/cutout center: explicit x/y, or live part position
+    via `ref` (deadzone follows the part through place iterations)."""
+    assert isinstance(c, dict)
+    out = dict(c)
+    if c.get("ref") is not None and str(c["ref"]) in board.parts:
+        p = board.parts[str(c["ref"])]
+        out["x"], out["y"] = p.x, p.y
+    return out
+
+
+def in_zone(c: object, x: float, y: float,
+            pad: float | tuple[float, float] = 0.0) -> bool:
+    """Shape-aware zone hit: rect (`w/h`) or round (`d`) keepout/cutout.
+    One predicate for maze walls, DRC warnings, export. `pad` grows the
+    shape — scalar, or (px, py) pair for exact box-vs-box (part half-size,
+    trace width/2, fiducial deadzone)."""
+    assert isinstance(c, dict)
+    cx, cy = _f(c["x"]), _f(c["y"])
+    dx, dy = abs(x - cx), abs(y - cy)
+    px, py = pad if isinstance(pad, tuple) else (pad, pad)
+    if c.get("d") is not None:
+        r: float = _f(c["d"]) / 2 + max(px, py)
+        return dx * dx + dy * dy < r * r
+    return dx < _f(c["w"]) / 2 + px and dy < _f(c["h"]) / 2 + py
+
+
 def _seg_dist(a: tuple[float, float, float, float],
               b: tuple[float, float, float, float]) -> float:
     (x1, y1, x2, y2), (x3, y3, x4, y4) = a, b
@@ -92,17 +119,18 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 warnings.append(f"airwire {t.net} (maze fallback — re-route?)")
     for c in board.constraints:
         if c.get("t") == "keepout":
-            cx, cy = _f(c["x"]), _f(c["y"])
-            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            z = zone_at(board, c)
             for p in parts:
+                if str(c.get("ref", "")) == p.ref:
+                    continue  # own deadzone never flags its anchor part
                 pw, ph = p.wh()
-                if abs(p.x - cx) < hw + pw / 2 and abs(p.y - cy) < hh + ph / 2:
+                if in_zone(z, p.x, p.y, (pw / 2, ph / 2)):
                     # warning, not error: modules sit in antenna keepouts by
                     # design (mitox U4); review, don't block
                     warnings.append(f"keepout {p.ref}")
             for t in board.traces:
                 mx, my = (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2
-                if abs(mx - cx) < hw and abs(my - cy) < hh:
+                if in_zone(z, mx, my, t.width / 2):
                     warnings.append(f"keepout-trace {t.net}")
         elif c.get("t") == "hole":
             if _f(c["d"]) < min_drill:
