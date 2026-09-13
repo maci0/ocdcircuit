@@ -32,9 +32,55 @@ def _boot() -> object:
 
 def _load(agent: object, src: str) -> Board:
     loads = cast(object, getattr(agent, "loads"))
-    from typing import Callable, Any
     fn = cast(Callable[..., Board], loads)
     return fn(open(src).read(), base=os.path.dirname(os.path.abspath(src)))
+
+
+class _Printer:
+    """Rich Console, or a plain-print shim when rich isn't installed."""
+    def __init__(self) -> None:
+        try:
+            from rich.console import Console  # type: ignore[import-not-found]
+            self._c: object = Console()
+        except ImportError:
+            self._c = None
+
+    def print(self, *a: object) -> None:
+        if self._c is not None:
+            print_fn = getattr(self._c, "print")
+            print_fn(*a)
+        else:
+            import re
+            print(re.sub(r"\[(/?[a-z_ ]*|#[0-9a-f]*)\]", "",
+                         " ".join(str(x) for x in a)))
+
+
+_C: _Printer | None = None  # lazy console
+
+
+def _out() -> _Printer:
+    global _C
+    if _C is None:
+        _C = _Printer()
+    return _C
+
+
+def _table(title: str, rows: list[tuple[str, str]]) -> None:
+    """Two-column table via rich, or aligned plain text."""
+    c = _out()
+    if c._c is None:
+        w = max(len(r[0]) for r in rows) if rows else 0
+        c.print(f"== {title} ==")
+        for k, v in rows:
+            c.print(f"{k:<{w}}  {v}")
+        return
+    from rich.table import Table  # type: ignore[import-not-found]
+    t = Table(title=title, show_header=False)
+    t.add_column(style="cyan")
+    t.add_column()
+    for k, v in rows:
+        t.add_row(k, v)
+    c.print(t)
 
 
 def cmd_new(args: list[str]) -> int:
@@ -88,13 +134,13 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
         b = _load(agent, src)
         b.fab = fab
     except (OSError, ValueError, KeyError) as e:
-        print(f"ocd: {e}")
+        _out().print(f"[red]ocd: {e}[/red]")
         return 1
     try:
         c = b.place(placer) if placer else b.place()
         n = b.route_board(router) if router else b.route_board()
     except KeyError as e:
-        print(f"ocd: {e}")
+        _out().print(f"[red]ocd: {e}[/red]")
         return 1
     r = b.check()
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
@@ -104,26 +150,33 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     open(os.path.join(out, b.name + ".stl"), "w").write(b.render("stl"))
     errors = cast(list[object], r["errors"])
     warnings = cast(list[object], r["warnings"])
-    print(f"{b.name}: cost={c:.1f} segs={n} errors={errors} warnings={len(warnings)}")
-    print(f"{len(files)} fab files + svg + stl in {out}/")
+    ok = not errors
+    _out().print(f"[bold]{b.name}[/bold]: cost=[yellow]{c:.1f}[/yellow] "
+                 f"segs=[cyan]{n}[/cyan] "
+                 f"errors={'[green]0[/green]' if ok else f'[red]{len(errors)}[/red]'} "
+                 f"warnings=[yellow]{len(warnings)}[/yellow]")
+    _table("fab output", [(f"{len(files)} files + svg + stl", out)])
     if simwhat:
         try:
             res = b.simulate(what=simwhat)
         except (ValueError, KeyError) as e:
-            print(f"ocd: sim: {e}")
+            _out().print(f"[red]ocd: sim: {e}[/red]")
             return 1
         if "nets" in res:
             nets = cast(dict[str, object], res["nets"])
-            cells = []
+            rows = []
             for k, v in sorted(nets.items()):
                 assert isinstance(v, (int, float))
-                cells.append(f"{k}={float(v):.3f}V")
-            print("sim dc: " + " ".join(cells))
+                rows.append((k, f"{float(v):.3f}V"))
+            _table("sim dc", rows)
         else:
             waves = cast(dict[str, list[float]], res["waves"])
-            for k, v in sorted(waves.items()):
-                print(f"sim {k}: final={v[-1]:.3f}V min={min(v):.3f} max={max(v):.3f} ({len(v)} pts)")
+            rows = [(k, f"final={v[-1]:.3f}V min={min(v):.3f} max={max(v):.3f} ({len(v)} pts)")
+                    for k, v in sorted(waves.items())]
+            _table("sim tran", rows)
     if errors:
+        for item in errors:
+            _out().print(f"  [red]✗ {item}[/red]")
         return 2
     seen: set[str] = set()
     for w in warnings:
@@ -131,7 +184,8 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
         if ws not in seen:
             seen.add(ws)
         if len(seen) <= 5:
-            print(f"warn: {ws}")
+            _out().print(f"  [yellow]~ {ws}[/yellow]")
+    _out().print("[green]✓ DRC clean[/green]")
     return 0
 
 
@@ -212,9 +266,10 @@ def cmd_score(agent: object, args: list[str]) -> int:
     from ocdcircuit.score import score as _score
     s = _score(b)
     sparts = cast(dict[str, float], s["parts"])
-    print(f"OCD {s['total']}/100 ({s['grade']})")
-    for k, v in sparts.items():
-        print(f"  {k}: {v}")
+    total = cast(float, s["total"])
+    color = "green" if total >= 75 else "yellow" if total >= 40 else "red"
+    _out().print(f"OCD [{color}]{total}/100 ({s['grade']})[/{color}]")
+    _table("neatness", [(k, str(v)) for k, v in sparts.items()])
     return 0
 
 
