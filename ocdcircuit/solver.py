@@ -420,6 +420,7 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
             best, best_pos = c, {r: (q.x, q.y) for r, q in board.parts.items()}
     for r, (x, y) in best_pos.items():
         board.parts[r].x, board.parts[r].y = x, y
+    _repair(board)
     board.traces = old_traces
     final = {r: (p.x, p.y) for r, p in board.parts.items()}
 
@@ -433,6 +434,45 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
 
     board.ctx.emit(_do, _undo)
     return best
+
+
+def _repair(board: Board, rounds: int = 8) -> None:
+    """Min-conflicts repair (research §4): greedy place leaves overlaps;
+    repeatedly move the most-overlapped part to its min-conflict spot.
+    Runs inside optimize's undoable effect (positions restored by _undo)."""
+    import random
+    rng = random.Random(0)
+    fx = _fixed(board)
+    parts = [p for p in board.parts.values() if p.ref not in fx]
+
+    def _ovl(p: object) -> int:
+        assert isinstance(p, Part)
+        pw, ph = p.wh()
+        n = 0
+        for q in board.parts.values():
+            if q is p:
+                continue
+            qw, qh = q.wh()
+            if (abs(p.x - q.x) < (pw + qw) / 2 + 0.4 and
+                    abs(p.y - q.y) < (ph + qh) / 2 + 0.4):
+                n += 1
+        return n
+
+    for _ in range(rounds):
+        if not parts:
+            return
+        p = max(parts, key=_ovl)
+        if _ovl(p) == 0:
+            return
+        pw, ph = p.wh()
+        bx, by, bc = p.x, p.y, cost(board)
+        for _ in range(12):
+            p.x = min(max(rng.uniform(bx - 8, bx + 8), pw / 2), board.width - pw / 2)
+            p.y = min(max(rng.uniform(by - 8, by + 8), ph / 2), board.height - ph / 2)
+            c = cost(board)
+            if c < bc:
+                bx, by, bc = p.x, p.y, c
+        p.x, p.y = bx, by
 
 
 def hierarchical(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,

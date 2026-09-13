@@ -1,18 +1,18 @@
 {
  "blinky_555.ocd/compact/maze/2L": {
-  "hash": "f81ef9a4cea06819",
+  "hash": "abd71468203cd1a4",
   "parts": 10,
-  "segs": 132
+  "segs": 101
  },
  "blinky_555.ocd/compact/maze/4L": {
-  "hash": "a5d9edc6657a8743",
+  "hash": "a1d18a26cb208c93",
   "parts": 10,
-  "segs": 120
+  "segs": 102
  },
  "blinky_555.ocd/compact/maze/8L": {
-  "hash": "a5d9edc6657a8743",
+  "hash": "a1d18a26cb208c93",
   "parts": 10,
-  "segs": 120
+  "segs": 102
  },
  "blinky_555.ocd/diffusion/lroute/2L": {
   "hash": "2c4aa24e499c3cea",
@@ -20,9 +20,9 @@
   "segs": 38
  },
  "blinky_555.ocd/diffusion/maze/1L": {
-  "hash": "7c4ced4fda2a05f6",
+  "hash": "9f71292fa8f0fb33",
   "parts": 10,
-  "segs": 112
+  "segs": 95
  },
  "bme690_carrier.ocd/diffusion/maze/2L": {
   "hash": "bb5a0c2bbf6582c1",
@@ -30,14 +30,14 @@
   "segs": 56
  },
  "mitox.ocd/compact/maze/2L": {
-  "hash": "57e63aaaa5da4d5c",
+  "hash": "e83dabb2325a307e",
   "parts": 43,
-  "segs": 1536
+  "segs": 987
  },
  "pico_tmc2209.ocd/hierarchical/maze/2L": {
-  "hash": "24d15493da0e990a",
+  "hash": "6d0dcb5f3d21bdec",
   "parts": 20,
-  "segs": 604
+  "segs": 545
  },
  "psu.ocd/diffusion/lroute/2L": {
   "hash": "ff86a14ea3a997a6",

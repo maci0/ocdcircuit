@@ -227,6 +227,26 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     return len(new)
 
 
+def _mst_pairs(pts: list[tuple[str, XY]]) -> list[tuple[tuple[str, XY], tuple[str, XY]]]:
+    """Prim's tree edges over Manhattan pad distance (research §5).
+    O(pins²) — nets are small. Shared trunk beats pin-order chaining."""
+    if len(pts) < 3:
+        return list(zip(pts, pts[1:]))
+    done = [pts[0]]
+    rest = pts[1:]
+    legs: list[tuple[tuple[str, XY], tuple[str, XY]]] = []
+    while rest:
+        bi, bj, bd = 0, 0, float("inf")
+        for i, (_, a) in enumerate(done):
+            for j, (_, b) in enumerate(rest):
+                d = abs(a[0] - b[0]) + abs(a[1] - b[1])
+                if d < bd:
+                    bi, bj, bd = i, j, d
+        legs.append((done[bi], rest[bj]))
+        done.append(rest.pop(bj))
+    return legs
+
+
 def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                nx: int, ny: int, base_blocked: set[tuple[int, int]],
                pad_cells: dict[tuple[int, int], str],
@@ -234,10 +254,13 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                cells_of: dict[str, set[tuple[int, int, int]]],
                new: list[Seg], frames: list[Frame] | None) -> bool:
     """Route one net with current blockage. Returns True if maze-succeeded.
-    copper/halo are per-layer (FR4 isolates); pads expand onto all layers."""
+    copper/halo are per-layer (FR4 isolates); pads expand onto all layers.
+    Legs follow a rectilinear MST over pads (research §5), not pin order —
+    one shared trunk instead of N-1 competing maze paths."""
     pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
     if len(pts) < 2:
         return True
+    legs = _mst_pairs(pts)
     layer = net.layer if net.layer is not None else 0
     # dynamic bend rects: traces pass, layer jumps forbidden
     novia: set[tuple[int, int]] = set()
@@ -270,8 +293,7 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                     for ll in range(nl):
                         blocked.discard((gx, gy, ll))
     own: set[tuple[int, int, int]] = set()
-    for i in range(1, len(pts)):
-        a, b = pts[i - 1][1], pts[i][1]
+    for (_, a), (_, b) in legs:
         s = (min(nx - 1, max(0, int(a[0] / grid))),
              min(ny - 1, max(0, int(a[1] / grid))), layer)
         g = (min(nx - 1, max(0, int(b[0] / grid))),
