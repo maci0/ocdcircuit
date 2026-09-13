@@ -68,7 +68,7 @@ body.light .tok-k{color:#0050a0}body.light .tok-net{color:#b9770e}
 <main>
 <section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3><div id=ed contenteditable spellcheck=false></div></section>
 <section id=pcbwrap><h3>PCB — DRAG PARTS, THEY STAY WHERE DROPPED</h3><canvas id=pcb></canvas><div id=drc></div></section>
-<section id=schwrap><h3>SCHEMATIC</h3><canvas id=sch></canvas></section>
+<section id=schwrap><h3>SCHEMATIC — CLICK PIN, CLICK NET TO REWIRE · ALT-CLICK DROPS PIN · DOUBLE-CLICK LABEL RENAMES</h3><canvas id=sch></canvas></section>
 <section id=wrap3d><h3>3D</h3><canvas id=t3d></canvas></section>
 </main>
 <script>
@@ -97,14 +97,83 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   return {s,ox,oy};
 }
 let view={s:1,ox:0,oy:0};
+let schSel=null; // selected "REF.PIN"
 function drawSCH(st){
   const c=$('sch'),ctx=c.getContext('2d'),R=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   c.width=R.width*dpr;c.height=R.height*dpr;ctx.scale(dpr,dpr);
   const nets=Object.keys(st.nets),cw=110;ctx.clearRect(0,0,R.width,R.height);
+  st._schmap={pins:[],nets:[]};
   nets.forEach((n,i)=>{const x=30+i*cw;ctx.strokeStyle=['#e74c3c','#3498db','#2ecc71','#9b59b6'][i%4];ctx.beginPath();ctx.moveTo(x,24);ctx.lineTo(x,R.height-8);ctx.stroke();
     ctx.fillStyle='#e8e8e8';ctx.textAlign='center';ctx.fillText(n,x,16);
-    st.nets[n].forEach((pp,j)=>{const y=44+j*30;ctx.fillStyle='#111';ctx.fillRect(x-42,y-10,84,20);ctx.strokeRect(x-42,y-10,84,20);ctx.fillStyle='#e8e8e8';ctx.fillText(pp,x,y+4);});});
+    st._schmap.nets.push({n,x});
+    st.nets[n].forEach((pp,j)=>{const y=44+j*30;
+      const sel=schSel===pp;
+      ctx.fillStyle=sel?'#3a2f00':'#111';ctx.fillRect(x-42,y-10,84,20);
+      ctx.strokeStyle=sel?'#f1c40f':'#888';ctx.strokeRect(x-42,y-10,84,20);
+      ctx.fillStyle='#e8e8e8';ctx.fillText(pp,x,y+4);
+      st._schmap.pins.push({pp,net:n,x,y});});});
 }
+// --- schematic edits → .ocd text (two-way binding) ---
+function schLines(){return $('ed').innerText.split('\n');}
+const schEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+// parse net lines: {name, idx, pins:[{tok, li}]} (li = line index)
+function schNets(){
+  const lines=schLines(),out=[];
+  lines.forEach((l,li)=>{const m=l.match(/^net\s+(\S+?)(?:\s+[LW][\d.]+)*\s*:\s*(.*)$/);
+    if(m)out.push({name:m[1],li,pins:m[2].split(/\s+/).filter(Boolean)});});
+  return out;
+}
+function schCommit(lines){$('ed').innerText=lines.join('\n');push();}
+function schMovePin(pp,dst){
+  const [ref,pin]=pp.split('.'),lines=schLines(),nets=schNets();
+  let changed=false;
+  for(const n of nets){
+    const i=n.pins.findIndex(t=>{const [r,p]=t.split('.');return r===ref&&p===pin;});
+    if(i>=0&&n.name!==dst){n.pins.splice(i,1);changed=true;
+      const rx=new RegExp(`\\b${schEsc(ref)}\\.${schEsc(pin)}\\b`);
+      lines[n.li]=lines[n.li].replace(rx,'').replace(/:\s*$/ ,':').replace(/\s+/g,' ').replace(/ :/ ,':');}
+  }
+  for(const n of nets)if(n.name===dst){n.pins.push(`${ref}.${pin}`);
+    lines[n.li]=lines[n.li].replace(/:\s*(.*)$/,`: ${n.pins.join(' ')}`);changed=true;}
+  if(changed)schCommit(lines);
+}
+function schDropPin(pp){
+  const [ref,pin]=pp.split('.'),lines=schLines(),nets=schNets();
+  for(const n of nets){
+    const i=n.pins.findIndex(t=>{const [r,p]=t.split('.');return r===ref&&p===pin;});
+    if(i>=0){lines[n.li]=lines[n.li].split(':')[0]+': '+n.pins.filter((_,j)=>j!==i).join(' ');
+      schCommit(lines);return;}
+  }
+}
+function schRename(net){
+  const to=prompt(`rename net ${net} to:`,net);
+  if(!to||to===net||!to.match(/^\w+$/))return;
+  const esc=schEsc(net);
+  const lines=schLines().map(l=>{
+    l=l.replace(new RegExp(`^(net\\s+)${esc}\\b`,'$1'+to));
+    l=l.replace(new RegExp(`^(route\\s+)${esc}\\b`,'$1'+to));
+    l=l.replace(new RegExp(`^(trace\\s+)${esc}\\b`,'$1'+to));
+    return l;});
+  // power/match/join lists: word-boundary replace on those lines only
+  for(let i=0;i<lines.length;i++){
+    if(/^(power|match)\b/.test(lines[i])||/\bjoin\b/.test(lines[i]))
+      lines[i]=lines[i].replace(new RegExp(`\\b${esc}\\b`, 'g'),to);
+  }
+  schCommit(lines);
+}
+(()=>{const c=$('sch');
+c.addEventListener('mousedown',e=>{if(!S||!S._schmap)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
+  for(const p of S._schmap.pins){
+    if(Math.abs(mx-p.x)<42&&Math.abs(my-p.y)<10){
+      if(e.altKey){schDropPin(p.pp);schSel=null;return;}
+      schSel=(schSel===p.pp)?null:p.pp;return;}}
+  for(const n of S._schmap.nets){
+    if(Math.abs(mx-n.x)<50&&my<26){
+      if(schSel){schMovePin(schSel,n.n);schSel=null;}return;}}
+  schSel=null;});
+c.addEventListener('dblclick',e=>{if(!S||!S._schmap)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
+  for(const n of S._schmap.nets)if(Math.abs(mx-n.x)<50&&my<26){schRename(n.n);return;}});
+})();
 function draw3D(st,rot){
   const c=$('t3d'),ctx=c.getContext('2d'),R=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   c.width=R.width*dpr;c.height=R.height*dpr;ctx.scale(dpr,dpr);
@@ -207,6 +276,16 @@ c.addEventListener('mouseup',async()=>{if(!drag)return;const r=drag;drag=null;
   let idx=lines.findIndex(l=>/^(part|net|fix|keep|route|trace|power|silk)\b/.test(l));if(idx<0)idx=lines.length;
   lines.splice(idx,0,`fix ${r} at ${p.x} ${p.y}`);
   $('ed').innerText=lines.join('\n');push();});
+c.addEventListener('dblclick',()=>{ // unpin: remove fix, let solver place freely
+  if(!S||!S.cur||!S.cur.hover)return;
+  const r=S.cur.hover,lines=$('ed').innerText.split('\n')
+    .filter(l=>!/^fix\s+\S+\s+at\s/.test(l)||!l.startsWith('fix '+r+' '));
+  if(lines.length!==$('ed').innerText.split('\n').length){$('ed').innerText=lines.join('\n');push();}});
+c.addEventListener('mousemove',e=>{if(!S||drag)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
+  S.cur.hover=null;
+  for(const r in S.cur.parts){const p=S.cur.parts[r];
+    const x=view.ox+p.x*view.s,y=view.oy+(S.bh-p.y)*view.s;
+    if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4){S.cur.hover=r;break;}}});
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value});applyState(r,true);};
 $('theme').onclick=()=>{theme=theme==='dark'?'light':'dark';document.body.className=theme==='light'?'light':'';$('theme').textContent=theme==='dark'?'light':'dark';};
@@ -280,6 +359,15 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
 class H(http.server.BaseHTTPRequestHandler):
     src_text: str = ""
 
+    @staticmethod
+    def save() -> None:
+        """Persist the .ocd source of truth to disk (edits are real)."""
+        try:
+            with open(SRC, "w") as f:
+                f.write(H.src_text if H.src_text.endswith("\n") else H.src_text + "\n")
+        except OSError as e:
+            print(f"studio: save failed: {e}", file=sys.stderr)
+
     def _send(self, obj: object) -> None:
         body = json.dumps(obj).encode()
         self.send_response(200)
@@ -310,10 +398,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 text = str(req.get("text", H.src_text))
                 st = self._build(text, False, req)
                 H.src_text = str(st["text"])  # only keep good builds
+                H.save()
                 self._send(st)
             elif self.path == "/solve":
                 st = self._build(H.src_text, True, req)
                 H.src_text = str(st["text"])
+                H.save()
                 self._send(st)
             else:
                 self.send_response(404)

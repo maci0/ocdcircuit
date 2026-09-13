@@ -29,6 +29,6 @@ audit output.
 
 ## Task ledger
 - [x] Write this plan
-- [ ] Fan out 4 audit subagents (one per brief)
-- [ ] Lead spot-checks (benchmark table, code refs, docs/outputs diff)
-- [ ] Synthesize `outputs/the-research-here-audit.md`
+- [x] Fan out 4 audit subagents (one per brief)
+- [x] Lead spot-checks (benchmark table, code refs, docs/outputs diff)
+- [x] Synthesize `outputs/the-research-here-audit.md`
