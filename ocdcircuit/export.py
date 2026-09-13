@@ -75,8 +75,13 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
     open(fn, "w").write(_gerber(paste, [], 0.4))
     files.append(fn)
-    # mask / silk / outline (minimal but present)
-    for nm, ap in (("GTS", 0.5), ("GBS", 0.5), ("GTO", 0.2), ("GBO", 0.2)):
+    # mask / silk / outline (minimal but present; no bottom side on 1L)
+    bottom = [] if board.layers == 1 else ["GBS", "GBO"]
+    for nm, ap in (("GTS", 0.5), ("GTO", 0.2)):
+        fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
+        open(fn, "w").write(_gerber([], [], ap))
+        files.append(fn)
+    for nm, ap in zip(bottom, (0.5, 0.2)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
         open(fn, "w").write(_gerber([], [], ap))
         files.append(fn)
