@@ -107,6 +107,9 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"power ([\w ]+)$", t, re.I)
     if m:
         return {"t": "power", "nets": m.group(1).split()}
+    m = re.match(r"silk ([0-3])$", t, re.I)
+    if m:
+        return {"t": "silk", "level": int(m.group(1))}
     m = re.match(r"board ([\d.]+) ?x ([\d.]+)$", t, re.I)
     if m:
         return {"t": "board", "w": float(m.group(1)), "h": float(m.group(2))}
@@ -156,6 +159,8 @@ def dumps(board: Board) -> str:
             continue
         elif t == "width":
             L.append(f"trace {c['net']} {_f(c['width']):g}")
+        elif t == "silk":
+            L.append(f"silk {c['level']}")
         elif t == "power":
             if c.get("owner"):
                 continue  # contributed by an include — comes back via `use`

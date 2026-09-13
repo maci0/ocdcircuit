@@ -122,9 +122,11 @@ class Registry:
             raise KeyError(f"can't swap to unmounted {kind}:{key}")
         self.active[kind] = key
 
-    def list(self, kind: str | None = None) -> list[tuple[str, str]]:
-        return sorted(k for (k, _v) in self.items.items()
-                      if kind is None or k[0] == kind)
+    def list(self, kind: str | None = None) -> list[str]:
+        """Key names for a kind (or 'kind:key' strings when kind is None)."""
+        if kind is None:
+            return sorted(f"{k}:{kk}" for (k, kk) in self.items)
+        return sorted(kk for (k, kk) in self.items if k == kind)
 
 
 class Plugin(Component, Generic[Out]):

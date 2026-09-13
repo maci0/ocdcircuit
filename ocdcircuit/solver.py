@@ -105,7 +105,7 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                 mem[ref].append(net.name)
     for t in range(iters):
         T = 1 - t / iters  # temperature
-        step = 0.25 + 0.65 * T
+        step = (0.25 + 0.65 * T) * (0.3 + 0.7 * T)  # shrink late: settle, don't jitter
         for p in parts:
             Fx = Fy = 0.0
             # springs to net centroids
@@ -126,7 +126,8 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                     q = board.parts[a]
                     Fx += 0.05 * w * (q.x - p.x)
                     Fy += 0.05 * w * (q.y - p.y)
-            # pairwise repulsion (diffusion spread)
+            # pairwise repulsion: radial spread + hard box-penetration
+            # push (matches cost()'s overlap box, so dynamics feel the cliff)
             for q in board.parts.values():
                 if q is p:
                     continue
@@ -139,6 +140,14 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                     f = 3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0)
                     Fx += f * dx / d
                     Fy += f * dy / d
+                pen_x = (p.w + q.w) / 2 + 0.4 - abs(dx)
+                pen_y = (p.h + q.h) / 2 + 0.4 - abs(dy)
+                if pen_x > 0 and pen_y > 0:
+                    push = 4.0 + 8.0 * min(pen_x, pen_y)
+                    if pen_x < pen_y:
+                        Fx += push if dx >= 0 else -push
+                    else:
+                        Fy += push if dy >= 0 else -push
             # edge push
             Fx += max(0, (m + p.w / 2 + 1 - p.x)) * 2 - max(0, (p.x - (board.width - m - p.w / 2 - 1))) * 2
             Fy += max(0, (m + p.h / 2 + 1 - p.y)) * 2 - max(0, (p.y - (board.height - m - p.h / 2 - 1))) * 2

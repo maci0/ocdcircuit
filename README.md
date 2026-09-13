@@ -1,20 +1,58 @@
-# ocdcircuit
+# OCD Circuit
 
-Circuits as code, agents as first-class users, every edit reversible.
-Built on [spatiotemporal composability](https://github.com/cordiverse/paper).
+A circuit design tool for people with OCD. Your traces are parallel.
+Your silkscreen is aligned. Your DRC is clean. It has to be.
 
-One source of truth per board: the `.ocd` file (commit it; build outputs
-are gitignored). Full syntax: `docs/OCD.md`.
+One source of truth per board: the `.ocd` file — one fact per line,
+commit it, build the rest. If a line is off by a space, `ocd` tells you
+which line. You knew which line. Now you can fix it.
 
 ```bash
-python ocd.py examples/blinky_555.ocd  # .ocd → DRC → JLC files in examples/out/
-python tests/test_all.py               # one self-check for everything
+python ocd.py examples/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
+python ocd.py --fab oshpark examples/psu.ocd # same board, stricter fab
+python studio.py examples/blinky_555.ocd     # visual editor → localhost:8077
+python tests/test_all.py                     # one self-check for everything
+mypy ocdcircuit/ ocd.py studio.py tests/     # strict, zero errors
 ```
 
-Humans write `.ocd` (one fact per line). Python (`Board` API) and JSON
-(`agent.from_json`) build the same model; agents drive it via patch ops.
-Everything else (placer/router/drc/exporter/parts/renderer) is a
-hot-swappable plugin.
+## The language (full spec: `docs/OCD.md`)
 
-Layout: `ocdcircuit/` (core, circuit, parts, solver, drc, export, agent),
-`docs/` (PRD, ADRs, RFC, landscape, OCD), `examples/`, `tests/`.
+```ocd
+board blinky555 40x30 2L     # every board starts exactly like this
+use psu.ocd as PSU           # include another board (refs → PSU_*, VCC/GND join)
+part U1 SOIC8 NE555          # every part has a ref, a footprint, a place
+net VCC: PSU_J1.1 U1.8 R1.1  # every net lists every pin, no exceptions
+fix PSU_J1 at 3 15           # dragged in studio? lands here, kept forever
+keep U1 near C1 3            # related parts stay together. everything has its place
+route GND on 1               # ground goes on the bottom. obviously
+power VCC GND                # power traces are 0.5mm. obviously
+silk 2                       # refs + values + outlines. level 3 labels nets too
+```
+
+## Studio
+
+`.ocd` editor with highlighting | PCB (drag parts — they stay where dropped,
+everything else re-solves around them) | schematic | live 3D | DRC panel.
+Pick placer/router/fab/silk level from dropdowns — parts glide to the new
+solution with easing, traces grow net by net. Light/dark toggle. Design
+rules stolen from tmog (`~/Desktop/tmog/DESIGN_RULES.md`) — cockpit, not
+report; motion is the product; one concept, one hue.
+
+## Under the hood
+
+- **Context paradigm** ([the paper](https://github.com/cordiverse/paper)):
+  every edit carries its inverse, every module declares its deps. Undo is
+  total. ([ADR-0001](docs/ADR-0001-context-core.md))
+- **Diffusion placer**: parts drift along net-springs with Langevin noise,
+  hard box-penetration repulsion, multi-seed best-of. Streams animation
+  frames. ([ADR-0002](docs/ADR-0002-solver.md))
+- **Everything is a hot-swappable plugin**: placers, routers, DRC, exporters
+  (Gerber, KiCad, `.ocd`, JSON), parts library (99 footprints, all with 3D
+  bodies), renderers (PCB/SCH SVG, STL).
+- **Fab profiles**: JLCPCB, PCBWay, OSH Park, Seeed, Aisler — DRC checks
+  your board against the factory you actually ordered from
+  ([inventory](docs/FAB.md)).
+- **mypy strict**, zero `Any`, zero errors. The code is aligned too.
+
+Layout: `ocdcircuit/` (core, circuit, parts, solver, drc, fab, silk, export,
+agent, plugins), `studio.py`, `ocd.py`, `docs/`, `examples/`, `tests/`.

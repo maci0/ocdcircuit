@@ -136,6 +136,22 @@ class JsonExporter(Plugin[list[str]]):
         return [fn]
 
 
+# tmog rules 21/28/29: one concept one hue everywhere; themes change skin,
+# never structure; dark quiet chrome, brightest = live data.
+THEMES: dict[str, dict[str, object]] = {
+    "dark": {"bg": "#0b3d0b", "edge": "#1e5a1e", "part": "#111111",
+             "courtyard": "#f1c40f", "silk": "#f5f5f5", "silk_dim": "#9a9a9a",
+             "layers": ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6"],
+             "net": "#e67e22", "grid": "#123f12", "text": "#e8e8e8",
+             "panel": "#101010", "accent": "#f1c40f"},
+    "light": {"bg": "#f4f1e8", "edge": "#999999", "part": "#ffffff",
+              "courtyard": "#8a6d00", "silk": "#222222", "silk_dim": "#666666",
+              "layers": ["#c0392b", "#2471a3", "#1e8449", "#7d3c98"],
+              "net": "#b9770e", "grid": "#ddd6c4", "text": "#222222",
+              "panel": "#ffffff", "accent": "#8a6d00"},
+}
+
+
 def ir_of(board: Board) -> dict[str, object]:
     return {
         "board": {"name": board.name, "w": board.width, "h": board.height,
@@ -191,23 +207,76 @@ class SvgRenderer(Plugin[str]):
     kind, key = "renderer", "svg"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
-        S = float(k.get("scale", 10))  # type: ignore[arg-type]
+        from . import silk as _silk
+        S = _f(k.get("scale", 10))
+        theme = str(k.get("theme", "dark"))
+        silk_lv = k.get("silk")
+        assert silk_lv is None or isinstance(silk_lv, int)
+        th = THEMES.get(theme, THEMES["dark"])
+        layers = cast(list[str], th["layers"])
         W, H = board.width * S, board.height * S
-        cols = ["#c0392b", "#2980b9", "#27ae60", "#8e44ad"]
         el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
               f'viewBox="0 0 {W} {H}">',
-              f'<rect x="0" y="0" width="{W}" height="{H}" fill="#0b3d0b" '
-              f'stroke="white"/>']
+              f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["bg"]}" '
+              f'stroke="{th["edge"]}"/>']
         for t in board.traces:
-            c = cols[t.layer % len(cols)]
+            c = layers[t.layer % len(layers)]
             el.append(f'<line x1="{t.x1 * S}" y1="{H - t.y1 * S}" x2="{t.x2 * S}" '
                       f'y2="{H - t.y2 * S}" stroke="{c}" stroke-width="{max(1, t.width * S)}"/>')
         for p in board.parts.values():
             x, y = (p.x - p.w / 2) * S, (H - (p.y + p.h / 2) * S)
+            part, court = str(th["part"]), str(th["courtyard"])
             el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{p.w * S:.1f}" '
-                      f'height="{p.h * S:.1f}" fill="#111" stroke="#f1c40f"/>')
-            el.append(f'<text x="{p.x * S:.1f}" y="{(H - p.y * S):.1f}" fill="white" '
-                      f'font-size="{4 * S / 10:.1f}" text-anchor="middle">{p.ref}</text>')
+                      f'height="{p.h * S:.1f}" fill="{part}" stroke="{court}"/>')
+        sk = _silk.labels(board, silk_lv)
+        fs = 4 * S / 10
+        silk = str(th["silk"])
+        silk_dim = str(th["silk_dim"])
+        for tx in sk.texts:
+            fill = {"silk-ref": silk, "silk-val": silk_dim,
+                    "silk-net": silk_dim}[tx.cls]
+            el.append(f'<text x="{tx.x * S:.1f}" y="{(H - tx.y * S):.1f}" fill="{fill}" '
+                      f'font-size="{fs:.1f}" text-anchor="middle">{tx.s}</text>')
+        for d in sk.dots:
+            el.append(f'<circle cx="{d.x * S:.1f}" cy="{(H - d.y * S):.1f}" '
+                      f'r="{max(1, 0.3 * S):.1f}" fill="{silk}"/>')
+        for bx in sk.boxes:
+            el.append(f'<rect x="{bx.x0 * S:.1f}" y="{(H - bx.y1 * S):.1f}" '
+                      f'width="{(bx.x1 - bx.x0) * S:.1f}" height="{(bx.y1 - bx.y0) * S:.1f}" '
+                      f'fill="none" stroke="{silk_dim}" stroke-width="0.5"/>')
+        el.append("</svg>")
+        return "\n".join(el)
+
+
+class SchRenderer(Plugin[str]):
+    """Schematic SVG: one column per net, parts as labeled boxes on their
+    nets. Readable, not pretty — structure for humans, routing for machines."""
+    kind, key = "renderer", "sch"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        theme = str(k.get("theme", "dark"))
+        th = THEMES.get(theme, THEMES["dark"])
+        layers = cast(list[str], th["layers"])
+        nets = sorted(board.nets)
+        col_w, row_h = 130, 34
+        W = max(1, len(nets)) * col_w + 20
+        H = 60 + max([len(board.nets[n].pins) for n in nets] + [1]) * row_h
+        el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+              f'viewBox="0 0 {W} {H}">',
+              f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["panel"]}"/>']
+        text = str(th["text"])
+        for i, n in enumerate(nets):
+            x = 10 + i * col_w + col_w / 2
+            el.append(f'<line x1="{x}" y1="30" x2="{x}" y2="{H - 10}" '
+                      f'stroke="{layers[i % len(layers)]}" stroke-width="2"/>')
+            el.append(f'<text x="{x}" y="20" fill="{text}" font-size="12" '
+                      f'text-anchor="middle">{n}</text>')
+            for j, (ref, pin) in enumerate(board.nets[n].pins):
+                y = 50 + j * row_h
+                el.append(f'<rect x="{x - 45}" y="{y - 10}" width="90" height="20" '
+                          f'fill="{th["part"]}" stroke="{layers[i % len(layers)]}"/>')
+                el.append(f'<text x="{x}" y="{y + 4}" fill="{text}" font-size="10" '
+                          f'text-anchor="middle">{ref}.{pin}</text>')
         el.append("</svg>")
         return "\n".join(el)
 
@@ -272,7 +341,7 @@ class StlRenderer(Plugin[str]):
 
 _DEFAULTS = (StdParts, DiffusionPlacer, GreedyLayers, LRouter, FabDrc,
              JlcDrc, JlcExporter, KicadExporter, OcdExporter, JsonExporter,
-             SvgRenderer, StlRenderer)
+             SvgRenderer, SchRenderer, StlRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:

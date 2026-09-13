@@ -14,8 +14,21 @@ keep U1 near C1 3            # pull parts together (weight, default 2)
 route GND on 1               # force net to layer (top/bottom also work: 0/1)
 trace VCC 0.5                # trace width mm
 power VCC GND                # widen nets to 0.5 (power)
+silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
+use psu.ocd as PSU            # include board (child size/layers/fix ignored)
+use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
 board 40x30                  # resize (bare form, no name)
 ```
+
+## Includes (`use`)
+
+- `use PATH [as PREFIX] [join NET ...]` — PATH relative to the file.
+- Child refs/nets gain `PREFIX_` (default: child board name). Joined nets
+  (`join`, plus `VCC GND VDD VSS 5V 3V3` automatically) merge into the parent.
+- Ignored from child: board size, layer count, `fix` lines. The parent
+  places everything; the include's parts stay grouped (`near-group`).
+- Cycles and ref clashes are errors. `dumps()` writes `use` + local-only
+  content, so committed files stay the single source of truth.
 
 ## Rules
 
