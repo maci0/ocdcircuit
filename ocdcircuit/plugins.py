@@ -209,9 +209,9 @@ class WireMaskRouter(Plugin[int]):
         import random
         from typing import cast
         from . import maze as _maze
-        pop = int(k.get("pop", 6))  # type: ignore[arg-type]
-        gen = int(k.get("gen", 4))  # type: ignore[arg-type]
-        seed = int(k.get("seed", 0))  # type: ignore[arg-type]
+        pop = int(cast(int, k.get("pop", 6)))
+        gen = int(cast(int, k.get("gen", 4)))
+        seed = int(cast(int, k.get("seed", 0)))
         rng = random.Random(seed)
         # evolving set: inter-block nets with ≥2 pins (rails excluded)
         cands = [n for n, net in board.nets.items()
@@ -233,7 +233,7 @@ class WireMaskRouter(Plugin[int]):
             return vias * 50.0 + wl, list(board.traces)
 
         masks = [{n: rng.randrange(board.layers) for n in cands} for _ in range(pop)]
-        best: tuple[float, list[object]] | None = None
+        best: tuple[tuple[float, list[object]], dict[str, int]] | None = None
         for _ in range(gen):
             scored = sorted((eval_mask(m), m) for m in masks)
             if best is None or scored[0][0] < best[0]:

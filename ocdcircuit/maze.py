@@ -143,18 +143,25 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     grid, bend, via = P["grid"], P["bend"], P["via"]
     nx, ny = max(1, int(board.width / grid) + 1), max(1, int(board.height / grid) + 1)
     base_blocked = _blocked(board, grid)
-    # keepout/cutout zones are hard walls (all layers — conservative)
+    # keepout/cutout zones are hard walls (all layers — conservative).
+    # Rect fill is the legacy inclusive bounding box (bit-stable); round
+    # zones filter by radius (legacy crashed on them — KeyError on w/h).
     from .drc import in_zone, zone_at
     for _c in board.constraints:
         if _c.get("t") in ("keepout", "cutout"):
             c = zone_at(board, _c)
             cx, cy = _f(c["x"]), _f(c["y"])
-            r = (_f(c["d"]) / 2 if c.get("d") is not None
-                 else max(_f(c["w"]), _f(c["h"])) / 2)
-            for gx in range(int((cx - r) / grid), int((cx + r) / grid) + 1):
-                for gy in range(int((cy - r) / grid), int((cy + r) / grid) + 1):
-                    if in_zone(c, gx * grid, gy * grid):
-                        base_blocked.add((gx, gy))
+            if c.get("d") is not None:
+                r = _f(c["d"]) / 2
+                for gx in range(int((cx - r) / grid), int((cx + r) / grid) + 1):
+                    for gy in range(int((cy - r) / grid), int((cy + r) / grid) + 1):
+                        if in_zone(c, gx * grid, gy * grid):
+                            base_blocked.add((gx, gy))
+                continue
+            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            for gx in range(int((cx - hw) / grid), int((cx + hw) / grid) + 1):
+                for gy in range(int((cy - hh) / grid), int((cy + hh) / grid) + 1):
+                    base_blocked.add((gx, gy))
     # foreign pads are obstacles too (routing over them shorts the net)
     pad_cells: dict[tuple[int, int], str] = {}
     for n, net in board.nets.items():
