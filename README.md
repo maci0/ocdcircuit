@@ -39,7 +39,7 @@ solution with easing, traces grow net by net. Light/dark toggle. Design
 rules stolen from tmog (`~/Desktop/tmog/DESIGN_RULES.md`) — cockpit, not
 report; motion is the product; one concept, one hue.
 
-## Under the hood
+## Under the hood (authoring: `docs/PLUGINS.md`)
 
 - **Context paradigm** ([the paper](https://github.com/cordiverse/paper)):
   every edit carries its inverse, every module declares its deps. Undo is
@@ -48,17 +48,17 @@ report; motion is the product; one concept, one hue.
   hard box-penetration repulsion, multi-seed best-of. Streams animation
   frames. ([ADR-0002](docs/ADR-0002-solver.md))
 - **Everything is a hot-swappable plugin**: placers, routers, DRC, exporters
-  (Gerber, KiCad, `.ocd`, JSON), parts library (99 footprints, all with 3D
-  bodies), renderers (PCB/SCH SVG, STL).
+  (Gerbers, KiCad, EasyEDA, `.ocd`, JSON), parts library (all with 3D
+  bodies), renderers (PCB/SCH SVG, PNG, STL, textured glTF, 3D HTML).
 - **Fab profiles**: JLCPCB, PCBWay, OSH Park, Seeed, Aisler — DRC checks
   your board against the factory you actually ordered from
   ([inventory](docs/FAB.md)).
 - **mypy strict**, zero `Any`, zero errors. The code is aligned too.
 - **`block`/`instance` + hierarchical placer**: repeat a channel 3×, solve
   it once, stamp rigidly (`placer:hierarchical`). Pico demo does exactly this.
-- **1–16 layers**: placer, maze router (any-layer vias + rip-up retry),
+- **1–32 layers**: placer, maze router (any-layer vias + rip-up retry),
   DRC, Gerber (`GTL/G1..Gn/GBL`) and KiCad (`F.Cu/In1..Bn`) exports all
-  handle 1–16 layers. 1-layer boards report `jumper` wire bridges.
+  handle 1–32 layers. 1-layer boards report `jumper` wire bridges.
 - **Mix-and-match plugins**: placers `diffusion` (wirelength) / `compact`
   (area) / `thermal` (heat); routers `lroute` (fast estimate) / `maze`
   (DRC-clean A* with vias); silk `ref` / `full` / `fab`. Swap live via
@@ -78,7 +78,7 @@ report; motion is the product; one concept, one hue.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (12 tools:
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (18 tools:
   load/solve/patch/place/route/check/export/render) — any MCP client can
   drive boards. `match`/`diff` constraints cover length + diff pairs.
 

@@ -1,4 +1,4 @@
-# RFC-0001 — Constraints DSL + agent patch API (v0)
+# RFC-0001 — Constraints DSL + agent patch API (historical: shipped, kept for grammar)
 
 ## Constraints (dicts, JSON-serializable)
 - `fixed {ref,x,y}` · `near {a,b,w}` · `keepout {x,y,w,h}` · `edge {margin}`

@@ -1,4 +1,4 @@
-# ocdcircuit — PRD
+# ocdcircuit — PRD (historical: v0/v1 shipped, kept for intent)
 
 Circuit design tool where **circuits are code**, **agents are first-class users**,
 and every edit is reversible. Principles: [cordiverse/paper](https://github.com/cordiverse/paper)
