@@ -391,6 +391,15 @@ assert cast(float, _call("calc", {"what": "divider", "vin": 9, "rtop": 10000,
 assert "error" in _rpc("tools/call", {"name": "nope", "arguments": {}})
 mcp.kill()
 print("MCP OK")
+# studio build pipeline headless (no HTTP): same place/route/check/tidy
+import sys as _sys
+_sys.argv = ["studio"]
+from apps import studio as _studio
+_st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
+                       {"placer": "diffusion", "router": "lroute"})
+assert _st["errors"] == [], _st["errors"]
+assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
+assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
 
 # custom .fp footprints + edge-mount: exotic parts without Python
 from ocdcircuit import footprint as _fp
