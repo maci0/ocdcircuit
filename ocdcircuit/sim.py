@@ -55,11 +55,12 @@ def parse_value(s: str) -> float:
             "M": 1e6, "G": 1e9, "R": 1.0}
     if not t:
         raise ValueError("empty value")
-    # embedded multiplier: 4k7, 4R7 → decimal point
+    # embedded multiplier: 4k7, 4R7 → decimal point (tail must extend
+    # the number — a trailing unit like 2.2k falls through to suffix below)
     for i, c in enumerate(t):
         if c in mult and i > 0 and t[i - 1].isdigit():
             head, tail = t[:i], t[i + 1:]
-            if not tail or tail[0].isdigit():
+            if tail and tail[0].isdigit():
                 return float(head + "." + tail) * mult[c]
     if t[-1] in mult and not t[-1].isdigit():
         return float(t[:-1] or "1") * mult[t[-1]]

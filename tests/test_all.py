@@ -971,6 +971,19 @@ assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
 assert 0 < calc.via_amps(0.3) < calc.via_amps(0.6)  # monotone in drill
 assert abs(calc.via_amps(0.3, 40.0) / calc.via_amps(0.3, 10.0) - 2.0) < 0.01  # sqrt rise
+# parse_value: suffixes, embedded multipliers, case (1m≠1M), errors
+from ocdcircuit.sim import parse_value as _pv
+for _vs, _vwant in [("10k", 1e4), ("4k7", 4700.0), ("4R7", 4.7), ("47R", 47.0),
+                    ("100n", 1e-7), ("10u", 1e-5), ("1m", 1e-3), ("1M", 1e6),
+                    ("0.11", 0.11), ("10", 10.0), ("2.2k", 2200.0),
+                    ("1G", 1e9), ("5p", 5e-12), ("1K", 1000.0)]:
+    assert abs(_pv(_vs) - _vwant) / max(1e-15, abs(_vwant)) < 1e-9, (_vs, _pv(_vs))
+for _vbad in ("", "abc"):
+    try:
+        _pv(_vbad)
+        raise AssertionError(f"should have raised: {_vbad!r}")
+    except ValueError:
+        pass
 # KiCad footprint aliases land on stdlib (bare + Lib: prefix); unknown stays loud
 from ocdcircuit.parts import resolve_fp, KICAD_ALIASES, FOOTPRINTS
 assert resolve_fp("Resistor_SMD:R_0603_1608Metric") == "R0603"
