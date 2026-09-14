@@ -49,6 +49,7 @@ SLOTS.register("toolbar", "actions",
                           '<button id=diffprev title="what changed since last edit">Δ</button>'
                           '<button id=dl title="download render (svg/sch/png)">⤓ svg</button>'
                           '<button id=simbtn title="simulate (shift-click: tran)">⚡ dc</button>'
+                          '<button id=stamp title="stamp another copy of the hovered instance">⧉ stamp</button>'
                           '<details id=calc title="trace/via/divider calculators"><summary>Ω</summary>'
                           '<label>A <input id=ca size=4 value=1></label>'
                           '<label>ΔT <input id=cdt size=3 value=10></label>'
@@ -531,6 +532,24 @@ $('redo').onclick=()=>hist('/redo');
 $('diffprev').onclick=async()=>{
   const r=await api('/diff_prev',{});
   statMsg(r.error||r.diff, !r.error);
+};
+$('stamp').onclick=()=>{ // repeat-layout: stamp another copy of hovered instance
+  if(!S||!S.cur||!S.cur.hover){statMsg('hover an instanced part, then stamp');return;}
+  const o=S.cur.parts[S.cur.hover].owner;
+  if(!o){statMsg('that part is not in an instance');return;}
+  const pre=o.replace(/_$/,'');
+  const lines=$('ed').innerText.split('\n');
+  const inst=lines.map((l,i)=>({m:l.match(/^instance\s+(\S+)\s+as\s+(\S+?)(?:\s+join\s+(.*))?$/),i}))
+    .filter(x=>x.m);
+  const src=inst.find(x=>x.m[2]===pre);
+  if(!src){statMsg(`no instance line for ${pre}`);return;}
+  const stem=pre.replace(/\d+$/,'')||pre;
+  const nums=inst.map(x=>{const m=x.m[2].match(/(\d+)$/);return m?parseInt(m[1]):0;});
+  const next=stem+(Math.max(0,...nums)+1);
+  const join=src.m[3]?` join ${src.m[3]}`:'';
+  const at=inst[inst.length-1].i;
+  lines.splice(at+1,0,`instance ${src.m[1]} as ${next}${join}`);
+  $('ed').innerText=lines.join('\n');push();
 };
 $('ed').addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();$('solve').click();}
