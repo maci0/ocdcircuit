@@ -853,6 +853,15 @@ assert solved["errors"] == [] and solved["warnings"] == [], solved
 assert solved["placer"] == "compact" and solved["router"] == "maze", solved
 _dsolve = _call("solve", {})
 assert _dsolve["placer"] == "diffusion" and _dsolve["router"] == "lroute", _dsolve
+# MCP honors board.toml picks (load configures, tools fall back to proj)
+with tempfile.TemporaryDirectory() as _md2:
+    shutil.copy(os.path.join(EX, "psu.ocd"), os.path.join(_md2, "psu.ocd"))
+    open(os.path.join(_md2, "board.toml"), "w").write('placer = "compact"\nrouter = "maze"\n')
+    assert _call("load_board", {"path": os.path.join(_md2, "psu.ocd")})["parts"] == 3
+    _psolve = _call("solve", {})
+    assert _psolve["placer"] == "compact" and _psolve["router"] == "maze", _psolve
+    assert _psolve["errors"] == [], _psolve
+    assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 _g = _call("candidates", {"n": 2, "seed": 3, "seeds": 1, "iters": 30})
 _gc = cast(list[object], _g["candidates"])
 _gf = cast(dict[str, dict[str, object]], _g["feasible"])

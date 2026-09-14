@@ -40,6 +40,7 @@ def t_load(a: dict[str, object]) -> dict[str, object]:
         text = open(SRC).read()
         base = os.path.dirname(os.path.abspath(SRC))
     BOARD = agent.loads(text, base=base)
+    BOARD.configure("toml", base=base)
     if isinstance(a.get("fab"), str):
         BOARD.fab = str(a["fab"])
     return {"board": BOARD.name, "parts": len(BOARD.parts),
@@ -92,10 +93,16 @@ def _i(v: object, default: int) -> int:
     return int(v)
 
 
+def _proj_str(b: Board, key: str) -> str | None:
+    v = b.proj.get(key)
+    return v if isinstance(v, str) else None
+
+
 def t_place(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
+    key = key or _proj_str(b, "placer")
     frames: list[dict[str, object]] = []
     cost = b.place(key, seeds=_i(a.get("seeds"), 4), iters=_i(a.get("iters"), 400),
                    frames=frames if a.get("frames") else None)
@@ -109,6 +116,7 @@ def t_route(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
+    key = key or _proj_str(b, "router")
     frames: list[dict[str, object]] = []
     n = b.route_board(key, frames=frames if a.get("frames") else None)
     out: dict[str, object] = {"segments": n}
@@ -127,6 +135,7 @@ def t_candidates(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
+    key = key or _proj_str(b, "placer")
     cands = _solver.candidates(b, n=_ii(a.get("n"), 4),
                                key=key, seed=_ii(a.get("seed"), 0),
                                seeds=_ii(a.get("seeds"), 1),
@@ -155,6 +164,7 @@ def t_apply_candidate(a: dict[str, object]) -> dict[str, object]:
     assert isinstance(idx, int)
     key = a.get("key")
     assert key is None or isinstance(key, str)
+    key = key or _proj_str(b, "placer")
     cands = _solver.candidates(b, n=_ii(a.get("n"), 4), key=key,
                                seed=_ii(a.get("seed"), 0),
                                seeds=1, iters=_ii(a.get("iters"), 400))
@@ -325,6 +335,8 @@ def t_solve(a: dict[str, object]) -> dict[str, object]:
     rk = a.get("router")
     assert pk is None or isinstance(pk, str)
     assert rk is None or isinstance(rk, str)
+    pk = pk or _proj_str(b, "placer")
+    rk = rk or _proj_str(b, "router")
     cost = b.place(pk)
     n = b.route_board(rk)
     r = b.check()
