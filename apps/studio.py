@@ -8,6 +8,10 @@ Interactions:
 - drag part on PCB → drops `fix REF at x y`, re-solves around it, editor updates
 - placer/router/fab/silk/theme dropdowns → re-run with animation frames;
   parts glide (ease-out cubic tween), traces grow net-by-net
+- 🎲 → N candidate layouts in a filmstrip; click picks (positions restored,
+  routed), drag nudges+fixes, re-run same/different engine (chain via fixes)
+- every build carries a routing-feasibility badge per layer count (maze
+  probe on current placement; theory, not proof)
 - light/dark toggle (themes change skin, never structure)
 
 Run: python studio.py [file.ocd]  → http://localhost:8077
@@ -36,8 +40,14 @@ SLOTS.register("toolbar", "solver-selects",
                           "<select id=silk title=silk></select>"))
 SLOTS.register("toolbar", "actions",
                lambda s: ('<button id=theme>light</button><button id=solve>solve ▶</button>'
+                          '<button id=dice title="generate N candidate layouts">🎲</button>'
+                          '<input id=ncand value=4 size=1 title="candidate count">'
                           '<button id=undo title="undo (Ctrl+Z)">↩</button>'
-                          '<button id=redo title="redo (Ctrl+Y)">↪</button><span id=stat></span>'))
+                          '<button id=redo title="redo (Ctrl+Y)">↪</button>'
+                          '<span id=feas title="routability per layer count"></span><span id=stat></span>'))
+SLOTS.register("view", "gallery",
+               lambda s: '<section id=galwrap style="display:none"><h3>CANDIDATES — CLICK TO PICK · DRAG ON PCB TO NUDGE+FIX · RE-RUN ANY ENGINE</h3>'
+                         '<div id=gal style="display:flex;gap:8px;overflow-x:auto;padding:8px"></div></section>')
 SLOTS.register("view", "editor",
                lambda s: '<section><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3>'
                          '<div id=ed contenteditable spellcheck=false></div></section>')
@@ -75,7 +85,10 @@ body.light{--bg:#f4f1e8;--panel:#fff;--line:#ccc;--tx:#222;--dim:#666;--acc:#8a6
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.45 monospace;height:100vh;display:flex;flex-direction:column}
 header{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
 header b{color:var(--acc)}header select,header button{background:var(--bg);color:var(--tx);border:1px solid var(--line);font:inherit;padding:3px 8px;border-radius:4px}
-main{flex:1;display:grid;grid-template-columns:minmax(300px,420px) 1fr 1fr;grid-template-rows:1fr 1fr;gap:1px;background:var(--line);min-height:0}
+main{flex:1;display:grid;grid-template-columns:minmax(300px,420px) 1fr 1fr;grid-template-rows:1fr 1fr auto;gap:1px;background:var(--line);min-height:0}
+#galwrap{grid-column:1/4;max-height:190px}#gal canvas{width:150px;height:110px;border:1px solid var(--line);cursor:pointer}
+#gal figure{margin:0;text-align:center;font-size:11px}#gal figcaption{color:var(--dim)}
+#feas{color:var(--dim)}#feas b{color:var(--ok)}#feas i{color:var(--bad);font-style:normal}
 section{background:var(--bg);position:relative;min-height:0;display:flex;flex-direction:column}
 section h3{margin:0;padding:4px 10px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);letter-spacing:1px}
 #ed{grid-row:1/3;overflow:auto;white-space:pre;padding:8px;outline:none;font:inherit;flex:1}
@@ -281,7 +294,48 @@ function applyState(r,live){
   S=r;S.cur={parts:JSON.parse(JSON.stringify(r.parts)),traces:[]};
   if(live&&r.frames&&r.frames.length)animate(r.frames,r.traces,()=>{drawDRC(r);});
   else{S.cur.traces=r.traces;$('cost').textContent=`cost ${r.cost}`;drawDRC(r);}
+  drawFeas(r);
   if(document.activeElement!==$('ed'))setEditor(r.text);
+}
+function drawFeas(r){
+  const f=r.feasible||{},el=$('feas');if(!el)return;
+  el.innerHTML='route@'+Object.keys(f).sort().map(L=>{
+    const v=f[L],here=+L===r.layers;
+    return `<span title="${v.segs} segs, ${v.jumpers} jumpers">${here?'<u>':''}${L}L ${v.ok?'<b>✓</b>':'<i>✗</i>'}${here?'</u>':''}</span>`;}).join(' ');
+}
+// --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
+let galSeed=0;
+function thumb(cand,i){
+  const fig=document.createElement('figure');
+  const cv=document.createElement('canvas');cv.width=300;cv.height=220;fig.appendChild(cv);
+  const cap=document.createElement('figcaption');cap.textContent=`#${i} cost ${cand.cost}`;fig.appendChild(cap);
+  fig.onclick=()=>pickCand(i);
+  const ctx=cv.getContext('2d'),W=300,H=220,s=Math.min(W/S.bw,H/S.bh),ox=(W-S.bw*s)/2,oy=(H-S.bh*s)/2;
+  ctx.fillStyle='#111';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#1e5a1e';ctx.strokeRect(ox,oy+S.bh*s,S.bw*s,-S.bh*s);
+  for(const r in cand.pos){const p=S.parts[r];if(!p)continue;
+    const [x,y]=cand.pos[r];
+    ctx.fillStyle=S.fixed&&S.fixed[r]?'#3a2f00':'#222';ctx.fillRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);
+    ctx.strokeStyle='#f1c40f';ctx.strokeRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);}
+  return fig;
+}
+async function genCands(){
+  if(!S)return;
+  const n=Math.max(1,Math.min(8,parseInt($('ncand').value||'4',10)));
+  galSeed=(galSeed+1)%1000;
+  const r=await api('/candidates',{placer:$('placer').value,n,seed:galSeed,iters:400});
+  if(r.error){$('stat').textContent=r.error;$('stat').className='err';return;}
+  galCands=r.candidates;galMeta={n,seed:galSeed};
+  const g=$('gal');g.innerHTML='';r.candidates.forEach((c,i)=>g.appendChild(thumb(c,i)));
+  $('galwrap').style.display='';
+  drawFeas({feasible:r.feasible,layers:r.layers});
+}
+let galCands=[],galMeta={n:4,seed:0};
+async function pickCand(i){
+  const r=await api('/pick',{placer:$('placer').value,router:$('router').value,
+    index:i,n:galMeta.n,seed:galMeta.seed,iters:400,silk:$('silk').value});
+  if(r.error){$('stat').textContent=r.error;$('stat').className='err';return;}
+  $('stat').textContent='';$('galwrap').style.display='none';applyState(r,true);
 }
 function drawDRC(r){
   const d=$('drc');let h='';
@@ -334,6 +388,7 @@ c.addEventListener('mousemove',e=>{if(!S||drag)return;const R=c.getBoundingClien
     if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4){S.cur.hover=r;break;}}});
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value});applyState(r,true);};
+$('dice').onclick=genCands;
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
 async function hist(op){
   const r=await api(op,{});
@@ -429,7 +484,8 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
         except (ValueError, KeyError):
             sim_nets = {}
     return {"text": text, "parts": parts, "nets": nets, "fixed": fixed,
-            "bw": b.width, "bh": b.height, "frames": frames,
+            "bw": b.width, "bh": b.height, "layers": b.layers,
+            "frames": frames,
             "traces": traces, "cost": round(cost, 1), "sim": sim_nets,
             "errors": drc["errors"], "warnings": drc["warnings"],
             "fab": drc.get("fab", "jlc"), "silk": 1, "sch": _sch_state(b)}
@@ -504,6 +560,52 @@ class H(http.server.BaseHTTPRequestHandler):
                 H.commit(H.src_text)
                 H.save()
                 self._send(st)
+            elif self.path == "/candidates":
+                from ocdcircuit import solver as _solver
+                b = agent.loads(H.src_text, base=BASE)
+                key = req.get("placer")
+                assert key is None or isinstance(key, str)
+                n = _i(req.get("n"), 4)
+                cands = _solver.candidates(b, n=n, key=key,
+                                           seed=_i(req.get("seed"), 0),
+                                           seeds=1, iters=_i(req.get("iters"), 400))
+                # feasibility on the best candidate (unplaced text proves nothing)
+                _solver.restore_candidate(b, cands[0])
+                snap = b.ctx.snapshot()
+                try:
+                    feas = _solver.feasible(b)
+                finally:
+                    b.ctx.rollback(snap)
+                self._send({"candidates": cands, "feasible": feas,
+                            "layers": b.layers})
+            elif self.path == "/pick":
+                from ocdcircuit import solver as _solver
+                from typing import cast
+                b = agent.loads(H.src_text, base=BASE)
+                key = req.get("placer")
+                assert key is None or isinstance(key, str)
+                idx = _i(req.get("index"), 0)
+                cands = _solver.candidates(b, n=_i(req.get("n"), 4), key=key,
+                                           seed=_i(req.get("seed"), 0),
+                                           seeds=1, iters=_i(req.get("iters"), 400))
+                if not 0 <= idx < len(cands):
+                    self._send({"error": f"index {idx} out of range"})
+                    return
+                _solver.restore_candidate(b, cands[idx])
+                router = str(req.get("router", "lroute"))
+                b.route_board(router)
+                drc = b.check()
+                st = board_state(b, agent.dumps(b), [], [
+                    {"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
+                     "y2": t.y2, "layer": t.layer, "w": t.width}
+                    for t in b.traces], cast(float, cands[idx]["cost"]), drc)
+                H._decorate(st, b, b.score(tidy=True), _solver.feasible(b),
+                            b.plugins().list("placer"), b.plugins().list("router"),
+                            req.get("silk", "full"), b.plugins().list("silk"))
+                H.src_text = str(st["text"])
+                H.commit(H.src_text)
+                H.save()
+                self._send(st)
             elif self.path == "/undo":
                 if len(H.hist) < 2:
                     self._send({"error": "nothing to undo"})
@@ -548,18 +650,28 @@ class H(http.server.BaseHTTPRequestHandler):
         drc = b.check()
         assert isinstance(drc, dict)
         st_tidy = b.score(tidy=True)
+        from ocdcircuit import solver as _solver
+        feas = _solver.feasible(b)  # untouched board (own snapshot/rollback)
         traces = [{"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
                    "y2": t.y2, "layer": t.layer, "w": t.width}
                   for t in b.traces]
         st = board_state(b, agent.dumps(b), frames, traces, cost, drc)
-        st["tidy"] = st_tidy
+        H._decorate(st, b, st_tidy, feas, placers, routers, silksel, silks)
+        H.src_text = str(st["text"])
+        return st
+
+    @staticmethod
+    def _decorate(st: dict[str, object], b: Board, tidy: object,
+                  feas: object, placers: object, routers: object,
+                  silksel: object, silks: object) -> None:
+        """Shared state attachments (build + pick agree)."""
+        st["tidy"] = tidy
+        st["feasible"] = feas
         st["placers"] = placers
         st["routers"] = routers
         st["fabs"] = _fab.list_fabs()
         st["silks"] = silks
         st["silk"] = silksel
-        H.src_text = str(st["text"])
-        return st
 
     def log_message(self, *a: object) -> None:
         pass

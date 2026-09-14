@@ -35,9 +35,12 @@ silk 2                       # refs + values + outlines. level 3 labels nets too
 `.ocd` editor with highlighting | PCB (drag parts — they stay where dropped,
 everything else re-solves around them) | schematic | live 3D | DRC panel.
 Pick placer/router/fab/silk level from dropdowns — parts glide to the new
-solution with easing, traces grow net by net. Light/dark toggle. Design
-rules stolen from tmog (`~/Desktop/tmog/DESIGN_RULES.md`) — cockpit, not
-report; motion is the product; one concept, one hue.
+solution with easing, traces grow net by net. 🎲 generates N candidate
+layouts in a filmstrip — click one to pick it, drag parts to nudge+fix,
+re-run the same or a different engine, rinse and repeat. Every step shows
+a routing-feasibility badge (`2L ✓` / `1L ✗`) per layer count. Light/dark
+toggle. Design rules stolen from tmog (`~/Desktop/tmog/DESIGN_RULES.md`) —
+cockpit, not report; motion is the product; one concept, one hue.
 
 ## Under the hood ([architecture](docs/ARCHITECTURE.md), authoring: `docs/PLUGINS.md`)
 
@@ -78,9 +81,10 @@ report; motion is the product; one concept, one hue.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (20 tools:
-  load/solve/patch/place/route/check/score/diff/export/render) — any MCP
-  client can drive boards. `match`/`diff` constraints cover length + diff pairs.
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (23 tools:
+  load/solve/patch/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render)
+  — any MCP client can drive boards, gallery-pick layouts, and probe routability.
+  `match`/`diff` constraints cover length + diff pairs.
 
 Ports: `tools/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
 to `.ocd` — see `boards/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).

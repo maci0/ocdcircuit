@@ -111,6 +111,64 @@ def t_route(a: dict[str, object]) -> dict[str, object]:
     return out
 
 
+def _ii(v: object, default: int) -> int:
+    assert v is None or isinstance(v, int)
+    return default if v is None else v
+
+
+def t_candidates(a: dict[str, object]) -> dict[str, object]:
+    from ocdcircuit import solver as _solver
+    b = _board()
+    key = a.get("key")
+    assert key is None or isinstance(key, str)
+    cands = _solver.candidates(b, n=_ii(a.get("n"), 4),
+                               key=key, seed=_ii(a.get("seed"), 0),
+                               seeds=_ii(a.get("seeds"), 1),
+                               iters=_ii(a.get("iters"), 400))
+    # feasibility on the best candidate (unplaced positions prove nothing)
+    _solver.restore_candidate(b, cands[0])
+    snap = b.ctx.snapshot()
+    try:
+        feas = _solver.feasible(b)
+    finally:
+        b.ctx.rollback(snap)
+    out: dict[str, object] = {"candidates": cands,
+                              "feasible": {str(k): v for k, v in feas.items()},
+                              "layers": b.layers,
+                              "note": "pick one via apply_candidate (same n/seed/iters)"}
+    if key is not None:
+        out["placer"] = key
+    return out
+
+
+def t_apply_candidate(a: dict[str, object]) -> dict[str, object]:
+    from ocdcircuit import solver as _solver
+    from typing import cast
+    b = _board()
+    idx = a.get("index", 0)
+    assert isinstance(idx, int)
+    key = a.get("key")
+    assert key is None or isinstance(key, str)
+    cands = _solver.candidates(b, n=_ii(a.get("n"), 4), key=key,
+                               seed=_ii(a.get("seed"), 0),
+                               seeds=1, iters=_ii(a.get("iters"), 400))
+    if not 0 <= idx < len(cands):
+        return {"applied": False, "error": f"index {idx} out of range ({len(cands)})"}
+    _solver.restore_candidate(b, cands[idx])
+    return {"applied": True, "seed": cands[idx]["seed"], "cost": cands[idx]["cost"]}
+
+
+def t_feasible(a: dict[str, object]) -> dict[str, object]:
+    from ocdcircuit import solver as _solver
+    b = _board()
+    raw = a.get("layers")
+    layers = None
+    if isinstance(raw, list):
+        layers = [int(v) for v in raw if isinstance(v, (int, float))]
+    return {"feasible": {str(k): v for k, v in _solver.feasible(b, layers).items()},
+            "layers": b.layers}
+
+
 def t_check(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
@@ -138,10 +196,16 @@ def t_export(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_render(a: dict[str, object]) -> dict[str, object]:
+    import base64
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
-    return {"svg": b.render(key)}
+    args = {k: v for k, v in a.items() if k != "key"}
+    out = b.render(key, **args)
+    if isinstance(out, bytes):
+        return {"key": key, "encoding": "base64",
+                "data": base64.b64encode(out).decode()}
+    return {"key": key, "encoding": "text", "data": out}
 
 
 def t_import(a: dict[str, object]) -> dict[str, object]:
@@ -208,6 +272,9 @@ TOOLS: dict[str, object] = {
                                 "constraints": "[...] (declarative, idempotent)"}),
     "parse_constraint": (t_parse, {"text": "NL constraint"}),
     "place": (t_place, {"key": "placer?", "seeds": 4, "iters": 400, "frames?": True}),
+    "candidates": (t_candidates, {"n": 4, "key": "placer?", "seed": 0, "seeds": 1, "iters": 400}),
+    "apply_candidate": (t_apply_candidate, {"index": 0, "n": 4, "key": "placer?", "seed": 0, "iters": 400}),
+    "feasible": (t_feasible, {"layers?": "[1, 2, 4]"}),
     "route": (t_route, {"key": "router?", "frames?": True}),
     "check": (t_check, {"key": "drc?"}),
     "score": (t_score, {"tidy": "include tidy scorecard?"}),

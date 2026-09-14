@@ -445,7 +445,7 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 20
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 23
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert _call("lint", {})["errors"] == []
 assert _call("doctor", {})["ok"] is True
@@ -459,6 +459,17 @@ assert _call("diff", {"text": open(os.path.join(EX, "blinky_555.ocd")).read(),
                        "base": EX}) == {"diff": ""}
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
+_g = _call("candidates", {"n": 2, "seed": 3, "seeds": 1, "iters": 30})
+_gc = cast(list[object], _g["candidates"])
+_gf = cast(dict[str, dict[str, object]], _g["feasible"])
+assert len(_gc) == 2 and "feasible" in _g, _g
+assert _gf["2"]["ok"] is True, _gf
+assert _call("apply_candidate", {"index": 0, "n": 2, "seed": 3,
+                                 "iters": 30})["applied"] is True
+assert _call("apply_candidate", {"index": 9, "n": 2, "seed": 3,
+                                 "iters": 30})["applied"] is False
+assert cast(dict[str, dict[str, object]],
+            _call("feasible", {})["feasible"])["2"]["ok"] is True
 assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
 # declarative set_state: idempotent, order-independent, atomic
@@ -525,6 +536,7 @@ _st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
 assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
+assert cast(dict[int, dict[str, object]], _st["feasible"])[2]["ok"] is True  # badge
 # ocd status solves then writes STATUS.md next to the file (temp copy keeps
 # the tree clean); exit 0 = DRC clean
 import tempfile as _tf
@@ -801,6 +813,36 @@ _ml = agent.loads(open(os.path.join(EX, "pico_tmc2209", "pico_tmc2209.ocd")).rea
 _ml.place("multilevel", seeds=1, iters=30)
 _ml.route_board("lroute")
 assert _ml.check()["errors"] == [], _ml.check()["errors"]
+# gallery candidates: N distinct seeds, sorted, one undoable effect
+from ocdcircuit import solver as _solver
+_gal = agent.loads(open(os.path.join(EX, "psu.ocd")).read(), base=EX)
+_snap0 = _gal.ctx.snapshot()
+_cands = _solver.candidates(_gal, n=3, seeds=1, iters=30)
+_costs = [float(cast(float, c["cost"])) for c in _cands]
+assert len(_cands) == 3 and len({_c["seed"] for _c in _cands}) == 3
+assert _costs == sorted(_costs)
+assert _gal.ctx.snapshot() - _snap0 == 1  # inner placements rolled back
+# pick worst, verify restore is exact, undo returns to start
+_solver.restore_candidate(_gal, _cands[-1])
+assert round(_solver.cost(_gal), 1) == _costs[-1]
+_gal.ctx.undo()
+assert _gal.ctx.snapshot() == _snap0 + 1  # candidates' own effect remains
+# chain: fix a part, re-run a different engine, others re-arrange
+_gal2 = agent.loads(open(os.path.join(EX, "psu.ocd")).read(), base=EX)
+_c0 = _solver.candidates(_gal2, n=1, key="diffusion", seeds=1, iters=30)[0]
+_solver.restore_candidate(_gal2, _c0)
+before = {r: (p.x, p.y) for r, p in _gal2.parts.items()}
+_gal2.constrain({"t": "fixed", "ref": "J1", "x": 3.0, "y": 15.0})
+_gal2.place("compact", seeds=1, iters=30)
+assert _gal2.parts["J1"].x == 3.0 and _gal2.parts["J1"].y == 15.0
+assert any((p.x, p.y) != before[r] for r, p in _gal2.parts.items() if r != "J1")
+# feasibility probe: blinky routes 2L, needs jumpers on 1L
+_fb = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
+_fb.place(seeds=2, iters=100)
+_feas = _solver.feasible(_fb)
+assert bool(_feas[2]["ok"]) is True and bool(_feas[1]["ok"]) is False
+assert int(cast(int, _feas[1]["jumpers"])) > 0 and int(cast(int, _feas[2]["segs"])) > 0
+assert len(_fb.traces) == 0  # probe leaves the board untouched
 # doctor: registry healthy on a live board
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)

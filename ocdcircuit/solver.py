@@ -436,6 +436,91 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
     return best
 
 
+def candidates(board: Board, n: int = 4, key: str | None = None,
+                 seed: int = 0, seeds: int = 1, iters: int = 400,
+                 **k: object) -> list[dict[str, object]]:
+    """N seeded layouts for gallery pick: run the placer N times (distinct
+    seeds), snapshot each (cost + positions), restore the board, and leave
+    exactly one undoable effect behind (the picked layout goes on top).
+    Returns [{seed, cost, pos:{ref:(x,y)}}] sorted by cost. The caller
+    applies one via restore_candidate (== one undo step back to here)."""
+    from typing import cast
+    snap = board.ctx.snapshot()
+    snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
+    old_traces = list(board.traces)
+    out: list[dict[str, object]] = []
+    for i in range(max(1, n)):
+        board.place(key, seed=seed + i, seeds=seeds, iters=iters, **k)
+        out.append({"seed": seed + i,
+                    "cost": round(cost(board), 1),
+                    "pos": {r: (round(q.x, 2), round(q.y, 2))
+                            for r, q in board.parts.items()}})
+    board.ctx.rollback(snap)  # inner place() effects discarded; one below
+    final = {r: (p.x, p.y) for r, p in board.parts.items()}
+
+    def _do() -> None:
+        for r, (x, y) in final.items():
+            board.parts[r].x, board.parts[r].y = x, y
+
+    def _undo() -> None:
+        for r, (x, y) in snap_pos.items():
+            board.parts[r].x, board.parts[r].y = x, y
+
+    board.ctx.emit(_do, _undo)
+    out.sort(key=lambda c: cast(float, c["cost"]))
+    return out
+
+
+def restore_candidate(board: Board, cand: dict[str, object]) -> None:
+    """Apply a picked gallery layout: one undoable effect (positions)."""
+    pos = cast(dict[str, tuple[float, float]], cand["pos"])
+    snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
+    final = {r: (float(xy[0]), float(xy[1])) for r, xy in pos.items()
+             if r in board.parts}
+
+    def _do() -> None:
+        for r, (x, y) in final.items():
+            board.parts[r].x, board.parts[r].y = x, y
+
+    def _undo() -> None:
+        for r, (x, y) in snap_pos.items():
+            board.parts[r].x, board.parts[r].y = x, y
+
+    board.ctx.emit(_do, _undo)
+
+
+def feasible(board: Board, layers: list[int] | None = None) -> dict[int, dict[str, object]]:
+    """Routability probe per layer count: lroute (10x maze speed) on the
+    CURRENT placement, snapshot/rollback so the board is untouched.
+    Returns {L: {ok, jumpers, airwires, segs}} — ok means no jumpers and
+    no airwires (maze fallback never ran). Theory, not proof: lroute has
+    no obstacle avoidance, so ok is necessary-but-not-sufficient; a fail
+    here means maze will almost surely fail too."""
+    from .maze import maze as _maze
+    out: dict[int, dict[str, object]] = {}
+    if layers is None:
+        layers = [ll for ll in (1, 2, 4) if ll <= max(2, board.layers)]
+    for ll in layers:
+        snap = board.ctx.snapshot()
+        old_traces = list(board.traces)
+        old_layers = board.layers
+        try:
+            board.layers = ll
+            n = _maze(board)
+            jumpers = sum(1 for s in board.traces if bool(getattr(s, "jumper", False)))
+            warns = board.check().get("warnings", [])
+            assert isinstance(warns, list)
+            air = sum(1 for w in warns
+                      if isinstance(w, str) and w.startswith("airwire"))
+            out[ll] = {"ok": jumpers == 0 and air == 0,
+                       "jumpers": jumpers, "airwires": air, "segs": n}
+        finally:
+            board.layers = old_layers
+            board.traces = old_traces
+            board.ctx.rollback(snap)
+    return out
+
+
 def _repair(board: Board, rounds: int = 8) -> None:
     """Min-conflicts repair (research §4): greedy place leaves overlaps;
     repeatedly move the most-conflicted part to its min-cost spot.
