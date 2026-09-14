@@ -724,6 +724,13 @@ assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
            _call("footprints", {"q": "R0805"})["footprints"]))
 assert len(cast(dict[str, object], _call("fabs", {})["fabs"])) == 11
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+assert cast(float, _call("place", {})["cost"]) >= 0  # every tool invoked live
+assert cast(int, _call("route", {})["segments"]) >= 0
+assert _call("use_plugin", {"kind": "placer", "key": "compact"}) == {"active": "compact"}
+assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active": "diffusion"}
+with tempfile.TemporaryDirectory() as _md:
+    assert len(cast(list[object], _call("export", {"key": "jlc", "outdir": _md})["files"])) >= 10
+assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
 assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
 assert _call("undo", {})["undone"] == 1  # patch reverted, board intact
