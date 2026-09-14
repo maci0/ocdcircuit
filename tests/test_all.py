@@ -400,6 +400,16 @@ _st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
 assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
+# ocd status solves then writes STATUS.md next to the file (temp copy keeps
+# the tree clean); exit 0 = DRC clean
+import tempfile as _tf
+from apps import ocd as _ocd
+with _tf.TemporaryDirectory() as _td:
+    _sp = os.path.join(_td, "psu.ocd")
+    shutil.copy(os.path.join(EX, "psu.ocd"), _sp)
+    assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
+    _sm = open(os.path.join(_td, "STATUS.md")).read()
+    assert "tidy (12/15" in _sm, _sm[:200]
 
 # custom .fp footprints + edge-mount: exotic parts without Python
 from ocdcircuit import footprint as _fp
