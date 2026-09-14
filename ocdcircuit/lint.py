@@ -150,6 +150,11 @@ def lint(board: Board) -> dict[str, object]:
             if not 0 <= ll < board.layers:
                 err(f"route {c.get('net')} on layer {ll} (board has {board.layers}L)")
 
+    from .export import MASK_COLORS
+    mask = str(board.meta.get("mask", "green")).lower()
+    if mask not in MASK_COLORS:
+        # renderers silently fall back to green — flag the typo here instead
+        warn(f"unknown mask {board.meta.get('mask')!r} (have {sorted(MASK_COLORS)})")
     if not board.parts:
         warn("no parts")
     return {"errors": errors, "warnings": warnings}
