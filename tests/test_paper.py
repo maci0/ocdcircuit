@@ -179,6 +179,23 @@ prt.undo()  # revert the O-Insert: retire + O-Remove (uid cleared)
 assert child.state == Fiber.INACTIVE and uid not in prt.registry
 assert events == ["child-up", "child-down"]
 
+# board fiber chain is journal-backed: rollback trims it (no stale
+# replays on unload), unload still reverts all domain state
+from ocdcircuit import agent as _agent
+_bb = _agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                   "net N :: R1.1 <--> C1.1\n", base="boards")
+_bb.place(seeds=1, iters=10)
+_snap = _bb.ctx.snapshot()
+_bb.route_board()
+_bb.ctx.rollback(_snap)  # route emits rolled back AND trimmed
+assert all(d <= _snap for d, _ in _bb._chain), "stale chain survives rollback"
+assert [d for d, _ in _bb._chain] == sorted(d for d, _ in _bb._chain)
+_bb.route_board()  # re-route so unload has something to revert
+assert len(_bb.parts) == 2
+_bb._fiber.retire()
+_bb._fiber._insert()
+assert len(_bb.parts) == 0, "board unload must revert domain state"
+
 # loader entries run through ctx.use: drop removes uid, re-add reissues
 ldt = Context()
 ld4 = Loader(ldt)

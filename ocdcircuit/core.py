@@ -72,6 +72,7 @@ class Context:
         self._intercept: dict[str, object] = {}
         self._providers: dict[str, tuple[Fiber | None, object, object]] = {}
         self._registry: dict[int, Fiber] = {}  # dom(Fγ): uid → live fiber
+        self._trim_hooks: list[Callable[[int], None]] = []
 
     def child(self) -> Context:
         """Derive a child context (fiber ctx, isolate scope). Realm tables
@@ -136,6 +137,8 @@ class Context:
     def undo(self, n: int = 1) -> None:
         for _ in range(min(n, len(self._undos))):
             self._undos.pop()()
+        for hook in list(self._trim_hooks):
+            hook(len(self._undos))
 
     def rollback(self, snap: int) -> None:
         self.undo(len(self._undos) - snap)

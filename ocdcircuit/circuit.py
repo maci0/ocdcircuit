@@ -112,28 +112,40 @@ class Board(Component):
         self._block_open: str | None = None  # parser scratch (not dumped)
         self._block_lines: list[str] | None = None
         self.ctx.set("plugins", Registry())
-        # board-owned fiber (paper Alg 4): every domain edit chains into
-        # its dispose, so unloading the board reverts all board state.
-        # The flat undo stack is untouched — snapshots/rollback keep working.
+        # board-owned fiber (paper Alg 4): every domain edit journals into
+        # its dispose chain, so unloading the board reverts all board state.
+        # The flat undo stack is untouched — snapshots/rollback keep working,
+        # and rollback trims the journal via the trim hook (no stale replays).
         def _noop(_fctx: Context) -> object:
             return lambda: None
 
         self._fiber = self.ctx.use((), _noop)
+        self._chain: list[tuple[int, Undo]] = []  # (stack depth, inverse)
+        self.ctx._trim_hooks.append(self._trim_chain)
+        base_dispose = self._fiber.dispose
+        board = self
+
+        def _drain() -> None:
+            for _, u in reversed(board._chain):
+                u()
+            base_dispose()
+
+        self._fiber.dispose = _drain
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)
 
+    def _trim_chain(self, depth: int) -> None:
+        """Drop journal entries popped off the flat stack — rollback/undo
+        already ran them; the fiber chain must not replay."""
+        while self._chain and self._chain[-1][0] > depth:
+            self._chain.pop()
+
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
-        """Board domain edit: flat-stack undo + chain into the board
-        fiber's dispose (paper §5.1.1 — unload reverts). All board/engine
-        mutations go through here, never ctx.emit directly."""
+        """Board domain edit: flat-stack undo + journal into the board
+        fiber's dispose chain (paper §5.1.1 — unload reverts). All
+        board/engine mutations go through here, never ctx.emit directly."""
         d = self.ctx.emit(do, undo)
-        prev = self._fiber.dispose
-
-        def _chained() -> None:
-            undo()
-            prev()
-
-        self._fiber.dispose = _chained
+        self._chain.append((len(self.ctx._undos), undo))
         return d
 
     # -- plugin dispatch: Board never calls solver/drc/export directly --
