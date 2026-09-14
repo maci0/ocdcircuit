@@ -669,6 +669,12 @@ except RuntimeError:
     pass
 assert _seen == {"kind": "placer", "key": "multilevel"}, _seen
 Board._run = _orig_run  # type: ignore[method-assign]
+# multilevel runs for real (not just dispatched): pico places DRC-clean
+_ml = agent.loads(open(os.path.join(EX, "pico_tmc2209", "pico_tmc2209.ocd")).read(),
+                  base=os.path.join(EX, "pico_tmc2209"))
+_ml.place("multilevel", seeds=1, iters=30)
+_ml.route_board("lroute")
+assert _ml.check()["errors"] == [], _ml.check()["errors"]
 # doctor: registry healthy on a live board
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)
