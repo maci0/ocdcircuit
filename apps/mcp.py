@@ -54,11 +54,9 @@ def t_state(a: dict[str, object]) -> dict[str, object]:
 def t_patch(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     ops = cast(list[dict[str, object]], a["ops"])
-    snap = b.ctx.snapshot()
     try:
         n = agent.apply_patch(b, ops)
     except (ValueError, KeyError) as e:
-        b.ctx.rollback(snap)
         return {"applied": 0, "error": str(e)}
     return {"applied": n}
 
@@ -72,14 +70,12 @@ def t_undo(a: dict[str, object]) -> dict[str, object]:
 
 def t_state_set(a: dict[str, object]) -> dict[str, object]:
     """Declarative desired-state: {parts, nets, constraints, board}.
-    Reconciles (add/drop/update), idempotent, order-independent, atomic
-    (rollback on error). Prefer over apply_patch for agents."""
+    Reconciles (add/drop/update), idempotent, order-independent, atomic.
+    Prefer over apply_patch for agents."""
     b = _board()
-    snap = b.ctx.snapshot()
     try:
         counts = b.declare(a)
     except (ValueError, KeyError, AssertionError) as e:
-        b.ctx.rollback(snap)
         return {"applied": {}, "error": str(e)}
     return {"applied": counts}
 

@@ -479,8 +479,16 @@ class Board(Component):
         """Reconcile board to a desired state: {"parts": {ref: {fp, value?}},
         "nets": {net: [REF.PIN...]}, "constraints": [...], "board": {...}}.
         Adds missing, drops stale, updates changed — order-independent,
-        idempotent. Returns counts. One undoable unit via snapshot/rollback
-        by the caller (each sub-op already emits its own inverse)."""
+        idempotent. Atomic: a mid-reconcile failure rolls everything back.
+        Returns counts."""
+        snap = self.ctx.snapshot()
+        try:
+            return self._declare_inner(want)
+        except Exception:
+            self.ctx.rollback(snap)
+            raise
+
+    def _declare_inner(self, want: dict[str, object]) -> dict[str, int]:
         counts = {"added": 0, "removed": 0, "updated": 0, "nets": 0}
         parts = want.get("parts", {})
         nets = want.get("nets", {})

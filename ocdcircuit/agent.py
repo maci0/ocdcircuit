@@ -14,6 +14,16 @@ ErrFn = Callable[[object], ValueError]
 
 
 def apply_patch(board: Board, ops: list[dict[str, object]]) -> int:
+    """Apply ops atomically: a mid-list failure rolls everything back."""
+    snap = board.ctx.snapshot()
+    try:
+        return _apply_patch_inner(board, ops)
+    except Exception:
+        board.ctx.rollback(snap)
+        raise
+
+
+def _apply_patch_inner(board: Board, ops: list[dict[str, object]]) -> int:
     n = 0
     for op in ops:
         k = op.get("op")

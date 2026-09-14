@@ -52,6 +52,28 @@ agent.apply_patch(b, [
 assert "R1" in b.parts
 b.ctx.rollback(s)
 assert "R1" not in b.parts
+# patch + declare are self-atomic: mid-list failure leaves no residue
+_ba = Board("ta", 40, 30)
+_sa0 = _ba.ctx.snapshot()
+try:
+    agent.apply_patch(_ba, [
+        {"op": "add_part", "ref": "R1", "fp": "R0805", "value": "1k"},
+        {"op": "frobnicate"},
+    ])
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+assert "R1" not in _ba.parts and _ba.ctx.snapshot() == _sa0
+_bd = Board("td", 40, 30)
+_bd.add_part("R9", "R0805", "1k")
+_s0 = _bd.ctx.snapshot()
+try:
+    _bd.declare({"parts": {"R1": {"fp": "NOPE"}}, "nets": {}, "constraints": []})
+    raise AssertionError("should have raised")
+except KeyError:
+    pass
+assert "R1" not in _bd.parts and "R9" in _bd.parts
+assert _bd.ctx.snapshot() == _s0, "declare must roll back"
 # patch carries attrs both ways (lcsc/dnp/class were unreachable via patch)
 _bp = Board("t3", 40, 30)
 _sp3 = _bp.ctx.snapshot()
