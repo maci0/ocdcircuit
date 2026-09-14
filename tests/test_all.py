@@ -218,6 +218,17 @@ for pl in ["diffusion", "compact", "thermal"]:
         bm.place(pl, seeds=2, iters=100)
         bm.route_board(rt, **({"pop": 2, "gen": 1} if rt == "wiremask" else {}))
         assert not cast(list[str], bm.check()["errors"]), (pl, rt)
+# thermal spreads big bodies: min pairwise separation beats diffusion's
+import itertools as _it
+_sep = {}
+for pl in ["diffusion", "thermal"]:
+    _tb = agent.loads(open(os.path.join(EX, "pico_tmc2209", "pico_tmc2209.ocd")).read(),
+                      base=os.path.join(EX, "pico_tmc2209"))
+    _tb.place(pl, seeds=4, iters=400)
+    _th_big = sorted(_tb.parts.values(), key=lambda p: p.wh()[0] * p.wh()[1], reverse=True)[:5]
+    _ds = [((a.x - c.x) ** 2 + (a.y - c.y) ** 2) ** 0.5 for a, c in _it.combinations(_th_big, 2)]
+    _sep[pl] = min(_ds)
+assert _sep["thermal"] > _sep["diffusion"], _sep
 for sk in ["ref", "full", "fab"]:
     silks = bo.silk(sk)
     assert isinstance(silks["texts"], list) and isinstance(silks["dots"], list)
