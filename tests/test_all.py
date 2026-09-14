@@ -2194,6 +2194,11 @@ _lj = agent.loads("board t 40x30 2L\npart U1 SOIC14 logic=NANDX\nN :: U1.1 U1.2\
 assert any("unknown logic" in w for w in cast(list[str], _lj.lint()["warnings"]))
 _lj.parts["U1"].attrs["logic"] = "nand"
 assert not [w for w in cast(list[str], _lj.lint()["warnings"]) if "logic" in w]
+# unknown sym= warns (schematic renderer crashes, svg hides the typo)
+_lj.parts["U1"].attrs["sym"] = "BOGUS"
+assert any("unknown sym" in w for w in cast(list[str], _lj.lint()["warnings"]))
+_lj.parts["U1"].attrs["sym"] = "R"
+assert not [w for w in cast(list[str], _lj.lint()["warnings"]) if "sym" in w]
 # off-board geometry warns (same smell as fix off-board)
 _lg = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n"
                   "hole 9999 9999 1\ncutout 9999 9999 5x5\nbend 5 5 4x4 r1\n", base=EX)

@@ -175,6 +175,13 @@ def lint(board: Board) -> dict[str, object]:
         # the gates simulator silently skips unknown kinds — flag it here
         if logic and logic.upper() not in GATES:
             warn(f"unknown logic {logic!r} on {ref} (have {sorted(GATES)})")
+        sym = p.attrs.get("sym", "")
+        # unknown sym= crashes the schematic renderer — flag it here
+        # (svg uses footprints, so the typo hides until sch export)
+        if sym and sym not in board.custom_sym:
+            from .symbol import SYMBOLS
+            if sym not in SYMBOLS:
+                warn(f"unknown sym {sym!r} on {ref} (have {sorted(SYMBOLS)})")
     if not board.parts:
         warn("no parts")
     return {"errors": errors, "warnings": warnings}
