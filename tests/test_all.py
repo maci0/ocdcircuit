@@ -625,6 +625,15 @@ with tempfile.TemporaryDirectory() as d:
     _kk = open([f for f in _kd.export("kicad", outdir=tempfile.mkdtemp())
                 if f.endswith(".kicad_pcb")][0]).read()
     assert _kk.count("(attr dnp)") == 1, _kk.count("(attr dnp)")
+    # net classes reach KiCad (net_class with clearance/width + member nets)
+    _kc = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                      "HV class=highvolt :: R1.1 C1.1\nLV :: R1.2 C1.2\n"
+                      "class highvolt width=0.8 clearance=0.5\n", base=EX)
+    _kc.place(seeds=1, iters=20)
+    _kc.route_board()
+    _kk2 = open([f for f in _kc.export("kicad", outdir=tempfile.mkdtemp())
+                 if f.endswith(".kicad_pcb")][0]).read()
+    assert '(net_class "highvolt"' in _kk2 and '(add_net "HV")' in _kk2, _kk2[-500:]
 
 # MCP stdio server: initialize → list → load → solve → patch → check
 import json as _json

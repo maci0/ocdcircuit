@@ -567,6 +567,17 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for i, n in enumerate(sorted(board.nets), 1):
         net_ids[n] = i
         A(f'  (net {i} {_sexp_str(n)})')
+    for c in board.constraints:
+        if not isinstance(c, dict) or c.get("t") != "class":
+            continue
+        members = sorted(n for n, net in board.nets.items()
+                         if net.attrs.get("class") == c.get("name"))
+        if not members:
+            continue
+        A(f'  (net_class {_sexp_str(str(c.get("name")))} ""'
+          f' (clearance {float(cast(float, c.get("clearance", 0.2))):.4f})'
+          f' (trace_width {float(cast(float, c.get("width", 0.3))):.4f})'
+          + "".join(f" (add_net {_sexp_str(m)})" for m in members) + ")")
     pin_net: dict[tuple[str, str], str] = {}
     for n, net in board.nets.items():
         for r, q in net.pins:
