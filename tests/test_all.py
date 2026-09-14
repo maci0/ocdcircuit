@@ -1779,6 +1779,13 @@ assert agent.dumps(agent.loads(agent.dumps(_bb))) == agent.dumps(_bb)
 _bhp = agent.loads("board t 60x40 2L\nblock ch\npart R R0805 10k\npart C C0805 100n\n"
                    "net RC: R.1 C.1\nend\ninstance ch as ../../x\n", base=EX)
 assert agent.dumps(agent.loads(agent.dumps(_bhp), base=EX)) == agent.dumps(_bhp)
+# same for hostile `use` prefixes (sibling stamping path)
+with tempfile.TemporaryDirectory() as _ud:
+    open(os.path.join(_ud, "sub.ocd"), "w").write(
+        "board s 20x10 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+    _bu = agent.loads("board t 40x30 2L\nuse sub.ocd as ../../p\n"
+                      "part R2 R0805 10k\nnet M: R2.1 R2.2\n", base=_ud)
+    assert agent.dumps(agent.loads(agent.dumps(_bu), base=_ud)) == agent.dumps(_bu)
 # block constraints remap on stamp (pour/route/trace survive, joins stay global)
 _bc = agent.loads("board t 60x40 2L\nblock ch\npart R R0805 10k\npart C C0805 100n\n"
                   "net N: R.1 C.1\nnet GND: R.2 C.2\npour GND on 0\nroute N on 1\ntrace N 0.6\nend\n"
