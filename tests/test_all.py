@@ -1071,6 +1071,34 @@ import time as _time
 _time.sleep(0.3)
 assert _cdp.events == []  # reply consumed, close drained
 _srv.close()
+# easyeda_live discovery vs a stub DevTools server: page-type filter,
+# wait_ready poll, no-page StopIteration
+import http.server as _hs
+
+
+class _Tg(_hs.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        import json as _js5
+        body = _js5.dumps([
+            {"type": "background_page", "webSocketDebuggerUrl": "ws://x/bg"},
+            {"type": "page", "webSocketDebuggerUrl": "ws://x/page1"},
+        ]).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a: object) -> None:
+        pass
+
+
+_hsrv = _hs.HTTPServer(("127.0.0.1", 0), _Tg)
+_hport = _hsrv.server_address[1]
+import threading as _thr2
+_thr2.Thread(target=_hsrv.serve_forever, daemon=True).start()
+assert _ezl2.page_ws(_hport) == "ws://x/page1"
+assert _ezl2.wait_ready(_hport, timeout=10.0) == "ws://x/page1"
+_hsrv.shutdown()
 # mitox convert end-to-end on a synthetic project: tsx + circuit.json →
 # harvested .fp + .ocd → loads, solves clean
 import json as _js2
