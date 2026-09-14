@@ -917,6 +917,9 @@ class H(http.server.BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        print("usage: python -m apps.studio [board.ocd]  # OCD_PORT=8077 to change port")
+        return
     H.src_text = open(SRC).read() if os.path.isfile(SRC) else (
         "board demo 40x30\npart R1 R0805 1k\npart C1 C0805 100n\n"
         "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")

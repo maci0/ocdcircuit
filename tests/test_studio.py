@@ -99,6 +99,13 @@ def png_brightness(path: str, x0: int, y0: int, x1: int, y1: int,
 
 
 def main() -> None:
+    # --help answers usage without booting a server (mcp + studio)
+    mh = subprocess.run([sys.executable, "-m", "apps.mcp", "--help"],
+                        cwd=ROOT, capture_output=True, timeout=30)
+    assert mh.returncode == 0 and b"stdio server" in mh.stdout, mh
+    sh = subprocess.run([sys.executable, "-m", "apps.studio", "--help"],
+                        cwd=ROOT, capture_output=True, timeout=30)
+    assert sh.returncode == 0 and b"OCD_PORT" in sh.stdout, sh
     # bad OCD_PORT falls back to 8077 with a stderr note (no traceback):
     # the server boots and serves instead of dying in main()
     import urllib.request as _url
