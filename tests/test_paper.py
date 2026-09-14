@@ -1,5 +1,6 @@
 """Paper §5 core self-check: effect/notify/fiber/loader/HMR (asserts only)."""
 from __future__ import annotations
+from collections.abc import Callable, Iterator
 import os
 import sys
 
@@ -13,7 +14,7 @@ log: list[str] = []
 
 
 def _cb() -> object:
-    def _gen():  # type: ignore[no-untyped-def]
+    def _gen() -> Iterator[Callable[[], None]]:
         log.append("do1")
         yield lambda: log.append("undo1")
         log.append("do2")
@@ -34,7 +35,7 @@ started: list[str] = []
 
 
 def _cb2() -> object:
-    def _gen():  # type: ignore[no-untyped-def]
+    def _gen() -> Iterator[Callable[[], None]]:
         started.append("a")
         yield lambda: started.append("ua")
         started.append("b")
@@ -143,8 +144,8 @@ assert app_fib.ctx["db"] == "one"
 # disable provider → dependent drains first, then provider
 ld2.declare([{"id": "db", "factory": _db1, "url": "db", "disabled": True},
              {"id": "app", "factory": _app, "url": "app", "inject": ("db",)}])
-assert ld2.entries["app"].fiber is not None
-assert ld2.entries["app"].fiber.state == Fiber.INACTIVE  # type: ignore[union-attr]
+_app_fib2 = ld2.entries["app"].fiber
+assert _app_fib2 is not None and _app_fib2.state == Fiber.INACTIVE
 
 # isolate: derived scope, independent binding, implicit recovery
 iso = Context()
@@ -247,8 +248,8 @@ def _ok(name: str) -> Callable[[], Component]:
 hld.declare([{"id": "x", "factory": _ok("x"), "url": "x"},
              {"id": "y", "factory": _ok("y"), "url": "y"}])
 hld.reload(list(hld.entries.values()))  # clean reload, same factories
-assert hld.entries["x"].fiber is not None
-assert hld.entries["x"].fiber.state == Fiber.ACTIVE
+_xf = hld.entries["x"].fiber
+assert _xf is not None and _xf.state == Fiber.ACTIVE
 assert hld.entries["y"].fiber is not None
 
 
@@ -265,10 +266,10 @@ try:
 except RuntimeError:
     pass
 # x swapped then restored; y never swapped — both ACTIVE on old factories
-assert hld.entries["x"].fiber is not None
-assert hld.entries["x"].fiber.state == Fiber.ACTIVE
-assert hld.entries["y"].fiber is not None
-assert hld.entries["y"].fiber.state == Fiber.ACTIVE
+_xf2 = hld.entries["x"].fiber
+_yf2 = hld.entries["y"].fiber
+assert _xf2 is not None and _xf2.state == Fiber.ACTIVE
+assert _yf2 is not None and _yf2.state == Fiber.ACTIVE
 # phase-2 failure (mount raises mid-swap): the broken entry parks
 # FAILED (paper §4.4) with its error recorded; the healthy swap stands —
 # rolling back working code because a sibling's new code is broken would
@@ -286,8 +287,8 @@ def _reimport2(e: object) -> Callable[[], Component]:
 
 
 hld.reload(list(hld.entries.values()), _reimport2)
-assert hld.entries["x"].fiber is not None
-assert hld.entries["x"].fiber.state == Fiber.ACTIVE
+_xf3 = hld.entries["x"].fiber
+assert _xf3 is not None and _xf3.state == Fiber.ACTIVE
 yf = hld.entries["y"].fiber
 assert yf is not None and yf.state == Fiber.FAILED
 assert isinstance(yf.error, RuntimeError)
