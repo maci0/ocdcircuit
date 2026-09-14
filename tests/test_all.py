@@ -410,6 +410,12 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
     _sm = open(os.path.join(_td, "STATUS.md")).read()
     assert "tidy (12/15" in _sm, _sm[:200]
+    # ocd new scaffolds + ocd diff spots the delta + plugins lists kinds
+    _np = os.path.join(_td, "newproj")
+    assert _ocd.cmd_new([_np]) == 0
+    assert _ocd.cmd_diff(_ocd._boot(), [_sp, os.path.join(_np, "newproj.ocd")]) == 0
+    assert _ocd.cmd_plugins(_ocd._boot(), ["placer"]) == 0
+    assert _ocd.cmd_plugins(_ocd._boot(), ["bogus"]) == 1
 
 # custom .fp footprints + edge-mount: exotic parts without Python
 from ocdcircuit import footprint as _fp
