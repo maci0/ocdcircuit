@@ -1522,6 +1522,11 @@ _sime = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
                     "sim expect VO ~ 2.88\nsim expect VIN == 9\nsim expect VO == 5\n")
 assert _sim.expect(_sime) == ["sim VO=2.878V, want == 5V"], _sim.expect(_sime)
 assert agent.dumps(agent.loads(agent.dumps(_sime), base=EX)) == agent.dumps(_sime)
+# sim r/c/l overrides beat part values in the solve
+_simo = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
+                    "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\n"
+                    "sim vcc VIN 9\nsim r R2 4k7\n", base=EX)
+assert abs(cast(dict[str, float], _simo.simulate()["nets"])["VO"] - 2.878) < 0.01
 assert agent.parse_constraint("sim expect VO ~ 2.88 tol 1%") == {
     "t": "sim", "kind": "expect", "net": "VO", "op": "~", "value": "2.88", "tol": "1%"}
 # gates plugin: NAND truth + DFF divide + clk grammar + round-trip
