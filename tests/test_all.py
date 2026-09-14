@@ -177,6 +177,13 @@ assert {s.width for s in bo.traces if s.net in ("VCC", "GND")} == {0.5}
 assert {s.width for s in bo.traces if s.net not in ("VCC", "GND")} == {0.3}
 # route constraint forces the layer (blinky: GND stays on 1)
 assert {s.layer for s in bo.traces if s.net == "GND"} == {1}
+# trace constraint sets routed width (same funnel as power)
+_tw = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\ntrace N 0.6\n", base=EX)
+_tw.place(seeds=1, iters=30)
+_tw.route_board("lroute")
+assert {s.width for s in _tw.traces if s.net == "N"} == {0.6}
+assert {s.width for s in _tw.traces if s.net == "GND"} == {0.3}
 
 # JSON wire IR round-trips
 bj = agent.from_json(agent.to_json(bo))
