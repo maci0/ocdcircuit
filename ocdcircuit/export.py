@@ -259,9 +259,11 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     open(fn, "w").write("\n".join(lines) + "\n")
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
+    # DNP excluded: CPL drives the pick-and-place machine, BOM marks the
+    # row do-not-place — listing both would place what must stay empty.
     open(fn, "w").write("Designator,Mid X,Mid Y,Layer,Rotation\n" + "".join(
         f"{p.ref},{p.x:.3f}mm,{p.y:.3f}mm,Top,{int(p.attrs.get('rot', 0))}\n"
-        for p in board.parts.values()))
+        for p in board.parts.values() if not p.attrs.get("dnp")))
     files.append(fn)
     return files
 
@@ -489,7 +491,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     lib = board._lib()
     L: list[str] = []
     A = L.append
-    A("(kicad_pcb (version 20221018) (generator ocdcircuit)")
+    A('(kicad_pcb (version 20260206) (generator "ocdcircuit") (generator_version "10.0")')
     if board.meta.get("title") or board.meta.get("rev"):
         A(f'  (title_block (title {_sexp_str(board.meta.get("title", board.name))})'
           + (f' (rev {_sexp_str(board.meta["rev"])})' if board.meta.get("rev") else "")
@@ -728,7 +730,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
                        for rr, q in _nn.pins if rr == r})
 
     counts = sorted({len(part_pins(r)) for r in order})
-    A('(kicad_sch (version 20250114) (generator "ocdcircuit")')
+    A('(kicad_sch (version 20250114) (generator "ocdcircuit") (generator_version "10.0")')
     A(f'  (uuid "{_uuid_mod.uuid4()}")')
     A('  (paper "A4")')
     A("  (lib_symbols")

@@ -442,6 +442,9 @@ with tempfile.TemporaryDirectory() as d:
     _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     assert "10k (DNP),\"R2\"" in _cbom and _cbom.count("10k") == 2, _cbom
+    _ccpl = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
+                  if f.endswith(".CPL.csv")][0]).read()
+    assert "R2," not in _ccpl and "R1," in _ccpl  # DNP never reaches PnP
     # same value+fp with different LCSC never merges (JLC orders per row)
     _lc = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcsc=C1\n"
                       "part R2 R0805 10k lcsc=C2\nnet N: R1.1 R2.1\nnet GND: R1.2 R2.2\n", base=EX)
