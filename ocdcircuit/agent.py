@@ -262,22 +262,35 @@ def dumps(board: Board) -> str:
     fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
     syms = [f"sym {board.sym_src[name]}" for name in sorted(board.custom_sym) if name in board.sym_src]
     L[1:1] = fps + syms
-    # fold layer/width constraints onto the net line (first wins on dupes)
+    # fold layer/width constraints onto the net line (first wins on dupes —
+    # but conflicting dupes stay unfolded as route/trace lines, otherwise
+    # dumps would flip last-wins runtime resolution)
     lay: dict[str, object] = {}
     wid: dict[str, object] = {}
+    lay_bad: set[str] = set()
+    wid_bad: set[str] = set()
     for c in board.constraints:
-        if c.get("t") == "layer" and c.get("net") not in lay:
-            lay[str(c["net"])] = c["layer"]
-        if c.get("t") == "width" and c.get("net") not in wid:
-            wid[str(c["net"])] = c["width"]
+        if c.get("t") == "layer":
+            n = str(c["net"])
+            if n in lay and lay[n] != c["layer"]:
+                lay_bad.add(n)
+            else:
+                lay[n] = c["layer"]
+        if c.get("t") == "width":
+            n = str(c["net"])
+            if n in wid and wid[n] != c["width"]:
+                wid_bad.add(n)
+            else:
+                wid[n] = c["width"]
     for n in sorted(board.nets):
         net = board.nets[n]
         pins = sorted((r, str(pin)) for r, pin in net.pins if r not in owned)
         if not pins and any(net.pins):
             continue  # fully owned by an include — comes back via `use`
         attrs = "".join(f" {k}={v}" for k, v in sorted(net.attrs.items()))
-        layer = net.layer if net.layer is not None else lay.get(n)
-        width = net.width if net.width != 0.3 else wid.get(n, 0.3)
+        layer = None if n in lay_bad else (net.layer if net.layer is not None else lay.get(n))
+        w0 = None if n in wid_bad else (net.width if net.width != 0.3 else wid.get(n, 0.3))
+        width: object = w0
         if layer is not None:
             attrs += f" L{layer}"
         if isinstance(width, (int, float)) and width != 0.3:
@@ -303,11 +316,11 @@ def dumps(board: Board) -> str:
                 _same = False
             if not _same:
                 L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
-        elif t == "layer" and str(c["net"]) in board.nets:
+        elif t == "layer" and str(c["net"]) in board.nets and str(c["net"]) not in lay_bad:
             continue  # folded onto the net line above (or via `use`)
         elif t == "layer":
             L.append(f"route {c['net']} on {c['layer']}")
-        elif t == "width" and str(c["net"]) in board.nets:
+        elif t == "width" and str(c["net"]) in board.nets and str(c["net"]) not in wid_bad:
             continue  # folded onto the net line above (or via `use`)
         elif t == "width":
             L.append(f"trace {c['net']} {_f(c['width']):g}")
