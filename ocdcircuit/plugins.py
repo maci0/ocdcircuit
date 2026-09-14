@@ -1353,7 +1353,11 @@ class CalcPlugin(Plugin[dict[str, object]]):
             return {"vout": _calc.divider(_f(k.get("vin", 9.0)),
                                           _f(k.get("rtop", 10000.0)),
                                           _f(k.get("rbot", 4700.0)))}
-        raise ValueError(f"unknown calc {what!r} (trace|amps|via|divider)")
+        if what == "pick":
+            return {"rtop": _calc.divider_pick(_f(k.get("vin", 9.0)),
+                                               _f(k.get("vout", 5.0)),
+                                               _f(k.get("rbot", 10000.0)))}
+        raise ValueError(f"unknown calc {what!r} (trace|amps|via|divider|pick)")
 
 
 class SimPlugin(Plugin[dict[str, object]]):
