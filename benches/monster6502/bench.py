@@ -90,12 +90,15 @@ def main() -> None:
     disp = sum(abs(p.x - g[r][0]) + abs(p.y - g[r][1])
                for r, p in b.parts.items() if r in g) / max(1, len(g))
     ov = overlaps(b)
+    # floating nets are file-static (5953 single-pin nets in the netlist),
+    # not placement signal — errors counts the placeable rest.
+    errs = sum(1 for e in b.check()["errors"] if not str(e).startswith("floating"))
     print(f"seeds={seeds} iters={iters} time={dt:.1f}s cost={cost:.0f}")
     print(f"wirelength placed={placed_wl:.0f} golden={golden_wl:.0f} "
           f"ratio={placed_wl / max(1.0, golden_wl):.2f}")
     print(f"mean_displacement={disp:.2f}mm (similarity, secondary)")
     print(f"overlaps placed={ov} golden_floor={golden_ov} "
-          f"above_floor={ov - golden_ov} errors={len(b.check()['errors'])}")
+          f"above_floor={ov - golden_ov} errors={errs}")
 
 
 if __name__ == "__main__":
