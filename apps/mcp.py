@@ -309,7 +309,7 @@ TOOLS: dict[str, object] = {
     "export": (t_export, {"key": "exporter?", "outdir": "out"}),
     "render": (t_render, {"key": "renderer?"}),
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda", "path": "file"}),
-    "calc": (t_calc, {"what": "trace|via|divider", "amps": 1.0}),
+    "calc": (t_calc, {"what": "trace|amps|via|divider", "amps": 1.0}),
     "simulate": (t_sim, {"what": "dc|tran"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),

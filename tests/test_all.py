@@ -808,6 +808,7 @@ assert any(f.endswith(".kicad_pcb") for f in bu.export("kicad", outdir=tempfile.
 # calculators (IPC-2221 etc.): rule-of-thumb values
 from ocdcircuit import calc
 assert abs(calc.trace_width(1.0) - 0.3) < 0.05
+assert abs(calc.trace_amps(calc.trace_width(1.0)) - 1.0) < 0.01  # inverse round-trips
 assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
 

@@ -1333,7 +1333,7 @@ class TomlConfig(Plugin[dict[str, object]]):
 
 
 class CalcPlugin(Plugin[dict[str, object]]):
-    """Embedded calculators: trace width, via current, divider."""
+    """Embedded calculators: trace width/amps, via current, divider."""
     kind, key = "calc", "std"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
@@ -1343,13 +1343,17 @@ class CalcPlugin(Plugin[dict[str, object]]):
             return {"mm": _calc.trace_width(_f(k.get("amps", 1.0)),
                                             _f(k.get("rise", 10.0)),
                                             _f(k.get("oz", 1.0)))}
+        if what == "amps":
+            return {"amps": _calc.trace_amps(_f(k.get("mm", 0.3)),
+                                             _f(k.get("rise", 10.0)),
+                                             _f(k.get("oz", 1.0)))}
         if what == "via":
             return {"amps": _calc.via_amps(_f(k.get("drill", 0.3)))}
         if what == "divider":
             return {"vout": _calc.divider(_f(k.get("vin", 9.0)),
                                           _f(k.get("rtop", 10000.0)),
                                           _f(k.get("rbot", 4700.0)))}
-        raise ValueError(f"unknown calc {what!r} (trace|via|divider)")
+        raise ValueError(f"unknown calc {what!r} (trace|amps|via|divider)")
 
 
 class SimPlugin(Plugin[dict[str, object]]):
