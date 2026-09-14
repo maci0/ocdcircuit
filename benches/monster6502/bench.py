@@ -15,7 +15,6 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from ocdcircuit import agent
 from ocdcircuit import solver
 
@@ -35,8 +34,7 @@ def golden(b: object) -> dict[str, tuple[float, float]]:
     if fix and len(fix) >= len(b.parts):
         return fix
     # block board: fixes cover stragglers only — map members via layout.json
-    sys.path.insert(0, HERE)
-    from convert import _find_blocks
+    from benches.monster6502.convert import _find_blocks
     raw = json.load(open(os.path.join(HERE, "netlist.json")))
     lay = json.load(open(os.path.join(HERE, "layout.json")))
     pos = {it["ref"]: (float(it["x"]), float(it["y"])) for it in lay["items"]}

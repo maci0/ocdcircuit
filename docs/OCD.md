@@ -2,7 +2,7 @@
 
 One fact per line. Keywords case-insensitive, `#` starts a comment,
 blank lines ignored. Units are mm. First non-blank line must be `board`.
-Build with `python apps/ocd.py <file.ocd>` — errors name the line number.
+Build with `python -m apps.ocd <file.ocd>` — errors name the line number.
 
 ```ocd
 board blinky555 40x30 2L       # board NAME WxH [NL] — 1..32 layers (default 2)

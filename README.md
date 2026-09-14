@@ -8,10 +8,10 @@ commit it, build the rest. If a line is off by a space, `ocd` tells you
 which line. You knew which line. Now you can fix it.
 
 ```bash
-python apps/ocd.py --placer compact --router maze boards/blinky_555.ocd  # cleanest
-python apps/ocd.py boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
-python apps/ocd.py --fab oshpark boards/psu.ocd # same board, stricter fab
-python apps/studio.py boards/blinky_555.ocd     # visual editor → localhost:8077
+python -m apps.ocd --placer compact --router maze boards/blinky_555.ocd  # cleanest
+python -m apps.ocd boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
+python -m apps.ocd --fab oshpark boards/psu.ocd # same board, stricter fab
+python -m apps.studio boards/blinky_555.ocd     # visual editor → localhost:8077
 python tests/test_all.py                     # one self-check for everything
 mypy     # strict, zero errors
 ```

@@ -15,8 +15,6 @@ import os
 import sys
 from typing import Callable, cast
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from ocdcircuit.circuit import Board  # noqa: E402
 
 USAGE = """usage:

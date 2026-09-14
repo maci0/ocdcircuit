@@ -5,18 +5,18 @@ BOARD ?= boards/blinky_555.ocd
 check: lint test			# everything green before commit
 lint:				# types + source lint (no place/route)
 	mypy
-	python apps/ocd.py lint $(BOARD)
+	python -m apps.ocd lint $(BOARD)
 doctor:				# tooling self-check
-	python apps/ocd.py doctor
+	python -m apps.ocd doctor
 test:				# unit suite + golden snapshots
 	python tests/test_all.py
 	python tests/test_snapshot.py
 run:				# webui → http://localhost:8077
-	python apps/studio.py $(BOARD)
+	python -m apps.studio $(BOARD)
 snap:				# re-pin goldens after intended geometry change
 	SNAP=1 python tests/test_snapshot.py
 bench:				# 5420-part stress (~5 min, not in check)
-	python benches/monster6502/bench.py 1 5
+	python -m benches.monster6502.bench 1 5
 farm:				# every board loads+solves (breath-ketone density excepted)
 	python -c "import sys, glob; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent; \

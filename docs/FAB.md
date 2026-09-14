@@ -29,5 +29,5 @@ Sources: [JLCPCB capabilities](https://jlcpcb.com/capabilities/Capabilities),
 [OSH Park](https://oshpark.com), [Seeed Fusion](https://www.seeedstudio.com/fusion.html),
 [Aisler](https://aisler.net).
 
-Use: `python apps/ocd.py --fab oshpark board.ocd`, `fab` dropdown in studio,
+Use: `python -m apps.ocd --fab oshpark board.ocd`, `fab` dropdown in studio,
 or `Board.fab = "pcbway"` in Python. DRC reports which fab it checked.

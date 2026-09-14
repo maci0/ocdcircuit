@@ -145,9 +145,9 @@ import shutil
 shutil.rmtree(os.path.join(EX, "tmp_inc"))
 
 # CLI builds the committed file (exit 0 = DRC clean)
-proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "apps", "ocd.py"),
+proc = subprocess.run([sys.executable, "-m", "apps.ocd",
                        os.path.join(EX, "blinky_555.ocd")],
-                      capture_output=True, text=True)
+                      capture_output=True, text=True, cwd=os.path.join(HERE, ".."))
 assert proc.returncode == 0, proc.stdout + proc.stderr
 
 # solver frames stream (animation API)
@@ -283,8 +283,9 @@ with tempfile.TemporaryDirectory() as d:
 
 # MCP stdio server: initialize → list → load → solve → patch → check
 import json as _json
-mcp = subprocess.Popen([sys.executable, os.path.join(HERE, "..", "apps", "mcp.py")],
-                       stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+mcp = subprocess.Popen([sys.executable, "-m", "apps.mcp"],
+                       stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                       cwd=os.path.join(HERE, ".."))
 _mid = [0]
 
 def _rpc(method: str, params: dict[str, object] | None = None) -> dict[str, object]:
