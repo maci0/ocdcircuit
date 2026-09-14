@@ -2,8 +2,10 @@
 
 One pattern for all behavior: subclass `Plugin[Out]`, set `kind` + `key`,
 implement `run(board, **k)`, mount it. `Board` dispatches (`b.place()`,
-`b.check()`, `b.export("easyeda")`…); a raising plugin is fenced and the
+`b.check()`, `b.export("easyeda")`…); a crashing plugin is fenced and the
 previous entry keeps serving (`Registry.failed`, re-arm via `use()`).
+Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`)
+propagate unfenced — fix the input and retry, no re-arm needed.
 
 ```python
 from ocdcircuit.core import Plugin
@@ -24,7 +26,7 @@ Kinds (see `plugins.py` for keys): `placer placer→float` · `router→int` ·
 `silk/importer/calc/simulate/lint/score/doctor→dict` · `diff→str` · `parts`.
 
 Current keys (from a live registry — count, don't hand-edit):
-`placer` compact/diffusion/hierarchical/multilevel/thermal ·
+`placer` compact/diffusion/hierarchical/multilevel/thermal/tidy ·
 `router` coarse/lroute/maze/wiremask · `exporter`
 bundle/eagle/easyeda/jlc/json/kicad/kicad-sch/ocd · `importer`
 eagle/eagle-brd/easyeda/fp/kicad/pcb/sym/tscircuit · `renderer`
