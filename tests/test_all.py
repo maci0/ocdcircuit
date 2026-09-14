@@ -281,6 +281,11 @@ with tempfile.TemporaryDirectory() as d:
     assert any(f.endswith(".GTL.gbr") for f in files)
     assert any(f.endswith(".kicad_pcb") for f in files)
     assert any(f.endswith(".TXT") for f in files)
+    import zipfile as _zf
+    _zb = b.export("bundle", outdir=d)[0]
+    assert _zb.endswith("-fab.zip")
+    _zn = _zf.ZipFile(_zb).namelist()
+    assert any(n.endswith(".GTL.gbr") for n in _zn) and any(n.endswith(".CPL.csv") for n in _zn)
     # drill file carries PTH holes (J1=PINHD2), grouped by tool diameter
     drl = open([f for f in files if f.endswith(".TXT")][0]).read()
     assert "M48" in drl and "M30" in drl
