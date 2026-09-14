@@ -1008,6 +1008,69 @@ with tempfile.NamedTemporaryFile("w", suffix=".kicad_pcb", delete=False) as _pf:
 assert (_pos, _pw, _ph, _pfps) == (
     {"R1": (10.0, 30.0), "C1": (30.0, 10.0)}, 40.0, 50.0,
     {"R1": "R_0805", "C1": "C_0805"})
+# easyeda_live CDP framing vs a fake server: upgrade handshake, masked
+# client frame, unmasked reply matched by id, 16-bit length branch, close
+import socket as _sock
+import struct as _struct
+import threading as _thr
+from tools import easyeda_live as _ezl2
+
+
+def _frame(payload: bytes, opcode: int = 0x1) -> bytes:
+    n = len(payload)
+    hdr = (bytes([0x80 | opcode, n]) if n < 126
+           else bytes([0x80 | opcode, 126]) + _struct.pack(">H", n))
+    return hdr + payload
+
+
+_srv = _sock.socket()
+_srv.bind(("127.0.0.1", 0))
+_srv.listen(1)
+_port = _srv.getsockname()[1]
+
+
+def _serve() -> None:
+    import socket as _sock2
+
+    def _recvn(conn: _sock2.socket, n: int) -> bytes:
+        d = b""
+        while len(d) < n:
+            d += conn.recv(n - len(d))
+        return d
+
+    conn, _ = _srv.accept()
+    req = b""
+    while not req.endswith(b"\r\n\r\n"):
+        req += conn.recv(1024)
+    assert b"Upgrade: websocket" in req
+    conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+                 b"Connection: Upgrade\r\nSec-WebSocket-Accept: x\r\n\r\n")
+    import json as _js4
+    for big in (False, True):
+        h = _recvn(conn, 2)
+        ln = h[1] & 0x7F
+        assert h[1] & 0x80, "client must mask"
+        if ln == 126:
+            ln = _struct.unpack(">H", _recvn(conn, 2))[0]
+        mask = _recvn(conn, 4)
+        data = _recvn(conn, ln)
+        q = _js4.loads(bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+        res: dict[str, object] = {"id": q["id"], "result": {"echo": q["method"]}}
+        if big:
+            res["result"] = {"echo": q["method"], "pad": "x" * 200}
+        conn.sendall(_frame(_js4.dumps(res).encode()))
+    conn.sendall(_frame(b"", opcode=0x8))  # close → _loop exits
+    conn.close()
+
+
+_thr.Thread(target=_serve, daemon=True).start()
+_cdp = _ezl2.CDP(f"ws://127.0.0.1:{_port}/devtools/page/1")
+assert _cdp.call("Test.ping", {"a": 1}, timeout=5.0) == {"echo": "Test.ping"}
+assert _cdp.call("Test.big", {"pad": "y" * 200}, timeout=5.0)["echo"] == "Test.big"
+import time as _time
+_time.sleep(0.3)
+assert _cdp.events == []  # reply consumed, close drained
+_srv.close()
 # mitox convert end-to-end on a synthetic project: tsx + circuit.json →
 # harvested .fp + .ocd → loads, solves clean
 import json as _js2
