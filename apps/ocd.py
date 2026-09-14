@@ -37,7 +37,19 @@ def _boot() -> object:
 def _load(agent: object, src: str) -> Board:
     loads = cast(object, getattr(agent, "loads"))
     fn = cast(Callable[..., Board], loads)
-    return fn(open(src).read(), base=os.path.dirname(os.path.abspath(src)))
+    b = fn(open(src).read(), base=os.path.dirname(os.path.abspath(src)))
+    b.configure("toml", base=os.path.dirname(os.path.abspath(src)))
+    return b
+
+
+def _proj_str(b: Board, key: str) -> str | None:
+    v = b.proj.get(key)
+    return v if isinstance(v, str) else None
+
+
+def _proj_list(b: Board, key: str) -> list[str] | None:
+    v = b.proj.get(key)
+    return list(v) if isinstance(v, list) else None
 
 
 class _Printer:
@@ -105,12 +117,18 @@ def cmd_new(args: list[str]) -> int:
         with open(readme, "w") as f:
             f.write(f"# {name}\n\n`ocd run {name}.ocd` → `out/` fab package.\n"
                     f"`ocd status {name}.ocd` refreshes STATUS.md.\n")
+    toml = os.path.join(d, "board.toml")
+    if not os.path.exists(toml):
+        with open(toml, "w") as f:
+            f.write('# per-project defaults (CLI flags win)\n'
+                    'fab = "jlc"\nplacer = "diffusion"\nrouter = "maze"\n'
+                    'drc = ["fab", "erc"]\nmask = "green"\n')
     print(f"new: {board}")
     return 0
 
 
-def _flags(args: list[str]) -> tuple[str, str | None, str | None, str | None, list[str]]:
-    fab: str = "jlc"
+def _flags(args: list[str]) -> tuple[str | None, str | None, str | None, str | None, list[str]]:
+    fab: str | None = None
     placer: str | None = None
     router: str | None = None
     simwhat: str | None = None
@@ -136,17 +154,20 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     src = rest[0]
     try:
         b = _load(agent, src)
-        b.fab = fab
+        if fab is not None:
+            b.fab = fab
     except (OSError, ValueError, KeyError) as e:
         _out().print(f"[red]ocd: {e}[/red]")
         return 1
+    placer = placer or _proj_str(b, "placer")
+    router = router or _proj_str(b, "router")
     try:
         c = b.place(placer) if placer else b.place()
         n = b.route_board(router) if router else b.route_board()
     except KeyError as e:
         _out().print(f"[red]ocd: {e}[/red]")
         return 1
-    r = b.check()
+    r = b.check("all", keys=_proj_list(b, "drc"))
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
     files = (b.export("jlc", outdir=out) + b.export("kicad", outdir=out)
              + b.export("ocd", outdir=out))
@@ -217,7 +238,8 @@ def cmd_status(agent: object, args: list[str]) -> int:
     src = rest[0]
     try:
         b = _load(agent, src)
-        b.fab = fab
+        if fab is not None:
+            b.fab = fab
         b.place()
         b.route_board()
     except (OSError, ValueError, KeyError) as e:
@@ -226,8 +248,9 @@ def cmd_status(agent: object, args: list[str]) -> int:
     s = b.score()
     t = b.score(tidy=True)
     _ext = cast(dict[str, object], s["extent"])
-    drc = b.check()
-    erc = b.check("erc")
+    checks = b.check("all", keys=_proj_list(b, "drc"))
+    derr = cast(list[object], checks["errors"])
+    dwarn = cast(list[object], checks["warnings"])
     simline = ""
     if any(c.get("t") == "sim" for c in b.constraints):
         try:
@@ -238,33 +261,33 @@ def cmd_status(agent: object, args: list[str]) -> int:
                 if isinstance(v, (int, float))) + "\n"
         except (ValueError, KeyError):
             simline = "sim: error\n"
-    derr = cast(list[object], drc["errors"])
-    dwarn = cast(list[object], drc["warnings"])
-    eerr = cast(list[object], erc["errors"])
-    ewarn = cast(list[object], erc["warnings"])
     trows = "\n".join(f"| {k} | {_tidy_md(v)} |" for k, v in t.items()
                         if k not in ("coverage", "routed_segs"))
+    ran = cast(list[str], checks.get("ran", []))
     doc = (f"# STATUS — {b.name}\n\n"
            f"OCD score: {s['total']}/100 ({s['grade']})\n\n"
            f"## tidy ({t['coverage']} metrics defined)\n\n"
            f"| metric | value |\n|---|---|\n{trows}\n\n"
            f"| check | errors | warnings |\n|---|---|---|\n"
-           f"| DRC ({drc.get('fab')}) | {len(derr)} | {len(dwarn)} |\n"
-           f"| ERC | {len(eerr)} | {len(ewarn)} |\n\n"
-           + ("".join(f"- DRC: {e}\n" for e in derr[:10]))
-           + ("".join(f"- ERC: {e}\n" for e in eerr[:10]))
+           + "".join(f"| {k} | {sum(1 for e in derr if str(e).startswith(k + ':'))} | "
+                     f"{sum(1 for w in dwarn if str(w).startswith(k + ':'))} |\n" for k in ran)
+           + "\n"
+           + ("".join(f"- {e}\n" for e in derr[:10]))
+           + ("".join(f"- {w}\n" for w in dwarn[:10]))
            + (f"{simline}\n" if simline else "")
            + f"parts: {len(b.parts)}, nets: {len(b.nets)}, "
            + f"traces: {len(b.traces)}, layers: {b.layers}\n"
            + _pour_line(b)
            + f"extent: {_ext['w']}x{_ext['h']}mm "
            + f"({float(cast(float, _ext['fill'])) * 100:.0f}% of "
-           + f"{b.width:g}x{b.height:g} board)\n")
+           + f"{b.width:g}x{b.height:g} board, shrink → "
+           + f"{cast(list[float], _ext['shrink'])[0]:g}x"
+           + f"{cast(list[float], _ext['shrink'])[1]:g})\n")
     proj = os.path.dirname(os.path.abspath(src))
     with open(os.path.join(proj, "STATUS.md"), "w") as f:
         f.write(doc)
     print(doc, end="")
-    return 0 if not derr and not eerr else 2
+    return 0 if not derr else 2
 
 
 def cmd_diff(agent: object, args: list[str]) -> int:
@@ -288,7 +311,8 @@ def cmd_score(agent: object, args: list[str]) -> int:
         return 1
     try:
         b = _load(agent, rest[0])
-        b.fab = fab
+        if fab is not None:
+            b.fab = fab
         b.place()
         b.route_board()
     except (OSError, ValueError, KeyError) as e:
@@ -306,7 +330,9 @@ def cmd_score(agent: object, args: list[str]) -> int:
     ext = cast(dict[str, object], s["extent"])
     _out().print(f"extent: {ext['w']}x{ext['h']}mm "
                  f"({float(cast(float, ext['fill'])) * 100:.0f}% of "
-                 f"{b.width:g}x{b.height:g} board)")
+                 f"{b.width:g}x{b.height:g} board, shrink → "
+                 f"{cast(list[float], ext['shrink'])[0]:g}x"
+                 f"{cast(list[float], ext['shrink'])[1]:g})")
     return 0
 
 

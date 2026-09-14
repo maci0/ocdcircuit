@@ -660,6 +660,7 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
     _sm = open(os.path.join(_td, "STATUS.md")).read()
     assert "tidy (12/15" in _sm, _sm[:200]
+    assert "shrink →" in _sm, _sm[-300:]
     # STATUS.md reports pour planes (mitox GND on 0,3)
     shutil.copytree(os.path.join(EX, "mitox"), os.path.join(_td, "mitox"))
     assert _ocd.cmd_status(_ocd._boot(), [os.path.join(_td, "mitox", "mitox.ocd")]) == 0
@@ -752,7 +753,7 @@ if shutil.which("kicad-cli") is not None:
 
 # textured 3D: glTF materials + shared mesh builder
 import json as _jj
-_g = _jj.loads(bo.render("gltf"))
+_g = _jj.loads(cast(str, bo.render("gltf")))
 assert {m["name"] for m in _g["materials"]} >= {"mask", "copper", "chip"}
 assert len(_g["meshes"]) == len(_g["materials"])
 for _m in _g["meshes"]:
@@ -864,8 +865,8 @@ assert agent.parse_constraint("sim clk CLK 4") == {
     "t": "sim", "kind": "clk", "net": "CLK", "period": 4.0, "duty": 0.5}
 assert agent.dumps(agent.loads(agent.dumps(_simg2))) == agent.dumps(_simg2)
 # ngspice plugin: same shape as mna + analog mna cannot do (skip if no binary)
-import shutil as _sh
-if _sh.which("ngspice") is not None:
+import shutil as _sh3
+if _sh3.which("ngspice") is not None:
     _ng0 = _simb2.simulate("ngspice", what="tran")
     _ngw = cast(list[float], cast(dict[str, object], _ng0["waves"])["VO"])
     assert abs(_ngw[-1] - 5.0) < 0.05, _ngw[-5:]
