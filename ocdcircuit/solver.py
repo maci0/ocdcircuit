@@ -67,6 +67,31 @@ def wirelength(board: Board) -> float:
     return tot
 
 
+def _keepouts(board: Board) -> list[dict[str, object]]:
+    """Live board-frame keepout zones: constraints + footprint keepouts
+    (antenna zones ride their part). One funnel for cost/diffusion."""
+    from .drc import fp_keepouts, zone_at
+    zones = [zone_at(board, c) for c in board.constraints
+             if isinstance(c, dict) and c.get("t") == "keepout"]
+    for ref in board.parts:
+        zones.extend(fp_keepouts(board, ref))
+    return zones
+
+
+def _keepout_cost(board: Board) -> float:
+    """Part center in a keepout (padded by part half-size) × 1e5."""
+    from .drc import in_zone
+    c = 0.0
+    zones = _keepouts(board)
+    if not zones:
+        return 0.0
+    for p in board.parts.values():
+        pw, ph = p.wh()
+        if any(in_zone(z, p.x, p.y, (pw / 2, ph / 2)) for z in zones):
+            c += 1e5
+    return c
+
+
 def cost(board: Board) -> float:
     parts = list(board.parts.values())
     c = wirelength(board)
@@ -90,7 +115,7 @@ def cost(board: Board) -> float:
         if na in board.parts and nb in board.parts:
             qa, qb = board.parts[na], board.parts[nb]
             c += wgt * (abs(qa.x - qb.x) + abs(qa.y - qb.y))
-    c += _match_cost(board) + _diff_cost(board)
+    c += _match_cost(board) + _diff_cost(board) + _keepout_cost(board)
     return c
 
 
@@ -238,6 +263,9 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
             # edge push (skipped for edge-mount parts: they live off-board)
             is_edge = bool(lib.get(p.fp, {}).get("edge"))
             pw, ph = p.wh()
+            # keepout escape lives in cost()'s 1e5 cliff (seed selection),
+            # not here: a dynamics push fights packing on dense boards
+            # (measured +4..6 overlaps on breath_ketone) and loses.
             if not is_edge:
                 Fx += max(0, (m + pw / 2 + 1 - p.x)) * 2 - max(0, (p.x - (board.width - m - pw / 2 - 1))) * 2
                 Fy += max(0, (m + ph / 2 + 1 - p.y)) * 2 - max(0, (p.y - (board.height - m - ph / 2 - 1))) * 2
@@ -375,6 +403,9 @@ def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
         hiy = pos[:, 1] - (board.height - m - wh[:, 1] / 2 - 1)
         F[:, 0] += np.maximum(0, lox) * 2 - np.maximum(0, hix) * 2
         F[:, 1] += np.maximum(0, loy) * 2 - np.maximum(0, hiy) * 2
+        # no keepout force here: cost()'s 1e5 cliff steers seed selection;
+        # a dynamics push fights packing on dense boards (measured +4..6
+        # overlaps on breath_ketone) and loses. See scalar path comment.
         F[is_edge] = 0.0
         # noise (same stream shape as scalar path: 2 gausses per part/iter)
         for i in range(n):

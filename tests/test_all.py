@@ -378,6 +378,17 @@ _fdz.place(seeds=1, iters=30)
 _fdz.route_board("maze")
 assert _fdz.check()["errors"] == [], _fdz.check()["errors"]
 assert _fdz.check()["warnings"] == [], _fdz.check()["warnings"]
+# placer honors keepouts: cost cliff steers seed selection (no dynamics
+# push — that fights packing on dense boards; measured +4..6 overlaps)
+from ocdcircuit import solver as _sv
+from ocdcircuit.drc import in_zone as _inzone
+_kp = agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart C1 C0805 100n\n"
+                  "net N :: R1.1 <--> C1.1\nkeepout 20 15 d10\n", base=EX)
+_kp.place(seeds=4, iters=200)
+_zs = _sv._keepouts(_kp)
+assert not [r for r, p in _kp.parts.items()
+            if any(_inzone(z, p.x, p.y, (p.wh()[0] / 2, p.wh()[1] / 2)) for z in _zs)]
+assert _sv._keepout_cost(_kp) == 0.0
 # cutout blocks maze routing; hole lands in the Excellon drill file
 _ch = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "fix R1 at 5 5\nfix C1 at 35 25\n"
