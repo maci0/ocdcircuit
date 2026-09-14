@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Optional
 import json
 import math
+import subprocess
 from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
 from .types import Constraint, PinLike, Undo, XY
@@ -189,16 +190,18 @@ class Board(Component):
     def _run(self, kind: str, key: str | None, **k: object) -> object:
         """Dispatch with failure memory: a crashing plugin is marked failed
         and the previous entry keeps serving (harness-loader style).
-        ValueError/KeyError/OSError/AssertionError (deterministic input
-        or environment errors — bad constraint, unknown ref, typo'd
-        config, missing file, wrong kwarg type) propagate unfenced:
-        fixing the input and retrying must work without explicit re-arm."""
+        ValueError/KeyError/OSError/AssertionError/TimeoutExpired
+        (deterministic input, environment, or transient errors — bad
+        constraint, unknown ref, typo'd config, missing file, wrong kwarg
+        type, hung subprocess) propagate unfenced: fixing the input and
+        retrying must work without explicit re-arm."""
         reg = self.plugins()
         plug = reg.get(kind, key)
         assert isinstance(plug, Plugin)
         try:
             return plug.run(self, **k)
-        except (ValueError, KeyError, OSError, AssertionError):
+        except (ValueError, KeyError, OSError, AssertionError,
+                subprocess.TimeoutExpired):
             raise
         except Exception as e:
             reg.fail(plug.kind, plug.key, f"{type(e).__name__}: {e}")

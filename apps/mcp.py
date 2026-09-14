@@ -14,6 +14,7 @@ Every mutation flows through Context, so undo reverts the last effect.
 from __future__ import annotations
 import json
 import os
+import subprocess
 import sys
 from typing import cast
 
@@ -419,7 +420,8 @@ def handle(msg: dict[str, object]) -> dict[str, object] | None:
         assert isinstance(fn, tuple) and callable(fn[0])
         try:
             out = fn[0](args)
-        except (ValueError, KeyError, AssertionError, OSError) as e:
+        except (ValueError, KeyError, AssertionError, OSError,
+                subprocess.TimeoutExpired) as e:
             return {"jsonrpc": "2.0", "id": mid,
                     "error": {"code": -32000, "message": str(e)}}
         return {"jsonrpc": "2.0", "id": mid,

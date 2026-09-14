@@ -929,11 +929,11 @@ class KicadRenderer(Plugin[bytes]):
         try:
             d = json.load(open(cfg))
         except (OSError, ValueError):
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=300)
             return
         presets = d.get("layer_presets", [])
         if not presets:
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=300)
             return
         saved = json.dumps(presets[0].get("colors", []))
         try:
@@ -942,7 +942,7 @@ class KicadRenderer(Plugin[bytes]):
                     r, g, b = mask
                     c["color"] = f"rgba({r}, {g}, {b}, 0.831)"
             json.dump(d, open(cfg, "w"), indent=2)
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=300)
         finally:
             d["layer_presets"][0]["colors"] = json.loads(saved)
             json.dump(d, open(cfg, "w"), indent=2)
@@ -1066,7 +1066,8 @@ class AllRenderer(Plugin[list[str]]):
                 continue
             try:
                 out = board.render(key)
-            except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as e:
+            except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired) as e:
                 print(f"ocd: render {key} skipped: {e}")
                 continue
             plug = board.plugins().get("renderer", key)

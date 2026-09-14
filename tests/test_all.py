@@ -841,6 +841,20 @@ assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active":
 with tempfile.TemporaryDirectory() as _md:
     assert len(cast(list[object], _call("export", {"key": "jlc", "outdir": _md})["files"])) >= 10
 assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
+# hung subprocesses time out clean (in-process: mock the run call —
+# the MCP server is a separate process, mocks don't cross it)
+import subprocess as _sp2
+from unittest import mock as _mock
+_tbto = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
+with _mock.patch("subprocess.run", side_effect=_sp2.TimeoutExpired("kicad-cli", 300)):
+    try:
+        _tbto.render("kicad")
+        raise AssertionError("should have raised")
+    except _sp2.TimeoutExpired:
+        pass
+    # render_all skips the timed-out renderer, keeps the rest
+    _rl = _tbto.render_all(tempfile.mkdtemp(), keys=["svg", "kicad"])
+    assert any(f.endswith(".svg") for f in _rl) and not any("kicad" in f for f in _rl)
 assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
 assert _call("undo", {})["undone"] == 1  # patch reverted, board intact

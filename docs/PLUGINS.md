@@ -4,7 +4,7 @@ One pattern for all behavior: subclass `Plugin[Out]`, set `kind` + `key`,
 implement `run(board, **k)`, mount it. `Board` dispatches (`b.place()`,
 `b.check()`, `b.export("easyeda")`…); a crashing plugin is fenced and the
 previous entry keeps serving (`Registry.failed`, re-arm via `use()`).
-Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`)
+Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`/`TimeoutExpired`)
 propagate unfenced — fix the input and retry, no re-arm needed.
 
 ```python
