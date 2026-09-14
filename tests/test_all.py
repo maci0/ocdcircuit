@@ -1472,6 +1472,17 @@ assert _sb.diff(_sb) == ""
 _drep = _sb.diff(agent.loads("board t 40x30\npart R1 R0805 10k\n"
                              "net N: R1.2\nnet GND: R1.1\n"))
 assert "- part C1" in _drep
+# diff branches: size, part change, move (>0.05), net add, constraint delta
+from ocdcircuit import diff as _diffmod
+_da = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
+_db = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.1 R1.2\nnet GND: R1.2 C1.2\npour GND on 0\nroute-grid 0.2\n", base=EX)
+_dd = _diffmod.diff(_da, _db)
+assert "+ part C1" in _dd and "+ pour" in _dd and "route-grid" in _dd, _dd
+_dc = agent.loads("board t 44x30 2L\npart R1 R0805 4k7\nnet N: R1.1 R1.2\n"
+                  "fix R1 at 3 5\n", base=EX)
+_dd2 = _diffmod.diff(_da, _dc)
+assert "size: 40x30 2L → 44x30 2L" in _dd2 and "~ part R1" in _dd2, _dd2
 # hierarchical placer: rigid instances, falls back cleanly without them
 assert _bb.place("hierarchical", seeds=1, iters=50) is not None
 _offs: dict[str, tuple[float, float]] = {}
