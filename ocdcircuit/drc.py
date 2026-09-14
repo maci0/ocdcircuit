@@ -110,6 +110,22 @@ def _seg_dist(a: tuple[float, float, float, float],
         t: float = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / denom))
         return float(((px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2) ** 0.5)
 
+    def cross() -> bool:
+        # proper intersection of two NON-DEGENERATE segments (points fall
+        # through to endpoint distances below — two distant vias must not
+        # read as crossing). Endpoint touches count: shared pads route
+        # through the same point only when same-net, checked by callers.
+        if (x1 == x2 and y1 == y2) or (x3 == x4 and y3 == y4):
+            return False
+
+        def side(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+            return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+        s1, s2 = side(x3, y3, x1, y1, x2, y2), side(x4, y4, x1, y1, x2, y2)
+        s3, s4 = side(x1, y1, x3, y3, x4, y4), side(x2, y2, x3, y3, x4, y4)
+        return s1 * s2 <= 0 and s3 * s4 <= 0
+
+    if cross():
+        return 0.0
     return min(d(x1, y1, x3, y3, x4, y4), d(x2, y2, x3, y3, x4, y4),
                d(x3, y3, x1, y1, x2, y2), d(x4, y4, x1, y1, x2, y2))
 

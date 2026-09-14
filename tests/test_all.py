@@ -488,6 +488,15 @@ with tempfile.TemporaryDirectory() as d:
     _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
     assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5
                cast(list[str], _cb.check()["warnings"]))
+    # X-crossings short: caught; distant via-points are not crossings
+    from ocdcircuit.drc import _seg_dist as _sd
+    assert _sd((0, 0, 10, 10), (0, 10, 10, 0)) == 0.0
+    assert _sd((20, 9.5, 20, 9.5), (14.5, 16, 14.5, 16)) > 8.0
+    _xx = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                      "A :: R1.1 R1.2\nB :: C1.1 C1.2\n", base=EX)
+    _xx.place(seeds=1, iters=20)
+    _xx.traces = [_Seg("A", 5, 15, 35, 15, 0, 0.3), _Seg("B", 20, 5, 20, 25, 0, 0.3)]
+    assert any("clearance A-B" in w for w in cast(list[str], _xx.check()["warnings"]))
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
     assert '(net 0 "")' in kc  # KiCad requires the unconnected net declared
