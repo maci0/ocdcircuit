@@ -395,6 +395,11 @@ with tempfile.TemporaryDirectory() as d:
     assert any(f.endswith(".GTL.gbr") for f in files)
     assert any(f.endswith(".kicad_pcb") for f in files)
     assert any(f.endswith(".TXT") for f in files)
+    import re as _re
+    _gtl = open([f for f in files if f.endswith(".GTL.gbr")][0]).read()
+    _codes = _re.findall(r"%ADD(\d+)[A-Z]", _gtl)
+    assert len(_codes) == len(set(_codes)), "dup Gerber D-codes"  # power/signal widths
+    assert "%ADD11C,0.500" in _gtl  # 0.5 power traces keep their aperture
     _gts = open([f for f in files if f.endswith(".GTS.gbr")][0]).read()
     assert _gts.count("D03*") > 0  # mask openings over pads (never empty)
     _gto = open([f for f in files if f.endswith(".GTO.gbr")][0]).read()

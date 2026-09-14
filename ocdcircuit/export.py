@@ -21,10 +21,20 @@ Draw = tuple[float, float, float, float]
 
 
 def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float,
-              negative: str | None = None) -> str:
-    """Positive plot, or negative plane (flood minus `negative` cutouts)."""
+              negative: str | None = None,
+              widths: list[float] | None = None) -> str:
+    """Positive plot, or negative plane (flood minus `negative` cutouts).
+    `widths` parallels `draws`: one aperture per distinct width (D10, D11,
+    ...), so 0.5 power traces don't render at the 0.4 default."""
+    groups: dict[float, int] = {}
+    for w in (widths or []):
+        if w not in groups:
+            groups[w] = 11 + len(groups)  # D10 is the base aperture
     if negative is None:
-        out = ["G04 ocdcircuit*", "%FSLAX46Y46*%", "%MOMM*%", f"%ADD10C,{aperture:.3f}*%"]
+        out = ["G04 ocdcircuit*", "%FSLAX46Y46*%", "%MOMM*%",
+               f"%ADD10C,{aperture:.3f}*%"]
+        for w, code in sorted(groups.items(), key=lambda kv: kv[1]):
+            out.append(f"%ADD{code}C,{w:.3f}*%")
         out.append("D10*")
     else:
         # negative plane: clear-polarity draws subtract from the flood.
@@ -34,7 +44,16 @@ def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float,
                f"G04 plane {negative}*"]
     for x, y in flashes:
         out.append(f"X{x:.4f}Y{y:.4f}D03*")
-    for x1, y1, x2, y2 in draws:
+    # one aperture select per width group (D01 draws with current aperture)
+    order = sorted(range(len(draws)),
+                   key=lambda i: groups[(widths or [])[i]] if widths else 10)
+    cur = -1
+    for i in order:
+        code = groups[(widths or [])[i]] if widths else 10
+        x1, y1, x2, y2 = draws[i]
+        if code != cur:
+            out.append(f"D{code:02d}*")
+            cur = code
         out.append(f"X{x1:.4f}Y{y1:.4f}D02*")
         out.append(f"X{x2:.4f}Y{y2:.4f}D01*")
     out.append("M02*")
@@ -137,10 +156,14 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             from .parts import hole_drill
             if not hole_drill(p.fp, pin, lib):
                 paste.append((x, y))  # SMD only — PTH gets no paste
+    widths: dict[int, list[float]] = {ll: [] for ll in range(board.layers)}
     for t in board.traces:
         draws[t.layer % board.layers].append((t.x1, t.y1, t.x2, t.y2))
+        widths[t.layer % board.layers].append(t.width)
     for ll in draws:
-        draws[ll] = sorted(draws[ll])
+        order = sorted(range(len(draws[ll])), key=lambda i: (draws[ll][i], widths[ll][i]))
+        draws[ll] = [draws[ll][i] for i in order]
+        widths[ll] = [widths[ll][i] for i in order]
         flashes[ll] = sorted(flashes[ll])
     # pours: negative plane (flood minus cutouts) replaces trace draws.
     # Flood insets by fab edge clearance (plane to outline shorts the specs
@@ -163,7 +186,8 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
                                         negative=",".join(
                                             f"{n}@L{ll}" for n, lls in poured_nets.items() if ll in lls)))
         else:
-            open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4))
+            open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4,
+                                        widths=widths.get(ll, [])))
         files.append(fn)
     # paste (top only — single-sided SMT like the mitox board)
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
