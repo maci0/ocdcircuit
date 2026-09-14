@@ -797,6 +797,10 @@ with tempfile.TemporaryDirectory() as d:
     _cpl = open([f for f in _bb.export("jlc", outdir=tempfile.mkdtemp())
                  if f.endswith(".CPL.csv")][0]).read()
     assert "J3," in _cpl and ",180" in _cpl, _cpl
+    # fp lines keep as-written (relative) paths through dumps (like `use`):
+    # absolutized saves would unportablize the file + dirty the tree
+    _rfl = [ln for ln in agent.dumps(_bb).splitlines() if ln.startswith("fp ")]
+    assert _rfl and all(not os.path.isabs(f.split(None, 1)[1]) for f in _rfl), _rfl
     # BOM groups by (value, fp) with LCSC (ne555: 21× R0603 share C21190)
     _nb = agent.loads(open(os.path.join(EX, "ne555", "ne555_discrete.ocd")).read(),
                       base=os.path.join(EX, "ne555"))
