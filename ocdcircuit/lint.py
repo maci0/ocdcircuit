@@ -169,6 +169,12 @@ def lint(board: Board) -> dict[str, object]:
     if mask not in MASK_COLORS:
         # renderers silently fall back to green — flag the typo here instead
         warn(f"unknown mask {board.meta.get('mask')!r} (have {sorted(MASK_COLORS)})")
+    from .gates import GATES
+    for ref, p in board.parts.items():
+        logic = p.attrs.get("logic", "")
+        # the gates simulator silently skips unknown kinds — flag it here
+        if logic and logic.upper() not in GATES:
+            warn(f"unknown logic {logic!r} on {ref} (have {sorted(GATES)})")
     if not board.parts:
         warn("no parts")
     return {"errors": errors, "warnings": warnings}
