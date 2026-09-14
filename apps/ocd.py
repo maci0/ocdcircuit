@@ -401,6 +401,9 @@ def cmd_doctor() -> int:
 
 
 def cmd_plugins(agent: object, args: list[str]) -> int:
+    if args and args[0] in ("-h", "--help"):
+        print("usage: ocd plugins [kind]")
+        return 1
     from ocdcircuit.circuit import Board as _B
     reg = _B("plugins").plugins()
     kinds = list(args) if args else ["placer", "router", "layers", "drc",
@@ -454,6 +457,9 @@ def main(argv: list[str]) -> int:
     if args[0] == "lint":
         return cmd_lint(agent, args[1:])
     if args[0] == "doctor":
+        if args[1:] and args[1] in ("-h", "--help"):
+            print("usage: ocd doctor")
+            return 1
         return cmd_doctor()
     if args[0] == "plugins":
         return cmd_plugins(agent, args[1:])
