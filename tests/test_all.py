@@ -446,7 +446,11 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 23
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 24
+assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+assert _call("apply_patch", {"ops": [{"op": "constrain",
+        "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
+assert _call("undo", {})["undone"] == 1  # patch reverted, board intact
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert _call("lint", {})["errors"] == []
 assert _call("doctor", {})["ok"] is True
@@ -649,6 +653,18 @@ for _m in _g["meshes"]:
     assert set(_at) >= {"POSITION", "NORMAL", "TEXCOORD_0"}, _at
 assert len(_g["images"]) == len(_g["materials"])
 assert all(_t["sampler"] == 0 for _t in _g["textures"])
+assert all(_m["pbrMetallicRoughness"]["baseColorFactor"] == [1, 1, 1, 1]
+           for _m in _g["materials"])  # texture IS the color (no double-dark)
+assert all(_m.get("alphaMode", "OPAQUE") == "OPAQUE" for _m in _g["materials"])
+# multilayer stack: copper planes inside the slab, not floating above
+from ocdcircuit.geom3d import build as _build3d
+_bo4 = agent.loads("board t4 40x30 4L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n", base=EX)
+_bo4.place(seeds=1, iters=30)
+_bo4.route_board("lroute")
+_cu_z = sorted({round(min(a[2], b[2], c[2]), 2)
+                for a, b, c, m in _build3d(_bo4) if m == "copper"})
+assert min(_cu_z) >= -0.05 and max(_cu_z) <= 1.66, _cu_z
 
 # blocks: repeatable units — stamp 3x, join, round-trip exactly
 _bb = agent.loads("board t 60x40\nblock ch\npart U QFN28\npart C C0805 100n\n"

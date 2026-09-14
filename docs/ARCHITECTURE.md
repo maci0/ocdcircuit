@@ -32,7 +32,7 @@ apps/mcp.py ───┘         │                        │                 
   `score/silk/sim/spice/calc/lint/doctor/diff` (analysis), `geom3d/raster/
   view3d` (3D), `parts/footprint/fab` (data).
 - **Apps** (`apps/`): `ocd` (CLI), `studio` (webui, slot-composed page),
-  `mcp` (23-tool agent server). `tools/` holds one-shot porters
+  `mcp` (24-tool agent server). `tools/` holds one-shot porters
   (tscircuit/atopile/mitox); `boards/` one dir per board; `benches/`
   monster6502 stress; `tests/` suite + geometry goldens.
 

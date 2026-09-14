@@ -81,8 +81,8 @@ cockpit, not report; motion is the product; one concept, one hue.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (23 tools:
-  load/solve/patch/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render)
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (24 tools:
+  load/solve/patch/set_state/undo/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render)
   — any MCP client can drive boards, gallery-pick layouts, and probe routability.
   `match`/`diff` constraints cover length + diff pairs.
 

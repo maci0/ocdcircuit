@@ -3,10 +3,13 @@
 Protocol: Content-Length-framed JSON-RPC over stdio (MCP stdio transport).
 Methods: initialize, tools/list, tools/call, ping. Notifications ignored.
 
-Tools: load_board, get_state, apply_patch, parse_constraint, place, route,
-check, export, render, use_plugin, list_plugins, solve.
+Tools: load_board, get_state, apply_patch, set_state, undo,
+parse_constraint, place, candidates, apply_candidate, feasible, route,
+check, score, diff, lint, doctor, export, render, import_footprint,
+calc, simulate, use_plugin, list_plugins, solve.
 State: one board in memory; load_board replaces it (old one undoable? no —
 load is a fresh Board; agents snapshot via get_state if needed).
+Every mutation flows through Context, so undo reverts the last effect.
 """
 from __future__ import annotations
 import json
@@ -58,6 +61,13 @@ def t_patch(a: dict[str, object]) -> dict[str, object]:
         b.ctx.rollback(snap)
         return {"applied": 0, "error": str(e)}
     return {"applied": n}
+
+
+def t_undo(a: dict[str, object]) -> dict[str, object]:
+    b = _board()
+    before = b.ctx.snapshot()
+    b.ctx.undo(_i(a.get("n"), 1))
+    return {"undone": before - b.ctx.snapshot()}
 
 
 def t_state_set(a: dict[str, object]) -> dict[str, object]:
@@ -277,6 +287,7 @@ TOOLS: dict[str, object] = {
     "set_state": (t_state_set, {"parts": "{ref: {fp, value?}}",
                                 "nets": "{net: [REF.PIN]}",
                                 "constraints": "[...] (declarative, idempotent)"}),
+    "undo": (t_undo, {"n": "effects to revert (default 1)"}),
     "parse_constraint": (t_parse, {"text": "NL constraint"}),
     "place": (t_place, {"key": "placer?", "seeds": 4, "iters": 400, "frames?": True}),
     "candidates": (t_candidates, {"n": 4, "key": "placer?", "seed": 0, "seeds": 1, "iters": 400}),
