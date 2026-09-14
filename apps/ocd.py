@@ -44,7 +44,7 @@ class _Printer:
     """Rich Console, or a plain-print shim when rich isn't installed."""
     def __init__(self) -> None:
         try:
-            from rich.console import Console  # type: ignore[import-not-found]
+            from rich.console import Console
             self._c: object = Console()
         except ImportError:
             self._c = None
@@ -78,7 +78,7 @@ def _table(title: str, rows: list[tuple[str, str]]) -> None:
         for k, v in rows:
             c.print(f"{k:<{w}}  {v}")
         return
-    from rich.table import Table  # type: ignore[import-not-found]
+    from rich.table import Table
     t = Table(title=title, show_header=False)
     t.add_column(style="cyan")
     t.add_column()

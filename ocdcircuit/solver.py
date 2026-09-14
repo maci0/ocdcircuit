@@ -25,7 +25,7 @@ def _numpy() -> Any:
     global _np
     if _np is None:
         try:
-            import numpy as _m  # type: ignore[import-not-found]
+            import numpy as _m
             _np = _m
         except ImportError:
             return None

@@ -19,7 +19,7 @@ def doctor(board: Board | None = None) -> dict[str, object]:
 
     add("python", sys.version_info >= (3, 11), sys.version.split()[0])
     try:
-        import numpy  # type: ignore[import-not-found]  # noqa: F401
+        import numpy  # noqa: F401
         add("numpy", True, str(numpy.__version__))
     except ImportError:
         add("numpy", False, "missing (SIMD placer falls back to scalar)")
@@ -27,7 +27,7 @@ def doctor(board: Board | None = None) -> dict[str, object]:
     add("ngspice", ng is not None,
         ng or "missing (simulate:ngspice unavailable, mna still works)")
     try:
-        import rich  # type: ignore[import-not-found]  # noqa: F401
+        import rich  # noqa: F401
         add("rich", True, "pretty CLI on")
     except ImportError:
         add("rich", False, "missing (plain-text CLI fallback)")
