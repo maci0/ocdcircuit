@@ -17,6 +17,9 @@ DRC: clean, 3 keepout warnings (documented placement notes, not blockers).
 | `mitox.CPL.csv` | 43 placements, rotations 0/90/180/270 | ✓ |
 
 Board: 24×56mm, 4L, lead-free, 1oz. Paste + assembly on top side.
+JLC-targeted: `fabsweep` shows R6 violates edge clearance under
+eurocircuits/oshpark (0.5mm) while clean on JLC (0.3mm) — move R6
+inboard if ordering EU/US.
 
 ## Hand-solder (no LCSC — customer-supplied)
 
