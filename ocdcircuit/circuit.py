@@ -435,6 +435,9 @@ class Board(Component):
         self.emit(_add, _drop)
 
     def move_part(self, ref: str, x: float, y: float) -> None:
+        import math
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise ValueError(f"move {ref}: non-finite position ({x}, {y})")
         p = self.parts[ref]
         ox, oy = p.x, p.y
 

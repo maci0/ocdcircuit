@@ -117,7 +117,13 @@ def _s(v: object) -> str:
 
 
 def _opt_float(v: object) -> float | None:
-    return None if v is None else _f(v)
+    if v is None:
+        return None
+    import math
+    out = _f(v)
+    if not math.isfinite(out):
+        raise ValueError(f"non-finite value {v!r}")
+    return out
 
 
 def parse_constraint(text: str) -> Constraint | None:

@@ -64,6 +64,20 @@ try:
 except ValueError:
     pass
 assert "R1" not in _ba.parts and _ba.ctx.snapshot() == _sa0
+# non-finite API positions rejected (nan/inf poison geometry silently)
+_bnan = Board("tn", 40, 30)
+_bnan.add_part("R1", "R0805", "1k")
+_bops: list[dict[str, object]] = [
+    {"op": "move_part", "ref": "R1", "x": "nan", "y": 5},
+    {"op": "add_part", "ref": "R2", "fp": "R0805", "x": "inf"}]
+for _bop in _bops:
+    try:
+        agent.apply_patch(_bnan, [_bop])
+        raise AssertionError(f"should have raised: {_bop}")
+    except ValueError:
+        pass
+assert (_bnan.parts["R1"].x, _bnan.parts["R1"].y) == (20.0, 15.0)
+assert "R2" not in _bnan.parts
 _bd = Board("td", 40, 30)
 _bd.add_part("R9", "R0805", "1k")
 _s0 = _bd.ctx.snapshot()
