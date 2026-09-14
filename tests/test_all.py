@@ -976,6 +976,13 @@ except ValueError as e:
 assert _bb2.fab == "jlc"  # failed set doesn't stick
 _bb2.fab = "oshpark"
 assert _bb2.fab == "oshpark"
+# Board.name validates too (export filenames derive from it — no traversal)
+try:
+    _bb2.name = "../evil"
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad board name" in str(e), str(e)
+assert _bb2.name == "t"  # failed set doesn't stick (name untouched)
 # check-all falls back to board.toml drc picks when keys omitted
 with tempfile.TemporaryDirectory() as _md3:
     shutil.copy(os.path.join(EX, "psu.ocd"), os.path.join(_md3, "psu.ocd"))
@@ -1715,6 +1722,7 @@ for _bbad, _bfrag in [
     ("board t 0x10 2L\n", "must be positive"),
     ("board t 40x30 0L\n", "≥1 layer"),
     ("board t 40x30 2L\npart R1 R0805 10k x=nan y=5\nnet N: R1.1 R1.2\n", "bad x=/y="),
+    ("board ../evil 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", "bad board name"),
 ]:
     try:
         agent.loads(_bbad)

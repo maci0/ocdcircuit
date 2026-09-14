@@ -94,7 +94,7 @@ class Board(Component):
             raise ValueError(f"board size must be positive (got {width}x{height})")
         if layers < 1:
             raise ValueError(f"board needs ≥1 layer (got {layers})")
-        super().__init__(name)
+        super().__init__(name)  # name setter validates (no path separators)
         self.ctx = Context()
         self.width, self.height, self.layers = width, height, layers
         self._fab: str = "jlc"
@@ -157,6 +157,18 @@ class Board(Component):
         if key not in PROFILES:
             raise ValueError(f"unknown fab {key!r} (have {sorted(PROFILES)})")
         self._fab = key
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, name: str) -> None:
+        # export filenames derive from it: no path separators, ever.
+        # (ValueError = fixable input, unfenced — retry works.)
+        if not name or "/" in name or "\\" in name or ".." in name or "\x00" in name:
+            raise ValueError(f"bad board name {name!r} (export filenames derive from it)")
+        self._name = name
 
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
         """Board domain edit: flat-stack undo + journal into the board
