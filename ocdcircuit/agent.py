@@ -756,10 +756,13 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         ref, dot, pin = tok.partition(".")
         if not dot or not ref or not pin:
             raise err(f"{ctx}bad pin {tok!r} (want REF.PIN)")
-        try:
-            b.connect(name, ref, pin)
-        except ValueError as e:
-            raise err(f"{ctx}{e}")
+        # order-free: parts may be declared later in the file; _validate
+        # checks existence at the end (unlike Board.connect, which is
+        # immediate and validates now)
+        net = b.net(name)
+        entry = (ref, pin)
+        if entry not in net.pins:
+            net.pins.append(entry)
 
 
 def _instance(parent: Board, block: str, prefix: str, join: str | None,

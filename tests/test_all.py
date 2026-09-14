@@ -1179,6 +1179,9 @@ for _bargs in [("N", "GHOST", "9"), ("N", "R1", "99")]:
     except ValueError:
         pass
 assert _bcn.nets["N"].pins == [("R1", "1"), ("R1", "2")]
+# file order is free: nets may precede parts (unlike immediate connect)
+_bfwd = agent.loads("board t 40x30 2L\nnet N: R1.1 R1.2\npart R1 R0805 10k\n", base=EX)
+assert _bfwd.nets["N"].pins == [("R1", "1"), ("R1", "2")]
 # Part rotation: rot parses + clamps, wh swaps on 90/270, rot_xy rotates offsets
 from ocdcircuit.circuit import Part as _Part
 _rp = _Part("R1", "R0805", "", 10, 10, 2.0, 1.0, attrs={"rot": "90"})
