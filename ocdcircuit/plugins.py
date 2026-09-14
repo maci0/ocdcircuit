@@ -1,6 +1,7 @@
 """Everything is a plugin: placers, routers, layers, drc, exporters,
 parts libraries, renderers (svg + 3D stl). Stdlib only, one file."""
 from __future__ import annotations
+import sys
 from typing import TYPE_CHECKING, cast
 
 
@@ -1068,7 +1069,7 @@ class AllRenderer(Plugin[list[str]]):
                 out = board.render(key)
             except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError,
                     subprocess.TimeoutExpired) as e:
-                print(f"ocd: render {key} skipped: {e}")
+                print(f"ocd: render {key} skipped: {e}", file=sys.stderr)
                 continue
             plug = board.plugins().get("renderer", key)
             ext = str(getattr(plug, "ext", f".{key}"))
