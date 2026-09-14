@@ -974,7 +974,7 @@ class PcbdrawRenderer(Plugin[str]):
             out = f"{tmp}/{board.name}.svg"
             subprocess.run([exe, "plot", "-s", style, "--side", side,
                             "--silent", src, out],
-                           capture_output=True, check=True)
+                           capture_output=True, check=True, timeout=300)
             return open(out).read()
 
 
