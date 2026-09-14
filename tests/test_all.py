@@ -554,6 +554,16 @@ for pl in ["diffusion", "compact", "thermal"]:
         bm.place(pl, seeds=2, iters=100)
         bm.route_board(rt, **({"pop": 2, "gen": 1} if rt == "wiremask" else {}))
         assert not cast(list[str], bm.check()["errors"]), (pl, rt)
+# loads-only farm: every committed board parses (grammar regressions
+# surface here, not in the slow full-solve farm)
+import glob as _glob
+_farm = sorted(_glob.glob(os.path.join(EX, "*.ocd"))
+               + _glob.glob(os.path.join(EX, "*", "*.ocd")))
+_farm = [f for f in _farm if "/out/" not in f]
+assert len(_farm) >= 8, _farm
+for _ff2 in _farm:
+    _bf2 = agent.loads(open(_ff2).read(), base=os.path.dirname(_ff2))
+    assert _bf2.parts, _ff2
 # route-grid grammar: parses, dumps round-trips, maze honors it
 _bg = agent.loads("board t 20x10\npart R1 R0805 1k\nN :: R1.1 R1.2\nroute-grid 0.2\n", base=EX)
 assert _bg.constraints[-1] == {"t": "route-grid", "grid": 0.2}
