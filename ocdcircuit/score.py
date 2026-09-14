@@ -379,4 +379,20 @@ def score(board: Board) -> dict[str, object]:
     subs["compact"] = max(0, min(100, subs["compact"]))
     total = round(sum(subs.values()) / len(subs), 1)
     grade = "A" if total >= 90 else "B" if total >= 75 else "C" if total >= 60 else "D" if total >= 40 else "F"
-    return {"total": total, "grade": grade, "parts": subs, "tidy": t}
+    return {"total": total, "grade": grade, "parts": subs, "tidy": t,
+            "extent": _extent(board)}
+
+
+def _extent(board: Board) -> dict[str, object]:
+    """Placed bounding box (courtyard extents) vs board size: bbox fill
+    fraction + shrink suggestion. Empty board → None-ish zeros."""
+    parts = list(board.parts.values())
+    if not parts:
+        return {"w": 0.0, "h": 0.0, "fill": 0.0}
+    x0 = min(p.x - p.wh()[0] / 2 for p in parts)
+    x1 = max(p.x + p.wh()[0] / 2 for p in parts)
+    y0 = min(p.y - p.wh()[1] / 2 for p in parts)
+    y1 = max(p.y + p.wh()[1] / 2 for p in parts)
+    w, h = round(x1 - x0, 2), round(y1 - y0, 2)
+    fill = round(w * h / max(1e-9, board.width * board.height), 3)
+    return {"w": w, "h": h, "fill": fill}

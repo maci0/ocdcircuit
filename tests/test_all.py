@@ -335,6 +335,8 @@ assert _call("import_footprint", {"key": "fp",
     "path": os.path.join(EX, "usb_c_edge.fp")})["name"] == "USB_C_EDGE_GCT"
 assert "coverage" in _call("score", {})
 assert cast(float, _call("score", {"tidy": False})["total"]) >= 0
+_ext = cast(dict[str, object], _call("score", {"tidy": False})["extent"])
+assert 0 < cast(float, _ext["fill"]) <= 1.0, _ext
 assert _call("diff", {"text": open(os.path.join(EX, "blinky_555.ocd")).read(),
                        "base": EX}) == {"diff": ""}
 solved = _call("solve", {"placer": "compact", "router": "maze"})

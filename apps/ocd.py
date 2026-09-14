@@ -212,6 +212,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
         return 1
     s = b.score()
     t = b.score(tidy=True)
+    _ext = cast(dict[str, object], s["extent"])
     drc = b.check()
     erc = b.check("erc")
     simline = ""
@@ -241,7 +242,10 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + ("".join(f"- ERC: {e}\n" for e in eerr[:10]))
            + (f"{simline}\n" if simline else "")
            + f"parts: {len(b.parts)}, nets: {len(b.nets)}, "
-           + f"traces: {len(b.traces)}, layers: {b.layers}\n")
+           + f"traces: {len(b.traces)}, layers: {b.layers}\n"
+           + f"extent: {_ext['w']}x{_ext['h']}mm "
+           + f"({float(cast(float, _ext['fill'])) * 100:.0f}% of "
+           + f"{b.width:g}x{b.height:g} board)\n")
     proj = os.path.dirname(os.path.abspath(src))
     with open(os.path.join(proj, "STATUS.md"), "w") as f:
         f.write(doc)
