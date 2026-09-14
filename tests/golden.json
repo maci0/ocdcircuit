@@ -29,10 +29,25 @@
   "parts": 4,
   "segs": 133
  },
+ "breath_ketone.ocd/diffusion/maze/2L": {
+  "hash": "2ebccda24b83cf89",
+  "parts": 31,
+  "segs": 670
+ },
+ "e2e_driver4.ocd/diffusion/maze/2L": {
+  "hash": "95f40e913206e45c",
+  "parts": 18,
+  "segs": 88
+ },
  "mitox.ocd/compact/maze/2L": {
   "hash": "a23a371473af9779",
   "parts": 43,
   "segs": 644
+ },
+ "ne555_discrete.ocd/diffusion/maze/2L": {
+  "hash": "1e77ff537b707bbc",
+  "parts": 40,
+  "segs": 577
  },
  "pico_tmc2209.ocd/hierarchical/maze/2L": {
   "hash": "d387d2183c26f74c",
