@@ -250,6 +250,10 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 pw, ph = p.wh()
                 if abs(p.x - cx) < hw + pw / 2 and abs(p.y - cy) < hh + ph / 2:
                     errors.append(f"bend-part {p.ref}")
+            if c.get("dynamic", True):
+                # pours flood the board: any plane crosses the bend and cracks
+                for n in sorted(pour_layers(board)):
+                    errors.append(f"bend-pour {n} (plane crosses dynamic bend)")
             # radius vs finished thickness: 6x static, 10x dynamic (JLC FPC)
             th = float(cast(tuple[float, float], P["thickness"])[1])
             need = (10 if c.get("dynamic", True) else 6) * th

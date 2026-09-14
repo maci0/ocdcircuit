@@ -363,6 +363,11 @@ assert not [t for t in _fb.traces if getattr(t, "via", False) and 27 <= t.x1 <= 
 _tb = agent.loads("board t 40x30\npart R1 R0805 1k\nbend 20 15 10x10 r1\nfix R1 at 20 15\n", base=EX)
 errs = cast(list[str], _tb.check("jlc-flex")["errors"])
 assert any(e.startswith("bend-part") for e in errs) and any(e.startswith("bend-radius") for e in errs)
+# planes crack in dynamic bends: pour + dynamic bend errors (static is fine)
+_bp = agent.loads("board t 60x20 2L\npart J1 PINHD4\npart U1 SOIC8 X\n"
+                  "net A: J1.1 U1.1\nnet B: J1.2 U1.2\npour A on 0\n"
+                  "bend 30 10 6x20 r5\nfix J1 at 8 10\nfix U1 at 50 10\n", base=EX)
+assert any(e.startswith("bend-pour A") for e in cast(list[str], _bp.check()["errors"]))
 # fiducials + deadzones: round/square, explicit/near-part, maze + DRC + dumps
 _fdz = agent.loads("board t 40x30\npart F1 FIDUCIAL\npart R1 R0805 1k\npart C1 C0805 100n\n"
                    "fix F1 at 3 3\nfix R1 at 30 20\nfix C1 at 8 25\n"
