@@ -96,6 +96,7 @@ class Board(Component):
         self.width, self.height, self.layers = width, height, layers
         self.fab: str = "jlc"
         self.meta: dict[str, str] = {}  # `meta k v` lines: title/rev/desc/...
+        self.proj: dict[str, object] = {}  # board.toml: placer/router/drc picks (never dumped)
         self.parts: dict[str, Part] = {}
         self.nets: dict[str, Net] = {}
         self.traces: list[Seg] = []
@@ -158,8 +159,15 @@ class Board(Component):
         assert isinstance(out, int)
         return out
 
-    def check(self, key: str | None = None) -> dict[str, object]:
-        out = self._run("drc", key)
+    def check(self, key: str | None = None, **k: object) -> dict[str, object]:
+        out = self._run("drc", key, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def check_all(self, keys: list[str] | None = None) -> dict[str, object]:
+        """Merged DRC across profiles (fab + erc + flex); `keys` subsets.
+        Same {errors, warnings} shape as check()."""
+        out = self._run("drc", "all", keys=keys)
         assert isinstance(out, dict)
         return out
 
@@ -253,6 +261,13 @@ class Board(Component):
         """What changed vs another board (knoll diff style)."""
         out = self._run("diff", key, other=other, **k)
         assert isinstance(out, str)
+        return out
+
+    def configure(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Project config: board.toml defaults (fab/placer/router/drc…).
+        A plugin like everything else; applied picks land in board.proj."""
+        out = self._run("config", key, **k)
+        assert isinstance(out, dict)
         return out
 
     # -- parts library via plugin, stdlib fallback --

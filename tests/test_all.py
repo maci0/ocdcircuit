@@ -403,14 +403,16 @@ with tempfile.TemporaryDirectory() as d:
     assert "%ADD11C,0.500" in _gtl  # 0.5 power traces keep their aperture
     _gtp = open([f for f in files if f.endswith(".GTP.gbr")][0]).read()
     assert _gtp.count("D03*") > 0  # paste covers SMD pads (never starved)
-    assert any(float(_re.search(r"%ADD1\dC,([\d.]+)", l).group(1)) > 0.4
-               for l in _gtp.splitlines() if l.startswith("%ADD11"))  # sized, not blind
+    _pm = [_re.search(r"%ADD1\dC,([\d.]+)", l) for l in _gtp.splitlines()
+           if l.startswith("%ADD11")]
+    assert any(m and float(m.group(1)) > 0.4 for m in _pm)  # sized, not blind
     _gts = open([f for f in files if f.endswith(".GTS.gbr")][0]).read()
     assert _gts.count("D03*") > 0  # mask openings over pads (never empty)
     _mc = _re.findall(r"%ADD(\d+)[A-Z]", _gts)
     assert len(_mc) == len(set(_mc)), "dup mask D-codes"
-    assert any(float(_re.search(r"%ADD\d+C,([\d.]+)", l).group(1)) > 0.5
-               for l in _gts.splitlines() if l.startswith("%ADD11"))  # sized to pads
+    _mm = [_re.search(r"%ADD\d+C,([\d.]+)", l) for l in _gts.splitlines()
+           if l.startswith("%ADD11")]
+    assert any(m and float(m.group(1)) > 0.5 for m in _mm)  # sized to pads
     _gto = open([f for f in files if f.endswith(".GTO.gbr")][0]).read()
     assert _gto.count("D01*") > 0  # silk outlines (never empty)
     import zipfile as _zf
