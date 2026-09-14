@@ -25,6 +25,7 @@ USAGE = """usage:
   ocd score <circuit.ocd>        OCD neatness 0-100 (read-only)
   ocd lint <circuit.ocd>         static source lint, no place/route
   ocd doctor                     tooling self-check (no file needed)
+  ocd plugins [kind]            list registry keys (placer/router/…)
   ocd <circuit.ocd>              shorthand for run"""
 
 
@@ -326,6 +327,21 @@ def cmd_doctor() -> int:
     return 0
 
 
+def cmd_plugins(agent: object, args: list[str]) -> int:
+    from ocdcircuit.circuit import Board as _B
+    reg = _B("plugins").plugins()
+    kinds = [args[0]] if args else ["placer", "router", "layers", "drc",
+                                    "exporter", "renderer", "silk", "calc",
+                                    "simulate", "importer"]
+    for kind in kinds:
+        keys = reg.list(kind)
+        if not keys:
+            print(f"unknown plugin kind {kind!r}")
+            return 1
+        _table(kind, [(k, "") for k in keys])
+    return 0
+
+
 def _tidy_md(v: object) -> str:
     if v is None:
         return "n/a"
@@ -366,6 +382,8 @@ def main(argv: list[str]) -> int:
         return cmd_lint(agent, args[1:])
     if args[0] == "doctor":
         return cmd_doctor()
+    if args[0] == "plugins":
+        return cmd_plugins(agent, args[1:])
     if args[0].startswith("-"):
         print(USAGE)
         return 1
