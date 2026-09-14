@@ -764,6 +764,13 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_diff(_ocd._boot(), [_sp, os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["placer"]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["bogus"]) == 1
+    # ocd run --sim dc: passing expects exit 0, failed expects exit 2 (CI ships)
+    _simbase = ("board t 40x30 2L\npart J1 PINHD2 5V\npart R1 R0805 10k\npart R2 R0805 10k\n"
+                "net VCC: J1.1 R1.1\nnet OUT: R1.2 R2.1\nnet GND: J1.2 R2.2\nsim vcc VCC 5\n")
+    open(os.path.join(_td, "simpass.ocd"), "w").write(_simbase + "sim expect OUT == 2.5 tol 0.2\n")
+    open(os.path.join(_td, "simfail.ocd"), "w").write(_simbase + "sim expect OUT == 4.9 tol 0.1\n")
+    assert _ocd.cmd_run(_ocd._boot(), ["--sim", "dc", os.path.join(_td, "simpass.ocd")]) == 0
+    assert _ocd.cmd_run(_ocd._boot(), ["--sim", "dc", os.path.join(_td, "simfail.ocd")]) == 2
 
 # custom .fp footprints + edge-mount: exotic parts without Python
 from ocdcircuit import footprint as _fp

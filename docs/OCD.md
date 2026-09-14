@@ -166,3 +166,5 @@ persist in dumps; resolution is by file order per target.
 Parse/validate problems → `ocd: line <n>: <what>: '<line>'`, exit 1.
 A file that parses but violates design rules builds, then exits 2 with
 `errors=[...]` (see `docs/ADR-0003-drc-export.md`).
+With `--sim dc`, failed `sim expect` assertions also exit 2 (`sim: …`
+rows join the error list — CI must not ship a board that simulates wrong).

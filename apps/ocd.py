@@ -195,8 +195,11 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
             _table("sim dc", rows)
             if simwhat == "dc":
                 from ocdcircuit import sim as _sim
-                for p in _sim.expect(b):
+                _simfails = _sim.expect(b)
+                for p in _simfails:
                     _out().print(f"  [red]⚡✗ {p}[/red]")
+                if _simfails:
+                    errors = [*errors, *["sim: " + p for p in _simfails]]
         else:
             waves = cast(dict[str, list[float]], res["waves"])
             rows = [(k, f"final={v[-1]:.3f}V min={min(v):.3f} max={max(v):.3f} ({len(v)} pts)")
