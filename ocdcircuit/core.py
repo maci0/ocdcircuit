@@ -1,24 +1,127 @@
-"""Unified context: revertible effects + reactive coeffects (paper §3)."""
+"""Unified context: revertible effects + reactive coeffects (paper §3, §5.1).
+
+Theory → runtime (paper Table 2, Cordis core):
+  effectΓ/ℑΓ → Context.effect (Alg 1)      Σ/Σiso/Σinter → _store/_isolate/_intercept
+  get/set    → get/set (Alg 2)             isolate/intercept → isolate/intercept
+  notify     → notify (Alg 3)              fiber ⟨d,p,e,π,σ,τ,θ⟩ → Fiber (Alg 4-5)
+  ctx[key]   → proxy resolve (Alg 6)       loader entries → Loader.declare
+  HMR        → classify/stale_entries (Alg 8-9)
+
+Legacy emit/provide/require/on_change stay as thin wrappers so boards,
+plugins and the fuzz suite keep working unchanged.
+Paper: https://arxiv.org/abs/2608.25512
+"""
 from __future__ import annotations
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar
+from collections.abc import Callable, Iterator
+from itertools import count
+from typing import TYPE_CHECKING, Generic, Optional, TypeVar, cast
 from .types import Constraint  # noqa: F401  (re-export for convenience)
+from .types import Undo
 
 if TYPE_CHECKING:
     from .circuit import Board
-    from .types import Undo
 
 Out = TypeVar("Out")
+Guard = Callable[[], bool]
+
+
+class InactiveAccess(RuntimeError):
+    """Proxy read of a declared-but-uncommitted key (paper Alg 6)."""
+
+
+class UndeclaredAccess(RuntimeError):
+    """Proxy read of a key no fiber in the chain declares (paper Alg 6)."""
+
+
+def execute(callback: Callable[[], object], guard: Guard) -> Undo:
+    """Drive an effect iterator (paper Alg 1): run the callback, fold each
+    yielded inverse into one LIFO composite. A plain callback returning its
+    inverse is the degenerate one-step iterator."""
+    res = callback()
+    inverses: list[Undo] = []
+    if isinstance(res, Iterator):
+        while guard():
+            try:
+                v = next(res)
+            except StopIteration:
+                break
+            if callable(v):
+                inverses.append(cast(Undo, v))
+    elif callable(res):
+        inverses.append(cast(Undo, res))
+
+    def _recover() -> None:
+        for inv in reversed(inverses):
+            inv()
+
+    return _recover
 
 
 class Context:
-    """Every mutation goes through emit(do, undo). Undo stack = temporal
-    composability. Services dict = spatial composability (declare/resolve)."""
+    """Every mutation goes through effect/emit. Undo stack = temporal
+    composability. Store + realm tables = spatial composability."""
 
-    def __init__(self) -> None:
+    def __init__(self, parent: Context | None = None) -> None:
         self._undos: list[Undo] = []
         self.services: dict[str, object] = {}
         self._listeners: dict[str, list[Callable[[object], None]]] = {}
+        # paper §5.1: accumulated inverse, child tracking, coeffect slots
+        self._dispose: Undo = lambda: None
+        self._parent = parent
+        self._children: list[Context] = []
+        self._fiber: Fiber | None = None
+        self._fibers: list[Fiber] = []
+        self._store: dict[object, object] = {}
+        self._isolate: dict[str, object] = {}
+        self._intercept: dict[str, object] = {}
+        self._providers: dict[str, tuple[Fiber | None, object, object]] = {}
+
+    def child(self) -> Context:
+        """Derive a child context (fiber ctx, isolate scope). Realm tables
+        are inherited by copy; the store resolves up the parent chain."""
+        c = Context(parent=self)
+        c._isolate = dict(self._isolate)
+        c._intercept = dict(self._intercept)
+        self._children.append(c)
+        return c
+
+    def effect(self, callback: Callable[[], object]) -> Undo:
+        """Paper Alg 1 ctx.effect: callback performs the mutation and
+        returns (or yields) its inverse(s). Dispose fires at most once;
+        the inverse is also prepended to the parent accumulator (∂²Γ)."""
+        armed = {"on": True}
+        recover = execute(callback, lambda: armed["on"])
+
+        def dispose() -> None:
+            if not armed["on"]:
+                return
+            armed["on"] = False
+            recover()
+
+        prev = self._dispose
+
+        def _chain() -> None:
+            dispose()
+            prev()
+
+        self._dispose = _chain
+        if self._parent is not None:
+            pprev = self._parent._dispose
+            par = self._parent
+
+            def _pchain() -> None:
+                dispose()
+                pprev()
+
+            par._dispose = _pchain
+        self.emit(lambda: None, dispose)
+        return dispose
+
+    def dispose_all(self) -> None:
+        """Run the accumulated inverse once (parent-cascade teardown)."""
+        d = self._dispose
+        self._dispose = lambda: None
+        d()
 
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
         do()
@@ -35,21 +138,198 @@ class Context:
     def rollback(self, snap: int) -> None:
         self.undo(len(self._undos) - snap)
 
-    # --- coeffects: services ---
+    # --- coeffects: two-layer resolution k→ρ(k)→σ(ρ(k)) (paper §5.1.2) ---
+    def _root(self) -> Context:
+        c = self
+        while c._parent is not None:
+            c = c._parent
+        return c
+
+    def _realm_of(self, key: str) -> object:
+        c: Context | None = self
+        while c is not None:
+            if key in c._isolate:
+                return c._isolate[key]
+            c = c._parent
+        return key
+
+    def _lookup(self, key: str) -> tuple[object, object]:
+        realm = self._realm_of(key)
+        # provider bindings are visible tree-wide while the provider is
+        # ACTIVE (paper §5.1.2: a withdrawal is visible one step early —
+        # UNLOADING already stopped providing, bindings still in place).
+        cur = self._root()._providers.get(key)
+        if cur is not None and cur[1] == realm:
+            f = cur[0]
+            if f is not None and f.state == Fiber.ACTIVE and len(cur) > 2:
+                return (cur[2], realm)
+            if f is None:
+                v = cur[2] if len(cur) > 2 else None
+                if v is not None:
+                    return (v, realm)
+        c: Context | None = self
+        while c is not None:
+            if realm in c._store:
+                return (c._store[realm], realm)
+            if isinstance(realm, str) and realm in c.services:
+                return (c.services[realm], realm)
+            c = c._parent
+        return (None, realm)
+
+    def get(self, key: str) -> object:
+        """Bare store lookup (never fails): k→ρ(k)→σ(ρ(k))."""
+        v, _ = self._lookup(key)
+        return v
+
+    def __getitem__(self, key: str) -> object:
+        """Proxy access (paper Alg 6): resolve against the accessing fiber's
+        committed view; declared-but-uncommitted → InactiveAccess, no
+        declarer up the chain → UndeclaredAccess."""
+        ctx: Context | None = self
+        while ctx is not None:
+            f = ctx._fiber
+            if f is not None:
+                if f.committed is not None and key in f.committed:
+                    return f.committed[key]
+                if key in f.inject:
+                    raise InactiveAccess(f"fiber {f.uid} reads uncommitted {key!r}")
+            ctx = ctx._parent
+        raise UndeclaredAccess(f"no fiber declares {key!r}")
+
+    def set(self, key: str, value: object) -> Undo:
+        """Paper Alg 2 set(k,v): effect-tracked provision + notify."""
+        realm = self._realm_of(key)
+        had = realm in self._store
+        old = self._store.get(realm)
+        had_svc = isinstance(realm, str) and realm in self.services
+        old_svc = self.services.get(realm) if isinstance(realm, str) else None
+
+        def _cb() -> object:
+            self._store[realm] = value
+            if isinstance(realm, str):
+                self.services[realm] = value
+            self._register_provider(key, realm, value)
+
+            def _inv() -> None:
+                if had:
+                    self._store[realm] = old
+                else:
+                    self._store.pop(realm, None)
+                if isinstance(realm, str):
+                    if had_svc:
+                        self.services[realm] = old_svc
+                    else:
+                        self.services.pop(realm, None)
+                self._unregister_provider(key, realm)
+
+            return _inv
+
+        d = self.effect(_cb)
+        self.notify([key])
+        return d
+
+    def isolate(self, key: str, realm: object | None = None) -> Undo:
+        """Override ρ at key (fresh symbol by default, paper §5.1.2)."""
+        r: object = realm if realm is not None else object()
+        had = key in self._isolate
+        old = self._isolate.get(key, key)
+
+        def _cb() -> object:
+            self._isolate[key] = r
+
+            def _inv() -> None:
+                if had:
+                    self._isolate[key] = old
+                else:
+                    self._isolate.pop(key, None)
+
+            return _inv
+
+        return self.effect(_cb)
+
+    def intercept(self, key: str, metadata: dict[str, object]) -> Undo:
+        """Merge metadata into ι (paper §5.1.2); consulted at read time."""
+        old = dict(cast(dict[str, object], self._intercept.get(key, {})))
+
+        def _cb() -> object:
+            merged = dict(cast(dict[str, object], self._intercept.get(key, {})))
+            merged.update(metadata)
+            self._intercept[key] = merged
+
+            def _inv() -> None:
+                if old:
+                    self._intercept[key] = old
+                else:
+                    self._intercept.pop(key, None)
+
+            return _inv
+
+        return self.effect(_cb)
+
+    # --- providers + reactive notification (paper Alg 3) ---
+    def _register_provider(self, key: str, realm: object, value: object = None) -> None:
+        self._root()._providers[key] = (self._fiber, realm, value)
+        if self._fiber is not None:
+            self._fiber.provided.add(key)
+
+    def _unregister_provider(self, key: str, realm: object) -> None:
+        root = self._root()
+        cur = root._providers.get(key)
+        if cur is not None and cur[1] == realm:
+            if cur[0] is None or cur[0] is self._fiber:
+                root._providers.pop(key, None)
+
+    def _resolve_provider(self, key: str) -> tuple[Fiber | None, object, object] | None:
+        cur = self._root()._providers.get(key)
+        if cur is None:
+            return None
+        if cur[1] != self._realm_of(key):
+            return None
+        return cur
+
+    def _all_fibers(self) -> list[Fiber]:
+        out = list(self._fibers)
+        for ch in self._children:
+            out += ch._all_fibers()
+        p = self._parent
+        while p is not None:
+            out += p._fibers
+            p = p._parent
+        return out
+
+    def notify(self, keys: list[str]) -> list[Fiber]:
+        """Paper Alg 3: re-evaluate dependents sharing the realm; legacy
+        listeners still fire (compat). Returns the affected fibers."""
+        affected: list[Fiber] = []
+        for fiber in self._all_fibers():
+            for key in keys:
+                if key in fiber.inject and fiber.ctx._realm_of(key) == self._realm_of(key):
+                    fiber.refresh()
+                    affected.append(fiber)
+                    break
+        for key in keys:
+            self._notify(key)
+        return affected
+
+    # --- legacy service API (thin wrappers over the slots) ---
     def provide(self, name: str, svc: object) -> None:
         old: Optional[object] = self.services.get(name)
 
         def _do() -> None:
             self.services[name] = svc
+            self._root()._providers[name] = (None, self._realm_of(name), svc)
 
         def _undo() -> None:
             if old is not None:
                 self.services[name] = old
             else:
                 self.services.pop(name, None)
+            cur = self._root()._providers.get(name)
+            if cur is not None and cur[0] is None:
+                self._root()._providers.pop(name, None)
 
         self.emit(_do, _undo)
-        self._notify(name)
+        self.notify([name])
 
     def require(self, name: str) -> object:
         if name not in self.services:
@@ -62,6 +342,141 @@ class Context:
     def _notify(self, name: str) -> None:
         for fn in self._listeners.get(name, []):
             fn(self.services.get(name))
+
+
+class Fiber:
+    """A component instantiation (paper §5.1.3, Alg 4-5): inject (d) +
+    config-bound apply (e) run in a child ctx; LOADING→ACTIVE / UNLOADING→
+    INACTIVE with inertial chaining. Sync: inertia is a reentrancy flag."""
+
+    LOADING = "LOADING"
+    ACTIVE = "ACTIVE"
+    UNLOADING = "UNLOADING"
+    INACTIVE = "INACTIVE"
+
+    _uids = count()
+
+    def __init__(self, parent: Context, inject: tuple[str, ...] | list[str],
+                 apply: Callable[[Context], object], capture: bool = True) -> None:
+        self.uid = next(Fiber._uids)
+        self.parent = parent
+        self.inject = tuple(inject)
+        self.apply = apply
+        self.capture = capture  # False = legacy comp (unmount compensates)
+        self.ctx = parent.child()
+        self.ctx._fiber = self
+        self.state = Fiber.INACTIVE
+        self.target: tuple[int, ...] | None = None
+        self.committed: dict[str, object] | None = None
+        self.provided: set[str] = set()
+        self.dispose: Undo = lambda: None
+        self.inertia = False
+        self._retired = False
+        parent._fibers.append(self)
+
+    def target_of(self) -> tuple[int, ...] | None:
+        """Digest of target(γ,n): provider uid per declared key (paper Alg 5).
+        None = ⊥ (unsatisfied). Retired entries stay ⊥ until re-enabled."""
+        if self._retired:
+            return None
+        uids: list[int] = []
+        for key in self.inject:
+            cur = self.ctx._resolve_provider(key)
+            if cur is None:
+                return None
+            f, _realm, _v = cur
+            if f is None:
+                uids.append(-1)  # external (legacy provide): always satisfied
+            elif f is self:
+                uids.append(self.uid)
+            elif f.state != Fiber.ACTIVE:
+                return None
+            else:
+                uids.append(f.uid)
+        return tuple(uids)
+
+    def refresh(self, force: bool = False) -> None:
+        """Recompute target; (un)load on change. Idempotent: neutral
+        changes are harmless (paper §5.1.2)."""
+        t = self.target_of()
+        if not force and t == self.target:
+            return
+        self.target = t
+        if self.inertia:
+            return
+        self.inertia = True
+        try:
+            if t is None:
+                self.state = Fiber.UNLOADING  # L-Leave: out before inverses
+                self._unload()
+            else:
+                self.state = Fiber.LOADING
+                self._reload()
+        finally:
+            self.inertia = False
+
+    def retire(self) -> None:
+        """Administrative disable (paper: O-Retire); re-enable via resume."""
+        self._retired = True
+        self.refresh(force=True)
+
+    def resume(self) -> None:
+        self._retired = False
+        self.refresh(force=True)
+
+    def _reload(self) -> None:
+        t0 = self.target
+        committed: dict[str, object] = {}
+        for key in self.inject:
+            committed[key] = self.ctx.get(key)
+        self.committed = committed
+        snap = self.ctx.snapshot()
+        recover = execute(lambda: self.apply(self.ctx),
+                          lambda: self.target == t0)
+        if self.capture:
+            span = self.ctx._undos[snap:]
+            del self.ctx._undos[snap:]
+            prev = self.dispose
+
+            def _new() -> None:
+                recover()
+                for u in reversed(span):
+                    u()
+                prev()
+
+            self.dispose = _new
+        else:
+            prev2 = self.dispose
+
+            def _new2() -> None:
+                recover()
+                prev2()
+
+            self.dispose = _new2
+        if self.target == t0 and t0 is not None:
+            self.state = Fiber.ACTIVE
+            self.ctx.notify(list(self.provided))
+        else:
+            self.state = Fiber.UNLOADING
+            self._unload()
+
+    def _unload(self) -> None:
+        """Stop providing → drain dependents → recover (paper Alg 5).
+        Bindings stay in place while dependents drain, so their teardown
+        still reads the withdrawing coeffects."""
+        for key in list(self.provided):
+            self.ctx._unregister_provider(key, self.ctx._realm_of(key))
+        self.ctx.notify(list(self.provided))
+        self.provided.clear()
+        d = self.dispose
+        self.dispose = lambda: None
+        d()
+        self.committed = None
+        if self.target is None:
+            self.state = Fiber.INACTIVE
+        else:
+            self.state = Fiber.LOADING
+            self._reload()
 
 
 class Component:
@@ -242,12 +657,101 @@ class Plugin(Component, Generic[Out]):
         raise NotImplementedError
 
 
+class Entry:
+    """One loader entry (paper §5.2.1 Def 81): id + url + isolate +
+    intercept + config + disabled. The entry is the identity that survives
+    revision; the fiber is the identity of one enablement."""
+
+    def __init__(self, id: str, factory: Callable[[], Component],
+                 url: str = "", inject: tuple[str, ...] = (),
+                 isolate: dict[str, object] | None = None,
+                 intercept: dict[str, object] | None = None,
+                 config: object = None, disabled: bool = False,
+                 args: tuple[object, ...] = (),
+                 kwargs: dict[str, object] | None = None) -> None:
+        self.id = id
+        self.factory = factory
+        self.url = url or factory.__qualname__
+        self.inject = tuple(inject)
+        self.isolate = dict(isolate or {})
+        self.intercept = dict(intercept or {})
+        self.config = config
+        self.disabled = disabled
+        self.args = args
+        self.kwargs = dict(kwargs or {})
+        self.fiber: Fiber | None = None
+        self.component: Component | None = None
+
+
+def classify(stashed: set[str], externals: set[str],
+             imports: dict[str, set[str]]) -> tuple[set[str], set[str]]:
+    """Paper Alg 8: accept a module once one import is accepted, decline
+    once all imports are declined; cycles default to declined."""
+    accepted = set(stashed)
+    declined = set(externals)
+    pending: set[str] = set()
+    for url in stashed:
+        pending |= imports.get(url, set()) - accepted - declined
+    progress = True
+    while progress:
+        progress = False
+        for url in list(pending):
+            im = imports.get(url, set())
+            if im & accepted:
+                accepted.add(url)
+                pending.discard(url)
+                progress = True
+            elif im <= declined:
+                declined.add(url)
+                pending.discard(url)
+                progress = True
+            else:
+                new = im - accepted - declined
+                if new - pending:
+                    pending |= new
+                    progress = True
+    declined |= pending
+    return (accepted, declined)
+
+
+def stale_entries(entries: list[Entry], accepted: set[str],
+                  declined: set[str],
+                  deps_of: Callable[[str], set[str]]) -> list[Entry]:
+    """Paper Alg 9: an entry is stale iff its dep tree (declined = boundary)
+    reaches accepted; each stale tree folds into accepted."""
+    acc = set(accepted)
+    out: list[Entry] = []
+    for e in entries:
+        tree = _tree(e.url, declined, deps_of)
+        if tree & acc:
+            acc |= tree
+            out.append(e)
+    return out
+
+
+def _tree(root: str, declined: set[str],
+          deps_of: Callable[[str], set[str]]) -> set[str]:
+    deps: set[str] = set()
+
+    def _walk(url: str) -> None:
+        if url in deps or url in declined:
+            return
+        deps.add(url)
+        for child in deps_of(url):
+            _walk(child)
+
+    _walk(root)
+    return deps
+
+
 class Loader:
     """Declarative loader with reconcile + hot remount (paper §5.2)."""
 
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
         self.modules: dict[str, Component] = {}
+        self.entries: dict[str, Entry] = {}
+        self._factories: dict[str, Callable[[], Component]] = {}
 
     def mount(self, mod: Component, *a: object, **k: object) -> None:
         mod.mount(self.ctx, *a, **k)
@@ -257,6 +761,7 @@ class Loader:
         if name in self.modules:
             self.modules[name].unmount(self.ctx)
             del self.modules[name]
+            self._factories.pop(name, None)
 
     def reconcile(self, want: dict[str, Callable[[], Component]]) -> None:
         """want: {name: factory} — add missing, drop stale, remount changed."""
@@ -266,10 +771,159 @@ class Loader:
         for name, factory in want.items():
             if name not in self.modules:
                 self.mount(factory())
-            elif type(self.modules[name]) is not type(factory()):
-                self.unmount(name)
-                self.mount(factory())
+                self._factories[name] = factory
+            elif (self._factories.get(name) is not factory
+                    or type(self.modules[name]) is not type(factory())):
+                # ponytail: one throwaway probe only when the factory object
+                # itself is new; repeated reconciles with the same factory skip it
+                self.remount(name, factory)
 
     def remount(self, name: str, factory: Callable[[], Component]) -> None:
-        self.unmount(name)
-        self.mount(factory())
+        """Transactional remount (paper Alg 10, single entry): on failure,
+        best-effort restore the previous component, then re-raise."""
+        old = self.modules.get(name)
+        if old is not None:
+            self.unmount(name)
+        try:
+            self.mount(factory())
+            self._factories[name] = factory
+        except Exception:
+            if old is not None:
+                try:
+                    self.mount(old)
+                except Exception:
+                    pass
+            raise
+
+    # --- declarative entries (paper §5.2.1): per-field least-disruptive ---
+    def declare(self, specs: list[dict[str, object]]) -> dict[str, int]:
+        """Keyed diff over entry ids: add missing, drop stale, per-field
+        update survivors. Returns {added, removed, updated}."""
+        counts = {"added": 0, "removed": 0, "updated": 0}
+        want = [str(s["id"]) for s in specs]
+        for eid in list(self.entries):
+            if eid not in want:
+                self._drop_entry(eid)
+                counts["removed"] += 1
+        for spec in specs:
+            eid = str(spec["id"])
+            if eid not in self.entries:
+                self._add_entry(spec)
+                counts["added"] += 1
+            else:
+                counts["updated"] += self._update_entry(spec)
+        return counts
+
+    def _spawn(self, entry: Entry) -> Fiber:
+        def _apply(fctx: Context) -> object:
+            comp = entry.factory()
+            entry.component = comp
+            comp.mount(fctx, *entry.args, **entry.kwargs)
+            if entry.config is not None:
+                apply_cfg = getattr(comp, "apply_config", None)
+                if callable(apply_cfg):
+                    apply_cfg(entry.config)
+            return lambda: comp.unmount(fctx)
+
+        fiber = Fiber(self.ctx, entry.inject, _apply, capture=False)
+        for k, r in entry.isolate.items():
+            fiber.ctx._isolate[k] = r
+        for k, m in entry.intercept.items():
+            assert isinstance(m, dict)
+            merged = dict(cast(dict[str, object], fiber.ctx._intercept.get(k, {})))
+            merged.update(cast(dict[str, object], m))
+            fiber.ctx._intercept[k] = merged
+        fiber.refresh(force=True)
+        return fiber
+
+    def _add_entry(self, spec: dict[str, object]) -> None:
+        entry = self._entry_of(spec)
+        self.entries[entry.id] = entry
+        if not entry.disabled:
+            entry.fiber = self._spawn(entry)
+
+    def _drop_entry(self, eid: str) -> None:
+        entry = self.entries.pop(eid, None)
+        if entry is not None and entry.fiber is not None:
+            entry.fiber.retire()  # O-Retire: ordered withdrawal, then dispose
+            if entry.fiber in self.ctx._fibers:
+                self.ctx._fibers.remove(entry.fiber)
+            entry.fiber = None
+
+    def _update_entry(self, spec: dict[str, object]) -> int:
+        """Per-field dispatch: url/factory → rebuild; isolate → realm
+        reassign + reload; intercept → in-place; config → handoff or
+        rebuild; disabled → retire/resume. Returns 1 if anything changed."""
+        entry = self.entries[str(spec["id"])]
+        new = self._entry_of(spec)
+        if new.factory is not entry.factory or new.url != entry.url:
+            self._drop_entry(entry.id)
+            self._add_entry(spec)
+            return 1
+        changed = 0
+        if new.disabled != entry.disabled:
+            entry.disabled = new.disabled
+            if entry.fiber is not None:
+                if new.disabled:
+                    entry.fiber.retire()
+                else:
+                    entry.fiber.resume()
+            elif not new.disabled:
+                entry.fiber = self._spawn(entry)
+            changed = 1
+        if new.isolate != entry.isolate:
+            entry.isolate = dict(new.isolate)
+            if entry.fiber is not None:
+                for k, r in entry.isolate.items():
+                    entry.fiber.ctx._isolate[k] = r
+                entry.fiber.refresh(force=True)  # reload, no rebuild
+            changed = 1
+        if new.intercept != entry.intercept:
+            entry.intercept = dict(new.intercept)
+            if entry.fiber is not None:
+                for k, m in entry.intercept.items():
+                    assert isinstance(m, dict)
+                    merged = dict(cast(dict[str, object],
+                                       entry.fiber.ctx._intercept.get(k, {})))
+                    merged.update(cast(dict[str, object], m))
+                    entry.fiber.ctx._intercept[k] = merged
+            changed = 1  # in place: consulted at read time, no reload
+        if new.config != entry.config:
+            entry.config = new.config
+            comp = entry.component
+            apply_cfg = getattr(comp, "apply_config", None)
+            if comp is not None and callable(apply_cfg):
+                apply_cfg(new.config)  # component diffs the payload itself
+            elif entry.fiber is not None:
+                eid, fib = entry.id, entry.fiber
+                fib.retire()
+                if fib in self.ctx._fibers:
+                    self.ctx._fibers.remove(fib)
+                entry.fiber = self._spawn(entry)
+                assert entry.id == eid
+            changed = 1
+        entry.args, entry.kwargs = new.args, new.kwargs
+        return changed
+
+    @staticmethod
+    def _entry_of(spec: dict[str, object]) -> Entry:
+        factory = spec["factory"]
+        assert callable(factory)
+        inject = spec.get("inject", ())
+        assert isinstance(inject, (tuple, list))
+        isolate = spec.get("isolate", None)
+        assert isolate is None or isinstance(isolate, dict)
+        intercept = spec.get("intercept", None)
+        assert intercept is None or isinstance(intercept, dict)
+        args = spec.get("args", ())
+        assert isinstance(args, tuple)
+        kwargs = spec.get("kwargs", None)
+        assert kwargs is None or isinstance(kwargs, dict)
+        return Entry(str(spec["id"]), cast(Callable[[], Component], factory),
+                     url=str(spec.get("url", "")),
+                     inject=tuple(str(k) for k in inject),
+                     isolate={str(k): v for k, v in isolate.items()} if isolate else None,
+                     intercept={str(k): v for k, v in intercept.items()} if intercept else None,
+                     config=spec.get("config"), disabled=bool(spec.get("disabled", False)),
+                     args=args,
+                     kwargs={str(k): v for k, v in kwargs.items()} if kwargs else None)
