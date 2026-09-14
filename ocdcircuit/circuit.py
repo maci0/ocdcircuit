@@ -87,7 +87,8 @@ class Block:
 class Board(Component):
     def __init__(self, name: str = "board", width: float = 40.0,
                  height: float = 30.0, layers: int = 2) -> None:
-        if not (width > 0 and height > 0):
+        import math
+        if not (math.isfinite(width) and math.isfinite(height) and width > 0 and height > 0):
             raise ValueError(f"board size must be positive (got {width}x{height})")
         if layers < 1:
             raise ValueError(f"board needs ≥1 layer (got {layers})")
@@ -664,7 +665,8 @@ class Board(Component):
 
     # -- board-level --
     def set_board(self, w: float, h: float) -> None:
-        if not (w > 0 and h > 0):
+        import math
+        if not (math.isfinite(w) and math.isfinite(h) and w > 0 and h > 0):
             raise ValueError(f"board size must be positive (got {w}x{h})")
         ow, oh = self.width, self.height
 

@@ -1596,6 +1596,12 @@ try:
 except ValueError as e:
     assert "must be positive" in str(e), str(e)
 assert (_sb2.width, _sb2.height) == (40.0, 30.0)  # failed resize doesn't stick
+try:
+    _sb2.declare({"board": {"w": 1e999, "h": 10}})
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "must be positive" in str(e), str(e)
+assert (_sb2.width, _sb2.height) == (40.0, 30.0)
 # workspace: score + diff go through the plugin registry like prod code
 _sb = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\nfix C1 at 8 5\n")
