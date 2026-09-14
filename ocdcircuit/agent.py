@@ -18,14 +18,36 @@ def apply_patch(board: Board, ops: list[dict[str, object]]) -> int:
     for op in ops:
         k = op.get("op")
         if k == "add_part":
+            attrs = op.get("attrs", None)
+            assert attrs is None or isinstance(attrs, dict)
             board.add_part(str(op["ref"]), str(op["fp"]), str(op.get("value", "")),
-                           _opt_float(op.get("x")), _opt_float(op.get("y")))
+                           _opt_float(op.get("x")), _opt_float(op.get("y")),
+                           attrs={str(k): str(v) for k, v in attrs.items()} if attrs else None)
         elif k == "move_part":
             board.move_part(_s(op["ref"]), _f(op["x"]), _f(op["y"]))
         elif k == "remove_part":
             board.remove_part(str(op["ref"]))
         elif k == "connect":
             board.connect(_s(op["net"]), _s(op["ref"]), _s(op["pin"]))
+            nattrs = op.get("attrs", None)
+            assert nattrs is None or isinstance(nattrs, dict)
+            if nattrs:
+                net = board.nets[_s(op["net"])]
+                new = {str(k): str(v) for k, v in nattrs.items()}
+                old = {k: net.attrs.get(k) for k in new}
+
+                def _do(_n: str = _s(op["net"]), _w: dict[str, str] = new) -> None:
+                    board.nets[_n].attrs.update(_w)
+
+                def _undo(_n: str = _s(op["net"]),
+                          _o: dict[str, str | None] = old) -> None:
+                    for k, v in _o.items():
+                        if v is None:
+                            board.nets[_n].attrs.pop(k, None)
+                        else:
+                            board.nets[_n].attrs[k] = v
+
+                board.ctx.emit(_do, _undo)
         elif k == "constrain":
             c = op["c"]
             assert isinstance(c, dict)
