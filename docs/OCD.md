@@ -156,6 +156,9 @@ N :: R1.2 <--> C1.2
 GND :: R1.1 <--> C1.1
 ```
 
+Duplicate position sources resolve last-wins: a later `fix R1 at …`
+overrides the `x=/y=` on the part line (both persist in dumps).
+
 ## Errors (exit 1) vs DRC fail (exit 2)
 
 Parse/validate problems → `ocd: line <n>: <what>: '<line>'`, exit 1.

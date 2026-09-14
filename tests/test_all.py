@@ -109,6 +109,11 @@ _nc.parts["R2"].x, _nc.parts["R2"].y = 35, 25
 assert _cost(_nc) > _c_near
 c1 = agent.parse_constraint("fix J1 at 3 10")
 assert c1 is not None and c1["t"] == "fixed"
+# duplicate position sources: later fix wins over part-line x=/y=
+_fx = agent.loads("board t 40x30 2L\npart R1 R0805 10k x=3 y=5\nnet N: R1.1 R1.2\n"
+                  "fix R1 at 30 25\n", base=EX)
+_fx.place(seeds=1, iters=20)
+assert (round(_fx.parts["R1"].x), round(_fx.parts["R1"].y)) == (30, 25)
 assert agent.parse_constraint("route GND on bottom") == {"t": "layer", "net": "GND", "layer": 1}
 wc = agent.parse_constraint("trace VCC 0.5")
 assert wc is not None and wc["width"] == 0.5
