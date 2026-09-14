@@ -299,7 +299,6 @@ def t_plugins(a: dict[str, object]) -> dict[str, object]:
 def t_ctx(a: dict[str, object]) -> dict[str, object]:
     """Paper §5.1 context ops: get/set/unset a coeffect, or list fibers.
     Lets agents probe reactive state (what provides key? who is ACTIVE?)."""
-    from ocdcircuit.core import Context
     b = _board()
     op = str(a.get("op", "fibers"))
     if op == "get":
@@ -314,15 +313,9 @@ def t_ctx(a: dict[str, object]) -> dict[str, object]:
         b.ctx.unset(str(a["key"]))
         return {"key": str(a["key"]), "withdrawn": True}
     fibs: list[dict[str, object]] = []
-    seen: set[int] = set()
-    c: Context | None = b.ctx
-    while c is not None:
-        for f in c._all_fibers():
-            if f.uid not in seen:
-                seen.add(f.uid)
-                fibs.append({"uid": f.uid, "inject": list(f.inject),
-                             "state": f.state, "provides": sorted(f.provided)})
-        break  # _all_fibers already walks the tree
+    for f in b.ctx._all_fibers():  # already walks the whole tree
+        fibs.append({"uid": f.uid, "inject": list(f.inject),
+                     "state": f.state, "provides": sorted(f.provided)})
     return {"fibers": fibs}
 
 
