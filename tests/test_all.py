@@ -992,6 +992,24 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
+# easyeda_live pro_source is pure (no client needed): NET + PRIMITIVE +
+# per-trace LINE/GEOM pairs, sequential tickets, 1-indexed layers
+import json as _js
+from tools import easyeda_live as _ezl
+_eb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.1 C1.2\n", base=EX)
+_eb.place(seeds=1, iters=20)
+_eb.route_board()
+_out = _ezl.pro_source(_eb, "BLANK|")
+assert _out.startswith("BLANK||") and _out.endswith("|")
+_recs = [_js.loads(r) for r in _out[len("BLANK||"):-1].split("||")]
+assert [r.get("type", "GEOM") for r in _recs] == (
+    ["NET", "PRIMITIVE"] + ["LINE", "GEOM"] * len(_eb.traces))
+assert [r["ticket"] for r in _recs if "ticket" in r] == list(
+    range(200, 200 + len([r for r in _recs if "ticket" in r])))
+_geoms = [r for r in _recs if "netName" in r]
+assert {r["netName"] for r in _geoms} == {"N"} and len(_geoms) == len(_eb.traces)
+assert {r["layerId"] for r in _geoms} == {s.layer + 1 for s in _eb.traces}
 _ebb = agent.loads("board t 20x20\npart R1 R0805 1k\npart R2 R0805 1k\n"
                    "net N: R1.2 R2.1\nnet GND: R1.1 R2.2\n")
 _ebb.place()
