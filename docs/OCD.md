@@ -18,7 +18,9 @@ meta title Blinky 555          # meta KEY value... (title/rev/desc/… → KiCad
 ```ocd
 part U1 SOIC8 NE555            # part REF FOOTPRINT [value...] [k=v ...]
 part C1 C0402 100n lcsc=C1525 rot=90 x=3 y=15
-part R9 R0603 0 dnp=1        # do-not-place: DNP BOM row, ERC-exempt
+part R9 R0603 0 dnp=1        # do-not-place: DNP BOM row, ERC-exempt,
+                             # excluded from CPL + KiCad (attr dnp), X'd on
+                             # assembly drawing (pads still export)
 part U2 SOIC8 TL072 sym=OPX pin2=VFB  # sym= symbol override; pinN= pin label
 ```
 
