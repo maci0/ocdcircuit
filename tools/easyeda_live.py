@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import random
+import shutil
 import socket
 import struct
 import subprocess
@@ -144,13 +145,16 @@ def page_ws(port: int = 9223) -> str:
     return url
 
 
-def launch_client(port: int = 9223) -> subprocess.Popen[bytes]:
-    """Fresh client under xvfb with CDP. Caller must .terminate() it."""
+def launch_client(port: int = 9223) -> tuple[subprocess.Popen[bytes], str]:
+    """Fresh client under xvfb with CDP. Returns (proc, profile dir):
+    caller must proc.terminate() + shutil.rmtree(home) — the profile
+    dir is ~100MB, don't leak it per render."""
     home = tempfile.mkdtemp(prefix="ezlive")
-    return subprocess.Popen(
+    proc = subprocess.Popen(
         ["xvfb-run", "-a", "/opt/easyeda-pro/easyeda-pro",
          f"--remote-debugging-port={port}", f"--user-data-dir={home}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return proc, home
 
 
 def wait_ready(port: int = 9223, timeout: float = 120.0) -> str:
@@ -201,11 +205,12 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
     from ocdcircuit import agent
     text = open(ocd_path).read()
     base = os.path.dirname(os.path.abspath(ocd_path))
-    proc = launch_client(port)
+    proc, home = launch_client(port)
     try:
         cdp = CDP(wait_ready(port))
     except TimeoutError:
         proc.terminate()
+        shutil.rmtree(home, ignore_errors=True)
         raise RuntimeError("easyeda-pro not found (need local install)")
     try:
         pre = ("(async()=>{const R=window._EXTAPI_ROOT_;return " , ";})()")
@@ -222,6 +227,7 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
                            "see module docstring for the proven chain")
     finally:
         proc.terminate()
+        shutil.rmtree(home, ignore_errors=True)
     return out_png
 
 

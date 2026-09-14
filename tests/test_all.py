@@ -1362,6 +1362,14 @@ _thr2.Thread(target=_hsrv.serve_forever, daemon=True).start()
 assert _ezl2.page_ws(_hport) == "ws://x/page1"
 assert _ezl2.wait_ready(_hport, timeout=10.0) == "ws://x/page1"
 _hsrv.shutdown()
+# launch_client returns (proc, profile dir) so callers can clean up
+from unittest import mock as _mock2
+with _mock2.patch("subprocess.Popen") as _pop:
+    _proc, _home = _ezl2.launch_client(9999)
+    assert _pop.called and os.path.isdir(_home) and "ezlive" in _home
+    import shutil as _sh4
+    _sh4.rmtree(_home, ignore_errors=True)
+    assert not os.path.exists(_home)
 # monster6502 converter pure fns: net sanitizer + block finder on the
 # real netlist (counts pinned — structural change should be deliberate)
 from benches.monster6502.convert import _safe_net, _find_blocks, _block_members
