@@ -4,10 +4,25 @@ import json
 import math
 import os
 import re
+import shlex
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from .types import Constraint
+
+
+def _q(v: object) -> str:
+    """Attr value for dumps: quote iff it carries whitespace/quotes so
+    the line still reloads (shlex.split on parse)."""
+    s = str(v)
+    if any(ch.isspace() or ch in "\"'" for ch in s):
+        return '"' + s.replace('"', '\\"') + '"'
+    return s
+
+
+def _split(tail: str) -> list[str]:
+    """shlex-split an attr-bearing segment (inverse of _q quoting)."""
+    return shlex.split(tail)
 
 if TYPE_CHECKING:
     from .circuit import Board
@@ -153,10 +168,10 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"power ([\w ]+)$", t, re.I)
     if m:
         return {"t": "power", "nets": m.group(1).split()}
-    m = re.match(r"class (\w+)((?:\s+\w+=[\w.]+)*)$", t, re.I)
+    m = re.match(r"class (\w+)((?:\s+\w+=(?:\"[^\"]*\"|[\w.]+))*)$", t, re.I)
     if m:
         cc: Constraint = {"t": "class", "name": m.group(1)}
-        for tok in m.group(2).split():
+        for tok in _split(m.group(2)):
             k, _, v = tok.partition("=")
             try:
                 cc[k] = float(v)
@@ -299,7 +314,7 @@ def dumps(board: Board) -> str:
     for p in sorted(board.parts.values(), key=lambda q: q.ref):
         if p.owner:
             continue  # owned by an include/instance — dumped as use/instance
-        attrs = "".join(f" {k}={v}" for k, v in sorted(p.attrs.items()))
+        attrs = "".join(f" {k}={_q(v)}" for k, v in sorted(p.attrs.items()))
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
     # fp/sym lines up front: must exist before parts use them
     fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
@@ -330,7 +345,7 @@ def dumps(board: Board) -> str:
         pins = sorted((r, str(pin)) for r, pin in net.pins if r not in owned)
         if not pins and any(net.pins):
             continue  # fully owned by an include — comes back via `use`
-        attrs = "".join(f" {k}={v}" for k, v in sorted(net.attrs.items()))
+        attrs = "".join(f" {k}={_q(v)}" for k, v in sorted(net.attrs.items()))
         # constraints win over runtime assignment: net.layer/width are
         # solver scratch (assign_layers), the constraint is the source.
         # Otherwise save-after-solve silently rewrites route intent.
@@ -427,7 +442,7 @@ def dumps(board: Board) -> str:
             seen_power.append(nets)
             L.append(f"power {' '.join(cast(list[str], c['nets']))}")
         elif t == "class":
-            rest = " ".join(f"{k}={_f(v):g}" if isinstance(v, float) else f"{k}={v}"
+            rest = " ".join(f"{k}={_f(v):g}" if isinstance(v, float) else f"{k}={_q(v)}"
                             for k, v in sorted(c.items()) if k not in ("t", "name"))
             L.append(f"class {c.get('name')}{(' ' + rest) if rest else ''}")
     return "\n".join(L) + "\n"
@@ -704,7 +719,11 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
     attrs: dict[str, str] = {}
     if val:
         words = []
-        for tok in val[0].split():
+        try:
+            tails = _split(val[0])
+        except ValueError:
+            raise err(f"{ctx}bad quoting in {val[0]!r}")
+        for tok in tails:
             if "=" in tok:
                 k, _, v = tok.partition("=")
                 attrs[k] = v
@@ -733,7 +752,10 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
     head, sep, pins = line.partition("::")
     if not sep:  # legacy `net NAME [attrs]: pins`
         head, _, pins = line.partition(":")
-    htoks = head.split()
+    try:
+        htoks = _split(head)
+    except ValueError:
+        raise err(f"{ctx}bad quoting in {head!r}")
     if not htoks:
         raise err(f"{ctx}want: NAME [L<n> w<n>] :: REF.PIN <--> ...")
     if htoks[0] == "net":  # legacy `net NAME [attrs]`

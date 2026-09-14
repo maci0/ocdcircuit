@@ -337,6 +337,20 @@ assert agent.to_json(bj).startswith("{")
 _ja = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1 lcsc=C1\npart C1 C0805 100n\n"
                   "HV class=highvolt :: R1.1 C1.1\nLV :: R1.2 C1.2\nclass highvolt width=0.8\n", base=EX)
 assert agent.dumps(agent.from_json(agent.to_json(_ja))) == agent.dumps(_ja)
+# dumps emits part AND net attrs on their own lines (leaked loop var once
+# put part attrs on every net line and dropped net attrs entirely)
+assert "HV class=highvolt ::" in agent.dumps(_ja), agent.dumps(_ja)
+assert "dnp=1" in [ln for ln in agent.dumps(_ja).splitlines()
+                   if ln.startswith("part R1")][0]
+# spaced attr values quote and reload (part/net/class)
+_jq = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+_jq.parts["R1"].attrs["note"] = "hello world"
+_jq.nets["N"].attrs["desc"] = 'a "quoted" thing'
+_jq.constrain({"t": "class", "name": "hv", "width": 0.8, "note": "sp ace"})
+_jq2 = agent.loads(agent.dumps(_jq), base=EX)
+assert _jq2.parts["R1"].attrs["note"] == "hello world"
+assert _jq2.nets["N"].attrs["desc"] == 'a "quoted" thing'
+assert _jq2.constraints[-1]["note"] == "sp ace"
 # JSON IR carries custom footprints (else round-trips dangle parts)
 _jc = agent.from_ir({"board": {"name": "t", "w": 40, "h": 30},
                      "parts": [{"ref": "R1", "fp": "X1", "x": 5, "y": 5}],
