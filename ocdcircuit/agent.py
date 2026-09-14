@@ -336,10 +336,16 @@ def dumps(board: Board) -> str:
         # Otherwise save-after-solve silently rewrites route intent.
         layer = None if n in lay_bad else (lay.get(n) if n in lay else net.layer)
         w0 = None if n in wid_bad else (wid.get(n) if n in wid else net.width)
+        # scratch emits only when reloadable: out-of-range layers or
+        # non-positive widths (direct writes, never solver output) would
+        # come back as constraints and crash routers — drop them here.
+        if layer is not None and not (isinstance(layer, int) and 0 <= layer < board.layers):
+            layer = None
         width: object = w0
         if layer is not None:
             attrs += f" L{layer}"
-        if isinstance(width, (int, float)) and width != 0.3:
+        if (isinstance(width, (int, float)) and not isinstance(width, bool)
+                and math.isfinite(width) and width != 0.3 and width > 0):
             attrs += f" w{width:g}"
         L.append(f"{n}{attrs} :: " + " <--> ".join(f"{r}.{pin}" for r, pin in pins))
     seen_power: list[list[str]] = []

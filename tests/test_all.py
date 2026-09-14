@@ -1292,6 +1292,16 @@ for _bwid in (0, -0.5, float("nan"), float("inf"), "x"):
     except ValueError as e:
         assert "bad width" in str(e), str(e)
 assert _blb.constraints == []
+# dumps drops unreloadable net scratch (poison never becomes constraint)
+_bsc = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+_bsc.nets["N"].layer = 99
+_bsc.nets["N"].width = -2
+_tscr = agent.dumps(_bsc)
+assert [ln for ln in _tscr.splitlines() if ln.startswith("N ")] == ["N :: R1.1 <--> R1.2"]
+_rtr = agent.loads(_tscr, base=EX)
+_rtr.place(seeds=1, iters=5)
+_rtr.route_board()
+assert _rtr.check()["errors"] == []
 # CONSTRAINT_TYPES matches dumps arms exactly (new kinds must land in both
 # or they silently vanish on save — the class this guards)
 import re as _re2
