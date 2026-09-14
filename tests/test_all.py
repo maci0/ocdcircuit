@@ -1524,6 +1524,21 @@ assert cast(dict[str, int], _gr["nets"])["Q"] == 1
 assert cast(list[int], cast(dict[str, object], _gr["waves"])["Q"]) == [1] * 10
 assert agent.parse_constraint("sim clk CLK 4") == {
     "t": "sim", "kind": "clk", "net": "CLK", "period": 4.0, "duty": 0.5}
+# gates truth: every combinational kind + JK toggle on rising edge
+from ocdcircuit import gates as _gates
+for _gk, _gins, _gwant in [
+        ("NAND", [1, 1], 0), ("NAND", [1, 0], 1),
+        ("NOR", [0, 0], 1), ("NOR", [1, 0], 0),
+        ("AND", [1, 1], 1), ("AND", [1, 0], 0),
+        ("OR", [0, 0], 0), ("OR", [0, 1], 1),
+        ("XOR", [1, 1], 0), ("XOR", [1, 0], 1),
+        ("INV", [0], 1), ("INV", [1], 0)]:
+    assert _gates._gate_fn(_gk, _gins) == _gwant, (_gk, _gins)
+_jk = agent.loads("board t 40x30\npart U1 SOIC14 JK logic=JK\n"
+                  "net J: U1.1\nnet K: U1.2\nnet CLK: U1.3\nnet Q: U1.4\n"
+                  "sim vcc J 1\nsim vcc K 1\nsim clk CLK 4\nsim tran 0.01 100\n")
+assert cast(list[int], cast(dict[str, object],
+             _jk.simulate("gates", ticks=8)["waves"])["Q"]) == [1] * 4 + [0] * 4
 assert agent.dumps(agent.loads(agent.dumps(_simg2))) == agent.dumps(_simg2)
 # ngspice plugin: same shape as mna + analog mna cannot do (skip if no binary)
 import shutil as _sh3
