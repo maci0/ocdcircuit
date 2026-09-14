@@ -992,6 +992,8 @@ with _tf.TemporaryDirectory() as _td:
     # ocd new scaffolds + ocd diff spots the delta + plugins lists kinds
     _np = os.path.join(_td, "newproj")
     assert _ocd.cmd_new([_np]) == 0
+    _toml_txt = open(os.path.join(_np, "board.toml")).read()
+    assert "ocd plugins [kind]" in _toml_txt  # scaffold documents valid picks
     assert _ocd.cmd_diff(_ocd._boot(), [_sp, os.path.join(_np, "newproj.ocd")]) == 0
     # scaffold solves clean out of the box (funnel promise: new → run works)
     assert _ocd.cmd_run(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0

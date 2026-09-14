@@ -120,7 +120,9 @@ def cmd_new(args: list[str]) -> int:
     toml = os.path.join(d, "board.toml")
     if not os.path.exists(toml):
         with open(toml, "w") as f:
-            f.write('# per-project defaults (CLI flags win)\n'
+            f.write('# per-project defaults (CLI flags win). Keys: fab, placer,\n'
+                    '# router, drc (list), mask, style. Values are validated:\n'
+                    '# `ocd plugins [kind]` lists legal placer/router/drc picks.\n'
                     'fab = "jlc"\nplacer = "diffusion"\nrouter = "maze"\n'
                     'drc = ["fab", "erc"]\nmask = "green"\n')
     print(f"new: {board}")
