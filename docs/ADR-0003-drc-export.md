@@ -27,3 +27,15 @@ Demo must reach zero *errors*. Warnings are the visible router-debt meter.
   `.kicad_sch` + `.brd`: one file to fab.
 - Lint (`lint.py`) covers the full constraint grammar (net/part refs,
   numeric ranges, layer bounds), dedupes, never crashes on junk input.
+
+## Update (pours, apertures, DRC hardening)
+- `pour NET on L` renders real copper: negative Gerber planes (flood inset
+  by fab edge rule + rect cutouts) + KiCad refillable zones; routers skip
+  poured nets, DRC exempts plane copper, `pour-isolated` errors on
+  keepout-stranded pads. Visible in PNG/canvas/STATUS.md.
+- Gerber apertures per width/size (traces, mask, paste) — the single-blind-
+  aperture era (0.4/0.5/0.4 for everything) under-built power, mask, paste.
+- DRC: segment-intersection catches X-crossing shorts (degenerate-safe);
+  ERC shorts custom `power`-constraint rails; lint validates `nc` refs.
+- BOM groups by LCSC (no wrong-reel merges); CPL excludes DNP rows.
+- `Board.check_all` merges fab+erc+flex profiles for ocd/MCP/studio.
