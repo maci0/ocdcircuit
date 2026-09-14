@@ -33,9 +33,10 @@ check pipeline (tscircuit).
 ### Later (bigger lifts, tracked not built)
 - **Copper pour** (tscircuit): DONE — `pour NET on L` floods negative
   Gerber plots + KiCad zones; routers/DRC honor planes (mitox GND on 0/3).
-  Remaining: keepout / fiducial / panel elements.
-- **Keepout / fiducial / panel elements** (tscircuit): assembly features
-  still open.
+  Remaining: panel elements.
+- **Keepout / fiducial** (tscircuit): DONE — rect/round/part-relative
+  keepouts (maze-soft + DRC-flagged), fiducial parts with deadzones.
+  Remaining: panel elements.
 - **Typed interfaces + `~`/`~>` wiring** (atopile): illegal connections as
   compile errors. Needs a type layer on nets — real design work, RFC first.
 - **Units + tolerances + parametric BOM picker** (atopile): value±tol →
@@ -45,9 +46,12 @@ check pipeline (tscircuit).
 - **Layout-preserving KiCad sync** (atopile `update_pcb`): merge code changes
   without wiping manual placement. Needs KiCad parsing, not just export.
 - **SPICE simulation** (flux prompt-sim, tscircuit `<analogsimulation>`):
-  biggest gap, biggest lift. Ngspice bridge + schematic-as-testbench.
-- **Candidate gallery + compare view** (quilter): batch runs with diff view.
-  Our frames API already streams; needs studio UI work.
+  DONE (stdlib MNA + ngspice bridge + `sim expect` assertions with CLI
+  exit codes, STATUS.md verdicts, MCP problems). Remaining: prompt-to-
+  testbench NL layer; tran-wave assertions.
+- **Candidate gallery + compare view** (quilter): DONE — N-candidate
+  gallery with feasibility badge, pick-to-restore, feasibility probe.
+  Remaining: side-by-side visual diff of candidates.
 - **Schematic sections + dual placement** (tscircuit schX/schY): schematic
   stays legible while PCB moves. Needs sch layout engine.
 
