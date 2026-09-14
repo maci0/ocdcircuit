@@ -769,6 +769,9 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
         t = c.get("t")
         if t == "fixed":
             continue  # block-local placement ignored — two-level placer owns it
+        # remapped: near/power/layer/width/pour. Dropped: class/match/diff/
+        # keepout/sim/... — board-global or position-dependent; put them at
+        # top level (a block has no position to anchor them to).
         if t == "near":
             parent.constrain({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
                               "w": _f(c.get("w", 2.0)), "owner": pre})
