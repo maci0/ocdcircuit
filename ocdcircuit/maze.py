@@ -184,8 +184,12 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     # small nets first: short point-to-point wires grab direct paths before
     # wide power busses wall off regions (completion beats convention here)
     order = sorted(board.nets.values(), key=lambda n: (len(n.pins), -_net_span(board, n)))
+    from .drc import pour_layers
+    poured = pour_layers(board)  # poured nets need no traces on pour layers
     failed: list[str] = []
     for net in order:
+        if net.layer is not None and net.layer in poured.get(net.name, []):
+            continue  # plane covers this layer — nothing to route
         if not _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
                           pad_cells, copper, halo, cells_of, new, frames):
             failed.append(net.name)

@@ -31,8 +31,11 @@ check pipeline (tscircuit).
    build — design intent verified before layout.
 
 ### Later (bigger lifts, tracked not built)
-- **Copper pour / keepout / fiducial / panel elements** (tscircuit): DRC and
-  export need pour support before assembly features matter.
+- **Copper pour** (tscircuit): DONE — `pour NET on L` floods negative
+  Gerber plots + KiCad zones; routers/DRC honor planes (mitox GND on 0/3).
+  Remaining: keepout / fiducial / panel elements.
+- **Keepout / fiducial / panel elements** (tscircuit): assembly features
+  still open.
 - **Typed interfaces + `~`/`~>` wiring** (atopile): illegal connections as
   compile errors. Needs a type layer on nets — real design work, RFC first.
 - **Units + tolerances + parametric BOM picker** (atopile): value±tol →

@@ -814,11 +814,21 @@ for frag in ("match on unknown net NZZZ", "pour on unknown net NONET",
              "outside sane range"):
     assert any(frag in w for w in cast(list[str], _l2r["warnings"])), (_l2r, frag)
 assert len(cast(list[str], _l2r["warnings"])) == len(set(cast(list[str], _l2r["warnings"])))
-# pour on a KNOWN net warns decorative (no consumer renders copper yet)
+# pour renders copper now: maze skips poured legs, Gerber plots planes
 _lp = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
-                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\npour GND on 0\n", base=EX)
-assert any("pour GND on 0 not rendered" in w
-           for w in cast(list[str], _lp.lint()["warnings"])), _lp.lint()
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\npour GND on 0\n"
+                  "pour N on 9\n", base=EX)
+assert not [w for w in cast(list[str], _lp.lint()["warnings"]) if "not rendered" in w]
+assert any("pour N on layer 9" in e for e in cast(list[str], _lp.lint()["errors"]))
+_lp.place(seeds=1, iters=30)
+_lp.route_board("maze")
+assert not [t for t in _lp.traces if t.net == "GND" and t.layer == 0]
+assert any(t.net == "N" for t in _lp.traces)  # unpoured net still routes
+from ocdcircuit.export import plane_plots as _pp
+assert _pp(_lp) and all(_pp(_lp)[ll] for ll in _pp(_lp))
+_lp2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n", base=EX)
+assert _pp(_lp2) == {}  # no pours, no plots
 # match/diff constraints: T6 reports routed skew, estimates when unrouted
 _mt = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
                   "part C1 C0805 100n\nnet A: R1.1 R2.1\nnet B: R1.2 C1.1\n"

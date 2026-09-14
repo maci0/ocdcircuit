@@ -20,9 +20,18 @@ Flash = tuple[float, float]
 Draw = tuple[float, float, float, float]
 
 
-def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float) -> str:
-    out = ["G04 ocdcircuit*", "%FSLAX46Y46*%", "%MOMM*%", f"%ADD10C,{aperture:.3f}*%"]
-    out.append("D10*")
+def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float,
+              negative: str | None = None) -> str:
+    """Positive plot, or negative plane (flood minus `negative` cutouts)."""
+    if negative is None:
+        out = ["G04 ocdcircuit*", "%FSLAX46Y46*%", "%MOMM*%", f"%ADD10C,{aperture:.3f}*%"]
+        out.append("D10*")
+    else:
+        # negative plane: clear-polarity draws subtract from the flood.
+        # Cutouts render as drawn rects; the flood rect is board outline.
+        out = ["G04 ocdcircuit*", "%FSLAX46Y46*%", "%MOMM*%", "%LPC*%",
+               f"%ADD10C,{aperture:.3f}*%", "D10*",
+               f"G04 plane {negative}*"]
     for x, y in flashes:
         out.append(f"X{x:.4f}Y{y:.4f}D03*")
     for x1, y1, x2, y2 in draws:
@@ -30,6 +39,69 @@ def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float) -> str:
         out.append(f"X{x2:.4f}Y{y2:.4f}D01*")
     out.append("M02*")
     return "\n".join(out)
+
+
+def plane_plots(board: Board) -> dict[int, list[Draw]]:
+    """Negative-plot cutouts per pour layer: what the plane must avoid.
+
+    Cutouts = foreign-net pads (pad + 0.3 gap), foreign vias, keepout /
+    cutout zones. Own-net pads need no cutout (the plane connects them;
+    that is the point); part bodies need none (no traces run under parts
+    except at pads). Returns {layer: [cutout rects]}; empty when the
+    board declares no pours.
+    # ponytail: rect cutouts, not polygon subtraction -- JLC renders the
+    # bbox union fine at these clearances; exact boolean ops if a fab
+    # ever rejects a plot (none has).
+    """
+    from .drc import fp_keepouts, pour_layers, zone_at
+    from .parts import hole_drill, pads_of
+    poured = pour_layers(board)
+    if not poured:
+        return {}
+    lib = {k: v for k, v in board._lib().items()}
+    gap = 0.3
+    out: dict[int, list[Draw]] = {}
+    for net, layers in poured.items():
+        own = {(r, str(q)) for r, q in board.nets[net].pins}
+        for ll in layers:
+            cuts: list[Draw] = []
+            for p in board.parts.values():
+                for pin in pads_of(p.fp, lib):
+                    if (p.ref, str(pin)) in own:
+                        continue  # own net -- plane connects, no cutout
+                    x, y = board.pad_pos(p.ref, pin)
+                    dr = 0.0
+                    try:
+                        dr = hole_drill(p.fp, pin, lib)
+                    except (KeyError, ValueError):
+                        pass
+                    r = max(1.0, dr + 0.3) / 2 + gap
+                    cuts.append((x - r, y - r, x + r, y + r))
+            for t in board.traces:
+                if getattr(t, "via", False) and t.net != net:
+                    r = 0.2 + gap
+                    cuts.append((t.x1 - r, t.y1 - r, t.x1 + r, t.y1 + r))
+            for c in board.constraints:
+                if isinstance(c, dict) and c.get("t") in ("keepout", "cutout"):
+                    z = zone_at(board, c)
+                    cx, cy = _f(z["x"]), _f(z.get("y", 0.0))
+                    if z.get("d") is not None:
+                        rr = _f(z["d"]) / 2 + gap
+                        cuts.append((cx - rr, cy - rr, cx + rr, cy + rr))
+                    else:
+                        hw = _f(z.get("w", 0.0)) / 2 + gap
+                        hh = _f(z.get("h", 0.0)) / 2 + gap
+                        cuts.append((cx - hw, cy - hh, cx + hw, cy + hh))
+            for ref in board.parts:
+                for z in fp_keepouts(board, ref):
+                    zz = zone_at(board, z)
+                    cx, cy = _f(zz["x"]), _f(zz.get("y", 0.0))
+                    hw = _f(zz.get("w", 0.0)) / 2 + gap
+                    hh = _f(zz.get("h", 0.0)) / 2 + gap
+                    cuts.append((cx - hw, cy - hh, cx + hw, cy + hh))
+            out[ll] = cuts
+    return out
+
 
 
 def layer_names(n: int) -> list[str]:
@@ -70,9 +142,24 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     for ll in draws:
         draws[ll] = sorted(draws[ll])
         flashes[ll] = sorted(flashes[ll])
+    # pours: negative plane (flood minus cutouts) replaces trace draws.
+    # The flood rect is the board outline; cutouts clear foreign copper.
+    from .drc import pour_layers as _pours
+    planes = plane_plots(board)
+    poured_nets = {n: sorted(ll) for n, ll in _pours(board).items()}
     for ll, nm in enumerate(layer_names(board.layers)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
-        open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4))
+        if ll in planes:
+            # no flashes: flood connects own-net pads directly; cutouts
+            # clear foreign copper (flashes would punch wrong-size voids)
+            cuts = planes[ll]
+            flood = [(0.0, 0.0, board.width, 0.0), (board.width, 0.0, board.width, board.height),
+                     (board.width, board.height, 0.0, board.height), (0.0, board.height, 0.0, 0.0)]
+            open(fn, "w").write(_gerber([], flood + cuts, 0.4,
+                                        negative=",".join(
+                                            f"{n}@L{ll}" for n, lls in poured_nets.items() if ll in lls)))
+        else:
+            open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4))
         files.append(fn)
     # paste (top only — single-sided SMT like the mitox board)
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
@@ -522,6 +609,16 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for ref in board.parts:
         for c in fp_keepouts(board, ref):
             _cmts(zone_at(board, c))
+    # pours: copper zones (KiCad refills geometry on load; hatch marks intent)
+    from .drc import pour_layers as _pours
+    for pname, lls in _pours(board).items():
+        zid = net_ids.get(pname, 0)
+        for ll in lls:
+            zln = layers[ll] if ll < len(layers) else layers[0]
+            A(f'  (zone (net {zid}) (net_name {_sexp_str(pname)}) (layer {_sexp_str(zln)})'
+              f' (uuid "{_uuid()}") (hatch edge 0.5)')
+            A(f'    (polygon (pts (xy 0 0) (xy {W:.4f} 0) (xy {W:.4f} {H:.4f}) (xy 0 {H:.4f})))')
+            A('    (fill (thermal_gap 0.5) (thermal_bridge_width 0.5)))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
     open(fn, "w").write("\n".join(L) + "\n")

@@ -80,9 +80,10 @@ route-grid 0.2               # maze cell size (default 0.25); finer closes
 silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 ```
 
-`pour` parses everywhere but warns until a consumer lands (no pour copper
-yet — LANDSCAPE defers it). Flex `bend`/`stiffener` enforced by `jlc-flex`
-DRC only (see `docs/FAB.md`).
+`pour NET on L` floods layer L with NET copper (negative Gerber plot +
+KiCad zone; routers skip poured nets on pour layers, DRC exempts plane
+copper from clearance/keepout). Flex `bend`/`stiffener` enforced by
+`jlc-flex` DRC only (see `docs/FAB.md`).
 
 ## Simulation (`sim`, one per line)
 

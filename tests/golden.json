@@ -30,9 +30,9 @@
   "segs": 133
  },
  "mitox.ocd/compact/maze/2L": {
-  "hash": "fb851cebeedcc51b",
+  "hash": "a23a371473af9779",
   "parts": 43,
-  "segs": 953
+  "segs": 644
  },
  "pico_tmc2209.ocd/hierarchical/maze/2L": {
   "hash": "d387d2183c26f74c",

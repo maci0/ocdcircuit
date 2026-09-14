@@ -1122,7 +1122,11 @@ def route(board: Board, frames: list[Frame] | None = None) -> int:
     assign_layers(board)
     old = list(board.traces)
     new: list[Seg] = []
+    from .drc import pour_layers
+    poured = pour_layers(board)  # same skip as maze: planes replace traces
     for net in board.nets.values():
+        if net.layer is not None and net.layer in poured.get(net.name, []):
+            continue
         pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
         if len(pts) < 2:
             continue

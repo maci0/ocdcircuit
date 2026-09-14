@@ -25,6 +25,26 @@ def zone_at(board: Board, c: object) -> dict[str, object]:
     return out
 
 
+def pour_layers(board: Board) -> dict[str, list[int]]:
+    """{net: sorted layers} with `pour` constraints. One funnel for maze
+    (skip poured-net legs), DRC (skip poured traces), Gerber/KiCad (plots)."""
+    out: dict[str, list[int]] = {}
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "pour":
+            n = str(c.get("net", ""))
+            try:
+                ll = int(cast(int, c.get("layer", 0)))
+            except (TypeError, ValueError):
+                continue
+            if n in board.nets and 0 <= ll < board.layers:
+                out.setdefault(n, [])
+                if ll not in out[n]:
+                    out[n].append(ll)
+    for n in out:
+        out[n].sort()
+    return out
+
+
 def in_zone(c: object, x: float, y: float,
             pad: float | tuple[float, float] = 0.0) -> bool:
     """Shape-aware zone hit: rect (`w/h`) or round (`d`) keepout/cutout.
@@ -151,6 +171,8 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 warnings.append(f"jumper {t.net} (wire bridge needed)")
             else:
                 warnings.append(f"airwire {t.net} (maze fallback — re-route?)")
+    poured = pour_layers(board)
+
     def _zone_warns(c: dict[str, object]) -> None:
         z = zone_at(board, c)
         for p in parts:
@@ -162,6 +184,8 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 # design (mitox U4); review, don't block
                 warnings.append(f"keepout {p.ref}")
         for t in board.traces:
+            if t.layer in poured.get(t.net, []):
+                continue  # plane copper, not a trace — keepouts don't apply
             mx, my = (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2
             if in_zone(z, mx, my, t.width / 2):
                 warnings.append(f"keepout-trace {t.net}")
@@ -219,6 +243,8 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             sa, sb = tr[i], tr[j]
             if sa.layer != sb.layer or sa.net == sb.net:
                 continue
+            if sa.layer in poured.get(sa.net, []) or sb.layer in poured.get(sb.net, []):
+                continue  # plane copper never clearances against traces
             if _seg_dist((sa.x1, sa.y1, sa.x2, sa.y2),
                          (sb.x1, sb.y1, sb.x2, sb.y2)) < _need(sa.net, sb.net):
                 warnings.append(f"clearance {sa.net}-{sb.net}")
