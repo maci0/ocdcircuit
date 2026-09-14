@@ -1,5 +1,6 @@
 """Agent-first API: structured patches (undoable) + NL constraint fallback."""
 from __future__ import annotations
+import json
 import math
 import os
 import re
@@ -552,11 +553,10 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             toks = line.split(None, 1)
             if len(toks) != 2:
                 raise err("want: fp PATH/to/part.fp")
-            import os as _os
-            fn = _os.path.normpath(_os.path.join(base, toks[1]))
+            fn = os.path.normpath(os.path.join(base, toks[1]))
             if fn in stack:
                 raise err(f"footprint cycle: {toks[1]!r}")
-            ext = _os.path.splitext(fn)[1].lower()
+            ext = os.path.splitext(fn)[1].lower()
             key = {".fp": "fp", ".kicad_mod": "kicad", ".pretty": "kicad",
                    ".lbr": "eagle", ".brd": "pcb", ".json": "tscircuit"}.get(ext)
             if key is None:
@@ -569,8 +569,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             toks = line.split(None, 1)
             if len(toks) != 2:
                 raise err("want: sym PATH/to/part.sym")
-            import os as _os
-            fn = _os.path.normpath(_os.path.join(base, toks[1]))
+            fn = os.path.normpath(os.path.join(base, toks[1]))
             try:
                 b.import_sym(path=fn)
             except (OSError, ValueError, KeyError, AssertionError) as e:
@@ -836,7 +835,6 @@ def ir(board: Board) -> dict[str, object]:
 
 
 def to_json(board: Board) -> str:
-    import json
     return json.dumps(ir(board), indent=1)
 
 
@@ -846,7 +844,6 @@ def from_ir(doc: dict[str, object]) -> Board:
 
 
 def from_json(text: str) -> Board:
-    import json
     raw = json.loads(text)
     assert isinstance(raw, dict)
     return from_ir(raw)

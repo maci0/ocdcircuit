@@ -6,6 +6,7 @@ snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
 from __future__ import annotations
 from collections.abc import Callable
 from typing import Optional
+import json
 import math
 from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
@@ -597,7 +598,6 @@ class Board(Component):
 
     @staticmethod
     def _ckey(c: Constraint) -> str:
-        import json
         return json.dumps(c, sort_keys=True, default=str)
 
     def disconnect(self, netname: str, ref: str, pin: PinLike) -> None:
