@@ -262,6 +262,10 @@ def cmd_status(agent: object, args: list[str]) -> int:
             simline = "sim: " + " ".join(
                 f"{k}={float(v):.2f}V" for k, v in sorted(nets.items())
                 if isinstance(v, (int, float))) + "\n"
+            from ocdcircuit import sim as _simexp
+            _fails = _simexp.expect(b)
+            if _fails:
+                simline += "sim FAIL: " + "; ".join(_fails) + "\n"
         except (ValueError, KeyError):
             simline = "sim: error\n"
     trows = "\n".join(f"| {k} | {_tidy_md(v)} |" for k, v in t.items()

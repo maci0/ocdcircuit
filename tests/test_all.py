@@ -758,6 +758,13 @@ with _tf.TemporaryDirectory() as _td:
     shutil.copytree(os.path.join(EX, "mitox"), os.path.join(_td, "mitox"))
     assert _ocd.cmd_status(_ocd._boot(), [os.path.join(_td, "mitox", "mitox.ocd")]) == 0
     assert "planes: GND on 0,3" in open(os.path.join(_td, "mitox", "STATUS.md")).read()
+    # STATUS.md surfaces sim expect verdicts (not just voltages)
+    open(os.path.join(_td, "simstat.ocd"), "w").write(
+        "board t 40x30 2L\npart J1 PINHD2 5V\npart R1 R0805 10k\npart R2 R0805 10k\n"
+        "net VIN: J1.1 R1.1\nnet VO: R1.2 R2.1\nnet GND: J1.2 R2.2\n"
+        "sim vcc VIN 9\nsim expect VO == 5\n")
+    assert _ocd.cmd_status(_ocd._boot(), [os.path.join(_td, "simstat.ocd")]) == 0
+    assert "sim FAIL:" in open(os.path.join(_td, "STATUS.md")).read()
     # ocd new scaffolds + ocd diff spots the delta + plugins lists kinds
     _np = os.path.join(_td, "newproj")
     assert _ocd.cmd_new([_np]) == 0
