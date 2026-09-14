@@ -969,6 +969,8 @@ assert abs(calc.trace_width(1.0) - 0.3) < 0.05
 assert abs(calc.trace_amps(calc.trace_width(1.0)) - 1.0) < 0.01  # inverse round-trips
 assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
+assert 0 < calc.via_amps(0.3) < calc.via_amps(0.6)  # monotone in drill
+assert abs(calc.via_amps(0.3, 40.0) / calc.via_amps(0.3, 10.0) - 2.0) < 0.01  # sqrt rise
 # KiCad footprint aliases land on stdlib (bare + Lib: prefix); unknown stays loud
 from ocdcircuit.parts import resolve_fp, KICAD_ALIASES, FOOTPRINTS
 assert resolve_fp("Resistor_SMD:R_0603_1608Metric") == "R0603"

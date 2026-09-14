@@ -192,6 +192,11 @@ def main() -> None:
         r2 = post(base, "/redo", {})
         assert not r2.get("error"), r2
         print("undo/redo ok")
+        sv = post(base, "/solve", {"placer": "diffusion", "router": "maze",
+                                   "full": True})
+        assert not sv.get("error"), sv
+        assert cast(list[object], sv["traces"]), "solve routes full quality"
+        print(f"solve ok (cost={sv['cost']})")
         ex = post(base, "/export", {})
         assert not ex.get("error"), ex
         assert cast(int, ex["bytes"]) > 1000, ex
