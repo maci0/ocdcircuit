@@ -508,3 +508,190 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
     open(fn, "w").write("\n".join(L) + "\n")
     return [fn]
+
+
+def export_eagle(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.brd (Eagle XML): libraries/packages from footprints,
+    elements, signals with contactrefs, Dimension wires. Mirrors what
+    foreign.eagle_brd parses, so export→import round-trips."""
+    from xml.sax.saxutils import escape as _esc
+    from .parts import hole_drill, pad_size, pads_of
+    os.makedirs(outdir, exist_ok=True)
+    lib = board._lib()
+    L: list[str] = []
+    A = L.append
+    A('<?xml version="1.0" encoding="utf-8"?>')
+    A('<!DOCTYPE eagle SYSTEM "eagle.dtd">')
+    A(f'<eagle version="9.6.2" generator="ocdcircuit">')
+    A("<drawing><board>")
+    A("<plain>")
+    W, H = board.width, board.height
+    for x1, y1, x2, y2 in [(0, 0, W, 0), (W, 0, W, H),
+                           (W, H, 0, H), (0, H, 0, 0)]:
+        A(f'<wire x1="{x1:.4f}" y1="{y1:.4f}" x2="{x2:.4f}" y2="{y2:.4f}" '
+          f'width="0" layer="20"/>')
+    A("</plain>")
+    A("<libraries><library>")
+    A("<packages>")
+    seen: set[str] = set()
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        if p.fp in seen:
+            continue
+        seen.add(p.fp)
+        A(f'<package name="{_esc(p.fp)}">')
+        for pin, (dx, dy) in sorted(pads_of(p.fp, lib).items()):
+            dr = hole_drill(p.fp, pin, lib)
+            if dr > 0:
+                A(f'<pad name="{_esc(str(pin))}" x="{dx:.4f}" y="{dy:.4f}" '
+                  f'drill="{dr:.4f}"/>')
+            else:
+                pw, ph = pad_size(p.fp, pin, lib)
+                A(f'<smd name="{_esc(str(pin))}" x="{dx:.4f}" y="{dy:.4f}" '
+                  f'dx="{pw:.4f}" dy="{ph:.4f}"/>')
+        A("</package>")
+    A("</packages></library></libraries>")
+    A("<elements>")
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        A(f'<element name="{_esc(p.ref)}" package="{_esc(p.fp)}" '
+          f'value="{_esc(p.value or p.fp)}" x="{p.x:.4f}" y="{p.y:.4f}"/>')
+    A("</elements>")
+    A("<signals>")
+    for n in sorted(board.nets):
+        net = board.nets[n]
+        A(f'<signal name="{_esc(n)}">')
+        for r, q in net.pins:
+            A(f'<contactref element="{_esc(r)}" pad="{_esc(str(q))}"/>')
+        for t in board.traces:
+            if t.net != n or getattr(t, "via", False):
+                continue
+            A(f'<wire x1="{t.x1:.4f}" y1="{t.y1:.4f}" x2="{t.x2:.4f}" y2="{t.y2:.4f}" '
+              f'width="{t.width:.4f}" layer="{t.layer + 1}"/>')
+        A("</signal>")
+    A("</signals>")
+    A("</board></drawing></eagle>")
+    fn = os.path.join(outdir, f"{board.name}.brd")
+    open(fn, "w").write("\n".join(L) + "\n")
+    return [fn]
+
+
+def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.kicad_sch: generic box symbols on the shared sch_layout
+    grid (same picture as the SVG canvas), one wire per pin-to-rail drop,
+    one global_label per net. Validated with `kicad-cli sch erc`."""
+    import uuid as _uuid_mod
+    from .plugins import sch_layout
+    os.makedirs(outdir, exist_ok=True)
+    lay = sch_layout(board)
+    order = lay["order"]
+    assert isinstance(order, list)
+    px = lay["px"]
+    assert isinstance(px, dict)
+    rail_y = lay["rail_y"]
+    assert isinstance(rail_y, dict)
+    from typing import cast
+    top = float(cast(float, lay["top"]))
+    # KiCad schematic units are mm; our layout is ~px — scale down
+    S = 0.25
+    L: list[str] = []
+    A = L.append
+    def lib_pin(i: int, n: int) -> tuple[float, float]:
+        # i-th of n pins: split across two columns; shared by lib emission
+        # + wire targets (one rounding — 0.01 mismatch breaks connectivity).
+        # 2.54 pitch keeps every pin on KiCad's 1.27 grid, any row count.
+        rows = max(1, (n + 1) // 2)
+        side = -1.0 if i < rows else 1.0
+        j = i if i < rows else i - rows
+        return (round(side * 7.62, 2), round(1.27 * (rows - 1 - 2 * j), 2))
+
+    def part_pins(r: str) -> list[str]:
+        return sorted({str(q) for _n, _nn in board.nets.items()
+                       for rr, q in _nn.pins if rr == r})
+
+    counts = sorted({len(part_pins(r)) for r in order})
+    A('(kicad_sch (version 20250114) (generator "ocdcircuit")')
+    A(f'  (uuid "{_uuid_mod.uuid4()}")')
+    A('  (paper "A4")')
+    A("  (lib_symbols")
+    for n in counts:
+        rows = max(1, (n + 1) // 2)
+        hh = round(max(2.54, 1.27 * (rows - 1) + 1.27), 2)
+        # ponytail: (pin_numbers show) with no parent pins breaks kicad-cli load
+        A(f'    (symbol "ocd:box{n}" (pin_numbers hide) (in_bom yes) (on_board yes)')
+        for prop, at in (("Reference", "0 2.54 0"), ("Value", "0 -2.54 0"),
+                         ("Footprint", "0 -5.08 0")):
+            # ponytail: hide lives INSIDE effects — trailing hide breaks load
+            hide = "" if prop == "Reference" else " hide"
+            A(f'      (property "{prop}" "{prop[0]}" (at {at})'
+              f' (effects (font (size 1.27 1.27)){hide}))')
+        A(f'      (symbol "box{n}_0_1"')
+        A(f'        (rectangle (start -5.08 {-hh:.2f}) (end 5.08 {hh:.2f})')
+        A('          (stroke (width 0.254) (type default)) (fill (type none)))')
+        A("      )")
+        if n:  # empty pin units break the loader — pinless boxes are rect-only
+            A(f'      (symbol "box{n}_1_1"')
+            for i in range(n):
+                dx, dy = lib_pin(i, n)
+                ang = 0 if dx < 0 else 180
+                A(f'        (pin passive line (at {dx:.2f} {dy:.2f} {ang}) (length 2.54)'
+                  f' (name "P{i + 1}" (effects (font (size 1.27 1.27))))'
+                  f' (number "{i + 1}" (effects (font (size 1.27 1.27)))))')
+            A("      )")
+        A("    )")
+    A("  )")
+    def g(v: float) -> float:
+        return round(v / 1.27) * 1.27  # KiCad schematic grid
+
+    def pin_xy(i: int, n: int, cx: float, cy: float) -> tuple[float, float]:
+        dx, dy = lib_pin(i, n)
+        return (round(cx + dx, 2), round(cy + dy, 2))
+
+    nets = lay["nets"]
+    assert isinstance(nets, list)
+    pin_pos: dict[tuple[str, str], tuple[float, float]] = {}
+    for r in order:
+        assert isinstance(r, str)
+        p = board.parts[r]
+        pins = part_pins(r)
+        n = len(pins)
+        sym = f"ocd:box{n}" if n else "ocd:box0"
+        x, y = g(float(px[r]) * S), g(float(top - 20) * S)
+        A(f'  (symbol (lib_id "{sym}") (at {x:.2f} {y:.2f} 0) (unit 1)')
+        A(f'    (uuid "{_uuid_mod.uuid4()}")')
+        A(f'    (property "Reference" "{r}" (at {x:.2f} {y - 5.08:.2f} 0)'
+          ' (effects (font (size 1.27 1.27))))')
+        A(f'    (property "Value" "{p.value or p.fp}" (at {x:.2f} {y + 5.08:.2f} 0)'
+          ' (effects (font (size 1.27 1.27))))')
+        A(f'    (property "Footprint" "{p.fp}" (at {x:.2f} {y + 7.62:.2f} 0)'
+          ' (effects (font (size 1.27 1.27)) hide))')
+        for i, q in enumerate(pins):
+            A(f'    (pin "{i + 1}" (uuid "{_uuid_mod.uuid4()}"))')
+            pin_pos[(r, q)] = pin_xy(i, n, x, y)
+        A("  )")
+    for i, n in enumerate(nets):
+        y = g(float(rail_y[str(n)]) * S)
+        xs = sorted(pin_pos.get((r, str(q)), (g(float(px[r]) * S), y))[0]
+                    for r, q in board.nets[str(n)].pins if r in px)
+        if not xs:
+            continue
+        # ponytail: rail as chained segments — KiCad ERC does not
+        # auto-junction mid-wire T-taps, every drop lands on an endpoint
+        for xa, xb in zip(xs, xs[1:]):
+            A(f'  (wire (pts (xy {xa:.2f} {y:.2f}) (xy {xb:.2f} {y:.2f}))'
+              ' (stroke (width 0.254) (type default))'
+              f' (uuid "{_uuid_mod.uuid4()}"))')
+        A(f'  (global_label "{n}" (shape input) (at {xs[0]:.2f} {y:.2f} 180)'
+          ' (effects (font (size 1.27 1.27)))'
+          f' (uuid "{_uuid_mod.uuid4()}"))')
+        for r, q in board.nets[str(n)].pins:
+            if (r, str(q)) not in pin_pos:
+                continue
+            ex, ey = pin_pos[(r, str(q))]
+            # lib pin `at` IS the wire attach point — drop straight to rail
+            A(f'  (wire (pts (xy {ex:.2f} {ey:.2f}) (xy {ex:.2f} {y:.2f}))'
+              ' (stroke (width 0.254) (type default))'
+              f' (uuid "{_uuid_mod.uuid4()}"))')
+    A('  (sheet_instances (path "/" (page "1")))')
+    A(")")
+    fn = os.path.join(outdir, f"{board.name}.kicad_sch")
+    open(fn, "w").write("\n".join(L) + "\n")
+    return [fn]

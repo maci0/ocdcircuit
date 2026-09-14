@@ -624,7 +624,7 @@ assert set(cast(dict[str, object], _ezrt["nets"])) == {"N", "GND"}
 import xml.etree.ElementTree as _ET
 _egf = _ebb.export("eagle", outdir=tempfile.mkdtemp())[0]
 assert _egf.endswith(".brd") and _ET.parse(_egf) is not None
-_egrt = agent.from_ir(cast(dict[str, object], foreign.eagle_brd(open(_egf).read())))
+_egrt = agent.from_ir(foreign.eagle_brd(open(_egf).read()))
 assert sorted(_egrt.parts) == ["R1", "R2"] and sorted(_egrt.nets) == ["GND", "N"]
 # kicad .sch export: same picture as the canvas, ERC-clean per kicad-cli
 _ksf = _ebb.export("kicad-sch", outdir=tempfile.mkdtemp())[0]
