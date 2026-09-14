@@ -107,6 +107,12 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     for t in board.traces:
         if getattr(t, "via", False):
             drills.setdefault(0.4, set()).add((round(t.x1, 3), round(t.y1, 3)))
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "hole":
+            from .drc import zone_at
+            z = zone_at(board, c)
+            drills.setdefault(_f(z["d"]), set()).add(
+                (round(_f(z["x"]), 3), round(_f(z.get("y", 0.0)), 3)))
     fn = os.path.join(outdir, f"{board.name}.TXT")
     d = ["M48", "METRIC,TZ"]
     tools = sorted(drills)

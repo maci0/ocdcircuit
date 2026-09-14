@@ -226,6 +226,19 @@ _fdz.place(seeds=1, iters=30)
 _fdz.route_board("maze")
 assert _fdz.check()["errors"] == [], _fdz.check()["errors"]
 assert _fdz.check()["warnings"] == [], _fdz.check()["warnings"]
+# cutout blocks maze routing; hole lands in the Excellon drill file
+_ch = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "fix R1 at 5 5\nfix C1 at 35 25\n"
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n"
+                  "cutout 20 15 6x6\nhole 30 8 2\n", base=EX)
+_ch.place(seeds=1, iters=30)
+_ch.route_board("maze")
+assert _ch.check()["errors"] == [], _ch.check()["errors"]
+assert not [s for s in _ch.traces
+            if 17 <= (s.x1 + s.x2) / 2 <= 23 and 12 <= (s.y1 + s.y2) / 2 <= 18]
+_drl = open([f for f in _ch.export("jlc", outdir=tempfile.mkdtemp())
+             if f.endswith(".TXT")][0]).read()
+assert "X30.000Y8.000" in _drl, _drl
 _dzbad = agent.loads("board t 40x30\npart F1 FIDUCIAL\npart R1 R0805 1k\n"
                      "fix F1 at 20 15\nfix R1 at 20 15\nnet N: R1.1 R1.2\n"
                      "keepout near F1 d4\n", base=EX)
