@@ -3,41 +3,68 @@
 One fact per line. Keywords case-insensitive, `#` starts a comment,
 blank lines ignored. Units are mm. First non-blank line must be `board`.
 Build with `python -m apps.ocd <file.ocd>` — errors name the line number.
+Declarative rule: facts describe the board (`part … x=3`,
+`GND pour=0 :: …`); legacy command spellings (`fix`, `route`, `pour`)
+still parse and dump in canonical form.
 
 ```ocd
 board blinky555 40x30 2L       # board NAME WxH [NL] — 1..32 layers (default 2)
+board 40x30                  # resize (bare form, no name)
 meta title Blinky 555          # meta KEY value... (title/rev/desc/… → KiCad/IR)
-part U1 SOIC8 NE555            # part REF FOOTPRINT [value...]
-VCC :: J1.1 <--> U1.8 <--> R1.1  # net flow: NAME [attrs] :: REF.PIN <--> ...
-GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> = layer, w<n> = width mm
+```
+
+## Parts
+
+```ocd
+part U1 SOIC8 NE555            # part REF FOOTPRINT [value...] [k=v ...]
+part C1 C0402 100n lcsc=C1525 rot=90 x=3 y=15
+part R9 R0603 0 dnp=1        # do-not-place: DNP BOM row, ERC-exempt
+part U2 SOIC8 TL072 sym=OPX pin2=VFB  # sym= symbol override; pinN= pin label
+```
+
+Part attrs (`k=v`, order-free, kept verbatim into IR/BOM/KiCad):
+`lcsc=` `mpn=` (orderable keys) · `rot=` 0/90/180/270 (bbox-aware) ·
+`x=` `y=` (≡ `fix REF at x y`, dumps in this form) · `dnp=1` ·
+`sym=` (symbol override) · `pinN=` (schematic pin label) ·
+`spicepin=` (SUBCKT node order, simulators brief) ·
+`alternates=` (comma MPN/LCSC list, parts-libraries brief).
+
+## Nets (mermaid-style flow)
+
+```ocd
+VCC :: J1.1 <--> U1.8 <--> R1.1  # NAME [attrs] :: REF.PIN <--> ...
+GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> layer, w<n> width mm
+GND pour=0 :: J1.2 <--> U1.1     #   pour=N ≡ `pour NET on N`
 HV class=highvolt :: J1.3 <--> U1.2  # k=v net attrs (class= names a class…)
 class highvolt width=0.8 clearance=0.5  # …defined once: width floor + DRC gap
-fix J1 at 3 15                 # pin a part at x y (or x=/y= on the part line)
+```
+
+Legacy `net NAME [attrs]: REF.PIN ...` (colon form) also parses.
+Every `REF` must be a declared part; every `PIN` must exist on its
+footprint — checked at load, no silent bad pins. Unknown footprints fail:
+`line 2: 'unknown footprint NOPE'`. Values may contain spaces
+(`part R1 R0805 10k 0805` keeps `10k 0805`).
+
+## Placement constraints
+
+```ocd
+fix J1 at 3 15                 # pin a part (or x=/y= on the part line)
 keep U1 near C1 3              # pull parts together (weight, default 2)
-route GND on 1                 # force net to layer (folds onto net line)
-trace VCC 0.5                  # trace width mm (folds onto net line)
+```
+
+## Routing constraints (fold onto the net line where possible)
+
+```ocd
+route GND on 1                 # force net to layer (top/bottom also work)
+trace VCC 0.5                  # trace width mm
 power VCC GND                # widen nets to 0.5 (power)
-nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
-sim vcc VIN 9                # 5V-style source net→GND (0 5 = step for tran)
-sim sine IN 1.65 1.65 1000   # sine source: offset amplitude freq-Hz
-sim tran 0.01 1000           # transient: t_end steps
-sim probe N_OUT              # record net (default: all)
-sim r R1 10k                 # value override when part text is exotic
 match A0 A1                  # length-match nets (placer cost + DRC skew report)
 diff DP DN gap 0.3           # diff pair: equal length + 0.3mm coupling gap
-silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
-use psu.ocd as PSU            # include board (child size/layers/fix ignored)
-use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
-fp exotic.fp                 # custom footprint file (pads/holes/3D/keepouts)
-sym opamp.sym                # custom symbol file (body + pin stubs + label)
-part U1 SOIC8 TL072 sym=OPX pin2=VFB  # sym= override; pinN= per-part pin label
-block driver               # reusable unit: local refs, stamped per instance
-  part U QFN28             #   (indented lines: part/net/constraints only)
-end
-instance driver as Z1      # stamp with PREFIX_; repeat as needed
-instance driver as Z2 join VCC GND  # joined nets merge, rest stay local
-part C1 C0402 100n lcsc=C1525 rot=90  # trailing k=v attrs (LCSC, rotation)
-part R9 R0603 0 dnp=1        # do-not-place: in BOM as DNP row, ERC-exempt
+```
+
+## Geometry (board features in mm, center x y)
+
+```ocd
 pour GND on 0                # copper pour (or pour=0 on the net line)
 keepout 11.5 47 15.7x1.9     # rect keepout, center x y WxH [+ on layers]
 keepout 20 15 d6           # round keepout, center x y dia [+ on layers]
@@ -45,41 +72,78 @@ keepout near F1 d4         # deadzone follows part (fiducial); WxH or dN,
                            # default d4; anchor part exempt, maze + DRC + KiCad
 cutout 11.5 47 15x1.2        # board cutout (slot)
 hole 15.2 12.9 1.3           # bare mounting hole (x y drill)
-                               # also: .kicad_mod/.pretty, .lbr (Eagle), .json (tscircuit)
-board 40x30                  # resize (bare form, no name)
+bend 10 20 30x5 r2           # flex bend area, center x y WxH radius [static]
+stiffener 10 20 30x5 FR4 0.2  # stiffener: center x y WxH material thick
+nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
+silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 ```
 
-## Includes (`use`)
+`pour` parses everywhere but warns until a consumer lands (no pour copper
+yet — LANDSCAPE defers it). Flex `bend`/`stiffener` enforced by `jlc-flex`
+DRC only (see `docs/FAB.md`).
 
-- `use PATH [as PREFIX] [join NET ...]` — PATH relative to the file.
-- Child refs/nets gain `PREFIX_` (default: child board name). Joined nets
-  (`join`, plus `VCC GND VDD VSS 5V 3V3` automatically) merge into the parent.
-- Ignored from child: board size, layer count, `fix` lines. The parent
-  places everything; the include's parts stay grouped (`near-group`).
-- Cycles and ref clashes are errors. `dumps()` writes `use` + local-only
-  content, so committed files stay the single source of truth.
+## Simulation (`sim`, one per line)
+
+```ocd
+sim vcc VIN 9                # 5V-style source net→GND (0 5 = step for tran)
+sim sine IN 1.65 1.65 1000   # sine source: offset amplitude freq-Hz
+sim isrc N 0.01              # current source into net (A)
+sim r R1 10k                 # value override (r/c/l/d/q + part REF + value)
+sim tran 0.01 1000           # transient: t_end steps
+sim probe N_OUT              # record net (default: all)
+sim op N_OUT V 0 5           # operating-point sweep (net, source, lo hi)
+sim ac IN LOG 10             # AC analysis (net, scale, points)
+sim lib models.lib           # extra SPICE include for simulate:ngspice
+sim expect VO == 5 tol 0.1   # assertion: VO==5 ±0.1 (red in studio/MCP/CLI)
+```
+
+## Reuse: files (`use`) and in-file units (`block`)
+
+```ocd
+use psu.ocd as PSU            # include board (child size/layers/fix ignored)
+use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
+block driver               # reusable unit: local refs, stamped per instance
+  part U QFN28             #   allowed inside: part/net/constraints only —
+end                        #   board/use/fp/instance/nested blocks rejected
+instance driver as Z1      # stamp with PREFIX_; repeat as needed
+instance driver as Z2 join VCC GND  # joined nets merge, rest stay local
+```
+
+`use`: child refs/nets gain `PREFIX_` (default: child board name). Joined
+nets (`join`, plus `VCC GND VDD VSS 5V 3V3` automatically) merge into the
+parent. Ignored from child: board size, layer count, `fix` lines. Cycles
+and ref clashes are errors. `dumps()` writes `use` + local-only content.
+
+## Libraries (footprints + symbols)
+
+```ocd
+fp exotic.fp                 # custom footprint (pads/holes/3D/keepouts)
+sym opamp.sym                # custom symbol (body + pin stubs + label)
+                               # also: .kicad_mod/.pretty, .lbr (Eagle), .json (tscircuit)
+```
+
+`.fp` format: `footprint NAME WxH [edge]` · `pad PIN dx dy w h` ·
+`hole PIN dx dy drill` · `body box|cyl …` · `keepout …`.
+`.sym` format: `symbol NAME [WxH]` · `pin NUM side [LABEL]` ·
+`label TEXT` (`{ref} {value} {fp}` interpolate) · `notch` · `zigzag`.
+Footprint shadowing of stdlib is an error (rename it).
 
 ## Rules
 
 - One board per file; a second `board NAME …` header is an error.
-- Every `REF` in a net must be a declared part; every `PIN` must exist on
-  that footprint (`ocd` checks this at load — no silent bad pins).
-- Unknown footprints fail at load: `line 2: 'unknown footprint NOPE'`.
-- Net attributes: `L<n>` / `w<n>` plus generic `k=v` (`class=…` names
-  a `class` line) — anything else is an error.
-- Values may contain spaces (`part R1 R0805 10k 0805` keeps `10k 0805`).
 - `dumps()` output is canonical: constraints come after nets; layer/width
-  constraints set by `net` attrs print as `route`/`trace` lines.
+  constraints set by `net` attrs print as `route`/`trace` lines;
+  `x=/y=` parts print no `fix` line.
+- A fact that parses but violates design rules builds, then exits 2.
 
 ## Minimal example
 
 ```ocd
 board rc 20x10
-part R1 R0805 1k
+part R1 R0805 1k x=3 y=5
 part C1 C0805 100n
-N :: R1.2 <--> C1.2        # ocd: floating-net DRC will flag single-pin nets
+N :: R1.2 <--> C1.2
 GND :: R1.1 <--> C1.1
-fix R1 at 3 5
 ```
 
 ## Errors (exit 1) vs DRC fail (exit 2)
