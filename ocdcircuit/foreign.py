@@ -146,17 +146,73 @@ def kicad_mod(text: str) -> tuple[str, Footprint]:
     for m in _kids(root, "model"):
         if len(m) > 1:
             models.append(_unq(m[1]))
+    # F/B.CrtYd rects: real courtyard (pin headers span past their pads).
+    # fp_line/fp_rect/fp_circle/fp_poly on a courtyard layer → bbox union.
+    crtx: list[float] = []
+    crty: list[float] = []
+    for tag in ("fp_rect", "fp_line", "fp_circle", "fp_poly"):
+        for node in _kids(root, tag):
+            lay = next((c for c in node[1:] if isinstance(c, list) and c and c[0] == "layer"), None)
+            if not lay or len(lay) < 2 or "CrtYd" not in _unq(lay[1]):
+                continue
+            pts: list[tuple[float, float]] = []
+            for c in node[1:]:
+                if not isinstance(c, list) or not c:
+                    continue
+                if c[0] in ("start", "end", "xy") and len(c) > 2 and _isnum(c[1]) and _isnum(c[2]):
+                    pts.append((_num(c[1]), _num(c[2])))
+                elif c[0] == "center" and len(c) > 2:
+                    pts.append((_num(c[1]), _num(c[2])))
+                elif c[0] == "pts":
+                    for p in c[1:]:
+                        if isinstance(p, list) and p and p[0] == "xy" and len(p) > 2:
+                            pts.append((_num(p[1]), _num(p[2])))
+            if pts:
+                crtx += [p[0] for p in pts]
+                crty += [p[1] for p in pts]
+    # antenna keepouts: (zone ... (keepout ...) (polygon (pts ...))) with
+    # tracks/vias/pads/copperpour/footprints not_allowed → rect bbox.
+    zones: list[dict[str, float | list[str]]] = []
+    for z in _kids(root, "zone"):
+        ko = next((c for c in z[1:] if isinstance(c, list) and c and c[0] == "keepout"), None)
+        if ko is None:
+            continue
+        flags = {_unq(c[0]) for c in ko[1:] if isinstance(c, list) and c
+                 and len(c) > 1 and _unq(c[1]) == "not_allowed"}
+        if not {"tracks", "vias", "pads", "footprints"} <= flags:
+            continue  # partial keepout (e.g. copperpour-only) — not routing
+        poly = next((c for c in z[1:] if isinstance(c, list) and c and c[0] == "polygon"), None)
+        pl = next((c for c in (poly[1:] if poly else []) if isinstance(c, list) and c and c[0] == "pts"),
+                  poly)
+        pts = [(_num(p[1]), _num(p[2])) for p in (pl[1:] if pl else [])
+               if isinstance(p, list) and p and p[0] == "xy" and len(p) > 2]
+        if len(pts) >= 2:
+            zx = [p[0] for p in pts]
+            zy = [p[1] for p in pts]
+            zones.append({"dx": (min(zx) + max(zx)) / 2, "dy": (min(zy) + max(zy)) / 2,
+                          "w": max(zx) - min(zx), "h": max(zy) - min(zy), "layers": []})
     if minx == float("inf"):
         minx, miny, maxx, maxy = 0.0, 0.0, 1.0, 1.0
+    if crtx:
+        # courtyard wins over pad bbox (headers, USB shells, tall bodies)
+        minx, miny = min(crtx), min(crty)
+        maxx, maxy = max(crtx), max(crty)
     wdt, hgt = max(1.0, maxx - minx + 1.0), max(1.0, maxy - miny + 1.0)
     # recenter pads/holes on centroid
     cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
     pads = {k: (v[0] - cx, v[1] - cy, v[2], v[3]) for k, v in pads.items()}
     holes = {k: (v[0] - cx, v[1] - cy, v[2]) for k, v in holes.items()}
+    from typing import cast
+    zones = [{"dx": cast(float, z["dx"]) - cx, "dy": cast(float, z["dy"]) - cy,
+                "w": cast(float, z.get("w", 0.0)), "h": cast(float, z.get("h", 0.0)),
+                "layers": cast(list[str], z.get("layers", []))}
+             for z in zones]
     fp: Footprint = {"w": wdt, "h": hgt, "pads": pads, "holes": holes,
                      "bodies": [{"box": (wdt - 1.0, hgt - 1.0, 1.0)}]}
     if models:
         fp["models"] = models  # STEP/WRL refs → texture/model hints
+    if zones:
+        fp["keepouts"] = zones
     return name, fp
 
 

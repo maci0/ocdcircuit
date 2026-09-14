@@ -41,6 +41,36 @@ def in_zone(c: object, x: float, y: float,
     return dx < _f(c["w"]) / 2 + px and dy < _f(c["h"]) / 2 + py
 
 
+def fp_keepouts(board: Board, ref: str) -> list[dict[str, object]]:
+    """Footprint keepouts as live board-frame zones: footprint-frame
+    (dx, dy, w/h or d) rotated into the part frame (rot-aware), centered
+    on the part. Follows placement like `keepout near` — synthesized at
+    consumption (maze/DRC/export), never materialized as constraints."""
+    p = board.parts[ref]
+    lib = board._lib()
+    meta = lib.get(p.fp, {})
+    out: list[dict[str, object]] = []
+    ko = meta.get("keepouts")
+    if not isinstance(ko, list):
+        return out
+    for z in ko:
+        if not isinstance(z, dict):
+            continue
+        rx, ry = p.rot_xy(_f(z.get("dx", 0.0)), _f(z.get("dy", 0.0)))
+        c: dict[str, object] = {"t": "keepout", "ref": ref,
+                                "x": p.x + rx, "y": p.y + ry,
+                                "layers": list(z.get("layers", []))}
+        if z.get("d") is not None:
+            c["d"] = _f(z["d"])
+        else:
+            w, h = _f(z.get("w", 0.0)), _f(z.get("h", 0.0))
+            if p.rot in (90, 270):
+                w, h = h, w
+            c["w"], c["h"] = w, h
+        out.append(c)
+    return out
+
+
 def _seg_dist(a: tuple[float, float, float, float],
               b: tuple[float, float, float, float]) -> float:
     (x1, y1, x2, y2), (x3, y3, x4, y4) = a, b
@@ -117,22 +147,32 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 warnings.append(f"jumper {t.net} (wire bridge needed)")
             else:
                 warnings.append(f"airwire {t.net} (maze fallback — re-route?)")
+    def _zone_warns(c: dict[str, object]) -> None:
+        z = zone_at(board, c)
+        for p in parts:
+            if str(c.get("ref", "")) == p.ref:
+                continue  # own deadzone never flags its anchor part
+            pw, ph = p.wh()
+            if in_zone(z, p.x, p.y, (pw / 2, ph / 2)):
+                # warning, not error: modules sit in antenna keepouts by
+                # design (mitox U4); review, don't block
+                warnings.append(f"keepout {p.ref}")
+        for t in board.traces:
+            mx, my = (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2
+            if in_zone(z, mx, my, t.width / 2):
+                warnings.append(f"keepout-trace {t.net}")
+
     for c in board.constraints:
-        if c.get("t") == "keepout":
-            z = zone_at(board, c)
-            for p in parts:
-                if str(c.get("ref", "")) == p.ref:
-                    continue  # own deadzone never flags its anchor part
-                pw, ph = p.wh()
-                if in_zone(z, p.x, p.y, (pw / 2, ph / 2)):
-                    # warning, not error: modules sit in antenna keepouts by
-                    # design (mitox U4); review, don't block
-                    warnings.append(f"keepout {p.ref}")
-            for t in board.traces:
-                mx, my = (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2
-                if in_zone(z, mx, my, t.width / 2):
-                    warnings.append(f"keepout-trace {t.net}")
-        elif c.get("t") == "hole":
+        if isinstance(c, dict) and c.get("t") == "keepout":
+            _zone_warns(c)
+    # footprint keepouts (antenna zones etc.): same warnings, synthesized
+    for ref in board.parts:
+        for c in fp_keepouts(board, ref):
+            _zone_warns(c)
+    for c in board.constraints:
+        if not (isinstance(c, dict) and c.get("t") in ("hole", "bend")):
+            continue
+        if c.get("t") == "hole":
             if _f(c["d"]) < min_drill:
                 errors.append(f"hole-drill {c['d']} < {min_drill}")
         elif c.get("t") == "bend":

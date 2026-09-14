@@ -242,6 +242,42 @@ assert "X30.000Y8.000" in _drl, _drl
 _gko = open([f for f in _ch.export("jlc", outdir=tempfile.mkdtemp())
              if f.endswith(".GKO.gbr")][0]).read()
 assert "X17.0000" in _gko and "X23.0000" in _gko, _gko
+# footprint keepouts ride the part: .fp keepout lines, kicad_mod zones +
+# courtyard art all parse; maze/DRC/export follow through placement+rot
+from ocdcircuit import footprint as _fp0, foreign as _frn
+_fpk, _fpm = _fp0.loads("footprint K1 4x4\npad 1 -1 0 1 1\npad 2 1 0 1 1\n"
+                        "keepout 0 3 4x2\nkeepout 0 -3 d2\n")
+assert _fpk == "K1" and len(cast(list[object], _fpm["keepouts"])) == 2
+_kn, _kfp = _frn.kicad_mod(
+    open(os.path.join(EX, "bme690", "fp", "PinHeader_1x07_P2.54mm_Vertical.kicad_mod")).read())
+assert _kfp["w"] == 4.54 and _kfp["h"] == 19.8  # courtyard, not pad bbox
+_mn, _mfp = _frn.kicad_mod(
+    open(os.path.join(EX, "breath_ketone", "fp", "Raytac_MDBT50Q.kicad_mod")).read())
+assert len(cast(list[object], _mfp["keepouts"])) == 2  # antenna zones
+_kb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\n"
+                  "fix R1 at 5 5\nnet GND: R1.1\n", base=EX)
+_kb.add_footprint("K1X", {"w": 4.0, "h": 4.0,
+                          "pads": {"1": (-1.0, 0.0, 1.0, 1.0), "2": (1.0, 0.0, 1.0, 1.0)},
+                          "keepouts": [{"dx": 0.0, "dy": 5.0, "w": 6.0, "h": 4.0, "layers": []}]})
+_kb.add_part("K1", "K1X", "", 20, 15)
+_kb.constrain({"t": "fixed", "ref": "K1", "x": 20, "y": 15})
+_kb.connect("N", "K1", "1")
+_kb.connect("N", "R1", "1")
+_kb.connect("GND", "K1", "2")
+_kb.connect("GND", "R1", "2")
+_kb.place(seeds=1, iters=30)
+_kb.route_board("maze")
+assert _kb.check()["errors"] == [], _kb.check()["errors"]
+assert not [s for s in _kb.traces  # nothing routes through the K1 north zone
+            if 17 <= (s.x1 + s.x2) / 2 <= 23 and 18 <= (s.y1 + s.y2) / 2 <= 22]
+from ocdcircuit.drc import fp_keepouts as _fk, in_zone as _iz
+assert len(_fk(_kb, "K1")) == 1 and _fk(_kb, "K1")[0]["x"] == 20.0
+assert _iz(_fk(_kb, "K1")[0], 20, 20) and not _iz(_fk(_kb, "K1")[0], 20, 10)
+_kb.move_part("K1", 10, 10)
+assert _fk(_kb, "K1")[0]["x"] == 10.0  # zone follows the part
+_kb.parts["K1"].attrs["rot"] = "90"
+_rz = _fk(_kb, "K1")[0]  # offset (0,5)->(-5,0), w/h swap 6x4->4x6
+assert (_rz["x"], _rz["y"], _rz["w"], _rz["h"]) == (5.0, 10.0, 4.0, 6.0)
 _dzbad = agent.loads("board t 40x30\npart F1 FIDUCIAL\npart R1 R0805 1k\n"
                      "fix F1 at 20 15\nfix R1 at 20 15\nnet N: R1.1 R1.2\n"
                      "keepout near F1 d4\n", base=EX)

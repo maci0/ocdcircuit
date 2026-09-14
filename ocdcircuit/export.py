@@ -224,6 +224,155 @@ def _sexp_str(s: str) -> str:
     return '"' + s.replace('"', "'") + '"'
 
 
+def _uuid() -> str:
+    import uuid
+    return str(uuid.uuid4())
+
+
+def _tech_layers() -> list[tuple[int, str, str]]:
+    """Full KiCad tech-layer table (ids + order from pcbnew's own files:
+    copper first, then tech — the CLI validates this). Unlisted layers
+    break zone fills, DRC, and 3D renders that reference F.Mask etc."""
+    return [(0, "F.Cu", "signal"), (2, "B.Cu", "signal"),
+            (9, "F.Adhes", "user"), (11, "B.Adhes", "user"),
+            (13, "F.Paste", "user"), (15, "B.Paste", "user"),
+            (5, "F.SilkS", "user"), (7, "B.SilkS", "user"),
+            (1, "F.Mask", "user"), (3, "B.Mask", "user"),
+            (17, "Dwgs.User", "user"), (19, "Cmts.User", "user"),
+            (21, "Eco1.User", "user"), (23, "Eco2.User", "user"),
+            (25, "Edge.Cuts", "user"), (27, "Margin", "user"),
+            (31, "F.CrtYd", "user"), (29, "B.CrtYd", "user"),
+            (35, "F.Fab", "user"), (33, "B.Fab", "user")]
+
+
+# soldermask palette for render presets (kicad preset patch at render time)
+MASK_COLORS = {"green": (18, 90, 20), "red": (160, 20, 20),
+               "blue": (20, 50, 140), "black": (15, 15, 15),
+               "white": (225, 225, 225), "purple": (90, 30, 130),
+               "yellow": (200, 170, 30)}
+
+
+def _model_for(fp: str) -> str | None:
+    """KiCad 3D model path for std footprints (env-var form so
+    KICAD10_3DMODEL_DIR resolves on the viewer's machine). Candidates
+    are probed against the local model dir; first hit wins, else a
+    static fallback (pads + silk still render)."""
+    import os
+    import re
+    M = "${KICAD10_3DMODEL_DIR}"
+    local = os.environ.get("KICAD10_3DMODEL_DIR", "/usr/share/kicad/3dmodels")
+
+    def pick(d: str, *cands: str) -> str | None:
+        for c in cands:
+            if os.path.exists(os.path.join(local, d, c)):
+                return f"{M}/{d}/{c}"
+        return None  # no such STEP shipped: pads + silk still render
+
+    _METRIC = {"0201": "0603Metric", "0402": "1005Metric",
+               "0603": "1608Metric", "0805": "2012Metric",
+               "1206": "3216Metric", "1210": "3225Metric",
+               "1218": "3246Metric", "2010": "5025Metric",
+               "2512": "6332Metric"}
+    m = re.fullmatch(r"(R|C|LED|L)(\d{4})", fp)
+    if m and m.group(2) in _METRIC:
+        fam = {"R": "Resistor_SMD.3dshapes", "C": "Capacitor_SMD.3dshapes",
+               "LED": "LED_SMD.3dshapes",
+               "L": "Inductor_SMD.3dshapes"}[m.group(1)]
+        s = f"{m.group(1)}_{m.group(2)}_{_METRIC[m.group(2)]}.step"
+        return pick(fam, s)
+    m = re.fullmatch(r"IND_SM(\d{4})", fp)
+    if m and m.group(1) in _METRIC:
+        return pick("Inductor_SMD.3dshapes",
+                    f"L_{m.group(1)}_{_METRIC[m.group(1)]}.step")
+    if fp in ("D_SOD123", "D_SOD323", "D_SMA", "D_SMB", "D_SMC"):
+        return pick("Diode_SMD.3dshapes", f"D_{fp[2:].replace('SOD', 'SOD-')}.step")
+    if fp in ("SOT23", "SOT-23", "SOT-23-3", "SOT23-3", "SOT-23-5",
+              "SOT223", "SOT-223", "SOT89", "SOT-89"):
+        stem = {"SOT-23-5": "SOT-23-5", "SOT223": "SOT-223",
+                "SOT-223": "SOT-223", "SOT89": "SOT-89-3",
+                "SOT-89": "SOT-89-3"}.get(fp, "SOT-23")
+        return pick("Package_TO_SOT_SMD.3dshapes", f"{stem}.step")
+    if fp in ("DPAK", "TO-252"):
+        return pick("Package_TO_SOT_SMD.3dshapes", "TO-252-2.step")
+    if fp in ("D2PAK", "TO-263"):
+        return pick("Package_TO_SOT_SMD.3dshapes", "TO-263-2.step")
+    if fp in ("MSOP8", "MSOP10"):
+        n = fp[4:]
+        return pick("Package_SO.3dshapes", f"MSOP-{n}_3x3mm_P0.65mm.step",
+                    f"MSOP-{n}_3x3mm_P0.5mm.step")
+    m = re.fullmatch(r"SOIC(\d+)", fp)
+    if m:
+        n = m.group(1)
+        wide = "3.9x8.7mm" if n in ("14", "16") else "3.9x9.9mm" if n in ("20", "28") else "3.9x4.9mm"
+        return pick("Package_SO.3dshapes", f"SOIC-{n}_{wide}_P1.27mm.step")
+    for fam_pre, dims in (("TSSOP", ("4.4x5mm_P0.65mm", "4.4x6.5mm_P0.65mm")),
+                          ("SSOP", ("5.3x6.2mm_P0.65mm", "5.3x10.2mm_P0.65mm",
+                                   "3.9x9.9mm_P0.635mm"))):
+        if fp.startswith(fam_pre):
+            n = fp[len(fam_pre):]
+            return pick("Package_SO.3dshapes",
+                        *(f"{fam_pre}-{n}_{d}.step" for d in dims))
+    m = re.fullmatch(r"QFN(\d+)", fp)
+    if m:
+        n = m.group(1)
+        return pick("Package_DFN_QFN.3dshapes",
+                    f"QFN-{n}-1EP_4x4mm_P0.4mm_EP2.65x2.65mm.step",
+                    f"QFN-{n}-1EP_5x5mm_P0.5mm_EP3.3x3.3mm.step",
+                    f"MPS_QFN-{n}_3x3mm_P0.5mm.step")
+    m = re.fullmatch(r"QFP(\d+)", fp)
+    if m:
+        n = m.group(1)
+        return pick("Package_QFP.3dshapes",
+                    f"LQFP-{n}_7x7mm_P0.5mm.step",
+                    f"TQFP-{n}_7x7mm_P0.8mm.step",
+                    f"LQFP-{n}_10x10mm_P0.5mm.step",
+                    f"LQFP-{n}_14x14mm_P0.5mm.step")
+    if fp in ("XTAL_3225", "XTAL_5032"):
+        return pick("Crystal.3dshapes",
+                    "Crystal_SMD_3225-4Pin_3.2x2.5mm.step",
+                    "Crystal_SMD_5032-2Pin_5.0x3.2mm.step")
+    if fp == "OSC4":
+        return pick("Crystal.3dshapes",
+                    "Crystal_SMD_5032-2Pin_5.0x3.2mm.step",
+                    "Crystal_SMD_3225-4Pin_3.2x2.5mm.step")
+    if fp in ("ELEC_5MM", "ELEC_6MM", "ELEC_8MM", "ELEC_10MM"):
+        d = fp.split("_")[1].replace("MM", "")
+        dia = "6.3" if d == "6" else d
+        pitch = "2.50mm" if d in ("6", "8", "10") else "2.00mm"
+        return pick("Capacitor_THT.3dshapes",
+                    f"CP_Radial_D{dia}mm_P{pitch}.step")
+    if fp in ("USB_C", "USB_C_EDGE"):
+        return pick("Connector_USB.3dshapes",
+                    "USB_C_Receptacle_GCT_USB4085.step")
+    if fp in ("USB_MICRO", "USB_MINI"):
+        return pick("Connector_USB.3dshapes",
+                    "USB_Micro-B_Molex_47346-0001.step",
+                    "USB_Mini-B_Lumberg_2486_01_Horizontal.step")
+    m = re.fullmatch(r"PINHD(\d+)", fp)
+    if m:
+        return pick("Connector_PinHeader_2.54mm.3dshapes",
+                    f"PinHeader_1x{int(m.group(1)):02d}_P2.54mm_Vertical.step")
+    m = re.fullmatch(r"PINHD2X(\d+)", fp)
+    if m:
+        return pick("Connector_PinHeader_2.54mm.3dshapes",
+                    f"PinHeader_2x{int(m.group(1)):02d}_P2.54mm_Vertical.step")
+    m = re.fullmatch(r"JST(\d+)", fp)
+    if m:
+        jn = int(str(m.group(1)))
+        return pick("Connector_JST.3dshapes",
+                    f"JST_XH_B{jn}B-XH-A_1x{jn:02d}_P2.50mm_Vertical.step")
+    if fp in ("TERMINAL2", "TERMINAL3"):
+        return pick("TerminalBlock_Phoenix.3dshapes",
+                    f"TerminalBlock_Phoenix_MKDS-1,5-{fp[-1]}-5.08_1x{fp[-1]:0>2}_P5.08mm_Horizontal.step")
+    if fp == "BARREL":
+        return pick("Connector_BarrelJack.3dshapes",
+                    "BarrelJack_Horizontal.step")
+    if fp == "SDCARD":
+        return pick("Connector_Card.3dshapes",
+                    "microSD_HC_Hirose_DM3D-SF.step")
+    return None
+
+
 def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.kicad_pcb (s-expression). Pads from pad_size, holes
     from hole_drill; segments per trace; silk refs via fp_text user."""
@@ -239,68 +388,101 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     A('  (paper "A4")')
     layers = kicad_layers(board.layers)
     A("  (layers")
-    for i, ln in enumerate(layers):
-        A(f'    ({i} {ln} signal)')
+    A('    (0 "F.Cu" signal)')
+    for i in range(1, board.layers - 1):
+        A(f'    ({2 * i + 2} "In{i}.Cu" signal)')
+    if board.layers > 1:
+        A('    (2 "B.Cu" signal)')
+    for i, name, typ in _tech_layers():
+        if name in ("F.Cu", "B.Cu"):
+            continue
+        A(f'    ({i} {_sexp_str(name)} {typ})')
     A("  )")
+    mask = MASK_COLORS.get(str(board.meta.get("mask", "green")).lower(),
+                           MASK_COLORS["green"])
+    _ = mask  # soldermask tint applies at render time (kicad preset), not in file
     A('  (setup (pad_to_mask_clearance 0.05))')
     net_ids: dict[str, int] = {}
     A('  (net 0 "")')  # KiCad requires the unconnected net declared first
     for i, n in enumerate(sorted(board.nets), 1):
         net_ids[n] = i
-        A(f"  (net {i} {_sexp_str(n)})")
-    pin_net: dict[tuple[str, str], int] = {}
+        A(f'  (net {i} {_sexp_str(n)})')
+    pin_net: dict[tuple[str, str], str] = {}
     for n, net in board.nets.items():
         for r, q in net.pins:
-            pin_net[(r, str(q))] = net_ids[n]
+            pin_net[(r, str(q))] = n
     for p in sorted(board.parts.values(), key=lambda q: q.ref):
-        A(f'  (footprint {_sexp_str(p.fp)} (layer "F.Cu")')
+        uuid = _uuid()
+        A(f'  (footprint {_sexp_str(p.fp)} (layer "F.Cu") (uuid "{uuid}")')
         A(f"    (at {p.x:.4f} {p.y:.4f})")
         A(f'    (descr {_sexp_str(p.value or p.fp)})')
         _pw, _ph = p.wh()
-        A(f'    (fp_text user {p.ref} (at 0 {-_ph / 2 - 1:.4f}) (layer "F.SilkS"))')
+        puuid = _uuid()
+        A(f'    (fp_text user {_sexp_str(p.ref)} (at 0 {-_ph / 2 - 1:.4f}) (layer "F.SilkS") (uuid "{puuid}"))')
+        if p.value:
+            A(f'    (fp_text value {_sexp_str(p.value)} (at 0 {_ph / 2 + 1:.4f}) '
+              f'(layer "F.Fab") (uuid "{_uuid()}"))')
         for pin in sorted(pads_of(p.fp, lib)):
             dx, dy = board.pad_pos(p.ref, pin)
             dr = hole_drill(p.fp, pin, lib)
-            nid = pin_net.get((p.ref, str(pin)), 0)
+            nn = _sexp_str(pin_net.get((p.ref, str(pin)), ""))
+            q = _uuid()
             if dr > 0:
-                A(f'    (pad {pin} thru_hole circle (at {dx:.4f} {dy:.4f}) '
-                  f"(size {dr + 0.7:.4f} {dr + 0.7:.4f}) (drill {dr:.4f}) (layers *.Cu *.Mask) (net {nid}))")
+                A(f'    (pad {_sexp_str(pin)} thru_hole circle (at {dx - p.x:.4f} {dy - p.y:.4f}) '
+                  f'(size {dr + 0.7:.4f} {dr + 0.7:.4f}) (drill {dr:.4f}) '
+                  f'(layers "*.Cu" "*.Mask") (net {nn}) (uuid "{q}"))')
             else:
                 pw, ph = pad_size(p.fp, pin, lib)
-                A(f'    (pad {pin} smd rect (at {dx:.4f} {dy:.4f}) '
-                  f"(size {pw:.4f} {ph:.4f}) (layers F.Cu F.Mask) (net {nid}))")
+                A(f'    (pad {_sexp_str(pin)} smd rect (at {dx - p.x:.4f} {dy - p.y:.4f}) '
+                  f'(size {pw:.4f} {ph:.4f}) (layers "F.Cu" "F.Paste" "F.Mask") '
+                  f'(net {nn}) (uuid "{q}"))')
+        model = _model_for(p.fp)
+        if model is not None:
+            A(f'    (model "{model}" (offset (xyz 0 0 0)) '
+              f'(scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))')
         A("  )")
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         ln = layers[t.layer] if t.layer < len(layers) else layers[0]
-        nid = net_ids.get(t.net, 0)
+        nid = _sexp_str(t.net)
+        if getattr(t, "via", False):
+            A(f'  (via (at {t.x1:.4f} {t.y1:.4f}) (size 0.8) (drill 0.4) '
+              f'(layers {_sexp_str(layers[0])} {_sexp_str(layers[-1])}) (net {nid}) (uuid "{_uuid()}"))')
+            continue
         A(f'  (segment (start {t.x1:.4f} {t.y1:.4f}) (end {t.x2:.4f} {t.y2:.4f}) '
-          f'(width {t.width:.4f}) (layer "{ln}") (net {nid}))')
+          f'(width {t.width:.4f}) (layer {_sexp_str(ln)}) (net {nid}) (uuid "{_uuid()}"))')
     W, H = board.width, board.height
     for x1, y1, x2, y2 in [(0, 0, W, 0), (W, 0, W, H), (W, H, 0, H), (0, H, 0, 0)]:
         A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
           f'(layer "Edge.Cuts") (width 0.1))')
+    from .drc import fp_keepouts, zone_at
+
+    def _cmts(z: dict[str, object]) -> None:
+        cx, cy = _f(z["x"]), _f(z.get("y", 0.0))
+        if z.get("d") is not None:
+            rr = _f(z["d"]) / 2
+            A(f'  (gr_circle (center {cx:.4f} {cy:.4f}) (end {cx + rr:.4f} {cy:.4f}) '
+              f'(layer "Cmts.User") (width 0.05))')
+            return
+        hw, hh = _f(z.get("w", 0.0)) / 2, _f(z.get("h", 0.0)) / 2
+        for x1, y1, x2, y2 in [(cx - hw, cy - hh, cx + hw, cy - hh),
+                               (cx + hw, cy - hh, cx + hw, cy + hh),
+                               (cx + hw, cy + hh, cx - hw, cy + hh),
+                               (cx - hw, cy + hh, cx - hw, cy - hh)]:
+            A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
+              f'(layer "Cmts.User") (width 0.05))')
+
     for con in board.constraints:
         kind = con.get("t")
         if kind == "keepout":
-            from .drc import zone_at
-            z = zone_at(board, con)
-            cx, cy = _f(z["x"]), _f(z.get("y", 0.0))
-            if z.get("d") is not None:
-                rr = _f(z["d"]) / 2
-                A(f'  (gr_circle (center {cx:.4f} {cy:.4f}) (end {cx + rr:.4f} {cy:.4f}) '
-                  f'(layer "Cmts.User") (width 0.05))')
-                continue
-            hw, hh = _f(z.get("w", 0.0)) / 2, _f(z.get("h", 0.0)) / 2
-            for x1, y1, x2, y2 in [(cx - hw, cy - hh, cx + hw, cy - hh),
-                                   (cx + hw, cy - hh, cx + hw, cy + hh),
-                                   (cx + hw, cy + hh, cx - hw, cy + hh),
-                                   (cx - hw, cy + hh, cx - hw, cy - hh)]:
-                A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
-                  f'(layer "Cmts.User") (width 0.05))')
+            _cmts(zone_at(board, con))
         elif kind == "hole":
-            A(f'  (pad HOLE thru_hole circle (at {_f(con["x"]):.4f} {_f(con["y"]):.4f}) '
-              f'(size {_f(con["d"]) + 0.6:.4f} {_f(con["d"]) + 0.6:.4f}) '
-              f'(drill {_f(con["d"]):.4f}) (layers *.Cu *.Mask) (net 0))')
+            hx, hy, hd = _f(con["x"]), _f(con["y"]), _f(con["d"])
+            A(f'  (footprint "MOUNT_HOLE" (layer "F.Cu") (uuid "{_uuid()}")')
+            A(f"    (at {hx:.4f} {hy:.4f})")
+            A(f'    (pad "1" thru_hole circle (at 0 0) '
+              f'(size {hd + 0.6:.4f} {hd + 0.6:.4f}) '
+              f'(drill {hd:.4f}) (layers "*.Cu" "*.Mask") (net "") (uuid "{_uuid()}"))')
+            A("  )")
         elif kind in ("bend", "stiffener"):
             cx, cy = _f(con["x"]), _f(con["y"])
             hw, hh = _f(con["w"]) / 2, _f(con["h"]) / 2
@@ -313,6 +495,10 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
                 A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
                   f'(layer "Cmts.User") (width 0.05))')
             A(f'  (gr_text "{tag}" (at {cx:.4f} {cy:.4f}) (layer "Cmts.User"))')
+    # footprint keepouts (antenna zones etc.) ride along as Cmts.User art
+    for ref in board.parts:
+        for c in fp_keepouts(board, ref):
+            _cmts(zone_at(board, c))
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
     open(fn, "w").write("\n".join(L) + "\n")

@@ -6,9 +6,12 @@ Format (one fact per line, # comments, mm):
   hole PIN dx dy drill     # PTH hole (repeat)
   body box w h z [at dx dy ...]   # 3D box, z = base height above board
   body cyl r z                    # 3D cylinder
+  keepout dx dy WxH [layers]      # no-copper/no-part rect, footprint frame
+  keepout dx dy dN [layers]       # no-copper/no-part circle, footprint frame
 
 `fp PATH` in .ocd loads it (relative to the file). `edge` flag = part may
-overhang the board outline (edge-mount plugs).
+overhang the board outline (edge-mount plugs). keepouts ride the part:
+maze walls + DRC warnings follow it through placement (rot-aware).
 """
 from __future__ import annotations
 import os
@@ -22,6 +25,7 @@ def loads(text: str) -> tuple[str, Footprint]:
     pads: dict[str, tuple[float, float, float, float]] = {}
     holes: dict[str, tuple[float, float, float]] = {}
     bodies: list[Footprint] = []
+    keepouts: list[dict[str, object]] = []
     for ln, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
@@ -65,6 +69,20 @@ def loads(text: str) -> tuple[str, Footprint]:
                 bodies.append({"cyl": (float(r), float(z))})
             else:
                 raise err("want: body box w h z [at dx dy ...] | body cyl r z")
+        elif kw == "keepout":
+            import re
+            m = re.match(r"^keepout\s+([\d.\-]+)\s+([\d.\-]+)\s+"
+                         r"(?:([\d.]+)x([\d.]+)|d([\d.]+))(?:\s+([\w,]+))?$",
+                         line, re.I)
+            if not m:
+                raise err("want: keepout dx dy WxH [layers] | keepout dx dy dN [layers]")
+            kd: dict[str, object] = {"dx": float(m.group(1)), "dy": float(m.group(2)),
+                                     "layers": m.group(6).split(",") if m.group(6) else []}
+            if m.group(5) is not None:
+                kd["d"] = float(m.group(5))
+            else:
+                kd["w"], kd["h"] = float(m.group(3)), float(m.group(4))
+            keepouts.append(kd)
         else:
             raise err("unknown statement")
     if not name or w <= 0 or h <= 0:
@@ -73,6 +91,8 @@ def loads(text: str) -> tuple[str, Footprint]:
                      "bodies": bodies}
     if edge:
         fp["edge"] = True
+    if keepouts:
+        fp["keepouts"] = keepouts
     return name, fp
 
 
