@@ -968,6 +968,30 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
+# atopile porter pure fns (no upstream project needed): main/parts/wires
+from tools import atopile as _ato
+assert _ato.parse_main(
+    "signal VCC\nsignal GND\nj1 = new Conn\nj1.p1 ~ VCC; j1.p2 ~ GND\n") == (
+    ["VCC", "GND"], {"j1": "Conn"},
+    [("j1.p1", "~", "VCC"), ("j1.p2", "~", "GND")])
+assert _ato.parse_parts(
+    'component R1:\n  footprint="R_0805"\n  supplier_partno="C1"\n'
+    "  signal a ~ pin 1\n") == {
+    "R1": {"fp": "R_0805", "lcsc": "C1", "pins": {"a": "1"}}}
+assert _ato._wire_stmts("a ~ b; c > d") == [("a", "~", "b"), ("c", ">", "d")]
+# mitox porter pure fns (no upstream project needed): elements + fallback
+from tools import mitox as _mitox
+assert _mitox.tsx_elements(
+    '<resistor name="R3" footprint="0402" resistance="1k" '
+    'pcbX="3mm" pcbY="4mm" pcbRotation="90deg" />') == {
+    "R3": {"kind": "resistor", "fpvar": "0402", "lcsc": "", "value": "1k",
+           "x": "3", "y": "4", "rot": "90"}}
+assert _mitox._std_fallback("C9") == "C0402"
+try:
+    _mitox._std_fallback("X9")
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
 _ebb = agent.loads("board t 20x20\npart R1 R0805 1k\npart R2 R0805 1k\n"
                    "net N: R1.2 R2.1\nnet GND: R1.1 R2.2\n")
 _ebb.place()
