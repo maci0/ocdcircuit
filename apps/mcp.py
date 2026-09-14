@@ -120,6 +120,17 @@ def t_check(a: dict[str, object]) -> dict[str, object]:
     return b.check(key)
 
 
+def t_score(a: dict[str, object]) -> dict[str, object]:
+    return _board().score(tidy=bool(a.get("tidy", True)))
+
+
+def t_diff(a: dict[str, object]) -> dict[str, object]:
+    base = str(a.get("base", os.path.dirname(os.path.abspath(SRC))
+                     if SRC != "<memory>" else BASE))
+    other = agent.loads(str(a["text"]), base=base)
+    return {"diff": _board().diff(other)}
+
+
 def t_export(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
@@ -201,6 +212,8 @@ TOOLS: dict[str, object] = {
     "place": (t_place, {"key": "placer?", "seeds": 4, "iters": 400, "frames?": True}),
     "route": (t_route, {"key": "router?", "frames?": True}),
     "check": (t_check, {"key": "drc?"}),
+    "score": (t_score, {"tidy": "include tidy scorecard?"}),
+    "diff": (t_diff, {"text": ".ocd source to compare against"}),
     "lint": (t_lint, {}),
     "doctor": (t_doctor, {}),
     "export": (t_export, {"key": "exporter?", "outdir": "out"}),

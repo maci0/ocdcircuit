@@ -78,9 +78,9 @@ report; motion is the product; one concept, one hue.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (18 tools:
-  load/solve/patch/place/route/check/export/render) — any MCP client can
-  drive boards. `match`/`diff` constraints cover length + diff pairs.
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (20 tools:
+  load/solve/patch/place/route/check/score/diff/export/render) — any MCP
+  client can drive boards. `match`/`diff` constraints cover length + diff pairs.
 
 Ports: `tools/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
 to `.ocd` — see `boards/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).

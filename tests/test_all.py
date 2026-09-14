@@ -303,10 +303,13 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 18
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 20
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert _call("lint", {})["errors"] == []
 assert _call("doctor", {})["ok"] is True
+assert _call("score", {})["total"] >= 0
+assert _call("diff", {"text": open(os.path.join(EX, "blinky_555.ocd")).read(),
+                       "base": EX}) == {"diff": ""}
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
 assert _call("apply_patch", {"ops": [{"op": "constrain",
