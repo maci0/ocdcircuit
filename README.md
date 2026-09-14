@@ -3,15 +3,37 @@
 A circuit design tool for people with OCD. Your traces are parallel.
 Your silkscreen is aligned. Your DRC is clean. It has to be.
 
-One source of truth per board: the `.ocd` file — one fact per line,
-commit it, build the rest. If a line is off by a space, `ocd` tells you
-which line. You knew which line. Now you can fix it.
+Needs: Python 3.11+, no other deps (`rich` optional for pretty CLI).
+
+## 10 minutes from KiCad
+
+Already have a schematic? Bring the board, keep the workflow:
+
+```bash
+# 1. import your layout (or a single footprint)
+python -c "from ocdcircuit.circuit import Board
+b = Board('mine'); b.import_fp('pcb', path='mine.kicad_pcb')
+print(len(b.parts), 'parts,', len(b.nets), 'nets')"
+# 2. write it back as .ocd, solve, check against your fab
+python -m apps.ocd boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
+# 3. open the cockpit and drag it into shape
+python -m apps.studio boards/blinky_555.ocd     # visual editor → localhost:8077
+# 4. ship: one zip, or push the .kicad_pcb back to KiCad
+```
+
+New board instead? Six lines, then `ocd run` (full spec: `docs/OCD.md`):
+
+```ocd
+board rc 20x10
+part R1 R0805 1k x=3 y=5
+part C1 C0805 100n
+N :: R1.2 <--> C1.2
+GND :: R1.1 <--> C1.1
+```
 
 ```bash
 python -m apps.ocd --placer compact --router maze boards/blinky_555.ocd  # cleanest
-python -m apps.ocd boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
 python -m apps.ocd --fab oshpark boards/psu.ocd # same board, stricter fab
-python -m apps.studio boards/blinky_555.ocd     # visual editor → localhost:8077
 python tests/test_all.py                     # one self-check for everything
 mypy     # strict, zero errors
 ```

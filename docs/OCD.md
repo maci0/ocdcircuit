@@ -3,6 +3,27 @@
 One fact per line. Keywords case-insensitive, `#` starts a comment,
 blank lines ignored. Units are mm. First non-blank line must be `board`.
 Build with `python -m apps.ocd <file.ocd>` — errors name the line number.
+
+## Your first board (six lines)
+
+```ocd
+board rc 20x10
+part R1 R0805 1k x=3 y=5
+part C1 C0805 100n
+N :: R1.2 <--> C1.2
+GND :: R1.1 <--> C1.1
+```
+
+```bash
+python -m apps.ocd run boards/blinky_555.ocd   # place → route → DRC → out/
+python -m apps.studio boards/blinky_555.ocd    # see it, drag it, keep it
+```
+
+Coming from KiCad? `Board('m').import_fp('pcb', path='mine.kicad_pcb')`
+loads parts+nets; `b.export('kicad')` writes it back. Footprints
+(`.kicad_mod`), Eagle (`.lbr`/`.brd`), tscircuit/EasyEDA JSON all import
+the same way (`docs/PORTS.md`).
+
 Declarative rule: facts describe the board (`part … x=3`,
 `GND pour=0 :: …`); legacy command spellings (`fix`, `route`, `pour`)
 still parse and dump in canonical form.
@@ -148,16 +169,6 @@ Footprint shadowing of stdlib is an error (rename it).
   constraints set by `net` attrs print as `route`/`trace` lines;
   `x=/y=` parts print no `fix` line.
 - A fact that parses but violates design rules builds, then exits 2.
-
-## Minimal example
-
-```ocd
-board rc 20x10
-part R1 R0805 1k x=3 y=5
-part C1 C0805 100n
-N :: R1.2 <--> C1.2
-GND :: R1.1 <--> C1.1
-```
 
 Duplicate sources resolve last-wins, uniformly: a later `fix R1 at …`
 overrides the `x=/y=` on the part line; a later net line's `L0 w0.5`
