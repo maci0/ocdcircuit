@@ -438,14 +438,15 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
 
 def _repair(board: Board, rounds: int = 8) -> None:
     """Min-conflicts repair (research §4): greedy place leaves overlaps;
-    repeatedly move the most-overlapped part to its min-conflict spot.
+    repeatedly move the most-conflicted part to its min-cost spot.
     Runs inside optimize's undoable effect (positions restored by _undo)."""
     import random
     rng = random.Random(0)
     fx = _fixed(board)
+    lib = board._lib()
     parts = [p for p in board.parts.values() if p.ref not in fx]
 
-    def _ovl(p: object) -> int:
+    def _bad(p: object) -> int:
         assert isinstance(p, Part)
         pw, ph = p.wh()
         n = 0
@@ -456,19 +457,25 @@ def _repair(board: Board, rounds: int = 8) -> None:
             if (abs(p.x - q.x) < (pw + qw) / 2 + 0.4 and
                     abs(p.y - q.y) < (ph + qh) / 2 + 0.4):
                 n += 1
+        if not lib.get(p.fp, {}).get("edge"):
+            m = edge_margin(board)
+            if not (pw / 2 + m <= p.x <= board.width - pw / 2 - m and
+                    ph / 2 + m <= p.y <= board.height - ph / 2 - m):
+                n += 1
         return n
 
     for _ in range(rounds):
         if not parts:
             return
-        p = max(parts, key=_ovl)
-        if _ovl(p) == 0:
+        p = max(parts, key=_bad)
+        if _bad(p) == 0:
             return
+        m = edge_margin(board)
         pw, ph = p.wh()
         bx, by, bc = p.x, p.y, cost(board)
         for _ in range(12):
-            p.x = min(max(rng.uniform(bx - 8, bx + 8), pw / 2), board.width - pw / 2)
-            p.y = min(max(rng.uniform(by - 8, by + 8), ph / 2), board.height - ph / 2)
+            p.x = min(max(rng.uniform(bx - 8, bx + 8), pw / 2 + m), board.width - pw / 2 - m)
+            p.y = min(max(rng.uniform(by - 8, by + 8), ph / 2 + m), board.height - ph / 2 - m)
             c = cost(board)
             if c < bc:
                 bx, by, bc = p.x, p.y, c

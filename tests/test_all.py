@@ -229,6 +229,11 @@ for pl in ["diffusion", "thermal"]:
     _ds = [((a.x - c.x) ** 2 + (a.y - c.y) ** 2) ** 0.5 for a, c in _it.combinations(_th_big, 2)]
     _sep[pl] = min(_ds)
 assert _sep["thermal"] > _sep["diffusion"], _sep
+# repair clears edge violations too (e2e J2 sat exactly on the rim at seed 0)
+_be = agent.loads(open(os.path.join(EX, "e2e_driver4", "e2e_driver4.ocd")).read(),
+                  base=os.path.join(EX, "e2e_driver4"))
+_be.place(seeds=2, iters=100)
+assert _be.check()["errors"] == [], _be.check()["errors"]
 for sk in ["ref", "full", "fab"]:
     silks = bo.silk(sk)
     assert isinstance(silks["texts"], list) and isinstance(silks["dots"], list)
