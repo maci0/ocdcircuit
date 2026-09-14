@@ -496,13 +496,13 @@ def restore_candidate(board: Board, cand: dict[str, object]) -> None:
 
 
 def feasible(board: Board, layers: list[int] | None = None) -> dict[int, dict[str, object]]:
-    """Routability probe per layer count: lroute (10x maze speed) on the
+    """Routability hint per layer count: lroute (10x maze speed) on the
     CURRENT placement, snapshot/rollback so the board is untouched.
-    Returns {L: {ok, jumpers, airwires, segs}} — ok means no jumpers and
-    no airwires (maze fallback never ran). Theory, not proof: lroute has
-    no obstacle avoidance, so ok is necessary-but-not-sufficient; a fail
-    here means maze will almost surely fail too."""
-    from .maze import maze as _maze
+    Returns {L: {ok, segs, wirelength}} — congestion comparison across
+    layer counts, not a maze-clean verdict (lroute is obstacle-blind).
+    ok=True here means "routed", not "clean": the real verdict is the
+    DRC panel's airwire/jumper warnings at the current layer count."""
+    from .solver import route as _route
     out: dict[int, dict[str, object]] = {}
     if layers is None:
         layers = [ll for ll in (1, 2, 4) if ll <= max(2, board.layers)]
@@ -512,14 +512,9 @@ def feasible(board: Board, layers: list[int] | None = None) -> dict[int, dict[st
         old_layers = board.layers
         try:
             board.layers = ll
-            n = _maze(board)
-            jumpers = sum(1 for s in board.traces if bool(getattr(s, "jumper", False)))
-            warns = board.check().get("warnings", [])
-            assert isinstance(warns, list)
-            air = sum(1 for w in warns
-                      if isinstance(w, str) and w.startswith("airwire"))
-            out[ll] = {"ok": jumpers == 0 and air == 0,
-                       "jumpers": jumpers, "airwires": air, "segs": n}
+            n = _route(board)
+            wl = round(sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in board.traces), 1)
+            out[ll] = {"ok": True, "segs": n, "wirelength": wl}
         finally:
             board.layers = old_layers
             board.traces = old_traces

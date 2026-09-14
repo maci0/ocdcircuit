@@ -6,6 +6,11 @@ Sources (checked Sep 2026, standard tiers — re-verify before ordering):
 - OSH Park: https://oshpark.com (fixed stackup, ENIG only)
 - Seeed Fusion: https://www.seeedstudio.com/fusion.html
 - Aisler: https://aisler.net (HDSK stackup)
+- Eurocircuits pattern/drill classes: https://www.eurocircuits.com/technical-guidelines/pcb-design-guidelines/classification/
+- NextPCB capabilities: https://www.nextpcb.com/capabilities
+- ALLPCB prototype: https://www.allpcb.com
+- Sierra Circuits proto: https://www.protoexpress.com/products/
+- Advanced Circuits: https://www.4pcb.com/pcb-capabilities.html
 
 Units: mm. min_drill = finished PTH min. annular = min ring.
 """
@@ -55,6 +60,41 @@ PROFILES: dict[str, FabProfile] = {
         "annular": 0.15, "edge": 0.3, "max_w": 300, "max_h": 400,
         "thickness": (1.0, 1.6), "finishes": ("ENIG",),
         "url": "https://aisler.net",
+    },
+    "eurocircuits": {
+        "name": "Eurocircuits standard pool", "layers": (2, 4, 6, 8),
+        "min_trace": 0.15, "min_space": 0.15, "min_drill": 0.3,
+        "annular": 0.15, "edge": 0.5, "max_w": 400, "max_h": 500,
+        "thickness": (0.5, 2.4), "finishes": ("ENIG", "HASL-LF"),
+        "url": "https://www.eurocircuits.com/technical-guidelines/pcb-design-guidelines/classification/",
+    },
+    "nextpcb": {
+        "name": "NextPCB standard", "layers": (1, 2, 4, 6, 8),
+        "min_trace": 0.09, "min_space": 0.09, "min_drill": 0.2,
+        "annular": 0.15, "edge": 0.3, "max_w": 500, "max_h": 1100,
+        "thickness": (0.4, 3.0), "finishes": ("HASL", "HASL-LF", "ENIG", "OSP"),
+        "url": "https://www.nextpcb.com/capabilities",
+    },
+    "allpcb": {
+        "name": "ALLPCB prototype", "layers": (1, 2, 4, 6, 8),
+        "min_trace": 0.1, "min_space": 0.1, "min_drill": 0.2,
+        "annular": 0.15, "edge": 0.3, "max_w": 500, "max_h": 1100,
+        "thickness": (0.4, 3.0), "finishes": ("HASL", "HASL-LF", "ENIG"),
+        "url": "https://www.allpcb.com",
+    },
+    "sierra": {
+        "name": "Sierra Circuits proto", "layers": (2, 4, 6, 8),
+        "min_trace": 0.09, "min_space": 0.09, "min_drill": 0.15,
+        "annular": 0.1, "edge": 0.25, "max_w": 457, "max_h": 610,
+        "thickness": (0.5, 3.2), "finishes": ("ENIG", "HASL-LF"),
+        "url": "https://www.protoexpress.com/products/",
+    },
+    "advanced": {
+        "name": "Advanced Circuits standard", "layers": (1, 2, 4, 6, 8),
+        "min_trace": 0.09, "min_space": 0.09, "min_drill": 0.25,
+        "annular": 0.15, "edge": 0.25, "max_w": 533, "max_h": 914,
+        "thickness": (0.8, 2.4), "finishes": ("HASL", "HASL-LF", "ENIG"),
+        "url": "https://www.4pcb.com/pcb-capabilities.html",
     },
 }
 

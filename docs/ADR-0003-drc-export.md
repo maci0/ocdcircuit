@@ -12,7 +12,8 @@ outline), Excellon drill, BOM + CPL CSVs — hand-rolled, no Gerber lib.
 Demo must reach zero *errors*. Warnings are the visible router-debt meter.
 
 ## Update (fab profiles, Eagle/EasyEDA, lint breadth)
-- Six fab profiles (`fab.py`: jlc/jlc-flex/pcbway/oshpark/seeed/aisler);
+- Eleven fab profiles (`fab.py`: jlc/jlc-flex/pcbway/oshpark/seeed/aisler +
+  eurocircuits/nextpcb/allpcb/sierra/advanced);
   `Board.fab` selects, DRC reports which fab it checked.
 - Import: Eagle `.brd` boards, EasyEDA Std JSON (footprint + PCB docs);
   export adds EasyEDA Std PCB JSON. All as `importer`/`exporter` plugins.

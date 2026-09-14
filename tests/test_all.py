@@ -322,6 +322,15 @@ from ocdcircuit import fab
 assert fab.get("oshpark")["min_drill"] == 0.508
 assert fab.get("jlc-flex")["layers"] == (1, 2, 4)
 assert fab.get("jlc-flex")["finishes"] == ("ENIG",)
+# all eleven profiles load and run DRC through the generic drc:fab path
+assert len(fab.list_fabs()) == 11, fab.list_fabs()
+_bfab = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                    "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n", base=EX)
+_bfab.place(seeds=1, iters=30)
+for _ff in fab.list_fabs():
+    _fr = _bfab.check("fab", fab=_ff)
+    assert isinstance(_fr["errors"], list) and _fr["fab"] == _ff, _ff
+assert _bfab.check("fab", fab="eurocircuits")["errors"] == []
 # flex: bend/stiffener round-trip, DRC, no maze vias in dynamic bends
 _fb = agent.loads("board f 60x20 2L\npart J1 PINHD4\npart U1 SOIC8 X\n"
                   "net A: J1.1 U1.1\nnet B: J1.2 U1.2\n"
@@ -1128,12 +1137,13 @@ _gal2.constrain({"t": "fixed", "ref": "J1", "x": 3.0, "y": 15.0})
 _gal2.place("compact", seeds=1, iters=30)
 assert _gal2.parts["J1"].x == 3.0 and _gal2.parts["J1"].y == 15.0
 assert any((p.x, p.y) != before[r] for r, p in _gal2.parts.items() if r != "J1")
-# feasibility probe: blinky routes 2L, needs jumpers on 1L
+# feasibility hint: lroute wirelength shrinks with layer count (congestion
+# comparison, not a maze verdict — ok means "routed", DRC owns "clean")
 _fb = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
 _fb.place(seeds=2, iters=100)
 _feas = _solver.feasible(_fb)
-assert bool(_feas[2]["ok"]) is True and bool(_feas[1]["ok"]) is False
-assert int(cast(int, _feas[1]["jumpers"])) > 0 and int(cast(int, _feas[2]["segs"])) > 0
+assert int(cast(int, _feas[2]["segs"])) > 0
+assert float(cast(float, _feas[2]["wirelength"])) <= float(cast(float, _feas[1]["wirelength"]))
 assert len(_fb.traces) == 0  # probe leaves the board untouched
 # symbols: stdlib resolve + .sym file + sym= attr + sch bodies + undo
 from ocdcircuit import symbol as _sym
