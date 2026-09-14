@@ -105,7 +105,8 @@ def _parse_with(text: str, modules: _ModTab
     # scope tracks each elaborated var's (module, localname) for .package
     # lookup; each expansion overwrites (innermost wins, children re-expand).
     scope: dict[str, tuple[str, str]] = {}
-    for _ in range(8):  # ponytail: depth cap, atopile allows recursion
+    for _ in range(8):  # ponytail: depth cap, atopile allows recursion;
+        # raise (or loop to fixpoint) if a real project nests deeper than 8
         todo = [(v, c) for v, c in insts.items() if c in modules]
         if not todo:
             break
