@@ -20,9 +20,9 @@ from ocdcircuit.circuit import Board  # noqa: E402
 USAGE = """usage:
   ocd new <dir>                 scaffold a board project
   ocd run [--fab F] [--placer P] [--router R] [--sim dc|tran] <circuit.ocd>
-  ocd status <circuit.ocd>      refresh STATUS.md next to the file
+  ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
-  ocd score <circuit.ocd>        OCD neatness 0-100 (read-only)
+  ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
   ocd doctor                     tooling self-check (no file needed)
   ocd plugins [kind]            list registry keys (placer/router/…)
@@ -50,6 +50,19 @@ def _proj_str(b: Board, key: str) -> str | None:
 def _proj_list(b: Board, key: str) -> list[str] | None:
     v = b.proj.get(key)
     return list(v) if isinstance(v, list) else None
+
+
+def _solve(b: Board, placer: str | None, router: str | None
+           ) -> tuple[float, int, str, str]:
+    """Place+route honoring CLI flags, else board.toml picks, else defaults.
+    Returns (cost, segs, placer_used, router_used) — the registry default
+    is untouched by one-shot runs, so callers display these, not active."""
+    placer = placer or _proj_str(b, "placer")
+    router = router or _proj_str(b, "router")
+    c = b.place(placer) if placer else b.place()
+    n = b.route_board(router) if router else b.route_board()
+    return (c, n, placer or str(b.plugins().active.get("placer")),
+            router or str(b.plugins().active.get("router")))
 
 
 class _Printer:
@@ -161,11 +174,8 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     except (OSError, ValueError, KeyError, AssertionError) as e:
         _out().print(f"[red]ocd: {e}[/red]")
         return 1
-    placer = placer or _proj_str(b, "placer")
-    router = router or _proj_str(b, "router")
     try:
-        c = b.place(placer) if placer else b.place()
-        n = b.route_board(router) if router else b.route_board()
+        c, n, pl_used, rt_used = _solve(b, placer, router)
     except KeyError as e:
         _out().print(f"[red]ocd: {e}[/red]")
         return 1
@@ -181,8 +191,7 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
                  f"segs=[cyan]{n}[/cyan] "
                  f"errors={'[green]0[/green]' if ok else f'[red]{len(errors)}[/red]'} "
                  f"warnings=[yellow]{len(warnings)}[/yellow] "
-                 f"({placer or b.plugins().active.get('placer')}/"
-                 f"{router or b.plugins().active.get('router')})")
+                 f"({pl_used}/{rt_used})")
     _table("fab output", [(f"{len(files)} files + {len(rendered)} renders", out)])
     if simwhat:
         try:
@@ -238,17 +247,16 @@ def _pour_line(b: object) -> str:
 
 
 def cmd_status(agent: object, args: list[str]) -> int:
-    fab, _placer, _router, _sim, rest = _flags(args)
+    fab, placer, router, _sim, rest = _flags(args)
     if len(rest) != 1:
-        print("usage: ocd status [--fab F] <circuit.ocd>")
+        print("usage: ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>")
         return 1
     src = rest[0]
     try:
         b = _load(agent, src)
         if fab is not None:
             b.fab = fab
-        b.place()
-        b.route_board()
+        _, _, pl_used, rt_used = _solve(b, placer, router)
     except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1
@@ -288,8 +296,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + (f"{simline}\n" if simline else "")
            + f"parts: {len(b.parts)}, nets: {len(b.nets)}, "
            + f"traces: {len(b.traces)}, layers: {b.layers}\n"
-           + f"solved: {b.plugins().active.get('placer')}/"
-           + f"{b.plugins().active.get('router')} @ {b.fab}\n"
+           + f"solved: {pl_used}/{rt_used} @ {b.fab}\n"
            + _pour_line(b)
            + f"extent: {_ext['w']}x{_ext['h']}mm "
            + f"({float(cast(float, _ext['fill'])) * 100:.0f}% of "
@@ -318,16 +325,15 @@ def cmd_diff(agent: object, args: list[str]) -> int:
 
 
 def cmd_score(agent: object, args: list[str]) -> int:
-    fab, _placer, _router, _sim, rest = _flags(args)
+    fab, placer, router, _sim, rest = _flags(args)
     if len(rest) != 1:
-        print("usage: ocd score [--fab F] <circuit.ocd>")
+        print("usage: ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>")
         return 1
     try:
         b = _load(agent, rest[0])
         if fab is not None:
             b.fab = fab
-        b.place()
-        b.route_board()
+        _solve(b, placer, router)
     except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1

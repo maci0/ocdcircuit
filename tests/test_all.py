@@ -978,6 +978,15 @@ with _tf.TemporaryDirectory() as _td:
     assert "tidy (13/15" in _sm, _sm[:200]
     assert "shrink →" in _sm, _sm[-300:]
     assert "solved: diffusion/lroute @ jlc" in _sm, _sm[-500:]
+    # status/score honor board.toml picks (same as run) + CLI flags win
+    open(os.path.join(_td, "board.toml"), "w").write('placer = "compact"\n')
+    assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
+    assert "solved: compact/" in open(os.path.join(_td, "STATUS.md")).read()
+    assert _ocd.cmd_status(_ocd._boot(), ["--placer", "thermal", _sp]) == 0
+    assert "solved: thermal/" in open(os.path.join(_td, "STATUS.md")).read()
+    assert _ocd.cmd_score(_ocd._boot(), ["--placer", "compact", _sp]) == 0
+    assert _ocd.cmd_score(_ocd._boot(), ["--placer", "bogus", _sp]) == 1
+    os.remove(os.path.join(_td, "board.toml"))
     # STATUS.md reports pour planes (mitox GND on 0,3)
     shutil.copytree(os.path.join(EX, "mitox"), os.path.join(_td, "mitox"))
     assert _ocd.cmd_status(_ocd._boot(), [os.path.join(_td, "mitox", "mitox.ocd")]) == 0
