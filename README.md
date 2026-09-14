@@ -10,10 +10,11 @@ Needs: Python 3.11+, no other deps (`rich` optional for pretty CLI).
 Already have a schematic? Bring the board, keep the workflow:
 
 ```bash
-# 1. import your layout (or a single footprint)
+# 1. import your footprints (or a whole .kicad_pcb layout)
 python -c "from ocdcircuit.circuit import Board
-b = Board('mine'); b.import_fp('pcb', path='mine.kicad_pcb')
-print(len(b.parts), 'parts,', len(b.nets), 'nets')"
+b = Board('mine')
+print(b.import_fp('kicad', path='boards/bme690/fp/PinHeader_1x07_P2.54mm_Vertical.kicad_mod'))
+# ...or b.import_fp('pcb', path='mine.kicad_pcb') → parts + nets"
 # 2. write it back as .ocd, solve, check against your fab
 python -m apps.ocd boards/blinky_555.ocd        # .ocd → DRC → Gerbers + KiCad
 # 3. open the cockpit and drag it into shape
