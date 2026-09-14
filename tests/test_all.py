@@ -348,6 +348,7 @@ with tempfile.TemporaryDirectory() as d:
     assert '"J11' in _bom and _bom.count("C21190") == 1, _bom
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
+    assert '(net 0 "")' in kc  # KiCad requires the unconnected net declared
 
 # MCP stdio server: initialize → list → load → solve → patch → check
 import json as _json

@@ -244,6 +244,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     A("  )")
     A('  (setup (pad_to_mask_clearance 0.05))')
     net_ids: dict[str, int] = {}
+    A('  (net 0 "")')  # KiCad requires the unconnected net declared first
     for i, n in enumerate(sorted(board.nets), 1):
         net_ids[n] = i
         A(f"  (net {i} {_sexp_str(n)})")
