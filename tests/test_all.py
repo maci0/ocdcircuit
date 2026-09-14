@@ -1185,6 +1185,19 @@ except RuntimeError:
     pass
 assert _seen == {"kind": "placer", "key": "multilevel"}, _seen
 Board._run = _orig_run  # type: ignore[method-assign]
+# router auto-select: default below 1000 parts, coarse at/above
+Board._run = _spy_run  # type: ignore[method-assign]
+try:
+    _lb.route_board()
+except RuntimeError:
+    pass
+assert _seen == {"kind": "router", "key": None}, _seen
+try:
+    _big.route_board()
+except RuntimeError:
+    pass
+assert _seen == {"kind": "router", "key": "coarse"}, _seen
+Board._run = _orig_run  # type: ignore[method-assign]
 # multilevel runs for real (not just dispatched): pico places DRC-clean
 _ml = agent.loads(open(os.path.join(EX, "pico_tmc2209", "pico_tmc2209.ocd")).read(),
                   base=os.path.join(EX, "pico_tmc2209"))

@@ -155,6 +155,10 @@ class Board(Component):
         return out
 
     def route_board(self, key: str | None = None, **k: object) -> int:
+        if key is None and len(self.parts) >= 1000:
+            # coarse-grid maze drafts huge boards ~10x faster; refine
+            # with maze after (mirrors placer multilevel auto-select).
+            key = "coarse"
         out = self._run("router", key, **k)
         assert isinstance(out, int)
         return out
