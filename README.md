@@ -40,7 +40,6 @@ mypy     # strict, zero errors
 ```
 
 ## The language (full spec: `docs/OCD.md`)
-
 ```ocd
 board blinky555 40x30 2L     # every board starts exactly like this
 use psu.ocd as PSU           # include another board (refs → PSU_*, VCC/GND join)
@@ -52,6 +51,11 @@ route GND on 1               # ground goes on the bottom. obviously
 power VCC GND                # power traces are 0.5mm. obviously
 silk 2                       # refs + values + outlines. level 3 labels nets too
 ```
+
+`board.toml` next to the `.ocd` sets project defaults (CLI flags win):
+`fab` / `placer` / `router` / `drc` (list) / `mask` / `style`.
+Values are validated — `ocd plugins [kind]` lists legal picks.
+Every surface honors them: CLI, studio dropdowns, and MCP tools.
 
 ## Studio
 
