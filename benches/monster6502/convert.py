@@ -107,6 +107,10 @@ def _block_members(comps: list[dict[str, object]]
 
 
 def main() -> None:
+    import sys
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        print("usage: python -m benches.monster6502.convert  # writes monster6502.ocd")
+        return
     raw = json.load(open(os.path.join(HERE, "netlist.json")))
     lay = json.load(open(os.path.join(HERE, "layout.json")))
     # positions: layout.json is authoritative (true mm, matches board 290.8x322.1)

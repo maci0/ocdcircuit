@@ -71,8 +71,14 @@ def overlaps(b: object) -> int:
 
 
 def main() -> None:
-    seeds = int(sys.argv[1]) if len(sys.argv) > 1 else BASE_SEEDS
-    iters = int(sys.argv[2]) if len(sys.argv) > 2 else BASE_ITERS
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        print("usage: python -m benches.monster6502.bench [seeds] [iters] [placer]")
+        return
+    try:
+        seeds = int(sys.argv[1]) if len(sys.argv) > 1 else BASE_SEEDS
+        iters = int(sys.argv[2]) if len(sys.argv) > 2 else BASE_ITERS
+    except ValueError:
+        raise SystemExit("usage: python -m benches.monster6502.bench [seeds] [iters] [placer]")
     placer = sys.argv[3] if len(sys.argv) > 3 else "diffusion"
     try:
         b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)

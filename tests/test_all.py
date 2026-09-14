@@ -1527,6 +1527,15 @@ try:
     raise AssertionError("should have exited 1")
 except SystemExit as e:
     assert e.code == 1, e.code
+# entry points answer --help without side effects (no regeneration)
+import subprocess as _sp9
+for _mod, _usage in [
+        ("tools.tscircuit", "tools.tscircuit"),
+        ("benches.monster6502.convert", "monster6502.convert"),
+        ("benches.monster6502.bench", "monster6502.bench")]:
+    _hr = _sp9.run([sys.executable, "-m", _mod, "--help"], capture_output=True,
+                   timeout=60, cwd=os.path.join(EX, ".."))
+    assert _usage in (_hr.stdout.decode() + _hr.stderr.decode()), (_mod, _hr)
 # tscircuit convert end-to-end: tsx + dist circuit.json → .ocd text →
 # loads, solves clean (pcb centers are board-centered in tscircuit output)
 import json as _js3

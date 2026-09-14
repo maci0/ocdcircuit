@@ -258,7 +258,7 @@ def _guess_fp(cname: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
         print("usage: python -m tools.tscircuit <project-dir>", file=sys.stderr)
         raise SystemExit(1)
     try:
