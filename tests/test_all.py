@@ -693,6 +693,9 @@ _dd = _diffmod.diff(_da, _db)
 assert "+ part C1" in _dd and "+ pour" in _dd and "route-grid" in _dd, _dd
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
+assert solved["placer"] == "compact" and solved["router"] == "maze", solved
+_dsolve = _call("solve", {})
+assert _dsolve["placer"] == "diffusion" and _dsolve["router"] == "lroute", _dsolve
 _g = _call("candidates", {"n": 2, "seed": 3, "seeds": 1, "iters": 30})
 _gc = cast(list[object], _g["candidates"])
 _gf = cast(dict[str, dict[str, object]], _g["feasible"])

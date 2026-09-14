@@ -310,7 +310,9 @@ def t_solve(a: dict[str, object]) -> dict[str, object]:
     n = b.route_board(rk)
     r = b.check()
     return {"cost": cost, "segments": n, "errors": r["errors"],
-            "warnings": r["warnings"]}
+            "warnings": r["warnings"],
+            "placer": pk or b.plugins().active.get("placer"),
+            "router": rk or b.plugins().active.get("router")}
 
 
 TOOLS: dict[str, object] = {
