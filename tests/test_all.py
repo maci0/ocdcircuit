@@ -166,6 +166,8 @@ assert len(rf) >= 1 and "segs" in rf[0]
 # power constraints widen routed copper (blinky: VCC/GND 0.5 vs 0.3 signal)
 assert {s.width for s in bo.traces if s.net in ("VCC", "GND")} == {0.5}
 assert {s.width for s in bo.traces if s.net not in ("VCC", "GND")} == {0.3}
+# route constraint forces the layer (blinky: GND stays on 1)
+assert {s.layer for s in bo.traces if s.net == "GND"} == {1}
 
 # JSON wire IR round-trips
 bj = agent.from_json(agent.to_json(bo))
