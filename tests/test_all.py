@@ -1008,6 +1008,59 @@ with tempfile.NamedTemporaryFile("w", suffix=".kicad_pcb", delete=False) as _pf:
 assert (_pos, _pw, _ph, _pfps) == (
     {"R1": (10.0, 30.0), "C1": (30.0, 10.0)}, 40.0, 50.0,
     {"R1": "R_0805", "C1": "C_0805"})
+# mitox convert end-to-end on a synthetic project: tsx + circuit.json →
+# harvested .fp + .ocd → loads, solves clean
+import json as _js2
+from tools import mitox as _mitox2
+_td3 = tempfile.mkdtemp()
+_tsx = ('<board width="24mm" height="56mm" layers={4}>\n'
+        '<resistor name="R3" footprint="0402" resistance="1k" />\n'
+        '<capacitor name="C4" footprint="0402" capacitance="100n" />\n'
+        "</board>\n")
+_cj = [
+    {"type": "source_component", "source_component_id": "s1", "name": "R3"},
+    {"type": "source_component", "source_component_id": "s2", "name": "C4"},
+    {"type": "pcb_component", "pcb_component_id": "p1",
+     "source_component_id": "s1",
+     "center": {"x": 0, "y": 0}, "rotation": 0, "width": 2.0, "height": 1.2},
+    {"type": "pcb_component", "pcb_component_id": "p2",
+     "source_component_id": "s2",
+     "center": {"x": 5, "y": 0}, "rotation": 0, "width": 2.0, "height": 1.2},
+    {"type": "source_port", "source_port_id": "sp1",
+     "source_component_id": "s1", "pin_number": "1"},
+    {"type": "source_port", "source_port_id": "sp2",
+     "source_component_id": "s1", "pin_number": "2"},
+    {"type": "source_port", "source_port_id": "sp3",
+     "source_component_id": "s2", "pin_number": "1"},
+    {"type": "source_port", "source_port_id": "sp4",
+     "source_component_id": "s2", "pin_number": "2"},
+    {"type": "pcb_port", "pcb_port_id": "pp1", "source_port_id": "sp1"},
+    {"type": "pcb_port", "pcb_port_id": "pp2", "source_port_id": "sp2"},
+    {"type": "pcb_port", "pcb_port_id": "pp3", "source_port_id": "sp3"},
+    {"type": "pcb_port", "pcb_port_id": "pp4", "source_port_id": "sp4"},
+    {"type": "pcb_smtpad", "pcb_component_id": "p1", "pcb_port_id": "pp1",
+     "x": -0.5, "y": 0, "width": 0.8, "height": 0.9, "shape": "rect"},
+    {"type": "pcb_smtpad", "pcb_component_id": "p1", "pcb_port_id": "pp2",
+     "x": 0.5, "y": 0, "width": 0.8, "height": 0.9, "shape": "rect"},
+    {"type": "pcb_smtpad", "pcb_component_id": "p2", "pcb_port_id": "pp3",
+     "x": 4.5, "y": 0, "width": 0.8, "height": 0.9, "shape": "rect"},
+    {"type": "pcb_smtpad", "pcb_component_id": "p2", "pcb_port_id": "pp4",
+     "x": 5.5, "y": 0, "width": 0.8, "height": 0.9, "shape": "rect"},
+    {"type": "source_net", "source_net_id": "n1", "name": "GND"},
+    {"type": "source_trace", "connected_source_port_ids": ["sp2", "sp3"],
+     "connected_source_net_ids": ["n1"]},
+]
+open(os.path.join(_td3, "index.circuit.tsx"), "w").write(_tsx)
+open(os.path.join(_td3, "index.circuit.circuit.json"), "w").write(
+    _js2.dumps(_cj))
+_fn4 = _mitox2.convert(_td3, os.path.join(_td3, "out"))
+assert _fn4.endswith("mitox.ocd")
+_mb = agent.loads(open(_fn4).read(), base=os.path.join(_td3, "out"))
+assert sorted(_mb.parts) == ["C4", "R3"] and "GND" in _mb.nets
+assert os.path.isfile(os.path.join(_td3, "out", "fp", "FP_R3.fp"))  # harvested
+_mb.place(seeds=1, iters=20)
+_mb.route_board()
+assert _mb.check()["errors"] == [], _mb.check()["errors"]
 # atopile convert end-to-end on a synthetic project: parse → elaborate →
 # emit .ocd → loads, solves clean
 import tempfile as _tf2
