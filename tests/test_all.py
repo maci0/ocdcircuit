@@ -307,7 +307,8 @@ assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert _call("lint", {})["errors"] == []
 assert _call("doctor", {})["ok"] is True
-assert _call("score", {})["total"] >= 0
+assert "coverage" in _call("score", {})
+assert cast(float, _call("score", {"tidy": False})["total"]) >= 0
 assert _call("diff", {"text": open(os.path.join(EX, "blinky_555.ocd")).read(),
                        "base": EX}) == {"diff": ""}
 solved = _call("solve", {"placer": "compact", "router": "maze"})
