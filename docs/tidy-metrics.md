@@ -194,7 +194,7 @@ Conventions (normative for any implementation — review round 1):
 | T8 | Grid-snap residual | mean dist to actual grid multiple (pin to the board's `route-grid` constraint, not literal 0.25) | 0 (J) | 🔧 |
 | T9 | Spacing uniformity | 1 − CV of neighbor gaps; `None` if <2 parts or mean gap 0 (conflicts with T7 by design — aligned groups score low here) | →1 (J) | 🔧 |
 | T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | 🔧 |
-| T11 | Copper tile variance | σ of tile density + layer Δ | Δ≤20% (F) | 🏗️ |
+| T11 | Copper tile variance | RAW tile σ + layer Δ over 5mm tiles (trace length; None if unrouted) | Δ≤20% (F) | ✅ |
 | T12 | Acid-trap scan | RAW # acute <90° copper wedges (always 0 under Manhattan-only routing — placeholder) | 0 (F) | 🏗️ |
 | T13 | Schematic crossings/jogs | RAW drop-line × rail crossings + jogs in `sch_layout` geometry | min (L — the one valid Purchase transfer) | ✅ |
 | T14 | Silk overlap | RAW text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents); **scored, never veto-gated** until precision is measured | 0 (F) | 🔧 |

@@ -234,6 +234,34 @@ def _ov(a: tuple[float, float, float, float],
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
+def _t11_copper_balance(board: Board) -> dict[str, object] | None:
+    """Copper tile density sigma + layer delta (RAW). Trace length per
+    5mm tile; None if unrouted. JLC warpage wants layer delta <= 20%."""
+    segs = [s for s in board.traces if not getattr(s, "jumper", False)]
+    if not segs:
+        return None
+    tile = 5.0
+    tiles: dict[tuple[int, int, int], float] = {}
+    for s in segs:
+        length = abs(s.x2 - s.x1) + abs(s.y2 - s.y1)
+        steps = max(1, int(length / tile) + 1)
+        for i in range(steps):
+            t = (i + 0.5) / steps
+            key = (int((s.x1 + (s.x2 - s.x1) * t) / tile),
+                   int((s.y1 + (s.y2 - s.y1) * t) / tile), s.layer)
+            tiles[key] = tiles.get(key, 0.0) + length / steps
+    vals = list(tiles.values())
+    mean = sum(vals) / len(vals)
+    var = sum((v - mean) ** 2 for v in vals) / len(vals)
+    by_layer: dict[int, float] = {}
+    for (_, _, ll), v in tiles.items():
+        by_layer[ll] = by_layer.get(ll, 0.0) + v
+    tot = sum(by_layer.values()) or 1.0
+    frac = sorted(v / tot for v in by_layer.values())
+    delta = frac[-1] - frac[0] if len(frac) > 1 else 0.0
+    return {"tile_sigma": round(var ** 0.5, 3), "layer_delta": round(delta, 3)}
+
+
 def _t15_silk_consistency(board: Board) -> float | None:
     """Modal ref-label offset direction %. None if no labels."""
     from .silk import labels
@@ -305,8 +333,8 @@ def tidy(board: Board) -> dict[str, object]:
         "T8_gridsnap_mm": _t8_gridsnap(board),
         "T9_spacing": _t9_spacing(board),
         "T10_orientation": _t10_orient(board),
-        # T11/T12: geometry-engine tier — reported as None (unmeasurable)
-        "T11_copper_balance": None,
+        # T12: geometry-engine tier — reported as None (unmeasurable)
+        "T11_copper_balance": _t11_copper_balance(board),
         "T12_acid_traps": None,
         "T13_schematic": _t13_schematic(board),
         "T14_silk_overlap": _t14_silk(board),

@@ -466,7 +466,8 @@ assert _tt["T1_crossings"] == 0 and _tt["T3_orthogonality"] == 1.0
 assert _tt["T4_vias"] == {"total": 0, "per_net": {}}
 assert _tt["T7_alignment"] == 1.0
 assert cast(dict[str, object], _tt["T10_orientation"])["cardinal"] == 1.0
-assert _tt["T11_copper_balance"] is None and _tt["T12_acid_traps"] is None
+assert set(cast(dict[str, object], _tt["T11_copper_balance"])) == {"tile_sigma", "layer_delta"}
+assert _tt["T12_acid_traps"] is None
 assert cast(dict[str, object], _tt["T13_schematic"])["jogs"] == 0
 assert isinstance(cast(dict[str, object], _tt["T13_schematic"])["crossings"], int)
 assert _tt["T15_silk_consistency"] == 1.0
