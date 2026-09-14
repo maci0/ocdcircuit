@@ -41,3 +41,10 @@ Boards: `pico_tmc2209` (20 parts), `mitox` (43 parts, 4L).
 
 Specialization of the tscircuit path for LCSC-footprint boards; same
 contract, exact-pad harvesting. See `boards/mitox/`.
+
+## live round-trip (`tools/easyeda_live.py`)
+
+Drives EasyEDA Pro through CDP (no extension): create project/PCB,
+push Pro source, screenshot the canvas — for visually verifying our
+exports inside the real editor. `python -m tools.easyeda_live
+boards/blinky_555.ocd`. Needs xvfb + the EasyEDA client; not in CI.
