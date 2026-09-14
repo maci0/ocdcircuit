@@ -340,10 +340,14 @@ def dumps(board: Board) -> str:
                 L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
         elif t == "layer" and str(c["net"]) in board.nets and str(c["net"]) not in lay_bad:
             continue  # folded onto the net line above (or via `use`)
+        elif t == "layer" and c.get("owner"):
+            continue  # stamped by an instance — comes back on re-stamp
         elif t == "layer":
             L.append(f"route {c['net']} on {c['layer']}")
         elif t == "width" and str(c["net"]) in board.nets and str(c["net"]) not in wid_bad:
             continue  # folded onto the net line above (or via `use`)
+        elif t == "width" and c.get("owner"):
+            continue  # stamped by an instance — comes back on re-stamp
         elif t == "width":
             L.append(f"trace {c['net']} {_f(c['width']):g}")
         elif t == "route-grid":
@@ -352,6 +356,8 @@ def dumps(board: Board) -> str:
             L.append(f"silk {c['level']}")
         elif t == "nc":
             L.append(f"nc {' '.join(cast(list[str], c['pins']))}")
+        elif t == "pour" and c.get("owner"):
+            continue  # stamped by an instance — comes back on re-stamp
         elif t == "pour":
             L.append(f"pour {c['net']} on {c['layer']}")
         elif t == "keepout":
@@ -756,6 +762,9 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
                   else pre + n)
         for ref, pin in net.pins:
             parent.connect(target, pre + ref, pin)
+    def _remap(n: str) -> str:
+        return n if (joins and n in joins) or (join is None and n in AUTO_JOIN) else pre + n
+
     for c in child.constraints:
         t = c.get("t")
         if t == "fixed":
@@ -765,9 +774,13 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
                               "w": _f(c.get("w", 2.0)), "owner": pre})
         elif t == "power":
             nets = cast(list[str], c["nets"])
-            merged = [x if (joins and x in joins) or (join is None and x in AUTO_JOIN)
-                      else pre + x for x in nets]
+            merged = [_remap(x) for x in nets]
             parent.constrain({"t": "power", "nets": merged, "owner": pre})
+        elif t in ("layer", "width", "pour"):
+            cc = dict(c)
+            cc["net"] = _remap(str(c["net"]))
+            cc["owner"] = pre
+            parent.constrain(cc)
     parent.instances.append({"block": block, "prefix": prefix, "join": sorted(joins)})
     parent.constrain({"t": "near-group", "prefix": pre, "owner": pre})
 

@@ -900,6 +900,17 @@ assert ("B_C", "1") in _bb.nets["GND"].pins and ("B_U", "1") in _bb.nets["GND"].
 assert ("A_C", "1") in _bb.nets["GND"].pins  # GND auto-joins even unlisted
 assert "block ch" in agent.dumps(_bb) and "instance ch as B join GND" in agent.dumps(_bb)
 assert agent.dumps(agent.loads(agent.dumps(_bb))) == agent.dumps(_bb)
+# block constraints remap on stamp (pour/route/trace survive, joins stay global)
+_bc = agent.loads("board t 60x40 2L\nblock ch\npart R R0805 10k\npart C C0805 100n\n"
+                  "net N: R.1 C.1\nnet GND: R.2 C.2\npour GND on 0\nroute N on 1\ntrace N 0.6\nend\n"
+                  "instance ch as A\ninstance ch as B join N GND\n", base=EX)
+assert ("GND", 0) in [(c.get("net"), c.get("layer")) for c in _bc.constraints
+                      if isinstance(c, dict) and c.get("t") == "pour"]
+assert ("N", 1) in [(c.get("net"), c.get("layer")) for c in _bc.constraints
+                    if isinstance(c, dict) and c.get("t") == "layer"]
+assert ("N", 0.6) in [(c.get("net"), c.get("width")) for c in _bc.constraints
+                      if isinstance(c, dict) and c.get("t") == "width"]
+assert agent.dumps(agent.loads(agent.dumps(_bc), base=EX)) == agent.dumps(_bc)
 for _bbad, _bfrag in [
     ("board t 10x10\nblock a\npart R1 R0805\nblock b\n", "nested blocks"),
     ("board t 10x10\nend\n", "end without block"),
