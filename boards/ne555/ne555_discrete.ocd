@@ -6,8 +6,8 @@ fp fp/LED0805-RD.kicad_mod
 fp fp/SOT-23-3_L2.9-W1.3-P1.90-LS2.4-BR.kicad_mod
 fp fp/RES-ADJ-SMD_TC33X-2-104E.kicad_mod
 fp fp/SW-SMD_4P-L5.1-W5.1-P3.70-LS6.5-TL_H1.5.kicad_mod
-part J1 HDR-SMD_2P-P2.54-LS4.8 lcsc=C5160785
-part J2 SOD-123F_L2.7-W1.6-LS3.8-RD lcsc=C81598
+part J1 HDR-SMD_2P-P2.54-LS4.8 lcsc=C5160785 rot=180
+part J2 SOD-123F_L2.7-W1.6-LS3.8-RD lcsc=C81598 rot=270
 part J3 C0805 lcsc=C15850
 part J4 HDR-SMD_2P-P2.54-LS4.8 lcsc=C5160785
 part J5 R0603 lcsc=C21190
@@ -37,7 +37,7 @@ part J28 R0603 lcsc=C25804
 part J29 C0805 lcsc=C15850
 part J30 SW-SMD_4P-L5.1-W5.1-P3.70-LS6.5-TL_H1.5 lcsc=C318884
 part J31 R0603 lcsc=C21190
-part J32 LED0805-RD lcsc=C84256
+part J32 LED0805-RD lcsc=C84256 rot=180
 part J33 R0603 lcsc=C21190
 part J34 LED0805-RD lcsc=C84256
 part J35 R0603 lcsc=C21190
@@ -68,4 +68,44 @@ net X_J37.2: J37.2 J38.2
 net X_J38.1: J22.3 J27.2 J27.3 J28.1 J38.1
 net X_J39.2: J39.2 J40.2
 net X_J5.2: J5.2 J6.2
+# fix J1 at 20.333 46.3 — dropped: stale layout (off-board), solver places freely
+fix J10 at 20.333 9.8
+fix J11 at 20.333 32.612
+fix J12 at 8.5 16.75
+fix J13 at 25.95 37.175
+fix J14 at 8.5 21.662
+fix J15 at 8.5 9.8
+fix J16 at 13.467 32.612
+fix J17 at 8.5 37.175
+fix J18 at 8.5 40.2
+fix J19 at 37.5 37.175
+fix J2 at 25.95 28.05
+fix J20 at 37.5 40.2
+fix J21 at 25.95 32.612
+fix J22 at 13.467 16.75
+fix J23 at 34.067 37.175
+fix J24 at 25.95 9.8
+fix J25 at 13.467 40.2
+fix J26 at 25.95 21.663
+fix J27 at 25.95 16.825
+fix J28 at 34.067 40.2
+fix J29 at 20.333 40.2
+fix J3 at 20.333 26.1
+# fix J30 at 34.067 46.3 — dropped: stale layout (off-board), solver places freely
+fix J31 at 18.6 16.75
+fix J32 at 33.4 32.612
+fix J33 at 13.467 37.175
+fix J34 at 20.333 21.663
+fix J35 at 37.5 21.663
+fix J36 at 6.6 32.612
+fix J37 at 8.5 28.05
+fix J38 at 34.067 28.05
+fix J39 at 34.067 21.663
+fix J4 at 34.067 9.8
+# fix J40 at 11.4 46.3 — dropped: stale layout (off-board), solver places freely
+# fix J5 at 6.6 46.3 — dropped: stale layout (off-board), solver places freely
+fix J6 at 34.067 16.75
+fix J7 at 20.333 37.175
+fix J8 at 25.95 40.2
+fix J9 at 37.5 32.612
 power GND

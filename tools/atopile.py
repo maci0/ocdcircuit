@@ -256,6 +256,22 @@ def convert(projdir: str, outdir: str) -> str:
                 signame = s
                 break
         named.setdefault(signame or f"X_{r[-6:]}", []).extend(pinlist)
+    # knoll autoplace emit: {fixed: {dotted.ref: [x, y, rot?]}} —
+    # dotted refs match elaboration inputs (core.rx2 → core_rx2 → ref).
+    # Loaded here so rotations land on part lines; positions join pinning.
+    import json as _json
+    _placed: dict[str, tuple[float, float, float]] = {}
+    _pj = os.path.join(projdir, "placement.json")
+    if os.path.isfile(_pj):
+        try:
+            _fix = _json.load(open(_pj)).get("fixed", {})
+            assert isinstance(_fix, dict)
+            for _vr, _xy in _fix.items():
+                assert isinstance(_xy, list) and len(_xy) >= 2
+                _placed[_vr.replace(".", "_")] = (float(_xy[0]), float(_xy[1]),
+                                                  float(_xy[2]) if len(_xy) > 2 else 0.0)
+        except (ValueError, AssertionError, IndexError):
+            _placed = {}
     # positions from layout pcb (match by order if refs differ)
     pos: dict[str, tuple[float, float]] = {}
     lay_fp: dict[str, str] = {}
@@ -338,12 +354,21 @@ def convert(projdir: str, outdir: str) -> str:
                 f"part {ref} ({var} = new {comp}): no footprint — add "
                 f"`{var}.package = \"{hint}\"` to the .ato")
     L += fps_emitted
+    # placement.json rotations apply here (knoll autoplace emit: dotted
+    # hierarchical refs + optional [x, y, rot]); positions join the
+    # verify-then-pin pass below.
+    _prot: dict[str, float] = {}
+    for _vr, _xy in _placed.items():
+        if _vr in refs and len(_xy) > 2 and _xy[2] not in (0.0, 0):
+            _prot[refs[_vr]] = _xy[2]
     for var, comp in insts.items():
         ref = refs[var]
         info = parts_info.get(comp, {})
         lcsc = info.get("lcsc", "")
         assert isinstance(lcsc, str)
         attrs = f" lcsc={lcsc}" if lcsc else ""
+        if ref in _prot:
+            attrs += f" rot={_prot[ref]:g}"
         L.append(f"part {ref} {modemap[ref]}{attrs}")
     for net, pinlist in sorted(named.items()):
         if len(pinlist) >= 2 or net in ("GND",):
@@ -365,6 +390,12 @@ def convert(projdir: str, outdir: str) -> str:
         cands = by_fp.get(fp, [])
         for lr, pr in zip(sorted(layrefs), sorted(cands)):
             remap[pr] = pos[lr]
+    # placement.json (dotted hierarchical refs) overlays the pcb remap:
+    # elaborated var names already use _ for . (core_rx2 == core.rx2).
+    # Rotations already landed on part lines above; fix takes x y only.
+    for vr, xy in _placed.items():
+        if vr in refs and refs[vr] in probe.parts:
+            remap[refs[vr]] = (xy[0], xy[1])
     for ref, (x, y) in sorted(remap.items()):
         if ref in probe.parts:
             part = probe.parts[ref]
