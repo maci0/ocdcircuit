@@ -241,18 +241,15 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.BOM.csv")
     # JLC format: Comment,Designator,Footprint,LCSC — grouped by value,
     # LCSC from `lcsc` part attr. DNP parts get their own rows (JLC's
-    # "Do not place" is per-line; never merge placed + DNP).
-    groups: dict[tuple[str, str, str], list[str]] = {}
+    # "Do not place" is per-line; never merge placed + DNP). LCSC is part
+    # of the key: same value+fp with different LCSC must not merge (JLC
+    # orders per row; first-wins would ship the wrong reel).
+    groups: dict[tuple[str, str, str, str], list[str]] = {}
     for p in board.parts.values():
-        groups.setdefault((p.value, p.fp, "DNP" if p.attrs.get("dnp") else ""), []).append(p.ref)
+        groups.setdefault((p.value, p.fp, str(p.attrs.get("lcsc", "")),
+                           "DNP" if p.attrs.get("dnp") else ""), []).append(p.ref)
     lines = ["Comment,Designator,Footprint,LCSC"]
-    for (value, fp, dnp), refs in sorted(groups.items()):
-        lcsc = ""
-        for r in refs:
-            a = board.parts[r].attrs.get("lcsc", "")
-            if a:
-                lcsc = str(a)
-                break
+    for (value, fp, lcsc, dnp), refs in sorted(groups.items()):
         comment = f"{value} (DNP)" if dnp else value
         lines.append(f"{comment},\"{','.join(sorted(refs))}\",{fp},{lcsc}")
     open(fn, "w").write("\n".join(lines) + "\n")

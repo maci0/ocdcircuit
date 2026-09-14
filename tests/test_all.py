@@ -419,6 +419,12 @@ with tempfile.TemporaryDirectory() as d:
     _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     assert "10k (DNP),\"R2\"" in _cbom and _cbom.count("10k") == 2, _cbom
+    # same value+fp with different LCSC never merges (JLC orders per row)
+    _lc = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcsc=C1\n"
+                      "part R2 R0805 10k lcsc=C2\nnet N: R1.1 R2.1\nnet GND: R1.2 R2.2\n", base=EX)
+    _lbom = open([f for f in _lc.export("jlc", outdir=tempfile.mkdtemp())
+                  if f.endswith(".BOM.csv")][0]).read()
+    assert ",C1" in _lbom and ",C2" in _lbom and _lbom.count("10k") == 2, _lbom
     from ocdcircuit.circuit import Seg as _Seg
     _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
     assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5
