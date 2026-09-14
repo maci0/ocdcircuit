@@ -492,6 +492,16 @@ _kb.add_footprint("K2X", {"w": 2.0, "h": 2.0, "pads": {}, "keepouts": []})
 assert _kb._lib() is not _lib0 and "K2X" in _kb._lib()
 _kb.ctx.undo()  # undo the K2X registration
 assert "K2X" not in _kb._lib()
+# add_footprint validates shape up front (not KeyError 'w' at add_part)
+_badfps: list[dict[str, object]] = [
+    {}, {"w": 1}, {"w": "x", "h": 2}, {"w": float("nan"), "h": 1}]
+for _badfp in _badfps:
+    try:
+        _kb.add_footprint("BAD", _badfp)
+        raise AssertionError(f"should have raised: {_badfp}")
+    except ValueError as e:
+        assert "numeric w/h" in str(e), str(e)
+assert "BAD" not in _kb.custom_fp
 _kb.add_part("K1", "K1X", "", 20, 15)
 _kb.constrain({"t": "fixed", "ref": "K1", "x": 20, "y": 15})
 _kb.connect("N", "K1", "1")

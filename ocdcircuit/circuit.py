@@ -365,6 +365,10 @@ class Board(Component):
                         src: str | None = None) -> None:
         """Register a custom (.fp) footprint. Undoable like everything.
         src: originating file path, so dumps() can re-emit the `fp` line."""
+        w, h = fp.get("w"), fp.get("h")
+        if (not isinstance(w, (int, float)) or not isinstance(h, (int, float))
+                or not (math.isfinite(w) and math.isfinite(h))):
+            raise ValueError(f"footprint {name!r} needs numeric w/h (got {w!r}, {h!r})")
         had = name in self.custom_fp
         old = self.custom_fp.get(name)
         old_src = self.fp_src.get(name)
