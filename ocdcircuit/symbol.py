@@ -70,6 +70,29 @@ def loads(text: str) -> tuple[str, Symbol]:
                    "zigzag": zigzag, "label": label}
 
 
+def dumps(name: str, sym: Symbol) -> str:
+    """Symbol dict → .sym text (inverse of loads: round-trips).
+    Lets exporters materialize in-memory customs as sidecar files."""
+    from typing import cast
+
+    def _n(v: object) -> float:
+        assert isinstance(v, (int, float))
+        return float(v)
+
+    w, h = _n(sym["w"]), _n(sym["h"])
+    L = [f"symbol {name} {w:g}x{h:g}"]
+    for num, (side, _order, label) in sorted(
+            cast(dict[str, tuple[str, int, str]], sym.get("pins", {})).items()):
+        L.append(f"pin {num} {side}" + (f" {label}" if label else ""))
+    if sym.get("notch"):
+        L.append("notch")
+    if sym.get("zigzag"):
+        L.append("zigzag")
+    if sym.get("label"):
+        L.append(f"label {sym['label']}")
+    return "\n".join(L) + "\n"
+
+
 def load_file(path: str) -> tuple[str, Symbol]:
     with open(path) as f:
         return loads(f.read())

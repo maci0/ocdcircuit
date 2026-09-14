@@ -349,6 +349,17 @@ assert agent.from_json(agent.to_json(_jc)).parts["R1"].fp == "X1"
 # custom symbols ride along too (same silent-drop class)
 _jc.add_symbol("S1", {"w": 6.0, "h": 4.0, "pins": {"1": ["left", 0, ""]}})
 assert sorted(agent.from_ir(agent.ir(_jc)).custom_sym) == ["S1"]
+# sym dumps inverts loads; export-ocd sidecars src-less syms like fps
+from ocdcircuit import symbol as _sym
+_symd: dict[str, object] = {"w": 6.0, "h": 4.0, "pins": {"1": ["left", 0, ""],
+                                                          "2": ["right", 0, "V"]},
+                            "notch": True, "zigzag": False, "label": "{ref}"}
+assert _sym.loads(_sym.dumps("S9", _symd))[0] == "S9"
+assert _sym.loads(_sym.dumps("S9", _symd))[1]["notch"] is True
+_jc.add_symbol("S9", _symd)
+_sfiles = _jc.export("ocd", outdir=tempfile.mkdtemp())
+_srt = agent.loads(open(_sfiles[0]).read(), base=os.path.dirname(_sfiles[0]))
+assert "S9" in _srt.custom_sym and _srt.custom_sym["S9"]["notch"] is True
 assert cast(str, bj.render("svg")).startswith("<svg")
 assert cast(str, bj.render("stl")).startswith("solid")
 assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"

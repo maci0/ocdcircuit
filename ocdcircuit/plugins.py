@@ -383,25 +383,34 @@ class OcdExporter(Plugin[list[str]]):
         import os
         from . import agent
         from . import footprint as _fp
+        from . import symbol as _sym
         outdir = k.get("outdir", "out")
         assert isinstance(outdir, str)
         os.makedirs(outdir, exist_ok=True)
         text = agent.dumps(board)
-        # in-memory customs (no src file) materialize as fp/ sidecars so
+        # in-memory customs (no src file) materialize as fp//sym/ sidecars so
         # the exported .ocd reloads; file-backed ones already have fp lines.
-        # sidecar filenames are sanitized (fp names are foreign-controlled);
-        # the .fp header keeps the raw name so parts still resolve.
-        bare = sorted(n for n in board.custom_fp if n not in board.fp_src)
-        if bare:
+        # sidecar filenames are sanitized (names are foreign-controlled);
+        # the headers keep raw names so parts still resolve.
+        bare_fp = sorted(n for n in board.custom_fp if n not in board.fp_src)
+        bare_sym = sorted(n for n in board.custom_sym if n not in board.sym_src)
+        if bare_fp or bare_sym:
             import re
-            os.makedirs(os.path.join(outdir, "fp"), exist_ok=True)
             lines = text.splitlines()
-            for n in bare:
+            for n in bare_fp:
+                os.makedirs(os.path.join(outdir, "fp"), exist_ok=True)
                 safe = re.sub(r"[^A-Za-z0-9_.-]", "_", n) or "X"
                 fn = os.path.join(outdir, "fp", f"{safe}.fp")
                 with open(fn, "w") as f:
                     f.write(_fp.dumps(n, board.custom_fp[n]))
                 lines.insert(1, f"fp fp/{safe}.fp")
+            for n in bare_sym:
+                os.makedirs(os.path.join(outdir, "sym"), exist_ok=True)
+                safe = re.sub(r"[^A-Za-z0-9_.-]", "_", n) or "X"
+                fn = os.path.join(outdir, "sym", f"{safe}.sym")
+                with open(fn, "w") as f:
+                    f.write(_sym.dumps(n, board.custom_sym[n]))
+                lines.insert(1, f"sym sym/{safe}.sym")
             text = "\n".join(lines) + "\n"
         fn = os.path.join(outdir, f"{board.name}.ocd")
         open(fn, "w").write(text)
