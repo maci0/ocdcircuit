@@ -129,6 +129,10 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"route-grid ([\d.]+)$", t, re.I)
     if m:
         return {"t": "route-grid", "grid": float(m.group(1))}
+    m = re.match(r"route-penalty bend ([\d.]+) via ([\d.]+)$", t, re.I)
+    if m:
+        return {"t": "route-penalty", "bend": float(m.group(1)),
+                "via": float(m.group(2))}
     m = re.match(r"power ([\w ]+)$", t, re.I)
     if m:
         return {"t": "power", "nets": m.group(1).split()}
@@ -352,6 +356,8 @@ def dumps(board: Board) -> str:
             L.append(f"trace {c['net']} {_f(c['width']):g}")
         elif t == "route-grid":
             L.append(f"route-grid {_f(c['grid']):g}")
+        elif t == "route-penalty":
+            L.append(f"route-penalty bend {_f(c['bend']):g} via {_f(c['via']):g}")
         elif t == "silk":
             L.append(f"silk {c['level']}")
         elif t == "nc":

@@ -101,6 +101,8 @@ stiffener 10 20 30x5 FR4 0.2  # stiffener: center x y WxH material thick
 nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
 route-grid 0.2               # maze cell size (default 0.25); finer closes
                              # dense boards, coarser routes faster
+route-penalty bend 3 via 20  # maze cost knobs (defaults 1.5/8.0);
+                             # higher bend = straighter, higher via = fewer layers
 silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 ```
 

@@ -144,7 +144,7 @@ assert cc is not None and cc["t"] == "class" and cc["width"] == 0.8 \
 _pre = ("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")
 for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6",
-              "route-grid 0.2", "power N GND", "class hv width=0.8",
+              "route-grid 0.2", "route-penalty bend 3 via 20", "power N GND", "class hv width=0.8",
               "match N GND", "diff N GND gap 0.5", "silk 2", "nc R1.1",
               "pour GND on 0", "keepout 20 15 6x6", "keepout 20 15 d6",
               "keepout near R1 d4", "cutout 20 15 6x6", "hole 20 15 1.2",
@@ -482,6 +482,16 @@ _bg = agent.loads("board t 20x10\npart R1 R0805 1k\nN :: R1.1 R1.2\nroute-grid 0
 assert _bg.constraints[-1] == {"t": "route-grid", "grid": 0.2}
 assert agent.dumps(agent.loads(agent.dumps(_bg), base=EX)) == agent.dumps(_bg)
 assert agent.parse_constraint("route-grid 0.2") == {"t": "route-grid", "grid": 0.2}
+# route-penalty grammar: parses, round-trips, maze pricing follows it
+_bp = agent.loads("board t 20x10 2L\npart R1 R0805 1k x=3 y=5\npart C1 C0805 100n x=17 y=5\n"
+                  "N :: R1.1 C1.2\nroute-penalty bend 3 via 20\n", base=EX)
+assert _bp.constraints[-1] == {"t": "route-penalty", "bend": 3.0, "via": 20.0}
+assert agent.dumps(agent.loads(agent.dumps(_bp), base=EX)) == agent.dumps(_bp)
+from ocdcircuit import maze as _mz
+assert _mz._constraints(_bp) == {"grid": 0.25, "bend": 3.0, "via": 20.0}
+_bp.place(seeds=1, iters=50)
+_bp.route_board("maze")
+assert _bp.check()["errors"] == [], _bp.check()["errors"]
 # wiremask evals must not pollute undo (pop*gen phantom entries); final
 # maze legitimately emits 2 (layer assignment + route). Coarse emits 2
 # (route-grid constrain + maze) for the same reason: real effects, not phantoms.
@@ -808,10 +818,10 @@ assert cast(dict[str, object], _spp["pours"]) == {"GND": [0]}
 assert len(cast(dict[str, list[object]], _spp["cuts"])["0"]) > 0  # planes ride state
 assert cast(dict[int, dict[str, object]], _st["feasible"])[2]["ok"] is True  # badge
 assert _st["sim_problems"] == []  # psu has no sim lines
-_sv = _studio.H._build("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+_svm = _studio.H._build("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
                        "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\n"
                        "sim vcc VIN 9\nsim expect VO == 5\n", False, {})
-assert _sv["sim_problems"] == ["sim VO=2.878V, want == 5V"], _sv["sim_problems"]
+assert _svm["sim_problems"] == ["sim VO=2.878V, want == 5V"], _svm["sim_problems"]
 # ocd status solves then writes STATUS.md next to the file (temp copy keeps
 # the tree clean); exit 0 = DRC clean
 import tempfile as _tf
