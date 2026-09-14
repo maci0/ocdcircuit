@@ -482,7 +482,10 @@ class Board(Component):
             self.constraints.append(c)
 
         def _drop() -> None:
-            self.constraints.remove(c)
+            # idempotent: temp constraints (coarse route-grid) are removed
+            # out-of-band by their owner's finally; undo must not crash.
+            if c in self.constraints:
+                self.constraints.remove(c)
 
         self.ctx.emit(_add, _drop)
 

@@ -53,6 +53,12 @@ assert "R1" in b.parts
 b.ctx.rollback(s)
 assert "R1" not in b.parts
 
+# coarse route's temp constraint removes out-of-band; undo must not crash
+_bc = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
+_bc.place(seeds=2, iters=100)
+_bc.route_board("coarse")
+_bc.ctx.undo(2)
+assert len(_bc.traces) == 0
 # NL constraints
 c0 = agent.parse_constraint("keep U1 near C1")
 assert c0 is not None and c0["t"] == "near"
