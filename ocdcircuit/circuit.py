@@ -111,6 +111,8 @@ class Board(Component):
         self.instances: list[dict[str, object]] = []  # {block, prefix, join}
         self._block_open: str | None = None  # parser scratch (not dumped)
         self._block_lines: list[str] | None = None
+        self._lib_cache: dict[str, dict[str, object]] | None = None
+        self._lib_parts_key: str | None = None
         self.ctx.set("plugins", Registry())
         # board-owned fiber (paper Alg 4): every domain edit journals into
         # its dispose chain, so unloading the board reverts all board state.
@@ -294,6 +296,9 @@ class Board(Component):
 
     # -- parts library via plugin, stdlib fallback --
     def _lib(self) -> dict[str, dict[str, object]]:
+        active = self.plugins().active.get("parts")
+        if self._lib_cache is not None and self._lib_parts_key == active:
+            return self._lib_cache
         from .parts import FOOTPRINTS as STD
         merged: dict[str, dict[str, object]] = dict(STD)
         merged.update(self.custom_fp)
@@ -305,6 +310,8 @@ class Board(Component):
             merged.update(out)
         except KeyError:
             pass
+        self._lib_cache = merged
+        self._lib_parts_key = active
         return merged
 
     def add_footprint(self, name: str, fp: dict[str, object],
@@ -317,6 +324,7 @@ class Board(Component):
 
         def _do() -> None:
             self.custom_fp[name] = fp
+            self._lib_cache = None  # merged lib goes stale
             if src is not None:
                 self.fp_src[name] = src
 
@@ -328,6 +336,7 @@ class Board(Component):
             else:
                 self.custom_fp.pop(name, None)
                 self.fp_src.pop(name, None)
+            self._lib_cache = None
 
         self.emit(_do, _undo)
 

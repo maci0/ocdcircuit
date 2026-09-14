@@ -422,6 +422,13 @@ _kb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\n"
 _kb.add_footprint("K1X", {"w": 4.0, "h": 4.0,
                           "pads": {"1": (-1.0, 0.0, 1.0, 1.0), "2": (1.0, 0.0, 1.0, 1.0)},
                           "keepouts": [{"dx": 0.0, "dy": 5.0, "w": 6.0, "h": 4.0, "layers": []}]})
+# lib cache: merged once, invalidated by add_footprint (do + undo)
+_lib0 = _kb._lib()
+assert _kb._lib() is _lib0  # same object, no re-merge
+_kb.add_footprint("K2X", {"w": 2.0, "h": 2.0, "pads": {}, "keepouts": []})
+assert _kb._lib() is not _lib0 and "K2X" in _kb._lib()
+_kb.ctx.undo()  # undo the K2X registration
+assert "K2X" not in _kb._lib()
 _kb.add_part("K1", "K1X", "", 20, 15)
 _kb.constrain({"t": "fixed", "ref": "K1", "x": 20, "y": 15})
 _kb.connect("N", "K1", "1")
