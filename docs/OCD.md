@@ -97,7 +97,7 @@ sim r R1 10k                 # value override (r/c/l/d/q + part REF + value)
 sim tran 0.01 1000           # transient: t_end steps
 sim probe N_OUT              # record net (default: all)
 sim op N_OUT V 0 5           # operating-point sweep (net, source, lo hi)
-sim ac IN LOG 10             # AC analysis (net, scale, points)
+sim ac 10 100000 20          # AC sweep f0 f1 npts (ngspice dec sweep)
 sim lib models.lib           # extra SPICE include for simulate:ngspice
 sim expect VO == 5 tol 0.1   # assertion: VO==5 ±0.1 (red in studio/MCP/CLI)
 sim clk CLK 4                # square-wave stimulus, period [duty] (gates)
