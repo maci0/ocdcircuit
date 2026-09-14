@@ -1420,26 +1420,40 @@ class CalcPlugin(Plugin[dict[str, object]]):
     kind, key = "calc", "std"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import math
         from . import calc as _calc
+
+        def _pos(v: object, name: str) -> float:
+            # physics inputs must be positive: negatives give complex
+            # widths, zeros divide by zero (and fence the plugin — a mere
+            # typo must stay a clean ValueError, never a fence trip).
+            f = _f(v)
+            if not math.isfinite(f) or f <= 0:
+                raise ValueError(f"calc {name} must be positive (got {v!r})")
+            return f
+
         what = str(k.get("what", "trace"))
         if what == "trace":
-            return {"mm": _calc.trace_width(_f(k.get("amps", 1.0)),
-                                            _f(k.get("rise", 10.0)),
-                                            _f(k.get("oz", 1.0)))}
+            return {"mm": _calc.trace_width(_pos(k.get("amps", 1.0), "amps"),
+                                            _pos(k.get("rise", 10.0), "rise"),
+                                            _pos(k.get("oz", 1.0), "oz"))}
         if what == "amps":
-            return {"amps": _calc.trace_amps(_f(k.get("mm", 0.3)),
-                                             _f(k.get("rise", 10.0)),
-                                             _f(k.get("oz", 1.0)))}
+            return {"amps": _calc.trace_amps(_pos(k.get("mm", 0.3), "mm"),
+                                             _pos(k.get("rise", 10.0), "rise"),
+                                             _pos(k.get("oz", 1.0), "oz"))}
         if what == "via":
-            return {"amps": _calc.via_amps(_f(k.get("drill", 0.3)))}
+            return {"amps": _calc.via_amps(_pos(k.get("drill", 0.3), "drill"))}
         if what == "divider":
             return {"vout": _calc.divider(_f(k.get("vin", 9.0)),
-                                          _f(k.get("rtop", 10000.0)),
-                                          _f(k.get("rbot", 4700.0)))}
+                                          _pos(k.get("rtop", 10000.0), "rtop"),
+                                          _pos(k.get("rbot", 4700.0), "rbot"))}
         if what == "pick":
+            _vo = _f(k.get("vout", 5.0))
+            if _vo == 0:
+                raise ValueError("calc vout must be nonzero (got 0)")
             return {"rtop": _calc.divider_pick(_f(k.get("vin", 9.0)),
-                                               _f(k.get("vout", 5.0)),
-                                               _f(k.get("rbot", 10000.0)))}
+                                               _vo,
+                                               _pos(k.get("rbot", 10000.0), "rbot"))}
         raise ValueError(f"unknown calc {what!r} (trace|amps|via|divider|pick)")
 
 

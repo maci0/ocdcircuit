@@ -1374,6 +1374,18 @@ assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
 assert 0 < calc.via_amps(0.3) < calc.via_amps(0.6)  # monotone in drill
 assert abs(calc.via_amps(0.3, 40.0) / calc.via_amps(0.3, 10.0) - 2.0) < 0.01  # sqrt rise
+# calc plugin rejects non-physical inputs (complex widths, div-by-zero —
+# and a fence trip: typos must stay clean ValueErrors, never fence)
+_cb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+for _ckw in [dict(what="trace", amps=-5), dict(what="trace", rise=0),
+             dict(what="amps", mm=0), dict(what="via", drill=-1),
+             dict(what="divider", rtop=0, rbot=0), dict(what="pick", vout=0)]:
+    try:
+        _cb.calc(**_ckw)  # type: ignore[arg-type]
+        raise AssertionError(f"should have raised: {_ckw}")
+    except ValueError as e:
+        assert "must be positive" in str(e) or "must be nonzero" in str(e), str(e)
+assert float(cast(float, _cb.calc(what="trace", amps=2)["mm"])) > 0  # still mounted
 # parse_value: suffixes, embedded multipliers, case (1m≠1M), errors
 from ocdcircuit.sim import parse_value as _pv
 for _vs, _vwant in [("10k", 1e4), ("4k7", 4700.0), ("4R7", 4.7), ("47R", 47.0),
