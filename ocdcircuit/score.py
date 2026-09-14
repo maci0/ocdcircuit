@@ -389,7 +389,7 @@ def _extent(board: Board) -> dict[str, object]:
     fraction + shrink suggestion. Empty board → None-ish zeros."""
     parts = list(board.parts.values())
     if not parts:
-        return {"w": 0.0, "h": 0.0, "fill": 0.0}
+        return {"w": 0.0, "h": 0.0, "fill": 0.0, "shrink": [0.0, 0.0]}
     x0 = min(p.x - p.wh()[0] / 2 for p in parts)
     x1 = max(p.x + p.wh()[0] / 2 for p in parts)
     y0 = min(p.y - p.wh()[1] / 2 for p in parts)
