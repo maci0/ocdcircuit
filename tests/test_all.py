@@ -1534,6 +1534,37 @@ try:
     raise AssertionError("should have exited 1")
 except SystemExit as e:
     assert e.code == 1, e.code
+# hostile foreign names fail fast (no traversal, no unloadable output)
+_badh = tempfile.mkdtemp()
+open(os.path.join(_badh, "index.circuit.tsx"), "w").write(
+    '<board width="10mm" height="10mm">'
+    '<resistor name="R3" footprint="0402" resistance="1k" '
+    'supplierPartNumbers={{jlcpcb: ["../../x"]}} /></board>')
+open(os.path.join(_badh, "index.circuit.circuit.json"), "w").write(
+    _js2.dumps([
+        {"type": "source_component", "source_component_id": "s1", "name": "R3"},
+        {"type": "pcb_component", "pcb_component_id": "p1",
+         "source_component_id": "s1", "center": {"x": 0, "y": 0},
+         "rotation": 0, "width": 2.0, "height": 1.2},
+        {"type": "source_port", "source_port_id": "sp1",
+         "source_component_id": "s1", "pin_number": "1"},
+        {"type": "pcb_port", "pcb_port_id": "pp1", "source_port_id": "sp1"},
+        {"type": "pcb_smtpad", "pcb_component_id": "p1", "pcb_port_id": "pp1",
+         "x": 0, "y": 0, "width": 0.8, "height": 0.9, "shape": "rect"}]))
+_outh = tempfile.mkdtemp()
+_fnh = _mitox2.convert(_badh, _outh)
+assert sorted(os.listdir(os.path.join(_outh, "fp"))) == ["FP_.._.._x.fp"]
+_badh2 = tempfile.mkdtemp()
+open(os.path.join(_badh2, "index.circuit.tsx"), "w").write(
+    '<board width="10mm" height="10mm"></board>')
+open(os.path.join(_badh2, "index.circuit.circuit.json"), "w").write(
+    _js2.dumps([{"type": "source_component", "source_component_id": "s1",
+                 "name": "../../../tmp/pwned"}]))
+try:
+    _mitox2.convert(_badh2, tempfile.mkdtemp())
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad component name" in str(e), str(e)
 # entry points answer --help without side effects (no regeneration)
 import subprocess as _sp9
 for _mod, _usage in [

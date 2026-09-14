@@ -163,6 +163,12 @@ def convert(projdir: str, outdir: str) -> str:
 
     by_comp = {str(e["source_component_id"]): str(e.get("name", ""))
                for e in cjson if e.get("type") == "source_component"}
+    for _cid, _nm in by_comp.items():
+        # .ocd refs must survive fix/net/nc round-trips (fix is \w+):
+        # reject foreign names outside that space instead of emitting
+        # a file that won't reload.
+        if not re.fullmatch(r"\w+", _nm):
+            raise ValueError(f"bad component name {_nm!r} (want \\w+)")
     pcb_of = {str(e.get("source_component_id")): str(e.get("pcb_component_id", ""))
               for e in cjson if e.get("type") == "pcb_component"}
     # invert: pcb_component_id → name
@@ -254,6 +260,9 @@ def convert(projdir: str, outdir: str) -> str:
         it = intent.get(name, {})
         lcsc = it.get("lcsc", "")
         fpname = f"FP_{lcsc}" if lcsc else f"FP_{name}"
+        # component names come from foreign files: keep the fp token
+        # filesystem-safe (else `fp/` writes escape outdir)
+        fpname = re.sub(r"[^A-Za-z0-9_.-]", "_", fpname) or "FP_X"
         # find harvested geometry: match by component name
         cid = next((c for c, n in pcb_name.items() if n == name), "")
         geo = harvested.get(cid, {})
