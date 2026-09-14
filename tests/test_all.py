@@ -195,6 +195,16 @@ assert agent.to_json(bj).startswith("{")
 assert cast(str, bj.render("svg")).startswith("<svg")
 assert cast(str, bj.render("stl")).startswith("solid")
 assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
+# pours render: flooded PNG differs from bare, studio state carries planes
+_pb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n", base=EX)
+_pb.place(seeds=1, iters=30)
+_pb.route_board()
+_bare = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                    "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n", base=EX)
+_bare.place(seeds=1, iters=30)
+_bare.route_board()
+assert cast(bytes, _pb.render("png")) != cast(bytes, _bare.render("png"))
 assert "<canvas" in cast(str, bj.render("html3d"))
 _sch = cast(str, bj.render("sch"))
 assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch
@@ -557,6 +567,10 @@ assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
 assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export button
+_spp = _studio.H._build("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                        "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n", False, {})
+assert cast(dict[str, object], _spp["pours"]) == {"GND": [0]}
+assert len(cast(dict[str, list[object]], _spp["cuts"])["0"]) > 0  # planes ride state
 assert cast(dict[int, dict[str, object]], _st["feasible"])[2]["ok"] is True  # badge
 assert _st["sim_problems"] == []  # psu has no sim lines
 _sv = _studio.H._build("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"

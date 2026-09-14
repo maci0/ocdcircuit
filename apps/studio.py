@@ -126,6 +126,13 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   ctx.strokeStyle=theme==='dark'?'#1e5a1e':'#999';ctx.strokeRect(X(0),Y(st.bh),st.bw*s,st.bh*s);
   const cols=['#e74c3c','#3498db','#2ecc71','#9b59b6'];
   const n=Math.ceil(st.traces.length*t);
+  if(st.pours&&Object.values(st.pours).some(lls=>lls.includes(0))){
+    // top pour: translucent copper flood, cutouts punched back to bg
+    ctx.fillStyle=theme==='dark'?'rgba(185,120,40,0.35)':'rgba(185,120,40,0.25)';
+    ctx.fillRect(X(0),Y(st.bh),st.bw*s,st.bh*s);
+    ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--bg');
+    for(const r of (st.cuts&&st.cuts['0'])||[])ctx.fillRect(X(r[0]),Y(r[3]),(r[2]-r[0])*s,(r[3]-r[1])*s);
+  }
   for(let i=0;i<n;i++){const g=st.traces[i];ctx.strokeStyle=cols[g.layer%4];ctx.lineWidth=Math.max(1,g.w*s);ctx.beginPath();ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));ctx.stroke();}
   for(const r in st.parts){const p=st.parts[r];
     ctx.fillStyle=st.fixed&&st.fixed[r]?'#3a2f00':'#111';ctx.fillRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
@@ -495,11 +502,16 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
             sim_problems = [str(p) for p in _sim.expect(b)]
         except (ValueError, KeyError):
             sim_nets = {}
+    from ocdcircuit.drc import pour_layers as _pours
+    from ocdcircuit.export import plane_plots as _plots
+    pours = {n: lls for n, lls in _pours(b).items()}
+    cuts = {str(ll): [[round(v, 2) for v in r] for r in _plots(b).get(ll, [])]
+            for lls in pours.values() for ll in lls}
     return {"text": text, "parts": parts, "nets": nets, "fixed": fixed,
             "bw": b.width, "bh": b.height, "layers": b.layers,
             "frames": frames,
             "traces": traces, "cost": round(cost, 1), "sim": sim_nets,
-            "sim_problems": sim_problems,
+            "sim_problems": sim_problems, "pours": pours, "cuts": cuts,
             "errors": drc["errors"], "warnings": drc["warnings"],
             "fab": drc.get("fab", "jlc"), "silk": 1, "sch": _sch_state(b)}
 

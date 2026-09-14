@@ -65,53 +65,86 @@ class Canvas:
                 o = (yy * self.w + xx) * 3
                 self.px[o:o + 3] = bytes(c)
 
+    def disc(self, x: float, y: float, hmm: float, rmm: float,
+             c: tuple[int, int, int]) -> None:
+        cx, cy, r = self.X(x), self.Y(y, hmm), max(1, int(rmm * self.s))
+        for yy in range(cy - r, cy + r + 1):
+            for xx in range(cx - r, cx + r + 1):
+                if (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r:
+                    if 0 <= xx < self.w and 0 <= yy < self.h:
+                        o = (yy * self.w + xx) * 3
+                        self.px[o:o + 3] = bytes(c)
+
     def line(self, x1: float, y1: float, x2: float, y2: float,
              hmm: float, wmm: float, c: tuple[int, int, int]) -> None:
         import math
         length = math.hypot(x2 - x1, y2 - y1)
         steps = max(1, int(length * self.s))
-        hw = max(1, int(wmm * self.s / 2))
+        hw = max(1.0, wmm * self.s / 2)
         for i in range(steps + 1):
             x = x1 + (x2 - x1) * i / steps
             y = y1 + (y2 - y1) * i / steps
-            cx, cy = self.X(x), self.Y(y, hmm)
-            for yy in range(cy - hw, cy + hw + 1):
-                for xx in range(cx - hw, cx + hw + 1):
-                    if 0 <= xx < self.w and 0 <= yy < self.h:
-                        o = (yy * self.w + xx) * 3
-                        self.px[o:o + 3] = bytes(c)
+            self.disc(x, y, hmm, hw / self.s, c)
 
     def text(self, s: str, x: float, y: float, hmm: float,
-             c: tuple[int, int, int]) -> None:
+             c: tuple[int, int, int], big: int = 2) -> None:
         cx, cy = self.X(x), self.Y(y, hmm)
         for ci, ch in enumerate(s.upper()[:24]):
             for ry, row in enumerate(FONT.get(ch, FONT[" "])):
                 for rx, bit in enumerate(row):
                     if bit == "1":
-                        xx, yy = cx + (ci * 4 + rx) - len(s) * 2, cy + ry - 2
-                        if 0 <= xx < self.w and 0 <= yy < self.h:
-                            o = (yy * self.w + xx) * 3
-                            self.px[o:o + 3] = bytes(c)
+                        for dy in range(big):
+                            for dx in range(big):
+                                xx = cx + (ci * 4 + rx) * big + dx - len(s) * 2 * big
+                                yy = cy + ry * big + dy - 2 * big
+                                if 0 <= xx < self.w and 0 <= yy < self.h:
+                                    o = (yy * self.w + xx) * 3
+                                    self.px[o:o + 3] = bytes(c)
 
     def bytes(self) -> bytes:
         return _png(self.w, self.h, self.px)
 
 
 def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
-    """Top-down PNG: mask bg, copper traces/pads, white silk refs."""
-    from .parts import pads_of, pad_size
+    """Top-down PNG: mask bg, copper traces/pads, bodies, white silk refs."""
+    from .parts import bodies_of, hole_drill, pads_of, pad_size
     c = Canvas(board.width, board.height, pxmm)
     cols = [(231, 76, 60), (52, 152, 219), (46, 204, 113), (155, 89, 182)]
     lib = board._lib()
+    from .drc import pour_layers
+    from .export import plane_plots
+    poured = pour_layers(board)
+    if 0 in {ll for lls in poured.values() for ll in lls}:
+        # top pour: copper flood, then mask-green cutouts back out
+        c.rect(0, 0, board.width, board.height, board.height, (185, 120, 40))
+        for x0, y0, x1, y1 in plane_plots(board).get(0, []):
+            c.rect(x0, y0, x1, y1, board.height, (11, 61, 11))
     for t in board.traces:
+        if getattr(t, "via", False):
+            continue
         c.line(t.x1, t.y1, t.x2, t.y2, board.height, max(0.2, t.width),
                cols[t.layer % 4])
+    for t in board.traces:
+        if getattr(t, "via", False):
+            c.disc(t.x1, t.y1, board.height, 0.4, (217, 168, 50))
+            c.disc(t.x1, t.y1, board.height, 0.2, (11, 61, 11))
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
             dx, dy = board.pad_pos(p.ref, pin)
             pw, ph = pad_size(p.fp, pin, lib)
             c.rect(dx - pw / 2, dy - ph / 2, dx + pw / 2, dy + ph / 2,
                    board.height, (217, 168, 50))
+            if hole_drill(p.fp, pin, lib) > 0:
+                c.disc(dx, dy, board.height, hole_drill(p.fp, pin, lib) / 2,
+                       (11, 61, 11))
+    for p in board.parts.values():
+        for body in bodies_of(p.fp, lib):
+            box = body.get("box")
+            if not isinstance(box, (list, tuple)) or len(box) < 2:
+                continue
+            w2, h2 = float(box[0]), float(box[1])
+            c.rect(p.x - w2 / 2, p.y - h2 / 2, p.x + w2 / 2, p.y + h2 / 2,
+                   board.height, (24, 24, 28))
     for p in board.parts.values():
         _w, ph = p.wh()
         c.text(p.ref, p.x, p.y + ph / 2 + 0.8, board.height, (245, 245, 245))
