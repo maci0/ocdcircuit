@@ -8,7 +8,8 @@ VPSC, local-search/population methods, Steiner/schematic/analog).
 For ocdcircuit's scale (tens of parts, zero-dependency Python), measurement
 supports the current architecture: released diffusion finds zero-error layouts
 at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
-(`outputs/dense-demo-experiment.md`). Exact
+(`benches/monster6502/bench.py` holds the live golden-WL comparison;
+the original `outputs/dense-demo-experiment.md` log is gone). Exact
 methods (CP-SAT, ILP/MILP) buy optimality proofs but cost a dependency plus a
 linearized/disjunctive formulation the true objective doesn't need yet. The
 cheapest upgrades, in order: (1) negotiated-congestion-lite in
