@@ -2189,6 +2189,12 @@ _lm.meta["mask"] = "gren"
 assert any("unknown mask" in w for w in cast(list[str], _lm.lint()["warnings"]))
 _lm.meta["mask"] = "red"
 assert not [w for w in cast(list[str], _lm.lint()["warnings"]) if "mask" in w]
+# sim lint covers clk/expect too (not just vcc/sine/isrc/probe)
+_ls = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n"
+                  "sim clk GHOST 10\nsim expect PHANTOM == 1\n", base=EX)
+_sw = cast(list[str], _ls.lint()["warnings"])
+assert any("sim clk on unknown net GHOST" in w for w in _sw), _sw
+assert any("sim expect on unknown net PHANTOM" in w for w in _sw), _sw
 # lint covers the whole constraint grammar, dedupes, never crashes on junk
 _l2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n"
