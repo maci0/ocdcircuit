@@ -401,6 +401,10 @@ with tempfile.TemporaryDirectory() as d:
     _codes = _re.findall(r"%ADD(\d+)[A-Z]", _gtl)
     assert len(_codes) == len(set(_codes)), "dup Gerber D-codes"  # power/signal widths
     assert "%ADD11C,0.500" in _gtl  # 0.5 power traces keep their aperture
+    _gtp = open([f for f in files if f.endswith(".GTP.gbr")][0]).read()
+    assert _gtp.count("D03*") > 0  # paste covers SMD pads (never starved)
+    assert any(float(_re.search(r"%ADD1\dC,([\d.]+)", l).group(1)) > 0.4
+               for l in _gtp.splitlines() if l.startswith("%ADD11"))  # sized, not blind
     _gts = open([f for f in files if f.endswith(".GTS.gbr")][0]).read()
     assert _gts.count("D03*") > 0  # mask openings over pads (never empty)
     _mc = _re.findall(r"%ADD(\d+)[A-Z]", _gts)

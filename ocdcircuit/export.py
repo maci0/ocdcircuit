@@ -162,6 +162,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     paste: list[Flash] = []
     from .parts import pad_size
     msizes: list[float] = []  # mask opening per top pad (pad + 0.1 each side)
+    psizes: list[float] = []  # paste per SMD pad (pad - 0.1, never starved)
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
             x, y = board.pad_pos(p.ref, pin)
@@ -171,6 +172,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             from .parts import hole_drill
             if not hole_drill(p.fp, pin, lib):
                 paste.append((x, y))  # SMD only — PTH gets no paste
+                psizes.append(round(max(min(pw, ph) - 0.1, 0.2), 3))
     widths: dict[int, list[float]] = {ll: [] for ll in range(board.layers)}
     for t in board.traces:
         draws[t.layer % board.layers].append((t.x1, t.y1, t.x2, t.y2))
@@ -212,7 +214,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
         files.append(fn)
     # paste (top only — single-sided SMT like the mitox board)
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
-    open(fn, "w").write(_gerber(paste, [], 0.4))
+    open(fn, "w").write(_gerber(paste, [], 0.4, fsizes=psizes))
     files.append(fn)
     # mask: openings over pads (empty file = full mask = unsolderable).
     # Bottom is pad-free (single-sided SMT), so empty GBS is correct there.
