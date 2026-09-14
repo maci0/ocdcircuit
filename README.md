@@ -53,9 +53,13 @@ cockpit, not report; motion is the product; one concept, one hue.
 - **Everything is a hot-swappable plugin**: placers, routers, DRC, exporters
   (Gerbers, KiCad, EasyEDA, `.ocd`, JSON), parts library (all with 3D
   bodies), renderers (PCB/SCH SVG, PNG, STL, textured glTF, 3D HTML).
-- **Fab profiles**: JLCPCB, PCBWay, OSH Park, Seeed, Aisler — DRC checks
+- **Fab profiles**: JLCPCB (+flex), PCBWay, OSH Park, Seeed, Aisler,
+  Eurocircuits, NextPCB, ALLPCB, Sierra, Advanced Circuits — DRC checks
   your board against the factory you actually ordered from
-  ([inventory](docs/FAB.md)).
+  ([inventory](docs/FAB.md)). `make fabsweep` runs every board × every fab.
+- **Copper pours**: `pour GND on 0` renders negative Gerber planes + KiCad
+  zones; routers skip poured nets, DRC exempts plane copper and flags
+  keepout-stranded pads (`pour-isolated`).
 - **mypy strict**, zero `Any`, zero errors. The code is aligned too.
 - **`block`/`instance` + hierarchical placer**: repeat a channel 3×, solve
   it once, stamp rigidly (`placer:hierarchical`). Pico demo does exactly this.
