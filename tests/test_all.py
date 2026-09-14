@@ -902,6 +902,10 @@ assert any(p["ref"] == "QX" for p in cast(list[dict[str, object]],
 assert _call("parse_constraint", {"text": "keep U1 near C1"})["constraint"] == {
     "t": "near", "a": "U1", "b": "C1", "w": 2.0}
 assert _call("check", {})["errors"] == []
+# per-call fab override (one-shot, not persisted — CLI --fab semantics)
+assert _call("check", {"fab": "eurocircuits"})["fab"] == "eurocircuits"
+_rfab = _rpc("tools/call", {"name": "check", "arguments": {"fab": "acme"}})
+assert "unknown fab" in str(_rfab.get("error")), _rfab
 # check-all falls back to board.toml drc picks when keys omitted
 with tempfile.TemporaryDirectory() as _md3:
     shutil.copy(os.path.join(EX, "psu.ocd"), os.path.join(_md3, "psu.ocd"))

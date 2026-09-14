@@ -185,8 +185,20 @@ def t_feasible(a: dict[str, object]) -> dict[str, object]:
             "layers": b.layers}
 
 
+def _fab_override(b: Board, a: dict[str, object]) -> None:
+    """Per-call fab pick (CLI --fab semantics): one-shot, not persisted."""
+    fab = a.get("fab")
+    assert fab is None or isinstance(fab, str)
+    if fab is not None:
+        from ocdcircuit import fab as _fab
+        if fab not in _fab.list_fabs():
+            raise ValueError(f"unknown fab {fab!r} (have {_fab.list_fabs()})")
+        b.fab = fab
+
+
 def t_check(a: dict[str, object]) -> dict[str, object]:
     b = _board()
+    _fab_override(b, a)
     key = a.get("key")
     assert key is None or isinstance(key, str)
     if key == "all":
@@ -213,6 +225,7 @@ def t_diff(a: dict[str, object]) -> dict[str, object]:
 
 def t_export(a: dict[str, object]) -> dict[str, object]:
     b = _board()
+    _fab_override(b, a)
     key = a.get("key")
     assert key is None or isinstance(key, str)
     outdir = str(a.get("outdir", "out"))
@@ -334,6 +347,7 @@ def t_ctx(a: dict[str, object]) -> dict[str, object]:
 
 def t_solve(a: dict[str, object]) -> dict[str, object]:
     b = _board()
+    _fab_override(b, a)
     pk = a.get("placer")
     rk = a.get("router")
     assert pk is None or isinstance(pk, str)
@@ -363,12 +377,12 @@ TOOLS: dict[str, object] = {
     "apply_candidate": (t_apply_candidate, {"index": 0, "n": 4, "key": "placer?", "seed": 0, "iters": 400}),
     "feasible": (t_feasible, {"layers?": "[1, 2, 4]"}),
     "route": (t_route, {"key": "router?", "frames?": True}),
-    "check": (t_check, {"key": "drc?"}),
+    "check": (t_check, {"key": "drc?", "fab?": "one-shot fab override"}),
     "score": (t_score, {"tidy": "include tidy scorecard?"}),
     "diff": (t_diff, {"text": ".ocd source to compare against"}),
     "lint": (t_lint, {}),
     "doctor": (t_doctor, {}),
-    "export": (t_export, {"key": "exporter?", "outdir": "out"}),
+    "export": (t_export, {"key": "exporter?", "outdir": "out", "fab?": "one-shot fab override"}),
     "render": (t_render, {"key": "renderer?"}),
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda", "path": "file"}),
     "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
@@ -378,7 +392,7 @@ TOOLS: dict[str, object] = {
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
     "context": (t_ctx, {"op": "fibers|get|set|unset", "key?": "coeffect key"}),
-    "solve": (t_solve, {"placer?": "key", "router?": "key"}),
+    "solve": (t_solve, {"placer?": "key", "router?": "key", "fab?": "one-shot fab override"}),
 }
 
 
