@@ -6,6 +6,7 @@
 
 ## Patch ops (`agent.apply_patch`)
 `add_part move_part remove_part connect constrain set_board route optimize`
+(+ `check export render` result-capture; `add_part`/`connect` take `attrs`).
 Each op runs through `Context` → fully undoable; returns applied count.
 
 ## NL shortcuts (`agent.parse_constraint`)
