@@ -19,7 +19,8 @@ OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
    re-solves around it. Double-click a part to unpin. Instanced parts
    (`block`/`instance`) drag as a rigid group — one `fix` line per
    member, double-click unpins the whole group. Groups show as dashed
-   outlines with `Z1`/`Z2`… tags (one hue each).
+   outlines with `Z1`/`Z2`… tags (one hue each). **⧉ stamp** appends
+   another copy of the hovered instance and rebuilds.
 3. **🎲** generates N candidate layouts (filmstrip) → click picks,
    drag nudges, re-run any engine.
 4. **Δ** shows what changed since the last edit (undo-history diff).
