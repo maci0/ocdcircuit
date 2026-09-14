@@ -76,6 +76,9 @@ assert c1 is not None and c1["t"] == "fixed"
 assert agent.parse_constraint("route GND on bottom") == {"t": "layer", "net": "GND", "layer": 1}
 wc = agent.parse_constraint("trace VCC 0.5")
 assert wc is not None and wc["width"] == 0.5
+cc = agent.parse_constraint("class highvolt width=0.8 clearance=0.5 note=x")
+assert cc is not None and cc["t"] == "class" and cc["width"] == 0.8 \
+    and cc["clearance"] == 0.5 and cc["note"] == "x"
 
 # hot-swap: mount alt plugin, use(), undo → back to default
 class AltPlacer(Plugin[float]):
@@ -196,6 +199,16 @@ assert "<canvas" in cast(str, bj.render("html3d"))
 _sch = cast(str, bj.render("sch"))
 assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch
 assert _sch.count("<circle") == sum(len(n.pins) for n in bj.nets.values())
+_ez = cast(str, bj.render("easyeda"))
+assert _ez.startswith("<svg") and "U1" in _ez and "#FFFF00" in _ez
+_ra = bj.render_all(tempfile.mkdtemp())
+assert len(_ra) == len(bj.plugins().list("renderer"))
+assert any(f.endswith(".easyeda.svg") for f in _ra)
+import shutil as _sh2
+if _sh2.which("kicad-cli") is not None:
+    assert cast(bytes, bj.render("kicad"))[:8] == b"\x89PNG\r\n\x1a\n"
+if _sh2.which("pcbdraw") is not None:
+    assert cast(str, bj.render("pcbdraw")).startswith("<")
 
 # fab profiles: oshpark is stricter than jlc on drills; jlc-flex is ENIG-only FPC
 from ocdcircuit import fab
@@ -382,6 +395,24 @@ with tempfile.TemporaryDirectory() as d:
     _bom = open([f for f in _nb.export("jlc", outdir=tempfile.mkdtemp())
                  if f.endswith(".BOM.csv")][0]).read()
     assert '"J11' in _bom and _bom.count("C21190") == 1, _bom
+    # net class + DNP: class width floor routes copper, clearance gates DRC,
+    # DNP splits the BOM row and exempts ERC pins
+    _cb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k dnp=1\n"
+                      "part C1 C0805 100n\nHV class=highvolt :: R1.1 C1.1\n"
+                      "LV :: R1.2 C1.2\nclass highvolt width=0.8 clearance=0.5\n", base=EX)
+    assert _cb.nets["HV"].attrs == {"class": "highvolt"}
+    assert agent.dumps(agent.loads(agent.dumps(_cb), base=EX)) == agent.dumps(_cb)
+    _cb.place(seeds=1, iters=30)
+    _cb.route_board()
+    assert _cb.nets["HV"].width == 0.8 and _cb.nets["LV"].width == 0.3
+    assert _cb.check("erc")["errors"] == [], _cb.check("erc")["errors"]
+    _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
+                  if f.endswith(".BOM.csv")][0]).read()
+    assert "10k (DNP),\"R2\"" in _cbom and _cbom.count("10k") == 2, _cbom
+    from ocdcircuit.circuit import Seg as _Seg
+    _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
+    assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5
+               cast(list[str], _cb.check()["warnings"]))
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
     assert '(net 0 "")' in kc  # KiCad requires the unconnected net declared
@@ -731,13 +762,14 @@ assert _t6["match:A+B"]["estimated"] is False, _t6
 assert _t6["diff:A/B"]["estimated"] is False, _t6
 # meta lines: title/rev/desc round-trip, flow into IR + KiCad title
 _mb = agent.loads("board t 40x30\nmeta title Blinky 555\nmeta rev A\n"
-                  "part R1 R0805 10k\nnet N: R1.1 R1.2\n")
-assert _mb.meta == {"title": "Blinky 555", "rev": "A"}, _mb.meta
+                  "meta desc demo\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+assert _mb.meta == {"title": "Blinky 555", "rev": "A", "desc": "demo"}, _mb.meta
 assert agent.dumps(agent.loads(agent.dumps(_mb))) == agent.dumps(_mb)
 import json as _jm
-assert _jm.loads(agent.to_json(_mb))["board"]["meta"] == {"title": "Blinky 555", "rev": "A"}
+assert _jm.loads(agent.to_json(_mb))["board"]["meta"] == {"title": "Blinky 555", "rev": "A", "desc": "demo"}
 _kd = _mb.export("kicad", outdir=tempfile.mkdtemp())[0]
-assert '(title "Blinky 555")' in open(_kd).read()
+_kdt = open(_kd).read()
+assert '(title "Blinky 555")' in _kdt and '(rev "A")' in _kdt and '(comment 1 "demo")' in _kdt
 # placer auto-select: diffusion below 1000 parts, multilevel at/above
 _seen: dict[str, object] = {}
 _orig_run = Board._run

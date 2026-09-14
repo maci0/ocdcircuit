@@ -10,6 +10,8 @@ meta title Blinky 555          # meta KEY value... (title/rev/desc/… → KiCad
 part U1 SOIC8 NE555            # part REF FOOTPRINT [value...]
 VCC :: J1.1 <--> U1.8 <--> R1.1  # net flow: NAME [attrs] :: REF.PIN <--> ...
 GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> = layer, w<n> = width mm
+HV class=highvolt :: J1.3 <--> U1.2  # k=v net attrs (class= names a class…)
+class highvolt width=0.8 clearance=0.5  # …defined once: width floor + DRC gap
 fix J1 at 3 15                 # pin a part at x y
 keep U1 near C1 3              # pull parts together (weight, default 2)
 route GND on 1                 # force net to layer (folds onto net line)
@@ -33,6 +35,7 @@ end
 instance driver as Z1      # stamp with PREFIX_; repeat as needed
 instance driver as Z2 join VCC GND  # joined nets merge, rest stay local
 part C1 C0402 100n lcsc=C1525 rot=90  # trailing k=v attrs (LCSC, rotation)
+part R9 R0603 0 dnp=1        # do-not-place: in BOM as DNP row, ERC-exempt
 pour GND on 0                # copper pour (top=0, bottom=layers-1)
 keepout 11.5 47 15.7x1.9     # rect keepout, center x y WxH [+ on layers]
 keepout 20 15 d6           # round keepout, center x y dia [+ on layers]
@@ -60,7 +63,8 @@ board 40x30                  # resize (bare form, no name)
 - Every `REF` in a net must be a declared part; every `PIN` must exist on
   that footprint (`ocd` checks this at load — no silent bad pins).
 - Unknown footprints fail at load: `line 2: 'unknown footprint NOPE'`.
-- Net attributes are only `L<n>` / `w<n>` — anything else is an error.
+- Net attributes: `L<n>` / `w<n>` plus generic `k=v` (`class=…` names
+  a `class` line) — anything else is an error.
 - Values may contain spaces (`part R1 R0805 10k 0805` keeps `10k 0805`).
 - `dumps()` output is canonical: constraints come after nets; layer/width
   constraints set by `net` attrs print as `route`/`trace` lines.

@@ -134,6 +134,10 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             dr = hole_drill(p.fp, pin, lib)
             if dr and dr < min_drill:
                 errors.append(f"drill {p.ref}.{pin}={dr} < {min_drill}")
+    classes: dict[str, float] = {}
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "class":
+            classes[str(c.get("name", ""))] = float(cast(float, c.get("clearance", 0.0)))
     for net in board.nets.values():
         if len([1 for r, _ in net.pins if r in board.parts]) == 1:
             errors.append(f"floating {net.name}")
@@ -200,6 +204,15 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     dc = _diff_cost(board)
     if dc > 10.0:
         warnings.append(f"diff-pair skew/gap dev~{dc / 100.0:.1f}mm")
+    def _need(a: str, b: str) -> float:
+        need = min_space
+        for n in (a, b):
+            net = board.nets.get(n)
+            cl = net.attrs.get("class") if net is not None else None
+            if cl in classes:
+                need = max(need, classes[cl])
+        return need
+
     tr = board.traces
     for i in range(len(tr)):
         for j in range(i + 1, len(tr)):
@@ -207,7 +220,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             if sa.layer != sb.layer or sa.net == sb.net:
                 continue
             if _seg_dist((sa.x1, sa.y1, sa.x2, sa.y2),
-                         (sb.x1, sb.y1, sb.x2, sb.y2)) < min_space:
+                         (sb.x1, sb.y1, sb.x2, sb.y2)) < _need(sa.net, sb.net):
                 warnings.append(f"clearance {sa.net}-{sb.net}")
                 break
     return {"errors": errors, "warnings": warnings, "fab": key}
@@ -243,6 +256,8 @@ def erc(board: Board) -> dict[str, object]:
             seen.add(key)
             connected.add(key)
     for ref, p in board.parts.items():
+        if p.attrs.get("dnp"):
+            continue  # unpopulated: pins float by design, still placed
         for pin in p.pins_of(lib):
             if (ref, pin) not in connected and f"{ref}.{pin}" not in ncs \
                     and not pin.startswith("NC"):

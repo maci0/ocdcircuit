@@ -63,11 +63,13 @@ class Part:
 
 class Net:
     def __init__(self, name: str, width: float = 0.3,
-                 layer: int | None = None) -> None:
+                 layer: int | None = None,
+                 attrs: dict[str, str] | None = None) -> None:
         self.name = name
         self.pins: list[tuple[str, str]] = []  # (ref, pin)
         self.width = width
         self.layer = layer  # None = auto
+        self.attrs: dict[str, str] = dict(attrs or {})  # class=, etc.
 
 
 class Seg:
@@ -168,6 +170,28 @@ class Board(Component):
         out = self._run("renderer", key, **k)
         assert isinstance(out, (str, bytes))
         return out
+
+    def render_all(self, outdir: str, keys: list[str] | None = None) -> list[str]:
+        """Every mounted renderer → outdir/<name><ext>. A raising renderer
+        is skipped with a warning (registry failure memory fences it)."""
+        import os
+        import subprocess
+        os.makedirs(outdir, exist_ok=True)
+        written: list[str] = []
+        for key in keys or self.plugins().list("renderer"):
+            try:
+                out = self.render(key)
+            except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as e:
+                print(f"ocd: render {key} skipped: {e}")
+                continue
+            plug = self.plugins().get("renderer", key)
+            ext = str(getattr(plug, "ext", f".{key}"))
+            mode = "w" if isinstance(out, str) else "wb"
+            fn = os.path.join(outdir, self.name + ext)
+            with open(fn, mode) as f:
+                f.write(out)
+            written.append(fn)
+        return written
 
     def silk(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Silkscreen generation, mix-and-match: ref (dense) / full

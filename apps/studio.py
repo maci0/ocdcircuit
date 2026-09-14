@@ -264,7 +264,7 @@ async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'
 function highlight(){
   const ed=$('ed');if(document.activeElement===ed)return; // don't clobber caret
   const t=ed.innerText;let h=t.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  h=h.replace(/(^|\n)(board|part|net|use|fix|keep|route|trace|power|silk|join|as|on|at|near|match|diff|pour|keepout|cutout|hole|bend|stiffener|block|instance|end|nc|sim|x|board)(?=[\\s]|$)/g,'$1<span class=tok-k>$2</span>');
+  h=h.replace(/(^|\n)(board|part|net|use|fix|keep|route|trace|power|silk|join|as|on|at|near|match|diff|pour|keepout|cutout|hole|bend|stiffener|block|instance|end|nc|sim|x|board|class|meta)(?=[\\s]|$)/g,'$1<span class=tok-k>$2</span>');
   h=h.replace(/(#[^\n]*)/g,'<span class=tok-c>$1</span>');
   // note: lightweight; full tokenize on load only
   ed.innerHTML=h;

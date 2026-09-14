@@ -107,6 +107,16 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"power ([\w ]+)$", t, re.I)
     if m:
         return {"t": "power", "nets": m.group(1).split()}
+    m = re.match(r"class (\w+)((?:\s+\w+=[\w.]+)*)$", t, re.I)
+    if m:
+        cc: Constraint = {"t": "class", "name": m.group(1)}
+        for tok in m.group(2).split():
+            k, _, v = tok.partition("=")
+            try:
+                cc[k] = float(v)
+            except ValueError:
+                cc[k] = v
+        return cc
     m = re.match(r"match ([\w ]+)$", t, re.I)
     if m:
         return {"t": "match", "nets": m.group(1).split()}
@@ -249,7 +259,7 @@ def dumps(board: Board) -> str:
         pins = sorted((r, str(pin)) for r, pin in net.pins if r not in owned)
         if not pins and any(net.pins):
             continue  # fully owned by an include — comes back via `use`
-        attrs = ""
+        attrs = "".join(f" {k}={v}" for k, v in sorted(net.attrs.items()))
         layer = net.layer if net.layer is not None else lay.get(n)
         width = net.width if net.width != 0.3 else wid.get(n, 0.3)
         if layer is not None:
@@ -314,6 +324,10 @@ def dumps(board: Board) -> str:
                 continue
             seen_power.append(nets)
             L.append(f"power {' '.join(cast(list[str], c['nets']))}")
+        elif t == "class":
+            rest = " ".join(f"{k}={_f(v):g}" if isinstance(v, float) else f"{k}={v}"
+                            for k, v in sorted(c.items()) if k not in ("t", "name"))
+            L.append(f"class {c.get('name')}{(' ' + rest) if rest else ''}")
     return "\n".join(L) + "\n"
 
 
@@ -578,9 +592,15 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         name, attrs = htoks[1], htoks[2:]
     else:
         name, attrs = htoks[0], htoks[1:]
+    nattrs: dict[str, str] = {}
     for a in attrs:
         if a[0] in "Ll" and a[1:].isdigit():
             b.constrain({"t": "layer", "net": name, "layer": int(a[1:])})
+        elif "=" in a:
+            k, _, v = a.partition("=")
+            if not k or not v:
+                raise err(f"{ctx}bad net attribute {a!r} (want k=v)")
+            nattrs[k] = v
         else:
             w: float | None = None
             if a[0] in "Ww":
@@ -589,8 +609,10 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
                 except ValueError:
                     w = None
             if w is None:
-                raise err(f"{ctx}bad net attribute {a!r} (want L<n> or w<n>)")
+                raise err(f"{ctx}bad net attribute {a!r} (want L<n>, w<n>, or k=v)")
             b.constrain({"t": "width", "net": name, "width": w})
+    if nattrs:
+        b.net(name).attrs.update(nattrs)
     for tok in pins.replace("<-->", " ").split():
         ref, dot, pin = tok.partition(".")
         if not dot or not ref or not pin:

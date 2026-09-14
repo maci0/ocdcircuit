@@ -137,19 +137,21 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.BOM.csv")
     # JLC format: Comment,Designator,Footprint,LCSC — grouped by value,
-    # LCSC from `lcsc` part attr
-    groups: dict[tuple[str, str], list[str]] = {}
+    # LCSC from `lcsc` part attr. DNP parts get their own rows (JLC's
+    # "Do not place" is per-line; never merge placed + DNP).
+    groups: dict[tuple[str, str, str], list[str]] = {}
     for p in board.parts.values():
-        groups.setdefault((p.value, p.fp), []).append(p.ref)
+        groups.setdefault((p.value, p.fp, "DNP" if p.attrs.get("dnp") else ""), []).append(p.ref)
     lines = ["Comment,Designator,Footprint,LCSC"]
-    for (value, fp), refs in sorted(groups.items()):
+    for (value, fp, dnp), refs in sorted(groups.items()):
         lcsc = ""
         for r in refs:
             a = board.parts[r].attrs.get("lcsc", "")
             if a:
                 lcsc = str(a)
                 break
-        lines.append(f"{value},\"{','.join(sorted(refs))}\",{fp},{lcsc}")
+        comment = f"{value} (DNP)" if dnp else value
+        lines.append(f"{comment},\"{','.join(sorted(refs))}\",{fp},{lcsc}")
     open(fn, "w").write("\n".join(lines) + "\n")
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
@@ -382,8 +384,11 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     L: list[str] = []
     A = L.append
     A("(kicad_pcb (version 20221018) (generator ocdcircuit)")
-    if board.meta.get("title"):
-        A(f'  (title_block (title {_sexp_str(board.meta["title"])}))')
+    if board.meta.get("title") or board.meta.get("rev"):
+        A(f'  (title_block (title {_sexp_str(board.meta.get("title", board.name))})'
+          + (f' (rev {_sexp_str(board.meta["rev"])})' if board.meta.get("rev") else "")
+          + (f' (comment 1 {_sexp_str(board.meta["desc"])})' if board.meta.get("desc") else "")
+          + ')')
     A('  (general (thickness 1.6))')
     A('  (paper "A4")')
     layers = kicad_layers(board.layers)

@@ -1001,6 +1001,12 @@ def assign_layers(board: Board) -> None:
             for n in nets:
                 if n in board.nets:
                     board.nets[n].width = max(board.nets[n].width, 0.5)
+    for c in board.constraints:
+        if c.get("t") == "class":
+            w = float(cast(float, c.get("width", 0.3)))
+            for n, net in board.nets.items():
+                if net.attrs.get("class") == c.get("name"):
+                    net.width = max(net.width, w)
     if board.layers == 1:
         for net in board.nets.values():
             net.layer = 0
