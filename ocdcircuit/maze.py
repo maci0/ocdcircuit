@@ -190,42 +190,68 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                           pad_cells, copper, halo, cells_of, new, frames):
             failed.append(net.name)
     # rip-up retry: drop the blocker crowding each failed net's corridor,
-    # re-route failed-first, then re-route the ripped net. One bounded round.
-    for fname in failed:
-        fnet = board.nets[fname]
-        fpts = [(r, board.pad_pos(r, q)) for r, q in fnet.pins if r in board.parts]
-        if len(fpts) < 2:
-            continue
-        best, best_hit = "", -1
-        for oname, cells in cells_of.items():
-            if oname == fname:
+    # re-route failed-first, then re-route the ripped net. A 2nd round runs
+    # only if the 1st strictly shrank the failed set (on jumper-structural
+    # boards like 1L blinky, extra churn converts routed nets to jumpers).
+    n_failed = len(failed)
+    for _round in range(2):
+        if not failed:
+            break
+        if _round == 1 and len(failed) >= n_failed:
+            for fname in failed:
+                fnet = board.nets[fname]
+                fpts = [(r, board.pad_pos(r, q)) for r, q in fnet.pins if r in board.parts]
+                if len(fpts) >= 2:
+                    _fallback(board, fnet, fpts, new)
+            break
+        still: list[str] = []
+        for fname in failed:
+            fnet = board.nets[fname]
+            fpts = [(r, board.pad_pos(r, q)) for r, q in fnet.pins if r in board.parts]
+            if len(fpts) < 2:
                 continue
-            hit = sum(1 for (gx, gy, _ll) in cells
-                      for (px, py) in (fpts[0][1], fpts[-1][1])
-                      if abs(gx * grid - px) + abs(gy * grid - py) < 4.0)
-            if hit > best_hit:
-                best, best_hit = oname, hit
-        if best_hit <= 0:
-            _fallback(board, fnet, fpts, new)
-            continue
-        ripped = [s for s in new if s.net == best]
-        new[:] = [s for s in new if s.net != best]
-        del cells_of[best]
-        _rebuild_blocked(copper, halo, cells_of)
-        if _route_one(board, fnet, grid, bend, via, nx, ny, base_blocked,
-                      pad_cells, copper, halo, cells_of, new, frames):
-            bnet = board.nets[best]
-            bpts = [(r, board.pad_pos(r, q)) for r, q in bnet.pins if r in board.parts]
-            if len(bpts) >= 2 and not _route_one(
-                    board, bnet, grid, bend, via, nx, ny, base_blocked,
-                    pad_cells, copper, halo, cells_of, new, frames):
-                _fallback(board, bnet, bpts, new)
-        else:
-            _fallback(board, fnet, fpts, new)
-            for s in ripped:  # restore ripped net as flagged fallback
-                j = Seg(s.net, s.x1, s.y1, s.x2, s.y2, s.layer, s.width)
-                j.jumper = True  # type: ignore[attr-defined]
-                new.append(j)
+            best, best_hit = "", -1
+            for oname, cells in cells_of.items():
+                if oname == fname:
+                    continue
+                hit = sum(1 for (gx, gy, _ll) in cells
+                          for (px, py) in (fpts[0][1], fpts[-1][1])
+                          if abs(gx * grid - px) + abs(gy * grid - py) < 4.0)
+                if hit > best_hit:
+                    best, best_hit = oname, hit
+            if best_hit <= 0:
+                if _round == 1:
+                    _fallback(board, fnet, fpts, new)
+                else:
+                    still.append(fname)
+                continue
+            ripped = [s for s in new if s.net == best]
+            new[:] = [s for s in new if s.net != best]
+            del cells_of[best]
+            _rebuild_blocked(copper, halo, cells_of)
+            if _route_one(board, fnet, grid, bend, via, nx, ny, base_blocked,
+                          pad_cells, copper, halo, cells_of, new, frames):
+                bnet = board.nets[best]
+                bpts = [(r, board.pad_pos(r, q)) for r, q in bnet.pins if r in board.parts]
+                if len(bpts) >= 2 and not _route_one(
+                        board, bnet, grid, bend, via, nx, ny, base_blocked,
+                        pad_cells, copper, halo, cells_of, new, frames):
+                    if _round == 1:
+                        _fallback(board, bnet, bpts, new)
+                    else:
+                        still.append(best)
+            else:
+                if _round == 1:
+                    _fallback(board, fnet, fpts, new)
+                    for s in ripped:  # restore ripped net as flagged fallback
+                        j = Seg(s.net, s.x1, s.y1, s.x2, s.y2, s.layer, s.width)
+                        j.jumper = True  # type: ignore[attr-defined]
+                        new.append(j)
+                else:
+                    new.extend(ripped)  # victim back untouched, retry later
+                    _rebuild_blocked(copper, halo, cells_of)
+                    still.append(fname)
+        failed = still
     board.ctx.emit(lambda: board.traces.__setitem__(slice(None), new),
                    lambda: board.traces.__setitem__(slice(None), old))
     return len(new)
