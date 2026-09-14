@@ -558,7 +558,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err(f"unknown footprint format {ext!r}")
             try:
                 b.import_fp(key, path=fn)
-            except (OSError, ValueError, KeyError) as e:
+            except (OSError, ValueError, KeyError, AssertionError) as e:
                 raise err(e)
         elif kw == "sym":
             toks = line.split(None, 1)
@@ -568,7 +568,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             fn = _os.path.normpath(_os.path.join(base, toks[1]))
             try:
                 b.import_sym(path=fn)
-            except (OSError, ValueError, KeyError) as e:
+            except (OSError, ValueError, KeyError, AssertionError) as e:
                 raise err(e)
             continue
         elif kw == "part":
