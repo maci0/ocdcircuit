@@ -1558,6 +1558,8 @@ for _bbad, _bfrag in [
     ("board t 10x10\nblock a\npart R1 R0805\nend\nblock a\npart R2 R0805\nend\n", "duplicate block"),
     ("board t 10x10\ninstance nope as X\n", "unknown block"),
     ("board t 10x10\nblock a\nuse x.ocd\nend\n", "not allowed inside block"),
+    ("board t 0x10 2L\n", "must be positive"),
+    ("board t 40x30 0L\n", "≥1 layer"),
 ]:
     try:
         agent.loads(_bbad)

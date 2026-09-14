@@ -87,6 +87,10 @@ class Block:
 class Board(Component):
     def __init__(self, name: str = "board", width: float = 40.0,
                  height: float = 30.0, layers: int = 2) -> None:
+        if not (width > 0 and height > 0):
+            raise ValueError(f"board size must be positive (got {width}x{height})")
+        if layers < 1:
+            raise ValueError(f"board needs ≥1 layer (got {layers})")
         super().__init__(name)
         self.ctx = Context()
         self.width, self.height, self.layers = width, height, layers
