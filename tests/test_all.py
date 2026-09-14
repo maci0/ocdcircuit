@@ -1190,6 +1190,15 @@ try:
 except ValueError as e:
     assert "unknown constraint type" in str(e), str(e)
 assert _bct.constraints == []
+# CONSTRAINT_TYPES matches dumps arms exactly (new kinds must land in both
+# or they silently vanish on save — the class this guards)
+import re as _re2
+_arms = set(_re2.findall(r'elif t == "([a-z-]+)"',
+                         open(os.path.join(EX, "..", "ocdcircuit",
+                                           "agent.py")).read()))
+_arms |= {"near", "fixed", "near-group", "layer", "width", "pour"}
+from ocdcircuit.circuit import CONSTRAINT_TYPES as _CT
+assert _arms == set(_CT), (_arms ^ set(_CT))
 # Part rotation: rot parses + clamps, wh swaps on 90/270, rot_xy rotates offsets
 from ocdcircuit.circuit import Part as _Part
 _rp = _Part("R1", "R0805", "", 10, 10, 2.0, 1.0, attrs={"rot": "90"})
