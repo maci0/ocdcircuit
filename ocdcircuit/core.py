@@ -71,6 +71,7 @@ class Context:
         self._isolate: dict[str, object] = {}
         self._intercept: dict[str, object] = {}
         self._providers: dict[str, tuple[Fiber | None, object, object]] = {}
+        self._registry: dict[int, Fiber] = {}  # dom(Fγ): uid → live fiber
 
     def child(self) -> Context:
         """Derive a child context (fiber ctx, isolate scope). Realm tables
@@ -176,7 +177,11 @@ class Context:
         return (None, realm)
 
     def get(self, key: str) -> object:
-        """Bare store lookup (never fails): k→ρ(k)→σ(ρ(k))."""
+        """Bare store lookup (never fails): k→ρ(k)→σ(ρ(k)). A `hidden`
+        intercept on the access path masks the binding (paper §5.1.2:
+        ι adjusts how a binding is used, not what it resolves to)."""
+        if self.intercepted(key).get("hidden") is True:
+            return None
         v, _ = self._lookup(key)
         return v
 
@@ -218,24 +223,13 @@ class Context:
         self.notify([key])
         return d
 
-    def isolate(self, key: str, realm: object | None = None) -> Undo:
-        """Override ρ at key (fresh symbol by default, paper §5.1.2)."""
-        r: object = realm if realm is not None else object()
-        had = key in self._isolate
-        old = self._isolate.get(key, key)
-
-        def _cb() -> object:
-            self._isolate[key] = r
-
-            def _inv() -> None:
-                if had:
-                    self._isolate[key] = old
-                else:
-                    self._isolate.pop(key, None)
-
-            return _inv
-
-        return self.effect(_cb)
+    def isolate(self, key: str, realm: object | None = None) -> Context:
+        """Derive a child context overriding ρ at one key (fresh symbol by
+        default, paper §5.1.2). Recovery is implicit: discard the child,
+        no inverse. Siblings resolving the key keep the parent binding."""
+        c = self.child()
+        c._isolate[key] = realm if realm is not None else object()
+        return c
 
     def intercept(self, key: str, metadata: dict[str, object]) -> Undo:
         """Merge metadata into ι (paper §5.1.2); consulted at read time."""
@@ -255,6 +249,21 @@ class Context:
             return _inv
 
         return self.effect(_cb)
+
+    def intercepted(self, key: str) -> dict[str, object]:
+        """Metadata ι consults at read time: merged down the context chain,
+        child takes priority (paper §5.1.2)."""
+        out: dict[str, object] = {}
+        chain: list[Context] = []
+        c: Context | None = self
+        while c is not None:
+            chain.append(c)
+            c = c._parent
+        for ctx in reversed(chain):
+            m = ctx._intercept.get(key)
+            if isinstance(m, dict):
+                out.update(cast(dict[str, object], m))
+        return out
 
     # --- providers + reactive notification (paper Alg 3) ---
     def _register_provider(self, key: str, realm: object, value: object = None) -> None:
@@ -286,6 +295,60 @@ class Context:
             out += p._fibers
             p = p._parent
         return out
+
+    def use(self, inject: tuple[str, ...] | list[str],
+            apply: Callable[[Context], object],
+            isolate: dict[str, object] | None = None,
+            intercept: dict[str, object] | None = None) -> Fiber:
+        """Instantiation primitive (paper Alg 4, O-Insert): the callback is
+        an effect tracked in THIS context — refresh runs the child on
+        execute, revert forces target ⊥ + unload. Unloading a parent
+        therefore cascades to its children. Returns the live fiber,
+        registered under a fresh uid (dom(Fγ), Table 2)."""
+        fiber = Fiber(self, inject, apply)
+        if isolate:
+            for k, r in isolate.items():
+                fiber.ctx._isolate[k] = r
+        if intercept:
+            for k, m in intercept.items():
+                assert isinstance(m, dict)
+                merged = dict(cast(dict[str, object],
+                                   fiber.ctx._intercept.get(k, {})))
+                merged.update(cast(dict[str, object], m))
+                fiber.ctx._intercept[k] = merged
+
+        def _cb() -> object:
+            fiber.refresh(force=True)
+
+            def _inv() -> None:
+                fiber.retire()  # O-Retire first: target ⊥ even with no inject
+                self._drop_fiber(fiber)  # O-Remove: uid cleared, no reissue
+
+            return _inv
+
+        fiber._insert = self.effect(_cb)
+        return fiber
+
+    def _drop_fiber(self, fiber: Fiber) -> None:
+        """O-Remove: drop from runtime, clear uid (paper Table 2). A stale
+        committed view naming the uid resolves against nothing."""
+        root = self._root()
+        root._registry.pop(fiber.uid, None)
+        for key in list(fiber.provided):
+            fiber.ctx._unregister_provider(key, fiber.ctx._realm_of(key))
+        fiber.provided.clear()
+        fiber.committed = None
+        ctxs: list[Context] = [self._root()]
+        while ctxs:
+            c = ctxs.pop()
+            if fiber in c._fibers:
+                c._fibers.remove(fiber)
+            ctxs += c._children
+
+    @property
+    def registry(self) -> dict[int, Fiber]:
+        """dom(Fγ): live fibers by uid (paper Table 2)."""
+        return self._root()._registry
 
     def notify(self, keys: list[str]) -> list[Fiber]:
         """Paper Alg 3: re-evaluate dependents sharing the realm.
@@ -364,7 +427,9 @@ class Fiber:
         self.inertia = False
         self._retired = False
         self.error: Exception | None = None  # FAILED outcome (paper §4.4)
+        self._insert: Undo = lambda: None  # O-Insert dispose (set by ctx.use)
         parent._fibers.append(self)
+        parent._root()._registry[self.uid] = self
 
     def target_of(self) -> tuple[int, ...] | None:
         """Digest of target(γ,n): provider uid per declared key (paper Alg 5).
@@ -834,15 +899,8 @@ class Loader:
                     apply_cfg(entry.config)
             return lambda: comp.unmount(fctx)
 
-        fiber = Fiber(self.ctx, entry.inject, _apply, capture=False)
-        for k, r in entry.isolate.items():
-            fiber.ctx._isolate[k] = r
-        for k, m in entry.intercept.items():
-            assert isinstance(m, dict)
-            merged = dict(cast(dict[str, object], fiber.ctx._intercept.get(k, {})))
-            merged.update(cast(dict[str, object], m))
-            fiber.ctx._intercept[k] = merged
-        fiber.refresh(force=True)
+        fiber = self.ctx.use(entry.inject, _apply, isolate=entry.isolate or None,
+                             intercept=entry.intercept or None)
         return fiber
 
     def _add_entry(self, spec: dict[str, object]) -> None:
@@ -855,14 +913,13 @@ class Loader:
         entry = self.entries.pop(eid, None)
         if entry is not None and entry.fiber is not None:
             entry.fiber.retire()  # O-Retire: ordered withdrawal, then dispose
-            if entry.fiber in self.ctx._fibers:
-                self.ctx._fibers.remove(entry.fiber)
+            entry.fiber._insert()  # undo the O-Insert: retire + O-Remove
             entry.fiber = None
 
     def _update_entry(self, spec: dict[str, object]) -> int:
-        """Per-field dispatch: url/factory → rebuild; isolate → realm
-        reassign + reload; intercept → in-place; config → handoff or
-        rebuild; disabled → retire/resume. Returns 1 if anything changed."""
+        """Per-field dispatch: url/factory/scope → rebuild; intercept-only
+        → in-place (consulted at read time, no reload); config → handoff
+        or rebuild; disabled → retire/resume. Returns 1 if changed."""
         entry = self.entries[str(spec["id"])]
         new = self._entry_of(spec)
         if new.factory is not entry.factory or new.url != entry.url:
@@ -881,13 +938,16 @@ class Loader:
                 entry.fiber = self._spawn(entry)
             changed = 1
         if new.isolate != entry.isolate:
+            # scope changed: retire + reinsert under a fresh scope
+            # (isolate derives a child ctx — scopes aren't mutated in place)
             entry.isolate = dict(new.isolate)
+            entry.intercept = dict(new.intercept)
             if entry.fiber is not None:
-                for k, r in entry.isolate.items():
-                    entry.fiber.ctx._isolate[k] = r
-                entry.fiber.refresh(force=True)  # reload, no rebuild
+                entry.fiber.retire()
+                entry.fiber._insert()
+                entry.fiber = self._spawn(entry)
             changed = 1
-        if new.intercept != entry.intercept:
+        elif new.intercept != entry.intercept:
             entry.intercept = dict(new.intercept)
             if entry.fiber is not None:
                 for k, m in entry.intercept.items():
@@ -904,10 +964,9 @@ class Loader:
             if comp is not None and callable(apply_cfg):
                 apply_cfg(new.config)  # component diffs the payload itself
             elif entry.fiber is not None:
-                eid, fib = entry.id, entry.fiber
-                fib.retire()
-                if fib in self.ctx._fibers:
-                    self.ctx._fibers.remove(fib)
+                eid = entry.id
+                entry.fiber.retire()
+                entry.fiber._insert()
                 entry.fiber = self._spawn(entry)
                 assert entry.id == eid
             changed = 1

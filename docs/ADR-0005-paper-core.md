@@ -31,24 +31,23 @@ Paper: [arXiv:2608.25512](https://arxiv.org/abs/2608.25512) (Table 2, Algs 1–1
 
 ## Open gaps (re-review 2026-09-14, honest list)
 
-1. **No `ctx.use` / O-Insert instantiation** (Table 2, Alg 4): fibers are
-   built by `Loader._spawn` directly; parts/nets/traces bypass fibers.
-   No parent-cascade teardown for domain state.
-2. **No `ctx.registry` / uid reissue** (Table 2, O-Remove): fibers leave
-   `_fibers` by list-removal, uid stays live; no `dom(Fγ)` enumeration.
-3. **Isolate goes through `effect`** (§5.1.2 says scope-derivation needs
-   no inverse): realm overrides are undoable entries, and loader pokes
-   `_isolate` directly instead of deriving a child context.
-4. **`intercept` is write-only**: nothing consults `_intercept` at read
-   time (§5.1.2: metadata adjusts *how a binding is used*).
-5. **Alg 7 managed realms + delimiters**: isolate dicts are raw values,
+Closed since: `ctx.use` O-Insert (tracked callback, revert = retire +
+O-Remove), `ctx.registry` + uid clearing, isolate-as-scope (no inverse;
+loader respawns on scope change), intercept consulted at read (`hidden`
+mask, child-overridable), Module build inside fiber apply.
+Remaining:
+
+1. **No parent-cascade for domain state**: parts/nets/traces emit on the
+   board ctx directly, not through fibers — unloading a component fiber
+   retires its own apply-inverse but sibling domain edits interleave on
+   the same undo stack. Per-part fibers have no paper basis (fibers are
+   component instantiations); closing this means routing domain edits
+   through the owning fiber's ctx, a big-bang engine rewrite.
+2. **Alg 7 managed realms + delimiters**: isolate dicts are raw values,
    no local-vs-global scoping or entry-move semantics.
-6. **Alg 10 is single-entry**: no cross-entry atomicity, no module cache
+3. **Alg 10 is single-entry**: no cross-entry atomicity, no module cache
    invalidation (`sys.modules` untouched).
-7. **`Module` fiber is decorative**: `_apply` is a no-op, build runs
-   outside the fiber, nothing injects module keys — ordered withdrawal
-   notifies nobody; `_refs` hand-removal stays.
-8. Prior skips stand: async `create_task`, group/include components,
+4. Prior skips stand: async `create_task`, group/include components,
    file-watcher HMR engine, compile-time `ctx[key]` (§6.4), §6.2/6.3/6.6.
 
 ## Checks

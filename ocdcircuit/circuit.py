@@ -643,18 +643,25 @@ class Module(Component):
         board = a[0] if a else k.get("board")
         assert isinstance(board, Board)
         self._board = board
-        refs_before = set(board.parts)
-        self.build(board)
-        mine = [r for r in board.parts if r not in refs_before or r in self._refs]
-        self._refs = list(dict.fromkeys(self._refs + mine))
         provide = getattr(self, "provides", ())
         assert isinstance(provide, tuple)
 
         def _apply(_fctx: Context) -> object:
-            return lambda: None  # build already ran; loader-owned fibers only
+            refs_before = set(board.parts)
+            self.build(board)
+            mine = [r for r in board.parts
+                    if r not in refs_before or r in self._refs]
+            self._refs = list(dict.fromkeys(self._refs + mine))
 
-        fiber = _Fiber(ctx, self.requires, _apply, capture=False)
-        fiber.refresh(force=True)
+            def _inv() -> None:
+                for ref in self._refs:
+                    if ref in board.parts:
+                        board.remove_part(ref)
+
+            return _inv
+
+        fiber = ctx.use(self.requires, _apply)
+        assert isinstance(fiber, _Fiber)
         self._mounted = fiber.state == _Fiber.ACTIVE
         self._fiber = fiber
 
@@ -665,14 +672,8 @@ class Module(Component):
         from .core import Fiber as _Fiber
         fiber = self._fiber
         if isinstance(fiber, _Fiber):
-            fiber.retire()  # ordered withdrawal: dependents drain first
-            if fiber in ctx._fibers:
-                ctx._fibers.remove(fiber)
+            fiber.retire()
+            fiber._insert()  # undo O-Insert: ordered withdrawal + part removal
             self._fiber = None
-        bd = board if board is not None else self._board
-        if bd is not None:
-            for ref in self._refs:
-                if ref in bd.parts:
-                    bd.remove_part(ref)
         self._refs = []
         super().unmount(ctx)

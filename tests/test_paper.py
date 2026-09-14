@@ -146,13 +146,47 @@ ld2.declare([{"id": "db", "factory": _db1, "url": "db", "disabled": True},
 assert ld2.entries["app"].fiber is not None
 assert ld2.entries["app"].fiber.state == Fiber.INACTIVE  # type: ignore[union-attr]
 
-# isolate: same key, independent bindings
+# isolate: derived scope, independent binding, implicit recovery
 iso = Context()
 iso.set("clk", "a")
-ch = iso.child()
-ch.isolate("clk")
+ch = iso.isolate("clk")
 ch.set("clk", "b")
 assert iso.get("clk") == "a" and ch.get("clk") == "b"
+assert len(iso._undos) == 1  # isolate pushes no inverse; discard = recover
+
+# intercept is consulted at read time: hidden masks the subtree until
+# the child re-exposes (child table takes priority, paper §5.1.2)
+iso.intercept("clk", {"hidden": True})
+assert iso.get("clk") is None and ch.get("clk") is None
+ch.intercept("clk", {"hidden": False})  # child re-exposes its own binding
+assert ch.get("clk") == "b" and iso.get("clk") is None
+
+# ctx.use: O-Insert tracked in parent; undo cascades to children
+prt = Context()
+events: list[str] = []
+
+
+def _child_apply(fctx: Context) -> object:
+    events.append("child-up")
+    return lambda: events.append("child-down")
+
+
+child = prt.use((), _child_apply)
+assert child.state == Fiber.ACTIVE and child.uid in prt.registry
+uid = child.uid
+prt.undo()  # revert the O-Insert: retire + O-Remove (uid cleared)
+assert child.state == Fiber.INACTIVE and uid not in prt.registry
+assert events == ["child-up", "child-down"]
+
+# loader entries run through ctx.use: drop removes uid, re-add reissues
+ldt = Context()
+ld4 = Loader(ldt)
+ld4.declare([{"id": "w", "factory": _fac, "url": "w"}])
+wf = ld4.entries["w"].fiber
+assert wf is not None and wf.uid in ldt.registry
+wuid = wf.uid
+ld4.declare([])
+assert wuid not in ldt.registry  # O-Remove clears; stale views resolve nothing
 
 # FAILED: raising apply parks the fiber (target ⊥) without breaking notify
 frt = Context()
