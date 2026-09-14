@@ -113,6 +113,7 @@ class Board(Component):
         self._block_lines: list[str] | None = None
         self._lib_cache: dict[str, dict[str, object]] | None = None
         self._lib_parts_key: str | None = None
+        self._reg: Registry | None = None
         self.ctx.set("plugins", Registry())
         # board-owned fiber (paper Alg 4): every domain edit journals into
         # its dispose chain, so unloading the board reverts all board state.
@@ -152,9 +153,11 @@ class Board(Component):
 
     # -- plugin dispatch: Board never calls solver/drc/export directly --
     def plugins(self) -> Registry:
-        reg = self.ctx.require("plugins")
-        assert isinstance(reg, Registry)
-        return reg
+        if self._reg is None:
+            reg = self.ctx.require("plugins")
+            assert isinstance(reg, Registry)
+            self._reg = reg
+        return self._reg
 
     def use(self, kind: str, key: str) -> None:
         """Hot-swap the active plugin for a kind. Undoable. Explicit use

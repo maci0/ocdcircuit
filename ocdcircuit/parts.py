@@ -8,6 +8,7 @@ SOT/SOIC/QFP/QFN/BGA generated from pitch/count/span params.
 PTH: pin-1 at (0,0), rest step +2.54mm x; drill + annular ring.
 """
 from __future__ import annotations
+from typing import cast
 from .types import Footprint, HoleSpec, PadSpec, PinLike, XY
 
 
@@ -389,7 +390,6 @@ def resolve_fp(name: str) -> str:
 def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
     """{pin: (dx, dy)} pad centers — what solver/DRC/export need.
     Merges SMD pads AND PTH holes (mixed footprints like USB-C exist)."""
-    from typing import cast
     meta = (lib or FOOTPRINTS)[fp]
     out: dict[str, XY] = {}
     if "pads" in meta:
@@ -402,7 +402,6 @@ def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
 
 
 def pad_size(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> tuple[float, float]:
-    from typing import cast
     meta = (lib or FOOTPRINTS)[fp]
     pads = cast(dict[str, PadSpec], meta.get("pads", {}))
     if str(pin) in pads:
@@ -411,7 +410,6 @@ def pad_size(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> 
 
 
 def hole_drill(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> float:
-    from typing import cast
     meta = (lib or FOOTPRINTS)[fp]
     holes = cast(dict[str, HoleSpec], meta.get("holes", {}))
     if str(pin) in holes:
@@ -425,11 +423,9 @@ def pin_offset(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -
 
 
 def bodies_of(fp: str, lib: dict[str, Footprint] | None = None) -> list[Footprint]:
-    from typing import cast
     return cast(list[Footprint], (lib or FOOTPRINTS)[fp].get("bodies", []))
 
 
 def courtyard(fp: str) -> tuple[float, float]:
-    from typing import cast
     m = FOOTPRINTS[fp]
     return (cast(float, m["w"]), cast(float, m["h"]))
