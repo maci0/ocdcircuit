@@ -753,7 +753,7 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
         kw = line.split(None, 1)[0].lower()
         if kw == "part":
             _exec_part(child, line, err, ctx=f"in block {block}: ")
-        elif kw == "net":
+        elif kw == "net" or "::" in line:
             _exec_net(child, line, err, ctx=f"in block {block}: ")
         else:
             c = parse_constraint(line)
@@ -771,6 +771,9 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
                   else pre + n)
         for ref, pin in net.pins:
             parent.connect(target, pre + ref, pin)
+        if net.attrs:
+            parent.nets[target].attrs.update(dict(net.attrs))
+
     def _remap(n: str) -> str:
         return n if (joins and n in joins) or (join is None and n in AUTO_JOIN) else pre + n
 

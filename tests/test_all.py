@@ -923,6 +923,15 @@ assert ("N", 1) in [(c.get("net"), c.get("layer")) for c in _bc.constraints
 assert ("N", 0.6) in [(c.get("net"), c.get("width")) for c in _bc.constraints
                       if isinstance(c, dict) and c.get("t") == "width"]
 assert agent.dumps(agent.loads(agent.dumps(_bc), base=EX)) == agent.dumps(_bc)
+# mermaid nets + net attrs stamp too (:: lines used to die in blocks)
+_bm = agent.loads("board t 60x40 2L\nclass hv width=0.8\nblock ch\npart R R0805 10k\n"
+                  "part C C0805 100n\nHV class=hv :: R.1 C.1\nLV :: R.2 C.2\nend\n"
+                  "instance ch as A\n", base=EX)
+assert _bm.nets["A_HV"].attrs == {"class": "hv"}
+_bm.place(seeds=1, iters=30)
+_bm.route_board()
+assert _bm.nets["A_HV"].width == 0.8
+assert agent.dumps(agent.loads(agent.dumps(_bm), base=EX)) == agent.dumps(_bm)
 for _bbad, _bfrag in [
     ("board t 10x10\nblock a\npart R1 R0805\nblock b\n", "nested blocks"),
     ("board t 10x10\nend\n", "end without block"),
