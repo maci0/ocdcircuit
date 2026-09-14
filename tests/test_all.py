@@ -310,6 +310,11 @@ for pl in ["diffusion", "compact", "thermal"]:
         bm.place(pl, seeds=2, iters=100)
         bm.route_board(rt, **({"pop": 2, "gen": 1} if rt == "wiremask" else {}))
         assert not cast(list[str], bm.check()["errors"]), (pl, rt)
+# route-grid grammar: parses, dumps round-trips, maze honors it
+_bg = agent.loads("board t 20x10\npart R1 R0805 1k\nN :: R1.1 R1.2\nroute-grid 0.2\n", base=EX)
+assert _bg.constraints[-1] == {"t": "route-grid", "grid": 0.2}
+assert agent.dumps(agent.loads(agent.dumps(_bg), base=EX)) == agent.dumps(_bg)
+assert agent.parse_constraint("route-grid 0.2") == {"t": "route-grid", "grid": 0.2}
 # wiremask evals must not pollute undo (pop*gen phantom entries); coarse
 # legitimately emits 2 (route-grid constrain + maze)
 _bw = agent.loads(ocd, base=EX)

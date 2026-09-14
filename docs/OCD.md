@@ -75,6 +75,8 @@ hole 15.2 12.9 1.3           # bare mounting hole (x y drill)
 bend 10 20 30x5 r2           # flex bend area, center x y WxH radius [static]
 stiffener 10 20 30x5 FR4 0.2  # stiffener: center x y WxH material thick
 nc J1.A5 J1.A6               # intentionally unconnected pins (ERC-exempt)
+route-grid 0.2               # maze cell size (default 0.25); finer closes
+                             # dense boards, coarser routes faster
 silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 ```
 

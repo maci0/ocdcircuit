@@ -35,9 +35,9 @@
   "segs": 953
  },
  "pico_tmc2209.ocd/hierarchical/maze/2L": {
-  "hash": "f44a9cb8112b3c9c",
+  "hash": "d387d2183c26f74c",
   "parts": 20,
-  "segs": 545
+  "segs": 468
  },
  "psu.ocd/diffusion/lroute/2L": {
   "hash": "ff86a14ea3a997a6",

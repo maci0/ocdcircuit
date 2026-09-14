@@ -49,3 +49,4 @@ nc Z1_U.6 Z1_U.7 Z1_U.8 Z1_U.9 Z2_U.10 Z2_U.11 Z2_U.12 Z2_U.14 Z2_U.16 Z2_U.17 Z
 nc Z2_U.21 Z2_U.23 Z2_U.27 Z2_U.28 Z2_U.6 Z2_U.7 Z2_U.8 Z2_U.9 Z3_U.10 Z3_U.11 Z3_U.12 Z3_U.14
 nc Z3_U.16 Z3_U.17 Z3_U.18 Z3_U.20 Z3_U.21 Z3_U.23 Z3_U.27 Z3_U.28 Z3_U.6 Z3_U.7 Z3_U.8 Z3_U.9
 power VM V3V3 GND
+route-grid 0.2  # dense 2L: finer maze grid closes the last airwires (0 jumpers, still ≥0.2mm halo vs 0.15 fab)
