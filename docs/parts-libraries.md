@@ -1,5 +1,13 @@
 # Parts libraries — research brief (ocdcircuit relevance)
 
+## Disposition (round 200–201)
+- (1) Alias table: SHIPPED — `KICAD_ALIASES` + `resolve_fp()` in
+  `ocdcircuit/parts.py`, wired into `Board.add_part` (all surfaces).
+- (2) Pin-map table: SKIPPED — MNA/ngspice map by net, not pin order;
+  no consumer needs it.
+- (4) Courtyard audit: DEFERRED to an automated pass (unchanged).
+- (5) Live distributor APIs: never by default (unchanged policy).
+
 ## Summary
 
 ocdcircuit already covers the import side well (101 stdlib footprints,
