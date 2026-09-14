@@ -920,6 +920,12 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_run(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["placer"]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["bogus"]) == 1
+    # score + lint commands exit 0 on the scaffold; usage errors exit 1
+    assert _ocd.cmd_score(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
+    assert _ocd.cmd_score(_ocd._boot(), []) == 1
+    assert _ocd.cmd_lint(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
+    assert _ocd.cmd_lint(_ocd._boot(), []) == 1
+    assert _ocd.cmd_lint(_ocd._boot(), [os.path.join(_td, "nope.ocd")]) == 1
     # ocd run --sim dc: passing expects exit 0, failed expects exit 2 (CI ships)
     _simbase = ("board t 40x30 2L\npart J1 PINHD2 5V\npart R1 R0805 10k\npart R2 R0805 10k\n"
                 "net VCC: J1.1 R1.1\nnet OUT: R1.2 R2.1\nnet GND: J1.2 R2.2\nsim vcc VCC 5\n")
