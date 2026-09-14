@@ -885,6 +885,8 @@ with _tf.TemporaryDirectory() as _td:
     _np = os.path.join(_td, "newproj")
     assert _ocd.cmd_new([_np]) == 0
     assert _ocd.cmd_diff(_ocd._boot(), [_sp, os.path.join(_np, "newproj.ocd")]) == 0
+    # scaffold solves clean out of the box (funnel promise: new → run works)
+    assert _ocd.cmd_run(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["placer"]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["bogus"]) == 1
     # ocd run --sim dc: passing expects exit 0, failed expects exit 2 (CI ships)
