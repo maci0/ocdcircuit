@@ -388,7 +388,7 @@ class OcdExporter(Plugin[list[str]]):
         assert isinstance(outdir, str)
         os.makedirs(outdir, exist_ok=True)
         text = agent.dumps(board)
-        # in-memory customs (no src file) materialize as fp//sym/ sidecars so
+        # in-memory customs (no src file) materialize as fp/sym sidecars so
         # the exported .ocd reloads; file-backed ones already have fp lines.
         # sidecar filenames are sanitized (names are foreign-controlled);
         # the headers keep raw names so parts still resolve.
