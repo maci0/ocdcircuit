@@ -860,24 +860,24 @@ assert len(_fb.traces) == 0  # probe leaves the board untouched
 # symbols: stdlib resolve + .sym file + sym= attr + sch bodies + undo
 from ocdcircuit import symbol as _sym
 assert _sym.resolve("R0805").get("zigzag") is True
-assert _sym.resolve("SOIC8")["pins"]["1"] == ("left", 0, "")
+assert cast(dict[str, object], _sym.resolve("SOIC8")["pins"])["1"] == ("left", 0, "")
 _symb = agent.loads("board sy 20x10\npart R1 R0805 1k\npart U1 SOIC8 NE555\n"
                     "net N: R1.1 U1.2\nnet GND: R1.2 U1.3\n")
 assert _symb.symbol_of("R1").get("zigzag") is True
-assert _symb.symbol_of("U1")["pins"]["1"] == ("left", 0, "")
-_svg = _symb.render("sch")
+assert cast(dict[str, object], _symb.symbol_of("U1")["pins"])["1"] == ("left", 0, "")
+_svg = cast(str, _symb.render("sch"))
 assert "<polyline" in _svg and _svg.count("<circle") >= 4  # zigzag + stubs
 with tempfile.TemporaryDirectory() as _d:
-    _fp = os.path.join(_d, "op.sym")
-    open(_fp, "w").write("symbol OPX\npin 1 left IN+\npin 2 left IN-\n"
+    _symfp = os.path.join(_d, "op.sym")
+    open(_symfp, "w").write("symbol OPX\npin 1 left IN+\npin 2 left IN-\n"
                          "pin 3 right OUT\nnotch\n")
-    _sb = agent.loads(f"board s2 20x10\nsym {_fp}\npart U1 SOIC8 TL072 sym=OPX\n"
+    _sb = agent.loads(f"board s2 20x10\nsym {_symfp}\npart U1 SOIC8 TL072 sym=OPX\n"
                       "net A: U1.1\nnet B: U1.2\n")
-    assert _sb.symbol_of("U1")["pins"]["3"] == ("right", 0, "OUT")
+    assert cast(dict[str, object], _sb.symbol_of("U1")["pins"])["3"] == ("right", 0, "OUT")
     assert "sym " in agent.dumps(_sb)  # round-trips
     _sb2 = agent.loads("board s3 20x10\npart U1 SOIC8 TL072\nnet A: U1.1\n")
     _s0 = _sb2.ctx.snapshot()
-    _sb2.import_sym(path=_fp)
+    _sb2.import_sym(path=_symfp)
     assert "OPX" in _sb2.custom_sym
     _sb2.ctx.rollback(_s0)
     assert "OPX" not in _sb2.custom_sym
