@@ -902,6 +902,14 @@ assert any(p["ref"] == "QX" for p in cast(list[dict[str, object]],
 assert _call("parse_constraint", {"text": "keep U1 near C1"})["constraint"] == {
     "t": "near", "a": "U1", "b": "C1", "w": 2.0}
 assert _call("check", {})["errors"] == []
+# check-all falls back to board.toml drc picks when keys omitted
+with tempfile.TemporaryDirectory() as _md3:
+    shutil.copy(os.path.join(EX, "psu.ocd"), os.path.join(_md3, "psu.ocd"))
+    open(os.path.join(_md3, "board.toml"), "w").write('drc = ["erc"]\n')
+    _call("load_board", {"path": os.path.join(_md3, "psu.ocd")})
+    assert _call("check", {"key": "all"})["ran"] == ["erc"]
+    assert _call("check", {"key": "all", "keys": ["fab"]})["ran"] == ["fab"]
+    _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})
 assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:fp" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "simulate:mna" in cast(list[str], _call("list_plugins", {})["plugins"])

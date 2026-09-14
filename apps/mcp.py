@@ -193,6 +193,9 @@ def t_check(a: dict[str, object]) -> dict[str, object]:
         keys = a.get("keys")
         ks = list(keys) if isinstance(keys, list) else None
         assert ks is None or all(isinstance(x, str) for x in ks)
+        if ks is None:
+            proj_drc = b.proj.get("drc")
+            ks = list(proj_drc) if isinstance(proj_drc, list) else None
         return b.check("all", keys=cast(list[str] | None, ks))
     return b.check(key)
 
