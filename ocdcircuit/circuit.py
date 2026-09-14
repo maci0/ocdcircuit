@@ -176,32 +176,16 @@ class Board(Component):
         assert isinstance(out, list)
         return out
 
-    def render(self, key: str | None = None, **k: object) -> str | bytes:
+    def render(self, key: str | None = None, **k: object) -> str | bytes | list[str]:
         out = self._run("renderer", key, **k)
-        assert isinstance(out, (str, bytes))
+        assert isinstance(out, (str, bytes, list))
         return out
 
     def render_all(self, outdir: str, keys: list[str] | None = None) -> list[str]:
-        """Every mounted renderer → outdir/<name><ext>. A raising renderer
-        is skipped with a warning (registry failure memory fences it)."""
-        import os
-        import subprocess
-        os.makedirs(outdir, exist_ok=True)
-        written: list[str] = []
-        for key in keys or self.plugins().list("renderer"):
-            try:
-                out = self.render(key)
-            except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as e:
-                print(f"ocd: render {key} skipped: {e}")
-                continue
-            plug = self.plugins().get("renderer", key)
-            ext = str(getattr(plug, "ext", f".{key}"))
-            mode = "w" if isinstance(out, str) else "wb"
-            fn = os.path.join(outdir, self.name + ext)
-            with open(fn, mode) as f:
-                f.write(out)
-            written.append(fn)
-        return written
+        """Every mounted renderer → outdir. Thin wrapper over renderer:all."""
+        out = self._run("renderer", "all", outdir=outdir, keys=keys)
+        assert isinstance(out, list)
+        return out
 
     def silk(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Silkscreen generation, mix-and-match: ref (dense) / full
@@ -367,12 +351,16 @@ class Board(Component):
         h = meta["h"]
         assert isinstance(w, float) and isinstance(h, float)
         p = Part(ref, fp, value, px, py, w, h, attrs=attrs)
+        old = self.parts.get(ref)
 
         def _add() -> None:
             self.parts[ref] = p
 
         def _drop() -> None:
-            self.parts.pop(ref, None)
+            if old is not None:
+                self.parts[ref] = old  # overwrite undoes to previous part
+            else:
+                self.parts.pop(ref, None)
 
         self.ctx.emit(_add, _drop)
 

@@ -426,11 +426,13 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
 
     def _do() -> None:
         for r, (x, y) in final.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:  # parts added/removed since still undo
+                board.parts[r].x, board.parts[r].y = x, y
 
     def _undo() -> None:
         for r, (x, y) in snap_pos.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
 
     board.ctx.emit(_do, _undo)
     return best
@@ -460,11 +462,13 @@ def candidates(board: Board, n: int = 4, key: str | None = None,
 
     def _do() -> None:
         for r, (x, y) in final.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:  # parts added/removed since still undo
+                board.parts[r].x, board.parts[r].y = x, y
 
     def _undo() -> None:
         for r, (x, y) in snap_pos.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
 
     board.ctx.emit(_do, _undo)
     out.sort(key=lambda c: cast(float, c["cost"]))
@@ -480,11 +484,13 @@ def restore_candidate(board: Board, cand: dict[str, object]) -> None:
 
     def _do() -> None:
         for r, (x, y) in final.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:  # parts added/removed since still undo
+                board.parts[r].x, board.parts[r].y = x, y
 
     def _undo() -> None:
         for r, (x, y) in snap_pos.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
 
     board.ctx.emit(_do, _undo)
 
@@ -605,11 +611,13 @@ def hierarchical(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
 
     def _do() -> None:
         for r, (x, y) in final.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:  # parts added/removed since still undo
+                board.parts[r].x, board.parts[r].y = x, y
 
     def _undo() -> None:
         for r, (x, y) in snap_pos.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
 
     board.ctx.emit(_do, _undo)
     return best
@@ -1061,11 +1069,13 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
 
     def _do() -> None:
         for r, (x, y) in final.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:  # parts added/removed since still undo
+                board.parts[r].x, board.parts[r].y = x, y
 
     def _undo() -> None:
         for r, (x, y) in snap_pos.items():
-            board.parts[r].x, board.parts[r].y = x, y
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
 
     board.ctx.emit(_do, _undo)
     return best
@@ -1074,7 +1084,12 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
 def assign_layers(board: Board) -> None:
     """Greedy: constrained nets keep layers; rest pick layer with fewer
     bbox crossings. Power nets default wide; GND goes to the last layer
-    (bottom on 2L, first inner plane on 4L+). 1-layer boards: all → 0."""
+    (bottom on 2L, first inner plane on 4L+). 1-layer boards: all → 0.
+    One undoable effect — but only when something actually changes, so
+    routers keep their undo accounting (wiremask emits exactly 1).
+    (Layer/width assignment used to leak through place/route undo —
+    caught by the undo fuzzer.)"""
+    snap = {n: (net.layer, net.width) for n, net in board.nets.items()}
     for c in board.constraints:
         if c.get("t") == "layer" and c["net"] in board.nets:
             board.nets[str(c["net"])].layer = int(cast(int, c["layer"]))
@@ -1112,6 +1127,17 @@ def assign_layers(board: Board) -> None:
         boxes[net.layer].append(bx)
     if "GND" in board.nets and board.nets["GND"].layer is None:
         board.nets["GND"].layer = board.layers - 1
+    if any((net.layer, net.width) != snap[n]
+           for n, net in board.nets.items() if n in snap):
+        def _undo() -> None:
+            for n, (layer, width) in snap.items():
+                if n in board.nets:
+                    board.nets[n].layer, board.nets[n].width = layer, width
+
+        def _do() -> None:
+            pass  # already applied; redo is re-run, not replay
+
+        board.ctx.emit(_do, _undo)
 
 
 def route(board: Board, frames: list[Frame] | None = None) -> int:

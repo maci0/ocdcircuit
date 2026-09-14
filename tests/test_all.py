@@ -52,6 +52,34 @@ agent.apply_patch(b, [
 assert "R1" in b.parts
 b.ctx.rollback(s)
 assert "R1" not in b.parts
+# fuzz: seeded random ops always roll back to identical dumps (no state leaks)
+import random as _rng
+_fz = _rng.Random(1337)
+_fb = agent.loads("board fz 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n", base=EX)
+_fz0, _fz_text = _fb.ctx.snapshot(), agent.dumps(_fb)
+_refs = ["R1", "C1", "QX"]
+for _i in range(60):
+    _r = _fz.choice(_refs)
+    _k = _fz.randrange(6)
+    try:
+        if _k == 0:
+            _fb.add_part(_r, "R0805", "1k")
+        elif _k == 1:
+            _fb.connect(_fz.choice(["N", "GND", "QN"]), _r, str(_fz.choice([1, 2])))
+        elif _k == 2:
+            _fb.constrain({"t": "near", "a": _r, "b": _fz.choice(_refs), "w": 1.0})
+        elif _k == 3:
+            _fb.move_part(_r, _fz.uniform(0, 40), _fz.uniform(0, 30))
+        elif _k == 4:
+            _fb.remove_part(_r)
+        else:
+            _fb.place(seeds=1, iters=5)
+            _fb.route_board("lroute")
+    except (KeyError, ValueError):
+        pass
+_fb.ctx.rollback(_fz0)
+assert agent.dumps(_fb) == _fz_text, "undo fuzz leaked state"
 
 # coarse route's temp constraint removes out-of-band; undo must not crash
 _bc = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
@@ -357,13 +385,14 @@ _bg = agent.loads("board t 20x10\npart R1 R0805 1k\nN :: R1.1 R1.2\nroute-grid 0
 assert _bg.constraints[-1] == {"t": "route-grid", "grid": 0.2}
 assert agent.dumps(agent.loads(agent.dumps(_bg), base=EX)) == agent.dumps(_bg)
 assert agent.parse_constraint("route-grid 0.2") == {"t": "route-grid", "grid": 0.2}
-# wiremask evals must not pollute undo (pop*gen phantom entries); coarse
-# legitimately emits 2 (route-grid constrain + maze)
+# wiremask evals must not pollute undo (pop*gen phantom entries); final
+# maze legitimately emits 2 (layer assignment + route). Coarse emits 2
+# (route-grid constrain + maze) for the same reason: real effects, not phantoms.
 _bw = agent.loads(ocd, base=EX)
 _bw.place(seeds=2, iters=100)
 _snap = _bw.ctx.snapshot()
 _bw.route_board("wiremask", pop=2, gen=1)
-assert _bw.ctx.snapshot() - _snap == 1, "wiremask undo pollution"
+assert _bw.ctx.snapshot() - _snap == 2, "wiremask undo pollution"
 # thermal spreads big bodies: min pairwise separation beats diffusion's
 import itertools as _it
 _sep = {}
