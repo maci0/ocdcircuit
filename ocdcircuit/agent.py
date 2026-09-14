@@ -582,9 +582,8 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err(e)
             # keep the as-written path for dumps (like `use` lines):
             # the joined fn is absolute, which would unportablize saves.
-            from typing import cast as _cast
             _names = out.get("names", [out.get("name")])
-            for _n in _cast(list[object], _names):
+            for _n in cast(list[object], _names):
                 if isinstance(_n, str) and _n in b.fp_src:
                     b.fp_src[_n] = toks[1]
         elif kw == "sym":
