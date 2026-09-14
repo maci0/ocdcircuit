@@ -211,6 +211,13 @@ _pgt = open([f for f in _pb.export("jlc", outdir=_pgd) if f.endswith(".GTL.gbr")
 assert "X0.3000Y0.3000D02*" in _pgt, _pgt[:200]
 _pkp = open([f for f in _pb.export("kicad", outdir=_pgd) if f.endswith(".kicad_pcb")][0]).read()
 assert "(xy 0.3000 0.3000)" in _pkp
+# stranded pour pad: keepout cuts the plane AND routers skip poured nets
+_ps = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n"
+                  "fix R1 at 20 15\nfix C1 at 30 15\nkeepout 20 15 6x6\n", base=EX)
+_ps.place(seeds=1, iters=30)
+_ps.route_board()
+assert any("pour-isolated GND R1.2" in e for e in cast(list[str], _ps.check()["errors"]))
 assert "<canvas" in cast(str, bj.render("html3d"))
 _sch = cast(str, bj.render("sch"))
 assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch

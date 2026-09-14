@@ -197,6 +197,24 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     for ref in board.parts:
         for c in fp_keepouts(board, ref):
             _zone_warns(c)
+    # stranded pour pads: plane is cut inside keepouts AND routers skip
+    # poured nets, so a poured pad in a keepout floats electrically. Error:
+    # fab-correct, circuit-broken.
+    if poured:
+        zones = [zone_at(board, c) for c in board.constraints
+                 if isinstance(c, dict) and c.get("t") in ("keepout", "cutout")]
+        for ref in board.parts:
+            for c in fp_keepouts(board, ref):
+                zones.append(zone_at(board, c))
+        for n, net in board.nets.items():
+            if n not in poured:
+                continue
+            for r, q in net.pins:
+                if r not in board.parts:
+                    continue
+                x, y = board.pad_pos(r, q)
+                if any(in_zone(z, x, y) for z in zones):
+                    errors.append(f"pour-isolated {n} {r}.{q} (keepout cuts plane, no trace)")
     for c in board.constraints:
         if not (isinstance(c, dict) and c.get("t") in ("hole", "bend")):
             continue
