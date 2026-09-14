@@ -395,6 +395,13 @@ class Board(Component):
                    src: str | None = None) -> None:
         """Register a custom (.sym) symbol. Undoable like everything.
         src: originating file path, so dumps() can re-emit the `sym` line."""
+        w, h, pins = sym.get("w"), sym.get("h"), sym.get("pins", {})
+        if (not isinstance(w, (int, float)) or not isinstance(h, (int, float))
+                or not (math.isfinite(w) and math.isfinite(h))
+                or not isinstance(pins, dict)):
+            raise ValueError(
+                f"symbol {name!r} needs numeric w/h + pins dict "
+                f"(got {w!r}, {h!r}, {pins!r})")
         had = name in self.custom_sym
         old = self.custom_sym.get(name)
         old_src = self.sym_src.get(name)

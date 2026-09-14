@@ -502,6 +502,15 @@ for _badfp in _badfps:
     except ValueError as e:
         assert "numeric w/h" in str(e), str(e)
 assert "BAD" not in _kb.custom_fp
+# add_symbol validates too (not KeyError 'w' at symbol_of)
+_badsyms: list[dict[str, object]] = [{}, {"w": 1}, {"w": 1, "h": 2, "pins": "x"}]
+for _badsym in _badsyms:
+    try:
+        _kb.add_symbol("BADS", _badsym)
+        raise AssertionError(f"should have raised: {_badsym}")
+    except ValueError as e:
+        assert "numeric w/h + pins" in str(e), str(e)
+assert "BADS" not in _kb.custom_sym
 _kb.add_part("K1", "K1X", "", 20, 15)
 _kb.constrain({"t": "fixed", "ref": "K1", "x": 20, "y": 15})
 _kb.connect("N", "K1", "1")
