@@ -14,6 +14,29 @@ if TYPE_CHECKING:
 EPS = 0.1  # T7 alignment tolerance, mm (placeholder per doc — uncalibrated)
 
 
+def _grid_pairs(bbox: list[tuple[float, float, float, float]],
+                cell: float) -> list[tuple[int, int]]:
+    """Index pairs sharing a grid cell (uniform spatial hash). Every pair
+    whose boxes overlap shares ≥1 cell, so callers testing a box-overlap
+    precondition lose nothing.
+    # ponytail: O(n·k) not O(n²); k = items per cell. cell ≈ typical size."""
+    grid: dict[tuple[int, int], list[int]] = {}
+    for i, (x0, y0, x1, y1) in enumerate(bbox):
+        for gx in range(int(x0 // cell), int(x1 // cell) + 1):
+            for gy in range(int(y0 // cell), int(y1 // cell) + 1):
+                grid.setdefault((gx, gy), []).append(i)
+    seen: set[tuple[int, int]] = set()
+    out: list[tuple[int, int]] = []
+    for members in grid.values():
+        for ai in range(len(members)):
+            for b in members[ai + 1:]:
+                pair = (members[ai], b)
+                if pair not in seen:
+                    seen.add(pair)
+                    out.append(pair)
+    return out
+
+
 def _routed(board: Board) -> bool:
     return any(not getattr(s, "jumper", False) for s in board.traces)
 
@@ -25,13 +48,19 @@ def _t1_crossings(board: Board) -> int | None:
     from .drc import _seg_dist
     segs = [s for s in board.traces if not getattr(s, "jumper", False)]
     n = 0
-    for i in range(len(segs)):
-        for j in range(i + 1, len(segs)):
-            a, b = segs[i], segs[j]
-            if a.layer != b.layer or a.net == b.net:
+    by_layer: dict[int, list[int]] = {}
+    for i, s in enumerate(segs):
+        by_layer.setdefault(s.layer, []).append(i)
+    for members in by_layer.values():
+        boxes = [(min(segs[i].x1, segs[i].x2), min(segs[i].y1, segs[i].y2),
+                  max(segs[i].x1, segs[i].x2), max(segs[i].y1, segs[i].y2))
+                 for i in members]
+        for a, b in _grid_pairs(boxes, 5.0):
+            A, B = segs[members[a]], segs[members[b]]
+            if A.net == B.net:
                 continue
-            d = _seg_dist((a.x1, a.y1, a.x2, a.y2), (b.x1, b.y1, b.x2, b.y2))
-            if d < 1e-9 and _cross(a, b):
+            d = _seg_dist((A.x1, A.y1, A.x2, A.y2), (B.x1, B.y1, B.x2, B.y2))
+            if d < 1e-9 and _cross(A, B):
                 n += 1
     return n
 
@@ -112,12 +141,18 @@ def _t5_headroom(board: Board) -> float | None:
     ms = float(P["min_space"])  # type: ignore[arg-type]
     segs = [s for s in board.traces if not getattr(s, "jumper", False)]
     best = float("inf")
-    for i in range(len(segs)):
-        for j in range(i + 1, len(segs)):
-            a, b = segs[i], segs[j]
-            if a.layer != b.layer or a.net == b.net:
+    by_layer: dict[int, list[int]] = {}
+    for i, s in enumerate(segs):
+        by_layer.setdefault(s.layer, []).append(i)
+    for members in by_layer.values():
+        boxes = [(min(segs[i].x1, segs[i].x2), min(segs[i].y1, segs[i].y2),
+                  max(segs[i].x1, segs[i].x2), max(segs[i].y1, segs[i].y2))
+                 for i in members]
+        for a, b in _grid_pairs(boxes, 5.0):
+            A, B = segs[members[a]], segs[members[b]]
+            if A.net == B.net:
                 continue
-            d = _seg_dist((a.x1, a.y1, a.x2, a.y2), (b.x1, b.y1, b.x2, b.y2))
+            d = _seg_dist((A.x1, A.y1, A.x2, A.y2), (B.x1, B.y1, B.x2, B.y2))
             if d < best:
                 best = d
     return best / ms if best != float("inf") else None
@@ -216,8 +251,7 @@ def _t14_silk(board: Board) -> dict[str, object] | None:
     # silk text ~1.0mm tall (AtlasPCB rule), ~0.6 aspect, centered on Text.xy
     boxes = [(t.x - len(t.s) * 0.3, t.y - 0.5, t.x + len(t.s) * 0.3, t.y + 0.5)
              for t in texts]
-    tt = sum(1 for i in range(len(boxes)) for j in range(i + 1, len(boxes))
-             if _ov(boxes[i], boxes[j]))
+    tt = sum(1 for i, j in _grid_pairs(boxes, 5.0) if _ov(boxes[i], boxes[j]))
     lib = board._lib()
     from .parts import pads_of
     copper = []
@@ -225,8 +259,19 @@ def _t14_silk(board: Board) -> dict[str, object] | None:
         for dx, dy in pads_of(p.fp, lib).values():
             copper.append((p.x + dx, p.y + dy))
     copper += [(s.x1, s.y1) for s in board.traces] + [(s.x2, s.y2) for s in board.traces]
-    tc = sum(1 for b in boxes for cx, cy in copper
-             if b[0] <= cx <= b[2] and b[1] <= cy <= b[3])
+    tc = 0
+    if copper:
+        xs = [c[0] for c in copper]
+        cell = (max(xs) - min(xs)) / max(1, int(len(copper) ** 0.5)) + 1e-9
+        grid: dict[tuple[int, int], list[tuple[float, float]]] = {}
+        for cx, cy in copper:
+            grid.setdefault((int(cx // cell), int(cy // cell)), []).append((cx, cy))
+        for b in boxes:
+            for gx in range(int(b[0] // cell), int(b[2] // cell) + 1):
+                for gy in range(int(b[1] // cell), int(b[3] // cell) + 1):
+                    for cx, cy in grid.get((gx, gy), []):
+                        if b[0] <= cx <= b[2] and b[1] <= cy <= b[3]:
+                            tc += 1
     return {"text_text": tt, "text_copper": tc}
 
 
@@ -298,24 +343,24 @@ def _t13_schematic(board: Board) -> dict[str, object] | None:
     crossings = 0
     from typing import cast
     top = float(cast(int, lay["top"])) - 4
+    span: dict[str, tuple[float, float]] = {}
+    yof: dict[str, float] = {}
+    for m, y in rail_y.items():
+        xs = [float(px[r]) for r, _ in board.nets[m].pins if r in px]
+        if xs:
+            span[m] = (min(xs), max(xs))
+            yof[m] = float(y)
     for n, net in board.nets.items():
         if n not in rail_y:
             continue
         y0 = float(rail_y[n])
-        for ref, _ in net.pins:
-            if ref not in px:
+        lo0, hi0 = min(top, y0), max(top, y0)
+        xs0 = [float(px[ref]) for ref, _ in net.pins if ref in px]
+        for m, (lo, hi) in span.items():
+            if m == n or not lo0 < yof[m] < hi0:
                 continue
-            x0 = float(px[ref])
-            for m, y in rail_y.items():
-                if m == n:
-                    continue
-                xs = [float(px[r]) for r, _ in board.nets[m].pins if r in px]
-                if not xs:
-                    continue
-                # drop x0 spans top→y0; crosses rail m iff x0 in m's span
-                # and m's rail lies strictly between
-                yy = float(y)
-                if min(xs) <= x0 <= max(xs) and min(top, y0) < yy < max(top, y0):
+            for x0 in xs0:
+                if lo <= x0 <= hi:
                     crossings += 1
     return {"crossings": crossings, "jogs": 0}
 
