@@ -571,6 +571,15 @@ class AssemblyRenderer(Plugin[str]):
         for p in board.parts.values():
             pw, ph = p.wh()
             x, y = (p.x - pw / 2) * S, (H - (p.y + ph / 2) * S)
+            if p.attrs.get("dnp"):
+                el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{pw * S:.1f}" '
+                          f'height="{ph * S:.1f}" fill="none" stroke="black" '
+                          f'stroke-dasharray="3,2"/>'
+                          f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{x + pw * S:.1f}" '
+                          f'y2="{y + ph * S:.1f}" stroke="black"/>'
+                          f'<line x1="{x:.1f}" y2="{y + ph * S:.1f}" x2="{x + pw * S:.1f}" '
+                          f'y1="{y:.1f}" stroke="black"/>')
+                continue
             el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{pw * S:.1f}" '
                       f'height="{ph * S:.1f}" fill="#eee" stroke="black"/>')
             el.append(f'<text x="{p.x * S:.1f}" y="{(H - p.y * S):.1f}" fill="black" '

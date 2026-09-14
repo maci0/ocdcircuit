@@ -321,6 +321,12 @@ assert _ez.startswith("<svg") and "U1" in _ez and "#FFFF00" in _ez
 _ra = bj.render_all(tempfile.mkdtemp())
 assert len(_ra) == len(bj.plugins().list("renderer")) - 1  # "all" excluded
 assert any(f.endswith(".easyeda.svg") for f in _ra)
+# assembly drawing X's out DNP parts (hand-assembly: do not place)
+_asm = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1\npart C1 C0805 100n\n"
+                   "N :: R1.1 C1.1\nGND :: R1.2 C1.2\n", base=EX)
+_asm.place(seeds=1, iters=20)
+_asvg = cast(str, _asm.render("assembly"))
+assert _asvg.count("stroke-dasharray") == 1 and "<line" in _asvg, _asvg[:300]
 _allr = cast(list[str], bj.render("all", outdir=tempfile.mkdtemp(), keys=["svg", "png"]))
 assert sorted(f.split(".")[-1] for f in _allr) == ["png", "svg"]
 import shutil as _sh2
