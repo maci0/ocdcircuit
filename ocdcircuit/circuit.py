@@ -13,6 +13,15 @@ from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
 from .types import Constraint, PinLike, Undo, XY
 
+#: Constraint types dumps() can emit. constrain() rejects anything else:
+#: an unknown `t` would silently vanish on save (typo'd kinds failing
+#: loud here, not as false-success applies).
+CONSTRAINT_TYPES = frozenset({
+    "near", "fixed", "near-group", "layer", "width", "route-grid",
+    "route-penalty", "silk", "nc", "pour", "keepout", "cutout", "hole",
+    "bend", "stiffener", "sim", "match", "diff", "power", "class",
+})
+
 
 class Part:
     def __init__(self, ref: str, fp: str, value: str = "", x: float = 0.0,
@@ -705,6 +714,10 @@ class Board(Component):
         self.emit(_do, _undo)
 
     def constrain(self, c: Constraint) -> None:
+        t = c.get("t")
+        if t not in CONSTRAINT_TYPES:
+            raise ValueError(f"unknown constraint type {t!r} (have {sorted(CONSTRAINT_TYPES)})")
+
         def _add() -> None:
             self.constraints.append(c)
 
