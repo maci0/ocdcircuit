@@ -1099,6 +1099,13 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_diff(_ocd._boot(), [_sp, os.path.join(_np, "newproj.ocd")]) == 0
     # scaffold solves clean out of the box (funnel promise: new → run works)
     assert _ocd.cmd_run(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
+    # main() dispatch: shorthand, flags, help, usage errors (README quickstart)
+    assert _ocd.main(["ocd", os.path.join(_np, "newproj.ocd")]) == 0
+    assert _ocd.main(["ocd", "run", "--placer", "compact", "--router", "maze",
+                      os.path.join(_np, "newproj.ocd")]) == 0
+    assert _ocd.main(["ocd", "--help"]) == 0
+    assert _ocd.main(["ocd"]) == 1
+    assert _ocd.main(["ocd", "frobnicate"]) == 1
     assert _ocd.cmd_plugins(_ocd._boot(), ["placer"]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["bogus"]) == 1
     # score + lint commands exit 0 on the scaffold; usage errors exit 1
