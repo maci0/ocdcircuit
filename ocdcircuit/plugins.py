@@ -721,6 +721,97 @@ class PngRenderer(Plugin[bytes]):
         return render_top(board, _f(k.get("pxmm", 10.0)))
 
 
+class BlenderRenderer(Plugin[bytes]):
+    """Studio product shot via Blender headless (needs flatpak
+    org.blender.Blender; missing → RuntimeError). Imports our glTF,
+    3/4 product angle, key+fill suns, EEVEE. ~30-60s per board."""
+    kind, key = "renderer", "blender"
+    ext = ".studio.png"
+
+    SCRIPT = """
+import bpy, sys
+from mathutils import Vector
+ai = sys.argv.index('--') + 1
+SRC, DST = sys.argv[ai], sys.argv[ai+1]
+W, H = int(sys.argv[ai+2]), int(sys.argv[ai+3])
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=SRC)
+sc = bpy.context.scene
+sc.world = bpy.data.worlds.new('W')
+sc.world.use_nodes = True
+bg = sc.world.node_tree.nodes['Background']
+bg.inputs[0].default_value = (0.06, 0.06, 0.09, 1.0)
+bg.inputs[1].default_value = 1.2
+mn = Vector((1e9,)*3); mx = Vector((-1e9,)*3)
+for o in sc.objects:
+    if o.type != 'MESH':
+        continue
+    for c in o.bound_box:
+        w = o.matrix_world @ Vector(c)
+        mn = Vector(map(min, mn, w)); mx = Vector(map(max, mx, w))
+ctr, size = (mn+mx)/2, mx-mn
+span = max(size.x, size.y, size.z)
+bpy.ops.object.empty_add(location=ctr)
+tgt = bpy.context.active_object
+cam = bpy.data.cameras.new('Cam')
+co = bpy.data.objects.new('Cam', cam)
+sc.collection.objects.link(co)
+sc.camera = co
+co.location = (ctr.x + span*0.55, ctr.y - span*0.75, ctr.z + span*0.75)
+con = co.constraints.new('TRACK_TO')
+con.target = tgt
+con.track_axis = 'TRACK_NEGATIVE_Z'
+con.up_axis = 'UP_Y'
+key = bpy.data.lights.new('Key', 'SUN')
+ko = bpy.data.objects.new('Key', key)
+sc.collection.objects.link(ko)
+ko.location = (ctr.x+30, ctr.y-30, 50)
+key.energy = 8.0
+fill = bpy.data.lights.new('Fill', 'SUN')
+fo = bpy.data.objects.new('Fill', fill)
+sc.collection.objects.link(fo)
+fo.location = (ctr.x-30, ctr.y+30, 20)
+fill.energy = 3.0
+try:
+    sc.render.engine = 'BLENDER_EEVEE_NEXT'
+except TypeError:
+    sc.render.engine = 'BLENDER_EEVEE'
+sc.render.resolution_x, sc.render.resolution_y = W, H
+sc.render.film_transparent = False
+sc.render.filepath = DST
+bpy.ops.render.render(write_still=True)
+"""
+
+    def run(self, board: Board, *a: object, **k: object) -> bytes:
+        import os
+        import shutil
+        import subprocess
+        import tempfile
+        from .geom3d import to_gltf
+        if shutil.which("flatpak") is None:
+            raise RuntimeError("flatpak not found; use renderer kicad "
+                               "for the fast preview")
+        w = _i(k.get("width"), 1200)
+        h = _i(k.get("height"), 800)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, board.name + ".gltf")
+            out = os.path.join(tmp, board.name + ".png")
+            script = os.path.join(tmp, "studio.py")
+            open(src, "w").write(to_gltf(board))
+            open(script, "w").write(self.SCRIPT)
+            r = subprocess.run(
+                ["flatpak", "run", "--filesystem=" + tmp,
+                 "org.blender.Blender", "--background",
+                 "--python", script, "--", src, out, str(w), str(h)],
+                capture_output=True, timeout=300)
+            if r.returncode != 0 or not os.path.isfile(out):
+                raise RuntimeError(
+                    "blender render failed "
+                    f"(have org.blender.Blender? {r.stderr.decode()[-300:]})")
+            with open(out, "rb") as f:
+                return f.read()
+
+
 class KicadRenderer(Plugin[bytes]):
     """Photorealistic PNG via kicad-cli's 3D raytracer (needs KiCad 9+;
     missing binary → RuntimeError naming the apt package). Exports the
@@ -1171,6 +1262,18 @@ class NgspicePlugin(Plugin[dict[str, object]]):
         return _spice.run(board, what, **k)
 
 
+class GatesPlugin(Plugin[dict[str, object]]):
+    """Digital simulator: event-driven unit-delay gates (logic= attr).
+    Same return shape as mna (nets + optional waves)."""
+    kind, key = "simulate", "gates"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import gates as _gates
+        ticks = k.pop("ticks", None)
+        assert ticks is None or isinstance(ticks, int)
+        return _gates.run(board, ticks, **k)
+
+
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
@@ -1181,10 +1284,10 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
              TscircuitImporter, PcbImporter, EasyedaImporter, SymImporter,
-             CalcPlugin, SimPlugin, NgspicePlugin, LintPlugin, DoctorPlugin,
+             CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
-             PngRenderer, KicadRenderer, PcbdrawRenderer,
+             PngRenderer, KicadRenderer, BlenderRenderer, PcbdrawRenderer,
              EasyedaRenderer, Html3dRenderer)
 
 

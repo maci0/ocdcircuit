@@ -195,6 +195,11 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"sim\s+probe\s+(\w+)$", t, re.I)
     if m:
         return {"t": "sim", "kind": "probe", "net": m.group(1)}
+    m = re.match(r"sim\s+clk\s+(\w+)\s+([\d.]+)(?:\s+([\d.]+))?$", t, re.I)
+    if m:
+        return {"t": "sim", "kind": "clk", "net": m.group(1),
+                "period": float(m.group(2)),
+                "duty": float(m.group(3)) if m.group(3) else 0.5}
     m = re.match(r"sim\s+expect\s+(\w+)\s*(==|!=|<=|>=|<|>|~)\s*(\S+)(?:\s+tol\s+(\S+))?$", t, re.I)
     if m:
         e: Constraint = {"t": "sim", "kind": "expect", "net": m.group(1),
@@ -371,6 +376,11 @@ def _dump_sim(c: Constraint) -> str:
         return f"sim tran {_f(c.get('t_end', 0.01)):g} {_i(c.get('steps'), 1000)}"
     if k == "probe":
         return f"sim probe {c['net']}"
+    if k == "clk":
+        s = f"sim clk {c['net']} {_f(c.get('period', 1)):g}"
+        if _f(c.get('duty', 0.5)) != 0.5:
+            s += f" {_f(c.get('duty')):g}"
+        return s
     if k == "expect":
         s = f"sim expect {c['net']} {c.get('op', '==')} {c.get('value', '0')}"
         if c.get("tol") is not None:

@@ -100,7 +100,12 @@ sim op N_OUT V 0 5           # operating-point sweep (net, source, lo hi)
 sim ac IN LOG 10             # AC analysis (net, scale, points)
 sim lib models.lib           # extra SPICE include for simulate:ngspice
 sim expect VO == 5 tol 0.1   # assertion: VO==5 ±0.1 (red in studio/MCP/CLI)
+sim clk CLK 4                # square-wave stimulus, period [duty] (gates)
 ```
+
+Digital: `part U1 SOIC14 NAND logic=NAND` (NAND/NOR/AND/OR/XOR/INV/BUF,
+DFF/JK; inputs in pin order, output = highest pin), then
+`b.simulate("gates")`. GND/VSS/0 = 0, VCC = 1 unless driven.
 
 ## Reuse: files (`use`) and in-file units (`block`)
 
