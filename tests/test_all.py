@@ -2199,6 +2199,9 @@ _lj.parts["U1"].attrs["sym"] = "BOGUS"
 assert any("unknown sym" in w for w in cast(list[str], _lj.lint()["warnings"]))
 _lj.parts["U1"].attrs["sym"] = "R"
 assert not [w for w in cast(list[str], _lj.lint()["warnings"]) if "sym" in w]
+# pinN= labels a footprint pin — typo'd N warns (labels nothing)
+_lj.parts["U1"].attrs["pin99"] = "X"
+assert any("unknown pin label" in w for w in cast(list[str], _lj.lint()["warnings"]))
 # off-board geometry warns (same smell as fix off-board)
 _lg = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n"
                   "hole 9999 9999 1\ncutout 9999 9999 5x5\nbend 5 5 4x4 r1\n", base=EX)

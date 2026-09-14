@@ -182,6 +182,14 @@ def lint(board: Board) -> dict[str, object]:
             from .symbol import SYMBOLS
             if sym not in SYMBOLS:
                 warn(f"unknown sym {sym!r} on {ref} (have {sorted(SYMBOLS)})")
+        try:
+            pins = set(p.pins_of(board._lib()))
+        except (KeyError, ValueError):
+            pins = set()
+        for k in p.attrs:
+            # pinN= labels a footprint pin — a typo'd N labels nothing
+            if k.startswith("pin") and k[3:] and k[3:] not in pins:
+                warn(f"unknown pin label {k}={p.attrs[k]!r} on {ref}")
     if not board.parts:
         warn("no parts")
     return {"errors": errors, "warnings": warnings}
