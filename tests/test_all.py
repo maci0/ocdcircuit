@@ -1412,6 +1412,19 @@ assert os.path.isfile(os.path.join(_td3, "out", "fp", "FP_R3.fp"))  # harvested
 _mb.place(seeds=1, iters=20)
 _mb.route_board()
 assert _mb.check()["errors"] == [], _mb.check()["errors"]
+# malformed porter input exits 1 with a clean message (no traceback)
+_badm = tempfile.mkdtemp()
+open(os.path.join(_badm, "index.circuit.tsx"), "w").write(
+    '<board width="10mm" height="10mm"></board>')
+open(os.path.join(_badm, "index.circuit.circuit.json"), "w").write(
+    _js2.dumps([{"type": "source_component"}]))
+import sys as _sys9
+_sys9.argv = ["mitox", _badm, tempfile.mkdtemp()]
+try:
+    _mitox2.main()
+    raise AssertionError("should have exited 1")
+except SystemExit as e:
+    assert e.code == 1, e.code
 # tscircuit convert end-to-end: tsx + dist circuit.json → .ocd text →
 # loads, solves clean (pcb centers are board-centered in tscircuit output)
 import json as _js3

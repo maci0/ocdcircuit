@@ -326,7 +326,7 @@ def main() -> None:
         raise SystemExit(1)
     try:
         print(convert(sys.argv[1], sys.argv[2]))
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"mitox-port: {e}", file=sys.stderr)
         raise SystemExit(1)
 
