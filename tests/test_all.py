@@ -1565,6 +1565,20 @@ try:
     raise AssertionError("should have raised")
 except ValueError as e:
     assert "bad component name" in str(e), str(e)
+# tscircuit convert rejects them too (same unloadable-output class)
+from tools import tscircuit as _tsc3
+_badt = tempfile.mkdtemp()
+os.makedirs(os.path.join(_badt, "dist", "index"))
+open(os.path.join(_badt, "index.circuit.tsx"), "w").write(
+    '<board width="10mm" height="10mm"></board>')
+open(os.path.join(_badt, "dist", "index", "circuit.json"), "w").write(
+    _js2.dumps([{"type": "source_component", "source_component_id": "s1",
+                 "name": "../../../tmp/pwn"}]))
+try:
+    _tsc3.convert(_badt)
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad component name" in str(e), str(e)
 # entry points answer --help without side effects (no regeneration)
 import subprocess as _sp9
 for _mod, _usage in [

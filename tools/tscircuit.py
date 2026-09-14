@@ -110,6 +110,13 @@ def convert(projdir: str) -> str:
     cjson = cast(list[dict[str, object]], json.load(open(cj_f)))
     by_id = {str(e["source_component_id"]): e for e in cjson
              if e.get("type") == "source_component"}
+    for _e in by_id.values():
+        # .ocd refs must survive fix/net/nc round-trips (fix is \w+):
+        # reject foreign names outside that space instead of emitting
+        # a file that won't reload.
+        _nm = str(_e.get("name", ""))
+        if _nm and not re.fullmatch(r"\w+", _nm):
+            raise ValueError(f"bad component name {_nm!r} (want \\w+)")
 
     def comp_name(cid: str) -> str:
         e = by_id.get(cid, {})
