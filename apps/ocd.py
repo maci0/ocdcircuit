@@ -289,6 +289,10 @@ def cmd_score(agent: object, args: list[str]) -> int:
     _table("neatness", [(k, str(v)) for k, v in sparts.items()])
     _table("tidy " + str(t["coverage"]), [_tidy_row(k, v) for k, v in t.items()
                                           if k not in ("coverage", "routed_segs")])
+    ext = cast(dict[str, object], s["extent"])
+    _out().print(f"extent: {ext['w']}x{ext['h']}mm "
+                 f"({float(cast(float, ext['fill'])) * 100:.0f}% of "
+                 f"{b.width:g}x{b.height:g} board)")
     return 0
 
 
