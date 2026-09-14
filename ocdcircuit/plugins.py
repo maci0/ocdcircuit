@@ -437,6 +437,7 @@ def ir_of(board: Board) -> dict[str, object]:
         # custom footprints ride along (from_ir restores them): without
         # this, IR round-trips silently drop customs and parts dangle.
         "_imported_fp": {fn: dict(meta) for fn, meta in board.custom_fp.items()},
+        "_imported_sym": {sn: dict(sym) for sn, sym in board.custom_sym.items()},
     }
 
 
@@ -459,6 +460,9 @@ def from_ir(doc: dict[str, object]) -> Board:
     for fn, meta in cast(dict[str, dict[str, object]], doc.get("_imported_fp", {})).items():
         if fn not in b._lib():
             b.add_footprint(fn, meta)
+    for sn, sym in cast(dict[str, dict[str, object]], doc.get("_imported_sym", {})).items():
+        if sn not in b.custom_sym:
+            b.add_symbol(sn, sym)
     for p in cast(list[dict[str, object]], doc.get("parts", [])):
         pref = str(p["ref"])
         # .ocd refs must survive fix/net/nc round-trips (fix is \w+):

@@ -346,6 +346,9 @@ _jc = agent.from_ir({"board": {"name": "t", "w": 40, "h": 30},
 _jc2 = agent.from_ir(agent.ir(_jc))
 assert sorted(_jc2.parts) == ["R1"] and sorted(_jc2.custom_fp) == ["X1"]
 assert agent.from_json(agent.to_json(_jc)).parts["R1"].fp == "X1"
+# custom symbols ride along too (same silent-drop class)
+_jc.add_symbol("S1", {"w": 6.0, "h": 4.0, "pins": {"1": ["left", 0, ""]}})
+assert sorted(agent.from_ir(agent.ir(_jc)).custom_sym) == ["S1"]
 assert cast(str, bj.render("svg")).startswith("<svg")
 assert cast(str, bj.render("stl")).startswith("solid")
 assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
