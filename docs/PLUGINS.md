@@ -28,8 +28,9 @@ Current keys (from a live registry — count, don't hand-edit):
 `router` coarse/lroute/maze/wiremask · `exporter`
 bundle/eagle/easyeda/jlc/json/kicad/kicad-sch/ocd · `importer`
 eagle/eagle-brd/easyeda/fp/kicad/pcb/sym/tscircuit · `renderer`
-assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg ·
-`simulate` mna/ngspice · `silk` fab/full/ref · `drc` erc/fab/jlc-flex.
+all/assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg ·
+`simulate` gates/mna/ngspice · `silk` fab/full/ref · `drc` all/erc/fab/jlc-flex ·
+`layers` greedy · `config` toml · `calc`/`diff`/`doctor`/`lint`/`parts`/`score` std.
 
 Rules: engine imports inside `run()` (keeps `import ocdcircuit` light);
 failure memory means `run` may raise — the registry fences it, no cleanup
