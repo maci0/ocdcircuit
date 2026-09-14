@@ -210,19 +210,23 @@ class WireMaskRouter(Plugin[int]):
 
         masks = [{n: rng.randrange(board.layers) for n in cands} for _ in range(pop)]
         best: tuple[tuple[float, list[object]], dict[str, int]] | None = None
-        for _ in range(gen):
-            scored = sorted(((eval_mask(m), m) for m in masks),
-                            key=lambda t: t[0][0])
-            if best is None or scored[0][0] < best[0]:
-                best = scored[0]
-            elite = [m for _, m in scored[: max(2, pop // 3)]]
-            masks = list(elite)
-            while len(masks) < pop:
-                p = rng.choice(elite)
-                child = dict(p)
-                for n in rng.sample(cands, max(1, len(cands) // 4)):
-                    child[n] = rng.randrange(board.layers)
-                masks.append(child)
+        snap = board.ctx.snapshot()  # evals emit undo entries; roll back to one
+        try:
+            for _ in range(gen):
+                scored = sorted(((eval_mask(m), m) for m in masks),
+                                key=lambda t: t[0][0])
+                if best is None or scored[0][0] < best[0]:
+                    best = scored[0]
+                elite = [m for _, m in scored[: max(2, pop // 3)]]
+                masks = list(elite)
+                while len(masks) < pop:
+                    p = rng.choice(elite)
+                    child = dict(p)
+                    for n in rng.sample(cands, max(1, len(cands) // 4)):
+                        child[n] = rng.randrange(board.layers)
+                    masks.append(child)
+        finally:
+            board.ctx.rollback(snap)
         assert best is not None
         # apply winning mask layers, final maze for real traces+frames
         _, win = best

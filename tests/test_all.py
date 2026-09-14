@@ -216,8 +216,10 @@ for pl in ["diffusion", "compact", "thermal"]:
     for rt in ["lroute", "maze", "coarse", "wiremask"]:
         bm = agent.loads(ocd, base=EX)
         bm.place(pl, seeds=2, iters=100)
+        _snap = bm.ctx.snapshot()
         bm.route_board(rt, **({"pop": 2, "gen": 1} if rt == "wiremask" else {}))
         assert not cast(list[str], bm.check()["errors"]), (pl, rt)
+        assert bm.ctx.snapshot() - _snap == 1, (pl, rt, "undo pollution")
 # thermal spreads big bodies: min pairwise separation beats diffusion's
 import itertools as _it
 _sep = {}
