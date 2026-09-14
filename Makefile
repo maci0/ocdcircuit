@@ -8,9 +8,10 @@ lint:				# types + source lint (no place/route)
 	python -m apps.ocd lint $(BOARD)
 doctor:				# tooling self-check
 	python -m apps.ocd doctor
-test:				# unit suite + golden snapshots
+test:				# unit suite + golden snapshots + studio smoke gate
 	python tests/test_all.py
 	python tests/test_snapshot.py
+	python tests/test_studio.py
 run:				# webui → http://localhost:8077
 	python -m apps.studio $(BOARD)
 snap:				# re-pin goldens after intended geometry change
