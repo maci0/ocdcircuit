@@ -498,7 +498,8 @@ with tempfile.TemporaryDirectory() as _td:
     assert _tc.fab == "oshpark" and _tc.meta["mask"] == "blue"
     assert _tc.proj["drc"] == ["erc"]
     assert _tc.configure("toml", base=EX) == {}
-    # config values are validated at load, not at solve: typos fail here
+    # config values are validated at load, not at solve: typos fail here,
+    # unfenced (ValueError = fixable input — retry works without re-arm)
     for _bad_toml, _frag in [
         ('placer = "difusion"\n', "unknown placer"),
         ('router = "maz"\n', "unknown router"),
@@ -506,12 +507,13 @@ with tempfile.TemporaryDirectory() as _td:
         ('drc = ["nope"]\n', "unknown drc"),
     ]:
         open(os.path.join(_td, "board.toml"), "w").write(_bad_toml)
-        _tb2 = agent.loads(ocd, base=EX)  # fresh board: no failure memory
         try:
-            _tb2.configure("toml", base=_td)
+            _tc.configure("toml", base=_td)
             raise AssertionError(f"should have raised: {_bad_toml!r}")
         except ValueError as e:
             assert _frag in str(e), str(e)
+    open(os.path.join(_td, "board.toml"), "w").write('placer = "compact"\n')
+    assert _tc.configure("toml", base=_td) == {"placer": "compact"}  # retry works
 
 # mix-and-match: every placer × every router × every silk resolves + runs
 for pl in ["diffusion", "compact", "thermal"]:
