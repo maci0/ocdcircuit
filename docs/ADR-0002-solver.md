@@ -23,6 +23,11 @@ run N seeds, keep the best.
   diffusion (default), compact (area), thermal (big bodies drift to edges
   for heatsinking + repel harder; separation wins are board-dependent —
   free layouts ring the perimeter, anchored ones spread).
+- Hierarchical/multilevel preserve instance structure (repeated channels
+  stay identical) at the cost of packing optimality: rigid stamps can
+  overlap where free placement wouldn't (pico: hierarchical overlaps at
+  seeds where diffusion is clean). Pick structure when channels must
+  match, diffusion when they must pack.
 - `match`/`diff` constraints feed placer cost + DRC skew warnings.
 - DRC `_seg_dist` collinear case now measures real 1D gaps (was: false 0).
 
