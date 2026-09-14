@@ -1542,6 +1542,15 @@ assert cast(list[int], cast(dict[str, object],
 assert agent.dumps(agent.loads(agent.dumps(_simg2))) == agent.dumps(_simg2)
 # ngspice plugin: same shape as mna + analog mna cannot do (skip if no binary)
 import shutil as _sh3
+# netlist text pins without the binary: element lines, source, terminator
+from ocdcircuit import spice as _spice
+_nlb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+                   "part C1 C0805 100n\nnet VIN: R1.1\nnet VO: R1.2 R2.1 C1.1\n"
+                   "net GND: R2.2 C1.2\nsim vcc VIN 9\n", base=EX)
+_nlt = _spice.netlist(_nlb).splitlines()
+assert _nlt[0] == "* ocdcircuit: t" and _nlt[-1] == ".end"
+assert "RR1 VIN VO 10000" in _nlt and "CC1 VO 0 1e-07 ic=0" in _nlt
+assert "V1 VIN 0 dc 9" in _nlt
 if _sh3.which("ngspice") is not None:
     _ng0 = _simb2.simulate("ngspice", what="tran")
     _ngw = cast(list[float], cast(dict[str, object], _ng0["waves"])["VO"])
