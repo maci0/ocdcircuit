@@ -88,7 +88,7 @@ to `.ocd` — see `boards/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).
 into `.fp` files — see `boards/mitox/` (43 parts, 4L, full fab output).
 `tools/atopile.py` ports atopile projects (`~` wiring, modules, kicad_mod
 footprints, LCSC) — see `boards/bme690/`, `boards/ne555/`,
-`boards/breath_ketone/`. Porter contracts: `docs/PORTS.md`.
+`boards/breath_ketone/`, `boards/e2e_driver4/`. Porter contracts: `docs/PORTS.md`.
 
 Layout: `ocdcircuit/` (core, circuit, parts, solver, maze, drc, fab, silk,
 export, agent, score, diff, plugins), `tools/` (importers),

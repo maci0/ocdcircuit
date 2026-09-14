@@ -21,7 +21,8 @@ Positions: layout `.kicad_pcb` refs rarely match porter refs, so matching
 is by footprint+order through verify-then-pin (overlap/off-board fixes are
 emitted commented, solver places freely).
 
-Boards: `bme690` (flat), `ne555` (nested modules), `breath_ketone`.
+Boards: `bme690` (flat), `ne555` (nested modules), `breath_ketone`
+(dense: 12mm USB-C on 16mm width, 8–11 residual overlaps), `e2e_driver4`.
 
 ## tscircuit (`tools/tscircuit.py`)
 
