@@ -577,6 +577,37 @@ _bw.place(seeds=2, iters=100)
 _snap = _bw.ctx.snapshot()
 _bw.route_board("wiremask", pop=2, gen=1)
 assert _bw.ctx.snapshot() - _snap == 2, "wiremask undo pollution"
+# wiremask mid-eval exception restores layer assignment (evals write
+# net.layer directly, invisible to undo — finally must cover them)
+_bx = agent.loads("board t 60x40 2L\nblock ch\npart R R0805 10k\npart C C0805 100n\n"
+                  "net RC: R.1 C.1\nend\ninstance ch as A\ninstance ch as B join GND\n"
+                  "net X: A_R.1 B_R.1\nnet GND: A_R.2 B_R.2\n", base=EX)
+_bx.place(seeds=1, iters=10)
+_bx.route_board("lroute")
+_lay0 = {n: (net.layer, net.width) for n, net in _bx.nets.items()}
+from ocdcircuit import maze as _mzx
+_orig_maze = _mzx.maze
+_calls = {"n": 0}
+from ocdcircuit.circuit import Board as _Board
+from ocdcircuit.types import Frame as _Frame
+
+
+def _boom_maze(board: _Board, frames: list[_Frame] | None = None) -> int:
+    _calls["n"] += 1
+    if _calls["n"] == 3:
+        raise RuntimeError("synthetic maze failure")
+    return _orig_maze(board, frames)
+
+
+_mzx.maze = _boom_maze
+try:
+    _bx.route_board("wiremask", pop=3, gen=2)
+    raise AssertionError("should have raised")
+except RuntimeError:
+    pass
+finally:
+    _mzx.maze = _orig_maze
+assert {n: (net.layer, net.width) for n, net in _bx.nets.items()} == _lay0
 # thermal spreads big bodies: min pairwise separation beats diffusion's
 import itertools as _it
 _sep = {}
