@@ -857,6 +857,13 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
           ' (effects (font (size 1.27 1.27))))')
         A(f'    (property "Footprint" "{p.fp}" (at {x:.2f} {y + 7.62:.2f} 0)'
           ' (effects (font (size 1.27 1.27)) hide))')
+        # LCSC/MPN ride as hidden properties so KiCad→JLC flows keep
+        # ordering data (our CSV BOM is the primary path; this is backup).
+        for _prop in ("LCSC", "MPN"):
+            _v = p.attrs.get(_prop.lower(), "")
+            if _v:
+                A(f'    (property "{_prop}" "{_v}" (at {x:.2f} {y + 10.16:.2f} 0)'
+                  ' (effects (font (size 1.27 1.27)) hide))')
         for i, q in enumerate(pins):
             A(f'    (pin "{i + 1}" (uuid "{_uuid_mod.uuid4()}"))')
             pin_pos[(r, q)] = pin_xy(i, n, x, y)

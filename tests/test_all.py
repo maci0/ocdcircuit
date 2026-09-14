@@ -1885,6 +1885,12 @@ assert len(_mep) == 2 and all(p.get("pour") == "solid" for p in _mep)
 # kicad .sch export: same picture as the canvas, ERC-clean per kicad-cli
 _ksf = _ebb.export("kicad-sch", outdir=tempfile.mkdtemp())[0]
 assert _ksf.endswith(".kicad_sch") and "(global_label" in open(_ksf).read()
+# lcsc/mpn ride as hidden properties (KiCad→JLC backup path)
+_kl = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcsc=C1 mpn=M1\n"
+                  "part C1 C0805 100n\nN :: R1.1 C1.2\n", base=EX)
+_kt = open(_kl.export("kicad-sch", outdir=tempfile.mkdtemp())[0]).read()
+assert '(property "LCSC" "C1"' in _kt and '(property "MPN" "M1"' in _kt
+assert _kt.count("LCSC") == 1  # only on the part that has one
 if shutil.which("kicad-cli") is not None:
     import glob as _glob
     _ercd = tempfile.mkdtemp()
