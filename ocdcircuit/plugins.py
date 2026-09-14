@@ -434,6 +434,9 @@ def ir_of(board: Board) -> dict[str, object]:
                  for n, net in board.nets.items()},
         "constraints": board.constraints,
         "includes": board.includes,
+        # custom footprints ride along (from_ir restores them): without
+        # this, IR round-trips silently drop customs and parts dangle.
+        "_imported_fp": {fn: dict(meta) for fn, meta in board.custom_fp.items()},
     }
 
 

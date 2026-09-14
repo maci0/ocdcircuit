@@ -337,6 +337,15 @@ assert agent.to_json(bj).startswith("{")
 _ja = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1 lcsc=C1\npart C1 C0805 100n\n"
                   "HV class=highvolt :: R1.1 C1.1\nLV :: R1.2 C1.2\nclass highvolt width=0.8\n", base=EX)
 assert agent.dumps(agent.from_json(agent.to_json(_ja))) == agent.dumps(_ja)
+# JSON IR carries custom footprints (else round-trips dangle parts)
+_jc = agent.from_ir({"board": {"name": "t", "w": 40, "h": 30},
+                     "parts": [{"ref": "R1", "fp": "X1", "x": 5, "y": 5}],
+                     "nets": {"N": {"pins": [["R1", "1"]]}},
+                     "_imported_fp": {"X1": {"w": 2.0, "h": 1.0,
+                                             "pads": {"1": [0, 0, 1, 1]}}}})
+_jc2 = agent.from_ir(agent.ir(_jc))
+assert sorted(_jc2.parts) == ["R1"] and sorted(_jc2.custom_fp) == ["X1"]
+assert agent.from_json(agent.to_json(_jc)).parts["R1"].fp == "X1"
 assert cast(str, bj.render("svg")).startswith("<svg")
 assert cast(str, bj.render("stl")).startswith("solid")
 assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
