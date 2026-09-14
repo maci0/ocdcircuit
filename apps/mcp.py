@@ -250,6 +250,15 @@ def t_footprints(a: dict[str, object]) -> dict[str, object]:
     return {"footprints": out, "aliases": len(KICAD_ALIASES)}
 
 
+def t_fabs(a: dict[str, object]) -> dict[str, object]:
+    from typing import cast
+    from ocdcircuit.fab import PROFILES
+    return {"fabs": {k: {"name": v["name"], "layers": list(cast(tuple[int, ...], v["layers"])),
+                         "min_trace": v["min_trace"], "min_space": v["min_space"],
+                         "min_drill": v["min_drill"]}
+                     for k, v in sorted(PROFILES.items())}}
+
+
 def t_calc(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
@@ -327,6 +336,7 @@ TOOLS: dict[str, object] = {
     "render": (t_render, {"key": "renderer?"}),
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda", "path": "file"}),
     "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
+    "fabs": (t_fabs, {}),
     "calc": (t_calc, {"what": "trace|amps|via|divider|pick", "amps": 1.0}),
     "simulate": (t_sim, {"what": "dc|tran"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
