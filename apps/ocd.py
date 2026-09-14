@@ -156,7 +156,7 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
         b = _load(agent, src)
         if fab is not None:
             b.fab = fab
-    except (OSError, ValueError, KeyError) as e:
+    except (OSError, ValueError, KeyError, AssertionError) as e:
         _out().print(f"[red]ocd: {e}[/red]")
         return 1
     placer = placer or _proj_str(b, "placer")
@@ -247,7 +247,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
             b.fab = fab
         b.place()
         b.route_board()
-    except (OSError, ValueError, KeyError) as e:
+    except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1
     s = b.score()
@@ -308,7 +308,7 @@ def cmd_diff(agent: object, args: list[str]) -> int:
     try:
         a = _load(agent, args[0])
         b = _load(agent, args[1])
-    except (OSError, ValueError, KeyError) as e:
+    except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1
     print(a.diff(b) or "identical")
@@ -326,7 +326,7 @@ def cmd_score(agent: object, args: list[str]) -> int:
             b.fab = fab
         b.place()
         b.route_board()
-    except (OSError, ValueError, KeyError) as e:
+    except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1
     s = b.score()
@@ -353,7 +353,7 @@ def cmd_lint(agent: object, args: list[str]) -> int:
         return 1
     try:
         b = _load(agent, args[0])
-    except (OSError, ValueError, KeyError) as e:
+    except (OSError, ValueError, KeyError, AssertionError) as e:
         _out().print(f"[red]ocd: {e}[/red]")
         return 1
     r = b.lint()
