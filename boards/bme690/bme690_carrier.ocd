@@ -6,8 +6,8 @@ fp fp/PinHeader_1x09_P2.54mm_Vertical.kicad_mod
 fp fp/PinHeader_1x07_P2.54mm_Vertical.kicad_mod
 part J1 PinSocket_1x09_P1.27mm_Vertical lcsc=C59983
 part J2 PinSocket_1x07_P1.27mm_Vertical lcsc=C59983
-part J3 PinHeader_1x09_P2.54mm_Vertical lcsc=C2337
-part J4 PinHeader_1x07_P2.54mm_Vertical lcsc=C2337
+part J3 PinHeader_1x09_P2.54mm_Vertical lcsc=C2337 rot=180
+part J4 PinHeader_1x07_P2.54mm_Vertical lcsc=C2337 rot=180
 net CS: J1.8 J3.8
 net GND: J1.3 J3.3
 net GPIO0: J1.4 J3.4
@@ -24,8 +24,8 @@ net SDI: J2.2 J4.2
 net SDO: J2.1 J4.1
 net VDD: J1.1 J3.1
 net VDDIO: J1.2 J3.2
-# fix J1 at 3.35 37.67 — dropped: stale layout (overlap), solver places freely
-# fix J2 at 21.13 37.67 — dropped: stale layout (overlap), solver places freely
-# fix J3 at 3.35 23.67 — dropped: stale layout (overlap), solver places freely
-# fix J4 at 21.13 23.67 — dropped: stale layout (overlap), solver places freely
+# fix J1 at 8 6 — dropped: stale layout (overlap), solver places freely
+# fix J2 at 25.78 6 — dropped: stale layout (overlap), solver places freely
+# fix J3 at 8 20 — dropped: stale layout (overlap), solver places freely
+# fix J4 at 25.78 20 — dropped: stale layout (overlap), solver places freely
 power GND

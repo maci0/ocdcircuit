@@ -25,9 +25,9 @@
   "segs": 95
  },
  "bme690_carrier.ocd/diffusion/maze/2L": {
-  "hash": "bb5a0c2bbf6582c1",
+  "hash": "51be1449bc0d8e1c",
   "parts": 4,
-  "segs": 56
+  "segs": 110
  },
  "mitox.ocd/compact/maze/2L": {
   "hash": "fb851cebeedcc51b",
