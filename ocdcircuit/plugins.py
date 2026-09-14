@@ -382,11 +382,29 @@ class OcdExporter(Plugin[list[str]]):
     def run(self, board: Board, *a: object, **k: object) -> list[str]:
         import os
         from . import agent
+        from . import footprint as _fp
         outdir = k.get("outdir", "out")
         assert isinstance(outdir, str)
         os.makedirs(outdir, exist_ok=True)
+        text = agent.dumps(board)
+        # in-memory customs (no src file) materialize as fp/ sidecars so
+        # the exported .ocd reloads; file-backed ones already have fp lines.
+        # sidecar filenames are sanitized (fp names are foreign-controlled);
+        # the .fp header keeps the raw name so parts still resolve.
+        bare = sorted(n for n in board.custom_fp if n not in board.fp_src)
+        if bare:
+            import re
+            os.makedirs(os.path.join(outdir, "fp"), exist_ok=True)
+            lines = text.splitlines()
+            for n in bare:
+                safe = re.sub(r"[^A-Za-z0-9_.-]", "_", n) or "X"
+                fn = os.path.join(outdir, "fp", f"{safe}.fp")
+                with open(fn, "w") as f:
+                    f.write(_fp.dumps(n, board.custom_fp[n]))
+                lines.insert(1, f"fp fp/{safe}.fp")
+            text = "\n".join(lines) + "\n"
         fn = os.path.join(outdir, f"{board.name}.ocd")
-        open(fn, "w").write(agent.dumps(board))
+        open(fn, "w").write(text)
         return [fn]
 
 

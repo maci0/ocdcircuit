@@ -95,6 +95,41 @@ def loads(text: str) -> tuple[str, Footprint]:
     return name, fp
 
 
+def dumps(name: str, fp: Footprint) -> str:
+    """Footprint dict → .fp text (inverse of loads: round-trips).
+    Lets exporters materialize in-memory customs as sidecar files."""
+    from typing import cast
+
+    def _n(v: object) -> float:
+        assert isinstance(v, (int, float))
+        return float(v)
+
+    w, h = _n(fp["w"]), _n(fp["h"])
+    L = [f"footprint {name} {w:g}x{h:g}" + (" edge" if fp.get("edge") else "")]
+    for pin, (dx, dy, pw, ph) in sorted(cast(dict[str, tuple[float, float, float, float]], fp.get("pads", {})).items()):
+        L.append(f"pad {pin} {_n(dx):g} {_n(dy):g} {_n(pw):g} {_n(ph):g}")
+    for pin, (x, y, dr) in sorted(cast(dict[str, tuple[float, float, float]], fp.get("holes", {})).items()):
+        L.append(f"hole {pin} {_n(x):g} {_n(y):g} {_n(dr):g}")
+    for b in cast(list[dict[str, object]], fp.get("bodies", [])):
+        if "box" in b:
+            bw, bh, z = cast(tuple[float, float, float], b["box"])
+            bw, bh, z = _n(bw), _n(bh), _n(z)
+            ats = " ".join(f"at {_n(x):g} {_n(y):g}"
+                           for x, y in cast(list[list[float]], b.get("at", [])))
+            L.append(f"body box {bw:g} {bh:g} {z:g}" + (f" {ats}" if ats else ""))
+        elif "cyl" in b:
+            r, z = cast(tuple[float, float], b["cyl"])
+            r, z = _n(r), _n(z)
+            L.append(f"body cyl {r:g} {z:g}")
+    for k in cast(list[dict[str, object]], fp.get("keepouts", [])):
+        layers = f" {','.join(cast(list[str], k.get('layers', [])))}" if k.get("layers") else ""
+        if k.get("d") is not None:
+            L.append(f"keepout {_n(k['dx']):g} {_n(k['dy']):g} d{_n(k['d']):g}{layers}")
+        else:
+            L.append(f"keepout {_n(k['dx']):g} {_n(k['dy']):g} {_n(k['w']):g}x{_n(k['h']):g}{layers}")
+    return "\n".join(L) + "\n"
+
+
 def load_file(path: str) -> tuple[str, Footprint]:
     with open(os.path.abspath(path)) as f:
         return loads(f.read())

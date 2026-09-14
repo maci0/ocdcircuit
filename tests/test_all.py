@@ -1208,6 +1208,17 @@ from ocdcircuit import footprint as _fp
 name, meta = _fp.load_file(os.path.join(EX, "usb_c_edge.fp"))
 assert name == "USB_C_EDGE_GCT" and meta.get("edge") is True
 assert len(cast(dict[str, object], meta["pads"])) == 26  # 2x12 + 2 shell
+# fp dumps inverts loads (sidecars for in-memory customs round-trip)
+assert _fp.loads(_fp.dumps(name, meta))[0] == name
+assert _fp.loads(_fp.dumps(name, meta))[1]["w"] == meta["w"]
+_jfp = agent.from_ir({"board": {"name": "t", "w": 40, "h": 30},
+                      "parts": [{"ref": "R1", "fp": "X1", "x": 5, "y": 5}],
+                      "nets": {"N": {"pins": [["R1", "1"]]}},
+                      "_imported_fp": {"X1": {"w": 2.0, "h": 1.0,
+                                              "pads": {"1": [0, 0, 1, 1]}}}})
+_jfiles = _jfp.export("ocd", outdir=tempfile.mkdtemp())
+_jrt = agent.loads(open(_jfiles[0]).read(), base=os.path.dirname(_jfiles[0]))
+assert sorted(_jrt.parts) == ["R1"] and "X1" in _jrt.custom_fp  # sidecar saved it
 try:
     _fp.loads("pad A1 0 0\n")
     raise AssertionError("should have raised")
