@@ -83,26 +83,52 @@ def _f(v: object) -> float:
     return float(v)
 
 
-def build(board: Board, thick: float = 1.6) -> list[Tri]:
-    """Full board mesh: mask slab + copper pads/traces + silk + bodies."""
-    from .parts import bodies_of, pads_of
+def _plane(layers: int, thick: float, layer: int) -> float:
+    """Copper plane height: layer 0 on the top face, last on the bottom
+    face, inner interpolated through the slab. (Stacking every layer
+    above the board reads as floating grids.)"""
+    if layers <= 1:
+        return thick
+    ll = min(max(layer, 0), layers - 1)
+    return thick - ll * (thick / (layers - 1))
+
+
+def build(board: Board, thick: float = 1.6, tagged: bool = False) -> list[Tri]:
+    """Full board mesh: mask slab + copper pads/traces + silk + bodies.
+    tagged=True splits copper into copper:pads/vias/Ln so viewers can
+    toggle per-layer (texture lookups strip the suffix)."""
+    from .parts import bodies_of, hole_drill, pads_of
     tris: list[Tri] = []
     lib = board._lib()
     _box(tris, 0, 0, 0, board.width, board.height, thick, MASK)
-    # copper: pads as thin boxes + traces as thin boxes
+    # copper: SMD pads proud of the top face, PTH barrels through the
+    # slab (seated past both faces — no coplanar flicker), traces as
+    # thin boxes centered on their plane, vias as through cylinders
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
             from .parts import pad_size
             dx, dy = board.pad_pos(p.ref, pin)
             pw, ph = pad_size(p.fp, pin, lib)
-            _box(tris, dx - pw / 2, dy - ph / 2, thick,
-                 dx + pw / 2, dy + ph / 2, thick + 0.05, COPPER)
+            dr = hole_drill(p.fp, pin, lib)
+            pm = "copper:pads" if tagged else COPPER
+            if dr > 0:
+                rw, rh = max(pw, dr + 0.7), max(ph, dr + 0.7)
+                _box(tris, dx - rw / 2, dy - rh / 2, -0.03,
+                     dx + rw / 2, dy + rh / 2, thick + 0.03, COPPER)
+            else:
+                _box(tris, dx - pw / 2, dy - ph / 2, thick - 0.01,
+                     dx + pw / 2, dy + ph / 2, thick + 0.05, pm)
     for t in board.traces:
+        if getattr(t, "via", False):
+            _cyl(tris, t.x1, t.y1, -0.03, 0.4, thick + 0.06,
+                 "copper:vias" if tagged else COPPER)
+            continue
         x0, x1 = sorted((t.x1, t.x2))
         y0, y1 = sorted((t.y1, t.y2))
         w = t.width / 2
-        z = thick + 0.05 + 0.3 * t.layer
-        _box(tris, x0 - w, y0 - w, z, x1 + w, y1 + w, z + 0.05, COPPER)
+        z = _plane(board.layers, thick, t.layer)
+        _box(tris, x0 - w, y0 - w, z - 0.025, x1 + w, y1 + w, z + 0.025,
+             f"copper:L{t.layer}" if tagged else COPPER)
     # silk refs as tiny white boxes (readable texture hint)
     from .silk import labels
     sk = labels(board)
@@ -253,7 +279,11 @@ def to_gltf(board: Board, thick: float = 1.6) -> str:
     doc = {
         "asset": {"version": "2.0", "generator": "ocdcircuit"},
         "materials": [{"name": m, "pbrMetallicRoughness": {
-            "baseColorFactor": list(COLORS[m]),
+            # factor stays white: the texture IS the color (else factor×tex
+            # double-darkens, e.g. mask reads near-black in Blender/viewers).
+            # mask stays opaque (BLEND sorts wrong in EEVEE); buried layers
+            # are genuinely hidden, like a real board — use the SVG for X-ray.
+            "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
             "baseColorTexture": {"index": mi},
             "metallicFactor": 0.9 if m == COPPER else 0.1,
             "roughnessFactor": 0.35 if m == COPPER else 0.8}} for mi, m in enumerate(materials)],

@@ -38,7 +38,7 @@ def doctor(board: Board | None = None) -> dict[str, object]:
         reg = board.plugins()
         for kind in ("placer", "router", "layers", "drc", "exporter", "parts",
                      "renderer", "lint", "doctor", "calc", "simulate",
-                     "silk", "importer"):
+                     "silk", "importer", "config"):
             try:
                 active = reg.get(kind)
                 from .core import Plugin
