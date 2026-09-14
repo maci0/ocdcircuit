@@ -237,6 +237,18 @@ try:
     raise AssertionError("missing should fail")
 except ValueError as e:
     assert "no such file" in str(e)
+# includes carry part/net attrs + pours across (lcsc/dnp/class drive fab/widths)
+with tempfile.TemporaryDirectory() as _td:
+    open(os.path.join(_td, "sub.ocd"), "w").write(
+        "board sub 30x20 2L\npart R1 R0805 10k lcsc=C9 dnp=1\npart C1 C0805 100n\n"
+        "HV class=hv :: R1.1 C1.1\nLV :: R1.2 C1.2\npour HV on 0\n")
+    _inc = agent.loads("board t 60x40 2L\nuse sub.ocd as S\npart X1 R0805 1k\n"
+                       "net Q: X1.1 X1.2\n", base=_td)
+    assert _inc.parts["S_R1"].attrs == {"lcsc": "C9", "dnp": "1"}
+    assert _inc.nets["S_HV"].attrs == {"class": "hv"}
+    assert ("S_HV", 0) in [(c.get("net"), c.get("layer")) for c in _inc.constraints
+                           if isinstance(c, dict) and c.get("t") == "pour"]
+    assert agent.dumps(agent.loads(agent.dumps(_inc), base=_td)) == agent.dumps(_inc)
 import shutil
 shutil.rmtree(os.path.join(EX, "tmp_inc"))
 

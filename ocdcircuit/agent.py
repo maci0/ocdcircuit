@@ -610,7 +610,7 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
         new = pre + ref
         if new in parent.parts:
             raise err(f"ref clash: {new!r} (use `as` for a unique prefix)")
-        parent.add_part(new, p.fp, p.value)
+        parent.add_part(new, p.fp, p.value, attrs=dict(p.attrs) or None)
         parent.parts[new].owner = pre
     for n, net in child.nets.items():
         # explicit `join` wins; power-style nets auto-join; rest prefixed
@@ -618,6 +618,8 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
                   else pre + n)
         for ref, pin in net.pins:
             parent.connect(target, pre + ref, pin)
+        if net.attrs:
+            parent.nets[target].attrs.update(dict(net.attrs))
         if net.layer is not None:
             parent.constrain({"t": "layer", "net": target, "layer": net.layer})
         if net.width != 0.3:
@@ -637,6 +639,13 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
                        and sorted(cast(list[str], x["nets"])) == sorted(merged)
                        for x in parent.constraints):
                 parent.constrain({"t": "power", "nets": merged, "owner": pre})
+        elif t == "pour":
+            target = (str(c["net"]) if (joins and str(c["net"]) in joins)
+                      or (join is None and str(c["net"]) in AUTO_JOIN)
+                      else pre + str(c["net"]))
+            parent.constrain({"t": "pour", "net": target,
+                              "layer": int(cast(int, c.get("layer", 0))),
+                              "owner": pre})
     parent.includes.append({"path": path, "prefix": prefix or child.name,
                             "join": sorted(joins)})
     parent.constrain({"t": "near-group", "prefix": pre, "owner": pre})
