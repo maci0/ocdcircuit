@@ -583,11 +583,13 @@ _lp = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\npour GND on 0\n", base=EX)
 assert any("pour GND on 0 not rendered" in w
            for w in cast(list[str], _lp.lint()["warnings"])), _lp.lint()
-# match/diff constraints: T6 reports routed skew (not estimates)
+# match/diff constraints: T6 reports routed skew, estimates when unrouted
 _mt = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
                   "part C1 C0805 100n\nnet A: R1.1 R2.1\nnet B: R1.2 C1.1\n"
                   "net GND: R2.2 C1.2\nmatch A B\ndiff A B gap 0.5\n", base=EX)
 _mt.place(seeds=2, iters=100)
+_t6e = cast(dict[str, dict[str, object]], _mt.score(tidy=True)["T6_skew"])
+assert _t6e["match:A+B"]["estimated"] is True, _t6e
 _mt.route_board()
 _t6 = cast(dict[str, dict[str, object]], _mt.score(tidy=True)["T6_skew"])
 assert _t6["match:A+B"]["estimated"] is False, _t6
