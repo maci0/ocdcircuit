@@ -992,6 +992,22 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
+# atopile positions_from_pcb: KiCad Y-flip, gr_line board size, lib split
+from tools import atopile as _ato2
+_pcb = ('(kicad_pcb (version 20221001)\n'
+        '  (footprint "R_0805" (at 10 20) (attr smd)'
+        ' (property "Reference" "R1"))\n'
+        '  (footprint "Lib:C_0805" (at 30 40) (attr smd)'
+        ' (property "Reference" "C1"))\n'
+        '  (gr_line (start 0 0) (end 40 50) (layer Edge.Cuts))\n'
+        ')\n')
+with tempfile.NamedTemporaryFile("w", suffix=".kicad_pcb", delete=False) as _pf:
+    _pf.write(_pcb)
+    _pf.flush()
+    _pos, _pw, _ph, _pfps = _ato2.positions_from_pcb(_pf.name)
+assert (_pos, _pw, _ph, _pfps) == (
+    {"R1": (10.0, 30.0), "C1": (30.0, 10.0)}, 40.0, 50.0,
+    {"R1": "R_0805", "C1": "C_0805"})
 # easyeda_live pro_source is pure (no client needed): NET + PRIMITIVE +
 # per-trace LINE/GEOM pairs, sequential tickets, 1-indexed layers
 import json as _js
