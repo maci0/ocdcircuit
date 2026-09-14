@@ -114,6 +114,12 @@ _fx = agent.loads("board t 40x30 2L\npart R1 R0805 10k x=3 y=5\nnet N: R1.1 R1.2
                   "fix R1 at 30 25\n", base=EX)
 _fx.place(seeds=1, iters=20)
 assert (round(_fx.parts["R1"].x), round(_fx.parts["R1"].y)) == (30, 25)
+# same rule, both directions: net-line attrs beat earlier route/trace
+_nl = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "route N on 1\ntrace N 0.6\nN L0 w0.3 :: R1.1 C1.2\nGND :: R1.2 C1.1\n", base=EX)
+_nl.place(seeds=1, iters=20)
+_nl.route_board()
+assert (_nl.nets["N"].layer, _nl.nets["N"].width) == (0, 0.3)
 assert agent.parse_constraint("route GND on bottom") == {"t": "layer", "net": "GND", "layer": 1}
 wc = agent.parse_constraint("trace VCC 0.5")
 assert wc is not None and wc["width"] == 0.5

@@ -156,8 +156,10 @@ N :: R1.2 <--> C1.2
 GND :: R1.1 <--> C1.1
 ```
 
-Duplicate position sources resolve last-wins: a later `fix R1 at …`
-overrides the `x=/y=` on the part line (both persist in dumps).
+Duplicate sources resolve last-wins, uniformly: a later `fix R1 at …`
+overrides the `x=/y=` on the part line; a later net line's `L0 w0.5`
+overrides an earlier `route`/`trace` (and vice versa). All statements
+persist in dumps; resolution is by file order per target.
 
 ## Errors (exit 1) vs DRC fail (exit 2)
 
