@@ -1362,6 +1362,37 @@ _thr2.Thread(target=_hsrv.serve_forever, daemon=True).start()
 assert _ezl2.page_ws(_hport) == "ws://x/page1"
 assert _ezl2.wait_ready(_hport, timeout=10.0) == "ws://x/page1"
 _hsrv.shutdown()
+# no page open: page_ws raises StopIteration, wait_ready polls → TimeoutError
+import json as _js7
+
+
+class _Tg2(_hs.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        body = _js7.dumps([{"type": "background_page",
+                            "webSocketDebuggerUrl": "ws://x/bg"}]).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a: object) -> None:
+        pass
+
+
+_hsrv2 = _hs.HTTPServer(("127.0.0.1", 0), _Tg2)
+_hport2 = _hsrv2.server_address[1]
+_thr2.Thread(target=_hsrv2.serve_forever, daemon=True).start()
+try:
+    _ezl2.page_ws(_hport2)
+    raise AssertionError("should have raised")
+except StopIteration:
+    pass
+try:
+    _ezl2.wait_ready(_hport2, timeout=0.1)
+    raise AssertionError("should have raised")
+except TimeoutError:
+    pass
+_hsrv2.shutdown()
 # launch_client returns (proc, profile dir) so callers can clean up
 from unittest import mock as _mock2
 with _mock2.patch("subprocess.Popen") as _pop:
