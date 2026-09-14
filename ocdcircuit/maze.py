@@ -147,8 +147,8 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     # the maze prefers around but crosses when walled in, and DRC flags
     # every crossing as keepout-trace (flagged, never silent). Hard walls
     # would force jumpers where a warned crossing is the right call.
-    # Rect fill is the legacy inclusive bounding box (bit-stable); round
-    # zones filter by radius (legacy crashed on them — KeyError on w/h).
+    # Rect fill is the inclusive bounding box (bit-stable); round
+    # zones filter by radius.
     from .drc import fp_keepouts, in_zone, zone_at
     zones: list[dict[str, object]] = [
         c for c in board.constraints

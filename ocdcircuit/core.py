@@ -7,14 +7,12 @@ Theory → runtime (paper Table 2, Cordis core):
   ctx[key]   → proxy resolve (Alg 6)       loader entries → Loader.declare
   HMR        → classify/stale_entries (Alg 8-9)
 
-Legacy emit/provide/require/on_change stay as thin wrappers so boards,
-plugins and the fuzz suite keep working unchanged.
 Paper: https://arxiv.org/abs/2608.25512
 """
 from __future__ import annotations
 from collections.abc import Callable, Iterator
 from itertools import count
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, TypeVar, cast
 from .types import Constraint  # noqa: F401  (re-export for convenience)
 from .types import Undo
 
@@ -58,13 +56,11 @@ def execute(callback: Callable[[], object], guard: Guard) -> Undo:
 
 
 class Context:
-    """Every mutation goes through effect/emit. Undo stack = temporal
+    """Every mutation goes through effect. Undo stack = temporal
     composability. Store + realm tables = spatial composability."""
 
     def __init__(self, parent: Context | None = None) -> None:
         self._undos: list[Undo] = []
-        self.services: dict[str, object] = {}
-        self._listeners: dict[str, list[Callable[[object], None]]] = {}
         # paper §5.1: accumulated inverse, child tracking, coeffect slots
         self._dispose: Undo = lambda: None
         self._parent = parent
@@ -114,7 +110,7 @@ class Context:
                 pprev()
 
             par._dispose = _pchain
-        self.emit(lambda: None, dispose)
+        self._undos.append(dispose)
         return dispose
 
     def dispose_all(self) -> None:
@@ -124,9 +120,14 @@ class Context:
         d()
 
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
-        do()
-        self._undos.append(undo)
-        return undo
+        """Two-lambda call form of effect: do() runs now, undo is its
+        inverse. One primitive underneath (paper Alg 1)."""
+
+        def _cb() -> object:
+            do()
+            return undo
+
+        return self.effect(_cb)
 
     def snapshot(self) -> int:
         return len(self._undos)
@@ -171,8 +172,6 @@ class Context:
         while c is not None:
             if realm in c._store:
                 return (c._store[realm], realm)
-            if isinstance(realm, str) and realm in c.services:
-                return (c.services[realm], realm)
             c = c._parent
         return (None, realm)
 
@@ -201,13 +200,9 @@ class Context:
         realm = self._realm_of(key)
         had = realm in self._store
         old = self._store.get(realm)
-        had_svc = isinstance(realm, str) and realm in self.services
-        old_svc = self.services.get(realm) if isinstance(realm, str) else None
 
         def _cb() -> object:
             self._store[realm] = value
-            if isinstance(realm, str):
-                self.services[realm] = value
             self._register_provider(key, realm, value)
 
             def _inv() -> None:
@@ -215,11 +210,6 @@ class Context:
                     self._store[realm] = old
                 else:
                     self._store.pop(realm, None)
-                if isinstance(realm, str):
-                    if had_svc:
-                        self.services[realm] = old_svc
-                    else:
-                        self.services.pop(realm, None)
                 self._unregister_provider(key, realm)
 
             return _inv
@@ -298,8 +288,8 @@ class Context:
         return out
 
     def notify(self, keys: list[str]) -> list[Fiber]:
-        """Paper Alg 3: re-evaluate dependents sharing the realm; legacy
-        listeners still fire (compat). Returns the affected fibers."""
+        """Paper Alg 3: re-evaluate dependents sharing the realm.
+        Returns the affected fibers."""
         affected: list[Fiber] = []
         for fiber in self._all_fibers():
             for key in keys:
@@ -307,62 +297,41 @@ class Context:
                     fiber.refresh()
                     affected.append(fiber)
                     break
-        for key in keys:
-            self._notify(key)
         return affected
 
-    # --- legacy service API (thin wrappers over the slots) ---
-    def provide(self, name: str, svc: object) -> None:
-        old: Optional[object] = self.services.get(name)
-
-        def _do() -> None:
-            self.services[name] = svc
-            self._root()._providers[name] = (None, self._realm_of(name), svc)
-
-        def _undo() -> None:
-            if old is not None:
-                self.services[name] = old
-            else:
-                self.services.pop(name, None)
-            cur = self._root()._providers.get(name)
-            if cur is not None and cur[0] is None:
-                self._root()._providers.pop(name, None)
-
-        self.emit(_do, _undo)
-        self.notify([name])
-
-    def unprovide(self, name: str) -> None:
-        """Withdraw an externally provided service (inverse of provide):
-        dependents deactivate ahead of the removal (paper §5.1.3 — the
-        provider stops providing before its bindings go away)."""
-        if name not in self.services:
-            return
-        old = self.services[name]
-
-        def _do() -> None:
-            self.services.pop(name, None)
-            cur = self._root()._providers.get(name)
-            if cur is not None and cur[0] is None:
-                self._root()._providers.pop(name, None)
-
-        def _undo() -> None:
-            self.services[name] = old
-            self._root()._providers[name] = (None, self._realm_of(name), old)
-
-        self.emit(_do, _undo)
-        self.notify([name])
-
+    # --- coeffect read + withdrawal ---
     def require(self, name: str) -> object:
-        if name not in self.services:
-            raise KeyError(f"unsatisfied service: {name}")
-        return self.services[name]
+        """Bare store read that fails loudly (KeyError) on absence — for
+        mandatory infrastructure lookups (e.g. the plugin registry)."""
+        v, _ = self._lookup(name)
+        if v is None:
+            raise KeyError(f"unsatisfied coeffect: {name}")
+        return v
 
-    def on_change(self, name: str, fn: Callable[[object], None]) -> None:
-        self._listeners.setdefault(name, []).append(fn)
+    def unset(self, name: str) -> None:
+        """Ordered withdrawal (paper §5.1.3): dependents deactivate ahead
+        of the removal; bindings stay readable during their teardown."""
+        cur = self._root()._providers.get(name)
+        if cur is not None and cur[0] is None:
+            self._root()._providers.pop(name, None)
+        realm = self._realm_of(name)
+        had = realm in self._store
+        if not had:
+            self.notify([name])
+            return
+        old = self._store.get(realm)
 
-    def _notify(self, name: str) -> None:
-        for fn in self._listeners.get(name, []):
-            fn(self.services.get(name))
+        def _cb() -> object:
+            self._store.pop(realm, None)
+
+            def _inv() -> None:
+                if had:
+                    self._store[realm] = old
+
+            return _inv
+
+        self.effect(_cb)
+        self.notify([name])
 
 
 class Fiber:
@@ -383,7 +352,7 @@ class Fiber:
         self.parent = parent
         self.inject = tuple(inject)
         self.apply = apply
-        self.capture = capture  # False = legacy comp (unmount compensates)
+        self.capture = capture  # False = component-owned teardown (unmount compensates)
         self.ctx = parent.child()
         self.ctx._fiber = self
         self.state = Fiber.INACTIVE
@@ -407,7 +376,7 @@ class Fiber:
                 return None
             f, _realm, _v = cur
             if f is None:
-                uids.append(-1)  # external (legacy provide): always satisfied
+                uids.append(-1)  # external binding (no owning fiber): always satisfied
             elif f is self:
                 uids.append(self.uid)
             elif f.state != Fiber.ACTIVE:
@@ -509,7 +478,7 @@ class Component:
         self._mounted = False
 
     def check_requires(self, ctx: Context) -> list[str]:
-        return [s for s in self.requires if s not in ctx.services]
+        return [s for s in self.requires if ctx.get(s) is None]
 
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
         missing = self.check_requires(ctx)
@@ -637,7 +606,7 @@ class Plugin(Component, Generic[Out]):
     provides: tuple[str, ...] = ("plugins",)  # reactive coeffect
 
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
-        missing = [s for s in self.requires if s not in ctx.services]
+        missing = [s for s in self.requires if ctx.get(s) is None]
         if missing:
             raise RuntimeError(f"{self.name} missing services: {missing}")
         reg = ctx.require("plugins")
@@ -649,12 +618,12 @@ class Plugin(Component, Generic[Out]):
         self._mounted = True
 
         def _undo() -> None:
-            svc = ctx.services.get("plugins")
+            svc = ctx.get("plugins")
             assert isinstance(svc, Registry)
             svc._drop(self.kind, self.key)
 
         ctx.emit(lambda: None, _undo)
-        ctx._notify(f"plugin:{self.kind}")
+        ctx.notify([f"plugin:{self.kind}"])
 
     def use(self, ctx: Context) -> None:
         """Hot-swap: make THIS instance the active one for its kind."""
@@ -672,7 +641,7 @@ class Plugin(Component, Generic[Out]):
                 reg.active[self.kind] = prev
 
         ctx.emit(_do, _undo)
-        ctx._notify(f"plugin:{self.kind}")
+        ctx.notify([f"plugin:{self.kind}"])
 
     def run(self, board: Board, *a: object, **k: object) -> Out:
         raise NotImplementedError
@@ -680,7 +649,7 @@ class Plugin(Component, Generic[Out]):
     def unmount(self, ctx: Context) -> None:
         """Compensate mount: drop the registry entry (idempotent — a stale
         mount-undo hitting the same entry is a masked no-op)."""
-        svc = ctx.services.get("plugins")
+        svc = ctx.get("plugins")
         if isinstance(svc, Registry):
             svc._drop(self.kind, self.key)
         super().unmount(ctx)

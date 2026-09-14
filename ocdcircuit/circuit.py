@@ -110,10 +110,7 @@ class Board(Component):
         self.instances: list[dict[str, object]] = []  # {block, prefix, join}
         self._block_open: str | None = None  # parser scratch (not dumped)
         self._block_lines: list[str] | None = None
-        self.ctx._store["plugins"] = Registry()
-        self.ctx.services["plugins"] = self.ctx._store["plugins"]
-        self.ctx._providers["plugins"] = (None, "plugins",
-                                          self.ctx._store["plugins"])
+        self.ctx.set("plugins", Registry())
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)
 
@@ -625,7 +622,8 @@ class Module(Component):
     """Hierarchical subcircuit (atopile-style). Mount spawns a Fiber in
     the board ctx: teardown orders dependent-drain before recovery, so a
     withdrawn module deactivates its dependents while its nets still
-    read (paper §5.1.3). Tracks refs it added as the legacy fallback."""
+    read (paper §5.1.3). Tracks refs it added so unmount removes exactly
+    those (temporal composability)."""
 
     def __init__(self, name: str) -> None:
         super().__init__(name)

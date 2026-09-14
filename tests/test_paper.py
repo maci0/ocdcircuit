@@ -62,7 +62,7 @@ except UndeclaredAccess:
 
 # fiber lifecycle: inactive until satisfied, unloads on withdrawal
 root = Context()
-root.provide("db", "sqlite")
+root.set("db", "sqlite")
 seen: list[str] = []
 comp_events: list[str] = []
 
@@ -83,7 +83,7 @@ def _mk() -> Component:
 
 
 f = Fiber(root, ("db",), lambda fctx: (_ for _ in ()).throw(AssertionError("unused")))
-# manual fiber via Loader path instead: entry with inject satisfied by legacy provide
+# manual fiber via Loader path instead: entry with inject satisfied by set()
 from ocdcircuit.core import Loader
 ld = Loader(root)
 
@@ -97,8 +97,7 @@ root._fibers.clear()
 fib = ld._spawn(ent)
 assert fib.state == Fiber.ACTIVE, fib.state
 assert fib.ctx["db"] == "sqlite"  # proxy reads committed view
-root.services.pop("db")
-root._root()._providers.pop("db", None)
+root.unset("db")
 root.notify(["db"])
 assert fib.state == Fiber.INACTIVE, fib.state
 try:

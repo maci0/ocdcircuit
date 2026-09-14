@@ -29,7 +29,7 @@ snap = ctx.snapshot()
 ctx.emit(lambda: None, lambda: None)
 ctx.undo()
 assert len(ctx._undos) == snap
-ctx.provide("vcc", 9)
+ctx.set("vcc", 9)
 assert ctx.require("vcc") == 9
 
 # temporal composability: module mount/unmount removes exactly its parts
@@ -1021,6 +1021,19 @@ assert cast(dict[str, object], _tt["T13_schematic"])["jogs"] == 0
 assert isinstance(cast(dict[str, object], _tt["T13_schematic"])["crossings"], int)
 assert _tt["T15_silk_consistency"] == 1.0
 assert isinstance(_tt["coverage"], str)
+# tidy-GA placer: improves placement-owned fitness, one effect, clean undo
+from ocdcircuit import tidy_ga as _ga
+_tg = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
+_tg.place(seeds=2, iters=100)
+_tg.route_board()
+_f0 = _ga.fitness(_tg)
+_snap = _tg.ctx.snapshot()
+_tidy_fit = _tg.place("tidy", pop=4, gen=2, seed=1, iters=30)
+assert _tidy_fit <= _f0, f"tidy regressed: {_f0:.1f} -> {_tidy_fit:.1f}"
+assert _tg.ctx.snapshot() - _snap == 1, "tidy must leave one effect"
+assert _tg.check()["errors"] == [], _tg.check()["errors"]
+_tg.ctx.undo()
+assert abs(_ga.fitness(_tg) - _f0) < 1e-6, "tidy undo must restore fitness"
 _tu = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.2\n").score(tidy=True)
 assert _tu["T1_crossings"] is None and _tu["T3_orthogonality"] is None
 assert _tu["T4_vias"] is None and _tu["T5_headroom"] is None

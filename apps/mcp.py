@@ -315,7 +315,7 @@ def t_ctx(a: dict[str, object]) -> dict[str, object]:
         b.ctx.set(str(a["key"]), a.get("value"))
         return {"key": str(a["key"]), "set": True}
     if op == "unprovide":
-        b.ctx.unprovide(str(a["key"]))
+        b.ctx.unset(str(a["key"]))
         return {"key": str(a["key"]), "withdrawn": True}
     fibs: list[dict[str, object]] = []
     seen: set[int] = set()

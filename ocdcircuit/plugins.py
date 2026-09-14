@@ -126,6 +126,22 @@ class ThermalPlacer(Plugin[float]):
                                thermal=True)
 
 
+class TidyPlacer(Plugin[float]):
+    """Optimize neatness: evolve placements for the tidy scorecard
+    (T1/T7/T8/T9), DRC errors at veto scale. Slower than diffusion —
+    use when the board must look deliberate, not just route."""
+    kind, key = "placer", "tidy"
+
+    def run(self, board: Board, *a: object, **k: object) -> float:
+        from typing import cast
+        from . import tidy_ga as _ga
+        pop = _i(k.get("pop"), 8)
+        gen = _i(k.get("gen"), 6)
+        seed = _i(k.get("seed"), 0)
+        iters = _i(k.get("iters"), 60)
+        return _ga.tidy_ga(board, pop=pop, gen=gen, seed=seed, iters=iters)
+
+
 class GreedyLayers(Plugin[None]):
     kind, key = "layers", "greedy"
 
@@ -1405,7 +1421,7 @@ class GatesPlugin(Plugin[dict[str, object]]):
 
 
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
-             HierarchicalPlacer, MultilevelPlacer,
+             HierarchicalPlacer, MultilevelPlacer, TidyPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
              FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
@@ -1423,7 +1439,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
 
 
 def mount_defaults(board: Board) -> Registry:
-    svc = board.ctx.require("plugins")
+    svc = board.ctx.get("plugins")
     assert isinstance(svc, Registry)
     reg: Registry = svc
     for cls in _DEFAULTS:

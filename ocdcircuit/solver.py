@@ -149,13 +149,14 @@ def edge_margin(board: Board) -> float:
 def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
                    frames: list[Frame] | None = None, every: int = 10,
                    pull: float = 0.08, spread: float = 1.0,
-                   edge: float | None = None, thermal: bool = False) -> None:
+                   edge: float | None = None, thermal: bool = False,
+                   init: bool = True) -> None:
     np = _numpy()
     # vector path pays below n=16 (numpy overhead ≈ win) and risks a worse
     # basin on tiny boards (measured: blinky vec 264+airwire vs scalar 258.8
     # clean). Scalar stays exact where it's already instant.
     if np is not None and not thermal and len(board.parts) >= 16:
-        _diffuse_np(board, np, iters, seed, frames, every, pull, spread, edge)
+        _diffuse_np(board, np, iters, seed, frames, every, pull, spread, edge, init)
         return
     rng = random.Random(seed)
     fx = _fixed(board)
@@ -170,10 +171,11 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
         return
     if frames is not None:
         frames.append(_snap(board))
-    for p in parts:  # random init inside board
-        pw, ph = p.wh()
-        p.x = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
-        p.y = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
+    if init:
+        for p in parts:  # random init inside board
+            pw, ph = p.wh()
+            p.x = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
+            p.y = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
     # net membership
     mem: dict[str, list[str]] = {p.ref: [] for p in parts}
     for net in board.nets.values():
@@ -255,7 +257,8 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
 
 def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
                  frames: list[Frame] | None, every: int,
-                 pull: float, spread: float, edge: float | None) -> None:
+                 pull: float, spread: float, edge: float | None,
+                 init: bool = True) -> None:
     """Vectorized _diffuse_once: positions/forces as (n,2) arrays, repulsion
     as one broadcast. Jacobi (not Gauss-Seidel) updates — same quality band,
     different trajectories; goldens pin the vector path."""
@@ -279,10 +282,11 @@ def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
     spos = np.array([[x, y] for x, y, _ in stat]) if stat else np.zeros((0, 2))
     swh = np.array([wh for _, _, wh in stat]) if stat else np.zeros((0, 2))
     pos = np.array([[board.parts[r].x, board.parts[r].y] for r in refs])
-    for r, p in zip(refs, pos):
-        pw, ph = board.parts[r].wh()
-        p[0] = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
-        p[1] = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
+    if init:
+        for r, p in zip(refs, pos):
+            pw, ph = board.parts[r].wh()
+            p[0] = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
+            p[1] = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
     for r, p in zip(refs, pos):
         board.parts[r].x, board.parts[r].y = float(p[0]), float(p[1])
     wh = np.array([board.parts[r].wh() for r in refs])
