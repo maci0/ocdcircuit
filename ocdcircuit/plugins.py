@@ -442,7 +442,9 @@ def ir_of(board: Board) -> dict[str, object]:
 
 
 def from_ir(doc: dict[str, object]) -> Board:
-    """JSON is the circuit language: agents emit this, boards load it."""
+    """JSON is the circuit language: agents emit this, boards load it.
+    `includes` is provenance only (parts/nets arrive already merged —
+    re-running includes would ref-clash); customs restore above."""
     from .circuit import Board
     bb = cast(dict[str, object], doc["board"])
     w = bb["w"]
