@@ -49,9 +49,13 @@ returns `{"error": "Type: msg"}` — the server never 500s the UI thread.
 
 ## Perf contract (enforced by `tests/test_studio.py`)
 
-- Quick rebuild < 0.5s on blinky_555 (measures ~0.1s).
+- Quick rebuild < 0.2s on blinky_555 (measures ~0.07s steady-state,
+  warm-up build first so cold caches don't fake-fail CI).
 - Static board costs zero frames (render-on-demand; 3D spins 4s
-  after new state, then rests).
+  after new state, then rests). Verified manually via `dirty` eval in
+  headless chromium — not in the gate: asserting it headlessly would
+  need test-only hooks in the UI, which is theater. Re-verify by hand
+  when touching the render loop.
 - Headless screenshot: PCB region must show content, console clean.
 
 ```bash
