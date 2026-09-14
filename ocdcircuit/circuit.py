@@ -733,6 +733,23 @@ class Board(Component):
         t = c.get("t")
         if t not in CONSTRAINT_TYPES:
             raise ValueError(f"unknown constraint type {t!r} (have {sorted(CONSTRAINT_TYPES)})")
+        if t in ("layer", "pour"):
+            # out-of-range layers crash routers deep inside (KeyError on
+            # layer tables): fail here with the board context instead.
+            # (spelled `route` like lint: `layer` is its storage type.)
+            from typing import cast
+            try:
+                ll = int(cast(int, c.get("layer", -1)))
+            except (TypeError, ValueError):
+                raise ValueError(f"route {c.get('net')} has non-numeric layer")
+            if not 0 <= ll < self.layers:
+                raise ValueError(f"route {c.get('net')} on layer {ll} "
+                                 f"(board has {self.layers}L)")
+        self._constrain_raw(c)
+
+    def _constrain_raw(self, c: Constraint) -> None:
+        """Append without validation: the file parser accepts junk so lint
+        can report it (order-free + error-collecting, unlike this method)."""
 
         def _add() -> None:
             self.constraints.append(c)

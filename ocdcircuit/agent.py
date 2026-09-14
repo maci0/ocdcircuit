@@ -601,7 +601,8 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             if c["t"] == "board":
                 b.set_board(_f(c["w"]), _f(c["h"]))
             else:
-                b.constrain(c)
+                # raw: lint owns junk-reporting; Board.constrain validates
+                b._constrain_raw(c)
     if b is None:
         raise ValueError("empty circuit")
     if top:
@@ -655,15 +656,15 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
         if net.attrs:
             parent.nets[target].attrs.update(dict(net.attrs))
         if net.layer is not None:
-            parent.constrain({"t": "layer", "net": target, "layer": net.layer})
+            parent._constrain_raw({"t": "layer", "net": target, "layer": net.layer})
         if net.width != 0.3:
-            parent.constrain({"t": "width", "net": target, "width": net.width})
+            parent._constrain_raw({"t": "width", "net": target, "width": net.width})
     for c in child.constraints:
         t = c.get("t")
         if t == "fixed":
             continue  # child placement ignored — parent places everything
         if t == "near":
-            parent.constrain({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
+            parent._constrain_raw({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
                               "w": _f(c.get("w", 2.0)), "owner": pre})
         elif t == "power":
             nets = cast(list[str], c["nets"])
@@ -672,17 +673,17 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
             if not any(x.get("t") == "power"
                        and sorted(cast(list[str], x["nets"])) == sorted(merged)
                        for x in parent.constraints):
-                parent.constrain({"t": "power", "nets": merged, "owner": pre})
+                parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
         elif t == "pour":
             target = (str(c["net"]) if (joins and str(c["net"]) in joins)
                       or (join is None and str(c["net"]) in AUTO_JOIN)
                       else pre + str(c["net"]))
-            parent.constrain({"t": "pour", "net": target,
+            parent._constrain_raw({"t": "pour", "net": target,
                               "layer": int(cast(int, c.get("layer", 0))),
                               "owner": pre})
     parent.includes.append({"path": path, "prefix": prefix or child.name,
                             "join": sorted(joins)})
-    parent.constrain({"t": "near-group", "prefix": pre, "owner": pre})
+    parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
 
 
 def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
@@ -738,13 +739,13 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
     nattrs: dict[str, str] = {}
     for a in attrs:
         if a[0] in "Ll" and a[1:].isdigit():
-            b.constrain({"t": "layer", "net": name, "layer": int(a[1:])})
+            b._constrain_raw({"t": "layer", "net": name, "layer": int(a[1:])})
         elif a.startswith("pour="):
             # declarative pour: `GND pour=0 :: ...` ≡ `pour GND on 0`
             _pv = a.partition("=")[2].lower()
             _pl = {"top": 0, "bottom": b.layers - 1}.get(_pv, _pv)
             assert str(_pl).isdigit(), f"{ctx}bad pour layer {a!r}"
-            b.constrain({"t": "pour", "net": name, "layer": int(_pl)})
+            b._constrain_raw({"t": "pour", "net": name, "layer": int(_pl)})
         elif "=" in a:
             k, _, v = a.partition("=")
             if not k or not v:
@@ -801,7 +802,7 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
             c = parse_constraint(line)
             if c is None:
                 raise err(f"in block {block}: unknown statement: {line!r}")
-            child.constrain(c)
+            child._constrain_raw(c)
     for ref, p in child.parts.items():
         new = pre + ref
         if new in parent.parts:
@@ -827,19 +828,19 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
         # keepout/sim/... — board-global or position-dependent; put them at
         # top level (a block has no position to anchor them to).
         if t == "near":
-            parent.constrain({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
+            parent._constrain_raw({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
                               "w": _f(c.get("w", 2.0)), "owner": pre})
         elif t == "power":
             nets = cast(list[str], c["nets"])
             merged = [_remap(x) for x in nets]
-            parent.constrain({"t": "power", "nets": merged, "owner": pre})
+            parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
         elif t in ("layer", "width", "pour"):
             cc = dict(c)
             cc["net"] = _remap(str(c["net"]))
             cc["owner"] = pre
-            parent.constrain(cc)
+            parent._constrain_raw(cc)
     parent.instances.append({"block": block, "prefix": prefix, "join": sorted(joins)})
-    parent.constrain({"t": "near-group", "prefix": pre, "owner": pre})
+    parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
 
 
 def ir(board: Board) -> dict[str, object]:

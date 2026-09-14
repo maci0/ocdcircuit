@@ -1262,6 +1262,19 @@ try:
 except ValueError as e:
     assert "unknown constraint type" in str(e), str(e)
 assert _bct.constraints == []
+# layer range validated at constrain (out-of-range crashes routers deep);
+# the file parser stays permissive so lint can report junk (see lint test)
+_blb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+for _blc, _blfrag in [
+        ({"t": "layer", "net": "N", "layer": 5}, "route N on layer 5 (board has 2L)"),
+        ({"t": "pour", "net": "N", "layer": 9}, "route N on layer 9 (board has 2L)"),
+]:
+    try:
+        _blb.constrain(_blc)
+        raise AssertionError("should have raised")
+    except ValueError as e:
+        assert _blfrag in str(e), str(e)
+assert _blb.constraints == []
 # CONSTRAINT_TYPES matches dumps arms exactly (new kinds must land in both
 # or they silently vanish on save — the class this guards)
 import re as _re2
