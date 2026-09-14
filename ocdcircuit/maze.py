@@ -184,9 +184,13 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     halo: set[tuple[int, int, int]] = set()  # per-layer 1-ring spacing
     cells_of: dict[str, set[tuple[int, int, int]]] = {}
 
-    # small nets first: short point-to-point wires grab direct paths before
-    # wide power busses wall off regions (completion beats convention here)
-    order = sorted(board.nets.values(), key=lambda n: (len(n.pins), -_net_span(board, n)))
+    # Big nets first: multi-pin power busses claim trunks while the board
+    # is open; small point-to-point wires thread the gaps after. Small-first
+    # walls big nets off (breath_ketone: 190 → 46 jumpers). Within a size
+    # class, wide spans still go last (short paths grab direct routes).
+    order = sorted(board.nets.values(),
+                   key=lambda n: (len(n.pins), -_net_span(board, n)),
+                   reverse=True)
     from .drc import pour_layers
     poured = pour_layers(board)  # poured nets need no traces on pour layers
     failed: list[str] = []
@@ -196,10 +200,11 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
         if not _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
                           pad_cells, copper, halo, cells_of, new, frames):
             failed.append(net.name)
-    # rip-up retry: drop the blocker crowding each failed net's corridor,
-    # re-route failed-first, then re-route the ripped net. A 2nd round runs
-    # only if the 1st strictly shrank the failed set (on jumper-structural
-    # boards like 1L blinky, extra churn converts routed nets to jumpers).
+    # rip-up retry: victim = blocker with most cells inside the failed net's
+    # corridor (pads bbox grown 4mm), not nearest endpoints — big blockers
+    # wall off whole regions. A 2nd round runs only if the 1st strictly
+    # shrank the failed set (on jumper-structural boards like 1L blinky,
+    # extra churn converts routed nets to jumpers).
     n_failed = len(failed)
     for _round in range(2):
         if not failed:
@@ -217,13 +222,16 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
             fpts = [(r, board.pad_pos(r, q)) for r, q in fnet.pins if r in board.parts]
             if len(fpts) < 2:
                 continue
+            xs = [p[0] for _, p in fpts]
+            ys = [p[1] for _, p in fpts]
+            x0, x1 = min(xs) - 4.0, max(xs) + 4.0
+            y0, y1 = min(ys) - 4.0, max(ys) + 4.0
             best, best_hit = "", -1
             for oname, cells in cells_of.items():
                 if oname == fname:
                     continue
                 hit = sum(1 for (gx, gy, _ll) in cells
-                          for (px, py) in (fpts[0][1], fpts[-1][1])
-                          if abs(gx * grid - px) + abs(gy * grid - py) < 4.0)
+                          if x0 <= gx * grid <= x1 and y0 <= gy * grid <= y1)
                 if hit > best_hit:
                     best, best_hit = oname, hit
             if best_hit <= 0:

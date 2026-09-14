@@ -48,3 +48,13 @@ run N seeds, keep the best.
   distance replaces pin-order chaining (blinky 109→98 segs, mitox 1536→987).
 - Per-layer copper/halo: L0 copper no longer walls L1 (FR4 isolates); PTH
   pads still span all layers. Pico 197→56 warnings on the same change.
+
+## Update (maze net order + rip-up victim)
+- Big-nets-first maze order (multi-pin power busses claim trunks while the
+  board is open; small wires thread gaps after): breath_ketone 190→52
+  jumpers, all other boards unchanged-or-clean (pico 20→24 jumpers, DRC
+  clean). Small-first walled big nets off — completion beats convention.
+- Corridor rip-up victim (blocker with most cells in failed net's pads
+  bbox + 4mm) replaces endpoint-distance scoring. Pathfinder history
+  adder tried and reverted: +24 jumpers on breath (rematches re-fight
+  the same corridor); order + victim choice carry the gain.

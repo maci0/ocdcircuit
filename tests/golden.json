@@ -1,18 +1,18 @@
 {
  "blinky_555.ocd/compact/maze/2L": {
-  "hash": "abd71468203cd1a4",
+  "hash": "6f0c3733aba26e82",
   "parts": 10,
-  "segs": 101
+  "segs": 103
  },
  "blinky_555.ocd/compact/maze/4L": {
-  "hash": "a1d18a26cb208c93",
+  "hash": "8311e26962c7a1ac",
   "parts": 10,
-  "segs": 102
+  "segs": 103
  },
  "blinky_555.ocd/compact/maze/8L": {
-  "hash": "a1d18a26cb208c93",
+  "hash": "8311e26962c7a1ac",
   "parts": 10,
-  "segs": 102
+  "segs": 103
  },
  "blinky_555.ocd/diffusion/lroute/2L": {
   "hash": "2c4aa24e499c3cea",
@@ -20,39 +20,39 @@
   "segs": 38
  },
  "blinky_555.ocd/diffusion/maze/1L": {
-  "hash": "4073e452c08c3854",
+  "hash": "91b481e05648844a",
   "parts": 10,
-  "segs": 95
+  "segs": 112
  },
  "bme690_carrier.ocd/diffusion/maze/2L": {
-  "hash": "586e0fb16d744bae",
+  "hash": "9fbc132ad4ba6b1f",
   "parts": 4,
-  "segs": 133
+  "segs": 86
  },
  "breath_ketone.ocd/diffusion/maze/2L": {
-  "hash": "2ebccda24b83cf89",
+  "hash": "a73f5526b3fc5997",
   "parts": 31,
-  "segs": 670
+  "segs": 565
  },
  "e2e_driver4.ocd/diffusion/maze/2L": {
-  "hash": "95f40e913206e45c",
+  "hash": "ea8e50809bf362b6",
   "parts": 18,
-  "segs": 88
+  "segs": 72
  },
  "mitox.ocd/compact/maze/2L": {
-  "hash": "a23a371473af9779",
+  "hash": "900bf62e9ae88b0a",
   "parts": 43,
-  "segs": 644
+  "segs": 496
  },
  "ne555_discrete.ocd/diffusion/maze/2L": {
-  "hash": "1e77ff537b707bbc",
+  "hash": "ae9822b27712914b",
   "parts": 40,
-  "segs": 577
+  "segs": 463
  },
  "pico_tmc2209.ocd/hierarchical/maze/2L": {
-  "hash": "d387d2183c26f74c",
+  "hash": "314d000367fee634",
   "parts": 20,
-  "segs": 468
+  "segs": 491
  },
  "psu.ocd/diffusion/lroute/2L": {
   "hash": "ff86a14ea3a997a6",
