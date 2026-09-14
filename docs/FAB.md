@@ -24,10 +24,11 @@ fabs update specs without telling you.
 | thickness | 0.5–2.4 | 0.4–3.0 | 0.4–3.0 | 0.5–3.2 | 0.8–2.4 |
 | finishes | ENIG HASL-LF | HASL LF ENIG OSP | HASL LF ENIG | ENIG HASL-LF | HASL LF ENIG |
 
-Flex extras (`bend`/`stiffener` constraints, `jlc-flex` only): no vias or
-parts in dynamic bend areas; bend radius ≥10× finished thickness dynamic,
-≥6× static; stiffeners PI/FR4/steel annotated to Cmts.User on KiCad export.
-No rigid-flex (JLC doesn't offer it). Source:
+Flex extras (`bend`/`stiffener` constraints, `jlc-flex` only): no vias,
+parts, or copper pours in dynamic bend areas (`bend-via`/`bend-part`/
+`bend-pour` errors — planes crack); bend radius ≥10× finished thickness
+dynamic, ≥6× static; stiffeners PI/FR4/steel annotated to Cmts.User on
+KiCad export. No rigid-flex (JLC doesn't offer it). Source:
 [JLCPCB flex capabilities](https://jlcpcb.com/capabilities/flex-pcb-capabilities).
 
 Units: mm. `min_trace`/`min_space` are 1oz copper; heavier copper needs
