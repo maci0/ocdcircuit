@@ -54,6 +54,18 @@ def lint(board: Board) -> dict[str, object]:
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "nc":
             ncs.update(_strs(c.get("pins", [])))
+    # nc entries must resolve: a typo'd exemption silently covers nothing
+    for rp in sorted(ncs):
+        ref, dot, pin = rp.partition(".")
+        if not dot or ref not in board.parts:
+            err(f"nc on unknown part {rp}")
+            continue
+        try:
+            pins = set(board.parts[ref].pins_of(lib))
+        except (KeyError, ValueError):
+            continue  # unreadable footprint already errored above
+        if pin not in pins:
+            err(f"nc on unknown pin {rp}")
     for ref, p in board.parts.items():
         if p.fp not in lib:
             err(f"unknown footprint {p.fp} on {ref}")

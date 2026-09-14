@@ -901,6 +901,11 @@ if _sh.which("ngspice") is not None:
 _lb = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
 assert _lb.lint() == {"errors": [], "warnings": []}, _lb.lint()
+# nc on ghost part/pin errors (typo'd exemptions silently cover nothing)
+_lnc = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\nnc R1.1 Q9.1\n", base=EX)
+assert any("nc on unknown part Q9.1" in e for e in cast(list[str], _lnc.lint()["errors"]))
+_lnp = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\nnc R1.9\n", base=EX)
+assert any("nc on unknown pin R1.9" in e for e in cast(list[str], _lnp.lint()["errors"]))
 _ld = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2\nfix ZZ at 5 5\nkeep R1 near ZZ\n"
                   "trace NONET 0.5\n")
