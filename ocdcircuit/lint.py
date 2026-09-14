@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from .circuit import Board
 
-# constraint kinds with part refs to resolve (error if dangling)
-_PARTREFS = {"fixed": ("ref",), "near": ("a", "b"), "keepout": ("ref",)}
-# ... with net refs (warning: solver skips unknown nets silently)
-_NETREFS = {"width": ("net",), "layer": ("net",), "power": ("nets",),
-            "match": ("nets",), "pour": ("net",), "diff": ("p", "n")}
+# ref-bearing keys, resolved structurally (no per-kind table to desync
+# when new constraint kinds land): part refs error if dangling...
+_PARTKEYS = ("ref", "a", "b")
+# ...net refs warn (solvers skip unknown nets silently)
+_NETKEYS = ("net", "nets", "p", "n")
 # ... with numeric ranges worth a second glance
 _RANGES = {"width": ("width", 0.05, 3.0), "bend": ("r", 0.5, 50.0),
            "hole": ("d", 0.1, 10.0), "keepout": ("d", 0.2, 200.0),
@@ -102,14 +102,20 @@ def lint(board: Board) -> dict[str, object]:
             pre = str(c.get("prefix", ""))
             if pre and not any(r.startswith(pre) for r in board.parts):
                 warn(f"near-group matches no parts with prefix {pre}")
-        for k in _PARTREFS.get(t, ()):
+        for k in _PARTKEYS:
+            if k not in c:
+                continue
             for v in _strs(c.get(k, "")):
                 if v and v not in board.parts:
                     err(f"{t} on unknown part {v}")
-        for k in _NETREFS.get(t, ()):
+        for k in _NETKEYS:
+            if k not in c:
+                continue
             for v in _strs(c.get(k, "")):
                 if v and v not in board.nets:
-                    warn(f"{t} on unknown net {v}")
+                    # kind disambiguates (sim probe vs sim vcc on one board)
+                    kind = f" {c['kind']}" if "kind" in c else ""
+                    warn(f"{t}{kind} on unknown net {v}")
         if t in _RANGES:
             k, lo, hi = _RANGES[t]
             try:
@@ -138,11 +144,6 @@ def lint(board: Board) -> dict[str, object]:
             if not (pw / 2 <= x <= board.width - pw / 2
                     and ph / 2 <= y <= board.height - ph / 2):
                 warn(f"fix {c.get('ref')} off-board")
-        elif t == "sim" and c.get("net") is not None:
-            # any sim kind with a net (vcc/sine/isrc/probe/clk/expect/...):
-            # no kind allowlist to desync when new kinds land.
-            if str(c.get("net", "")) not in board.nets:
-                warn(f"sim {c.get('kind')} on unknown net {c.get('net')}")
         elif t == "layer" and str(c.get("net", "")) in board.nets:
             try:
                 ll = int(cast(int, c.get("layer", 0)))
