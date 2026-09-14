@@ -15,7 +15,7 @@
 ## Files here
 
 - `convert.py` — netlist.json + layout.json → `monster6502.ocd`
-  (run: `python3 convert.py`; needs `netlist.json` + `layout.json` beside it)
+  (run: `python -m benches.monster6502.convert`; needs `netlist.json` + `layout.json` beside it)
 - `monster6502.ocd` — generated, 5420 parts / 2593 nets / ~14.9k pins
   (raw: 5421 comps / 2624 nets; DNP Pico U1 + 31 pico-private/single-pin nets
   dropped; vcc/vss kept)

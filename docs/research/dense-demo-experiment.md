@@ -48,5 +48,5 @@ because fallback count (not warnings) is now the measurable gap.
 ## Baseline job status
 
 `bench.py` background run (bash-341) was started pre-fix with stale defaults;
-its output (baseline_r2.txt) is superseded — rerun `python3 bench.py` (now
+its output (baseline_r2.txt) is superseded — rerun `python -m benches.monster6502.bench` (now
 defaults seeds=1 iters=5, prints golden WL + floor) for the headroom number.

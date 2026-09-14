@@ -11,7 +11,7 @@ Mapping: 4051 FETs -> FET_SOT323 (.fp, true 2.0x1.25); R/C0402 -> CHIP0402
 Positions: layout.json mm (netlist.json pos units are NOT mil — ignored).
 Board 291x322 6L. DNP ballast excluded.
 
-Usage: python3 convert.py  # writes monster6502.ocd (needs netlist.json + layout.json)
+Usage: python -m benches.monster6502.convert  # writes monster6502.ocd (needs netlist.json + layout.json)
 # ponytail: no cli args, single-purpose script — flags when reused.
 """
 from __future__ import annotations

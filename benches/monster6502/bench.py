@@ -6,7 +6,7 @@ Scores placer output against die-true golden positions:
   2-sided hierarchy-aware, NOT wirelength-optimal),
   overlaps above the golden floor (golden itself scores GOLDEN_OV via
   front/back stacking; 0 is NOT the target),
-  runtime. Run: python3 bench.py [seeds] [iters]  (defaults reproduce SOURCES baseline)
+  runtime. Run: python -m benches.monster6502.bench [seeds] [iters]  (defaults reproduce SOURCES baseline)
 
 # ponytail: single-scale harness, no cli framework — argparse when reused.
 """
@@ -75,7 +75,7 @@ def main() -> None:
     try:
         b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
     except OSError:
-        raise SystemExit("monster6502.ocd missing (generated, gitignored) — run: python3 convert.py")
+        raise SystemExit("monster6502.ocd missing (generated, gitignored) — run: python -m benches.monster6502.convert")
     g = golden(b)
     # golden baselines first (same WL model + same overlap counter both sides)
     apply_golden(b, g)
