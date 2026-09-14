@@ -152,6 +152,23 @@ def main() -> None:
         assert m.group(1) in str(dd.get("diff")), dd
         print("diff_prev ok:", dd["diff"])
 
+        no_sim = post(base, "/simulate", {"what": "dc"})
+        assert "error" in no_sim, no_sim  # blinky has no sim lines
+        rc = ("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+              "net VIN: R1.1\nnet VO: R1.2 C1.1\nnet GND: C1.2\n"
+              "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n")
+        post(base, "/build", {"text": rc, "placer": "diffusion",
+                              "router": "maze"})
+        dc = post(base, "/simulate", {"what": "dc"})
+        assert not dc.get("error"), dc
+        tran = cast(dict[str, object], post(base, "/simulate", {"what": "tran"})["tran"])
+        tr = cast(list[object], tran["VO"])
+        assert len(tr) == 500 and abs(cast(float, tr[-1]) - 5.0) < 0.05, tr[-3:]
+        print(f"simulate dc+tran ok (VO final={tr[-1]}V)")
+        # rebuild blinky: /build saves to disk, screenshot must see blinky
+        post(base, "/build", {"text": text, "placer": "diffusion",
+                              "router": "maze"})
+
         chrom = (shutil.which("chromium") or shutil.which("chromium-browser")
                  or shutil.which("google-chrome") or shutil.which("chrome"))
         if not chrom:

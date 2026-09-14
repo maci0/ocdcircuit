@@ -48,6 +48,7 @@ SLOTS.register("toolbar", "actions",
                           '<button id=redo title="redo (Ctrl+Y)">↪</button>'
                           '<button id=diffprev title="what changed since last edit">Δ</button>'
                           '<button id=dl title="download render (svg/sch/png)">⤓ svg</button>'
+                          '<button id=simbtn title="simulate (shift-click: tran)">⚡ dc</button>'
                           '<details id=calc title="trace/via/divider calculators"><summary>Ω</summary>'
                           '<label>A <input id=ca size=4 value=1></label>'
                           '<label>ΔT <input id=cdt size=3 value=10></label>'
@@ -398,6 +399,7 @@ function drawDRC(r){
   h+=(li.warnings||[]).slice(0,3).map(w=>`<div class=warn>~ lint: ${w}</div>`).join('');
   if(r.sim&&Object.keys(r.sim).length)h+='<div class=ok>⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')+'</div>';
   if(r.sim_problems&&r.sim_problems.length)h+=r.sim_problems.map(p=>`<div class=err>⚡✗ ${p}</div>`).join('');
+  if(r.tran&&Object.keys(r.tran).length)h+='<div class=ok>⚡tran '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')+'</div>';
   d.innerHTML=h;
   drawTidy(r);
 }
@@ -466,6 +468,16 @@ $('dl').onclick=async()=>{ // cycle svg → sch → png (shift-click backwards)
   a.download=r.name;a.click();statMsg(r.name,true);
 };
 let dlIdx=0;
+let simWhat='dc';
+$('simbtn').onclick=async()=>{ // dc ⇄ tran on shift-click
+  if(window.event&&window.event.shiftKey)simWhat=simWhat==='dc'?'tran':'dc';
+  $('simbtn').textContent=`⚡ ${simWhat}`;
+  const r=await api('/simulate',{what:simWhat});
+  if(r.error){statMsg(r.error);return;}
+  if(r.sim&&Object.keys(r.sim).length)S.sim=r.sim;
+  if(r.tran&&Object.keys(r.tran).length)S.tran=r.tran;
+  statMsg('',true);drawDRC(S);
+};
 // Ω calculators: same math as ocdcircuit/calc.py, instant, no round-trip
 function calcLive(){
   const A=parseFloat($('ca').value)||0,dT=parseFloat($('cdt').value)||10;
@@ -743,6 +755,23 @@ class H(http.server.BaseHTTPRequestHandler):
                 else:
                     self._send({"data": out if isinstance(out, str) else "\n".join(out),
                                 "bin": False, "name": f"{b.name}.{ext}"})
+            elif self.path == "/simulate":  # dc | tran on current text
+                what = str(req.get("what", "dc"))
+                b = agent.loads(H.src_text, base=BASE)
+                if not any(c.get("t") == "sim" for c in b.constraints):
+                    self._send({"error": "no sim lines (e.g. `sim vcc VCC 9`)"})
+                else:
+                    res = b.simulate(what=what)
+                    waves = res.get("waves")
+                    assert waves is None or isinstance(waves, dict)
+                    nets = res.get("nets")
+                    assert nets is None or isinstance(nets, dict)
+                    self._send({
+                        "sim": {str(k): round(float(v), 3) for k, v in nets.items()}
+                        if isinstance(nets, dict) else {},
+                        "tran": {str(k): [round(float(x), 3) for x in v]
+                                 for k, v in waves.items()}
+                        if isinstance(waves, dict) else {}})
             elif self.path == "/undo":
                 if len(H.hist) < 2:
                     self._send({"error": "nothing to undo"})
