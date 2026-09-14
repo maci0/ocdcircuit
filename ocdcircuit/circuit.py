@@ -6,6 +6,7 @@ snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
 from __future__ import annotations
 from collections.abc import Callable
 from typing import Optional
+import math
 from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
 from .types import Constraint, PinLike, Undo, XY
@@ -87,7 +88,6 @@ class Block:
 class Board(Component):
     def __init__(self, name: str = "board", width: float = 40.0,
                  height: float = 30.0, layers: int = 2) -> None:
-        import math
         if not (math.isfinite(width) and math.isfinite(height) and width > 0 and height > 0):
             raise ValueError(f"board size must be positive (got {width}x{height})")
         if layers < 1:
@@ -410,7 +410,6 @@ class Board(Component):
     def add_part(self, ref: str, fp: str, value: str = "",
                  x: float | None = None, y: float | None = None,
                  attrs: dict[str, str] | None = None) -> None:
-        import math
         if x is not None and not math.isfinite(x):
             raise ValueError(f"add {ref}: non-finite x ({x})")
         if y is not None and not math.isfinite(y):
@@ -441,7 +440,6 @@ class Board(Component):
         self.emit(_add, _drop)
 
     def move_part(self, ref: str, x: float, y: float) -> None:
-        import math
         if not (math.isfinite(x) and math.isfinite(y)):
             raise ValueError(f"move {ref}: non-finite position ({x}, {y})")
         p = self.parts[ref]
@@ -670,7 +668,6 @@ class Board(Component):
 
     # -- board-level --
     def set_board(self, w: float, h: float) -> None:
-        import math
         if not (math.isfinite(w) and math.isfinite(h) and w > 0 and h > 0):
             raise ValueError(f"board size must be positive (got {w}x{h})")
         ow, oh = self.width, self.height

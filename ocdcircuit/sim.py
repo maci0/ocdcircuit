@@ -50,7 +50,6 @@ def _s(v: object, default: str = "") -> str:
 
 def parse_value(s: str) -> float:
     """10k, 4k7, 4R7, 100n, 10u, 1m, 1M, 0.11 → float."""
-    import math
     t = s.strip().replace(" ", "")
     mult = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "K": 1e3,
             "M": 1e6, "G": 1e9, "R": 1.0}

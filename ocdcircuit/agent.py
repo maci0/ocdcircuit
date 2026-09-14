@@ -1,5 +1,6 @@
 """Agent-first API: structured patches (undoable) + NL constraint fallback."""
 from __future__ import annotations
+import math
 import os
 import re
 from collections.abc import Callable
@@ -119,7 +120,6 @@ def _s(v: object) -> str:
 def _opt_float(v: object) -> float | None:
     if v is None:
         return None
-    import math
     out = _f(v)
     if not math.isfinite(out):
         raise ValueError(f"non-finite value {v!r}")
@@ -701,7 +701,6 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         raise err(f"{ctx}{e}")
     # declarative placement: `part R1 R0805 1k x=3 y=15` ≡ `fix R1 at 3 15`
     if "x" in attrs or "y" in attrs:
-        import math
         try:
             px = float(attrs.get("x", "")) if "x" in attrs else b.parts[ref].x
             py = float(attrs.get("y", "")) if "y" in attrs else b.parts[ref].y
