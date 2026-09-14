@@ -2,8 +2,8 @@
 
 ## Decision
 All board mutations go through one unified `Context` (`ocdcircuit/core.py`):
-every effect carries its inverse (temporal composability), every module declares
-`requires`/`provides` services re-resolved on change (spatial composability).
+every effect carries its inverse (temporal composability), every fiber declares
+its coeffectdeps (`inject`) re-resolved on change (spatial composability).
 
 ## Why
 Paper §3–4: revertible effects + reactive coeffects → components interleave
@@ -12,8 +12,9 @@ removing a module removes exactly its parts/traces/nets; hot-reload remounts
 one module in place. VSCode-style restart-the-world is the failure mode we avoid.
 
 ## Consequences
-Board/Module are `Component`s; `Loader.reconcile()` diffs declarative configs.
-No direct list mutation outside `Context.emit` (undo breaks otherwise).
+Board/Module are `Component`s; `Loader.declare()` diffs declarative entry
+configs, `Board.declare()` diffs board state. No mutation outside
+`Context.effect` (undo breaks otherwise).
 
 ## Update (registry failure memory, UI slots)
 - `Registry.failed`: a raising plugin is fenced, `get()` refuses it, active

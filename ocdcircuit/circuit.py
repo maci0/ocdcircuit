@@ -697,8 +697,6 @@ class Module(Component):
         board = a[0] if a else k.get("board")
         assert isinstance(board, Board)
         self._board = board
-        provide = getattr(self, "provides", ())
-        assert isinstance(provide, tuple)
 
         def _apply(_fctx: Context) -> object:
             refs_before = set(board.parts)
@@ -714,7 +712,7 @@ class Module(Component):
 
             return _inv
 
-        fiber = ctx.use(self.requires, _apply)
+        fiber = ctx.use((), _apply)
         assert isinstance(fiber, _Fiber)
         self._mounted = fiber.state == _Fiber.ACTIVE
         self._fiber = fiber

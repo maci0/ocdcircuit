@@ -555,20 +555,11 @@ class Fiber:
 
 
 class Component:
-    requires: tuple[str, ...] = ()
-    provides: tuple[str, ...] = ()
-
     def __init__(self, name: str) -> None:
         self.name = name
         self._mounted = False
 
-    def check_requires(self, ctx: Context) -> list[str]:
-        return [s for s in self.requires if ctx.get(s) is None]
-
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
-        missing = self.check_requires(ctx)
-        if missing:
-            raise RuntimeError(f"{self.name} missing services: {missing}")
         self._mounted = True
 
     def unmount(self, ctx: Context) -> None:
@@ -688,12 +679,8 @@ class Plugin(Component, Generic[Out]):
 
     kind: str = "misc"
     key: str = "base"
-    provides: tuple[str, ...] = ("plugins",)  # reactive coeffect
 
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
-        missing = [s for s in self.requires if ctx.get(s) is None]
-        if missing:
-            raise RuntimeError(f"{self.name} missing services: {missing}")
         reg = ctx.require("plugins")
         assert isinstance(reg, Registry)
         prev = reg.active.get(self.kind)
