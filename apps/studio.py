@@ -921,7 +921,12 @@ def main() -> None:
         "board demo 40x30\npart R1 R0805 1k\npart C1 C0805 100n\n"
         "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
     H.commit(H.src_text)  # genesis commit — undo floor
-    port = int(os.environ.get("OCD_PORT", "8077"))
+    try:
+        port = int(os.environ.get("OCD_PORT", "8077"))
+    except ValueError:
+        print(f"studio: bad OCD_PORT {os.environ.get('OCD_PORT')!r}, using 8077",
+              file=sys.stderr)
+        port = 8077
     srv = http.server.HTTPServer(("127.0.0.1", port), H)
     print(f"OCD Studio: http://localhost:{port}  ({SRC})")
     srv.serve_forever()

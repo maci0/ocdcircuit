@@ -99,6 +99,28 @@ def png_brightness(path: str, x0: int, y0: int, x1: int, y1: int,
 
 
 def main() -> None:
+    # bad OCD_PORT falls back to 8077 with a stderr note (no traceback):
+    # the server boots and serves instead of dying in main()
+    import urllib.request as _url
+    fb = subprocess.Popen(
+        [sys.executable, "-c",
+         "import os; os.environ['OCD_PORT']='bogus'; "
+         "import apps.studio as S; S.main()"],
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        for _ in range(100):
+            try:
+                _url.urlopen("http://localhost:8077/slots", timeout=1).read()
+                break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            raise AssertionError("fallback server did not boot: "
+                                 + str(fb.stderr.read()[:300] if fb.stderr else b""))
+    finally:
+        fb.terminate()
+        _err = fb.stderr.read().decode() if fb.stderr else ""
+        assert "bad OCD_PORT" in _err, _err[:300]
     port = free_port()
     base = f"http://localhost:{port}"
     env = dict(os.environ, OCD_PORT=str(port))
