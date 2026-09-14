@@ -287,13 +287,19 @@ class Context:
         return cur
 
     def _all_fibers(self) -> list[Fiber]:
-        out = list(self._fibers)
-        for ch in self._children:
-            out += ch._all_fibers()
-        p = self._parent
-        while p is not None:
-            out += p._fibers
-            p = p._parent
+        out: list[Fiber] = []
+        seen: set[int] = set()
+        # descent: self + children (fibers register on the context whose
+        # use() spawned them; the upward parent walk below would re-list
+        # them once per child — dedupe by uid at the shared root).
+        stack: list[Context] = [self._root()]
+        while stack:
+            c = stack.pop()
+            for f in c._fibers:
+                if f.uid not in seen:
+                    seen.add(f.uid)
+                    out.append(f)
+            stack.extend(c._children)
         return out
 
     def use(self, inject: tuple[str, ...] | list[str],

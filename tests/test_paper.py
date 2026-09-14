@@ -342,4 +342,52 @@ except RuntimeError:
     pass
 assert "g" in ld3.modules  # restored, not absent
 
+# loader fuzz: random declare/reload/retire interleavings quiesce —
+# registry matches live fibers, realms drain, no FAILED, no dup uids
+import random as _lrng
+for _ls in (11, 77):
+    _lr = _lrng.Random(_ls)
+    _lc = Context()
+    _ld = Loader(_lc)
+
+    def _mkf(tag: str, key: str | None = None) -> Callable[[], Component]:
+        def _f() -> Component:
+            m = Component(f"{tag}")
+            orig = m.mount
+
+            def _m(ctx: Context, *a: object, **k: object) -> None:
+                orig(ctx)
+                if key is not None:
+                    ctx.set(key, tag)
+            m.mount = _m  # type: ignore[method-assign]
+            return m
+        return _f
+
+    _ids = ["a", "b", "c"]
+    for _i in range(40):
+        _specs = []
+        for _eid in _ids:
+            if _lr.random() < 0.7:
+                _iso: dict[str, object] | None = None
+                _r = _lr.random()
+                if _r < 0.25:
+                    _iso = {"bus": True}
+                elif _r < 0.5:
+                    _iso = {"bus": "g"}
+                _specs.append({"id": _eid, "factory": _mkf(_eid, "bus"),
+                               "url": _eid, "isolate": _iso,
+                               "disabled": _lr.random() < 0.2})
+        _ld.declare(_specs)
+        if _lr.random() < 0.3 and _ld.entries:
+            _ld.reload(list(_ld.entries.values()))
+    _ld.declare([{"id": _eid, "factory": _mkf(_eid, "bus"), "url": _eid}
+                 for _eid in _ids])  # converge: all enabled, no scopes
+    _live = [f for f in _lc._all_fibers()]
+    assert len({f.uid for f in _live}) == len(_live), "dup uid"
+    assert set(_lc.registry) == {f.uid for f in _live}, "registry drift"
+    assert not _ld._realms, f"realm leak: {_ld._realms}"
+    assert all(f.state == Fiber.ACTIVE for f in _live), \
+        [f.state for f in _live]
+    assert all(f.ctx.get("bus") is not None for f in _live)
+
 print("CORE PAPER OK")
