@@ -168,6 +168,18 @@ def main() -> None:
         assert len(tr) == 500 and abs(cast(float, tr[-1]) - 5.0) < 0.05, tr[-3:]
         print(f"simulate dc+tran ok (VO final={tr[-1]}V)")
 
+        gal = post(base, "/candidates", {"placer": "diffusion", "n": 2,
+                                         "seed": 3, "iters": 30})
+        cands = cast(list[dict[str, object]], gal["candidates"])
+        assert len(cands) == 2, gal
+        pk = post(base, "/pick", {"placer": "diffusion", "router": "lroute",
+                                  "n": 2, "seed": 3, "iters": 30, "index": 0})
+        assert not pk.get("error"), pk
+        assert cast(list[object], pk["traces"]), "picked board routes"
+        print(f"gallery ok ({len(cands)} candidates, pick routed)")
+        post(base, "/build", {"text": text, "placer": "diffusion",
+                              "router": "maze"})
+
         doc = post(base, "/doctor", {})
         checks = cast(list[dict[str, object]], doc["checks"])
         assert checks, doc
