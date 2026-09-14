@@ -186,6 +186,17 @@ def main() -> None:
         bad = [c["name"] for c in checks if not c["ok"]]
         print(f"doctor ok={doc['ok']} ({len(checks)} checks"
               + (f", degraded: {bad}" if bad else "") + ")")
+        # undo/redo walk the text history; export writes fab files
+        u = post(base, "/undo", {})
+        assert not u.get("error"), u
+        r2 = post(base, "/redo", {})
+        assert not r2.get("error"), r2
+        print("undo/redo ok")
+        ex = post(base, "/export", {})
+        assert not ex.get("error"), ex
+        assert cast(int, ex["bytes"]) > 1000, ex
+        assert str(ex["name"]).endswith("-fab.zip"), ex
+        print(f"export ok ({ex['bytes']} byte bundle)")
         # rebuild blinky: /build saves to disk, screenshot must see blinky
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
