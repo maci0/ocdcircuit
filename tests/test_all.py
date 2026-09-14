@@ -62,7 +62,7 @@ for _seed in (1337, 7331):
     _refs = ["R1", "C1", "QX"]
     for _i in range(60):
         _r = _fz.choice(_refs)
-        _k = _fz.randrange(7)
+        _k = _fz.randrange(9)
         try:
             if _k == 0:
                 _fb.add_part(_r, "R0805", "1k")
@@ -77,6 +77,10 @@ for _seed in (1337, 7331):
             elif _k == 5:
                 _fb.declare({"parts": {_r: {"fp": "R0805"}},
                              "nets": {"QN": [f"{_r}.1"]}, "constraints": []})
+            elif _k == 6:
+                _fb.set_board(_fz.uniform(20, 60), _fz.uniform(20, 60))
+            elif _k == 7:
+                _fb.use("placer", _fz.choice(["diffusion", "compact"]))
             else:
                 _fb.place(seeds=1, iters=5)
                 _fb.route_board("lroute")
