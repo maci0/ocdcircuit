@@ -333,7 +333,7 @@ def convert(projdir: str, outdir: str) -> str:
             if os.path.basename(fpfile) in fs:
                 src_fp = os.path.join(root, os.path.basename(fpfile))
                 break
-        from ocdcircuit.parts import FOOTPRINTS
+        from ocdcircuit.parts import FOOTPRINTS, resolve_fp
         if src_fp:
             if fpname in FOOTPRINTS:
                 modemap[ref] = fpname  # std land pattern — no import needed
@@ -346,6 +346,8 @@ def convert(projdir: str, outdir: str) -> str:
             modemap[ref] = fpname
         elif fpname in FOOTPRINTS:
             modemap[ref] = fpname  # package names a std footprint directly
+        elif resolve_fp(fpname) in FOOTPRINTS:
+            modemap[ref] = resolve_fp(fpname)  # KiCad alias — no import needed
         else:
             hint = {"Resistor": "R0805", "Capacitor": "C0805",
                     "LED": "LED0805"}.get(comp, "R0805")
