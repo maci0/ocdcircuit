@@ -845,6 +845,14 @@ except KeyError:
     pass
 _bo.use("drc", "boom")  # re-arm
 assert _bo.plugins().active.get("drc") == "boom"
+# fixable inputs bypass the fence: missing file retries clean, no re-arm
+_bf = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
+try:
+    _bf.import_fp("fp", path="nonexistent.fp")
+    raise AssertionError("should have raised")
+except OSError:
+    pass
+_bf.import_fp("fp", path=os.path.join(EX, "usb_c_edge.fp"))  # retry works, unfenced
 assert "importer:eagle-brd" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "exporter:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])

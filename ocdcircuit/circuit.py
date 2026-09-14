@@ -175,15 +175,16 @@ class Board(Component):
     def _run(self, kind: str, key: str | None, **k: object) -> object:
         """Dispatch with failure memory: a crashing plugin is marked failed
         and the previous entry keeps serving (harness-loader style).
-        ValueError (deterministic input error — bad constraint, typo'd
-        config) propagates unfenced: fixing the input and retrying must
-        work without explicit re-arm."""
+        ValueError/KeyError/OSError (deterministic input or environment
+        errors — bad constraint, unknown ref, typo'd config, missing file)
+        propagate unfenced: fixing the input and retrying must work
+        without explicit re-arm."""
         reg = self.plugins()
         plug = reg.get(kind, key)
         assert isinstance(plug, Plugin)
         try:
             return plug.run(self, **k)
-        except ValueError:
+        except (ValueError, KeyError, OSError):
             raise
         except Exception as e:
             reg.fail(plug.kind, plug.key, f"{type(e).__name__}: {e}")
