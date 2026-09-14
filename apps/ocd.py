@@ -330,9 +330,9 @@ def cmd_doctor() -> int:
 def cmd_plugins(agent: object, args: list[str]) -> int:
     from ocdcircuit.circuit import Board as _B
     reg = _B("plugins").plugins()
-    kinds = [args[0]] if args else ["placer", "router", "layers", "drc",
-                                    "exporter", "renderer", "silk", "calc",
-                                    "simulate", "importer"]
+    kinds = list(args) if args else ["placer", "router", "layers", "drc",
+                                      "exporter", "renderer", "silk", "calc",
+                                      "simulate", "importer"]
     for kind in kinds:
         keys = reg.list(kind)
         if not keys:
