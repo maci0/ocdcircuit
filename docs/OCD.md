@@ -82,7 +82,9 @@ silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 
 `pour NET on L` floods layer L with NET copper (negative Gerber plot +
 KiCad zone; routers skip poured nets on pour layers, DRC exempts plane
-copper from clearance/keepout). Flex `bend`/`stiffener` enforced by
+copper from clearance/keepout). EasyEDA/Eagle carry the net as ratsnest
+(pads keep net assignments; no plane polygon — those formats have no
+consumer here yet). Flex `bend`/`stiffener` enforced by
 `jlc-flex` DRC only (see `docs/FAB.md`).
 
 ## Simulation (`sim`, one per line)
