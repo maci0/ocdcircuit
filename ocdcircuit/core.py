@@ -829,58 +829,14 @@ def _tree(root: str, declined: set[str],
 
 
 class Loader:
-    """Declarative loader with reconcile + hot remount (paper §5.2)."""
+    """Declarative loader (paper §5.2): entries + two-phase reload."""
 
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
-        self.modules: dict[str, Component] = {}
         self.entries: dict[str, Entry] = {}
-        self._factories: dict[str, Callable[[], Component]] = {}
         # managed realms (paper §5.2.1): global name → shared symbol;
         # local realms live on the entry (tagged by id, die with it).
         self._realms: dict[str, tuple[object, int]] = {}
-
-    def mount(self, mod: Component, *a: object, **k: object) -> None:
-        mod.mount(self.ctx, *a, **k)
-        self.modules[mod.name] = mod
-
-    def unmount(self, name: str) -> None:
-        if name in self.modules:
-            self.modules[name].unmount(self.ctx)
-            del self.modules[name]
-            self._factories.pop(name, None)
-
-    def reconcile(self, want: dict[str, Callable[[], Component]]) -> None:
-        """want: {name: factory} — add missing, drop stale, remount changed."""
-        for name in list(self.modules):
-            if name not in want:
-                self.unmount(name)
-        for name, factory in want.items():
-            if name not in self.modules:
-                self.mount(factory())
-                self._factories[name] = factory
-            elif (self._factories.get(name) is not factory
-                    or type(self.modules[name]) is not type(factory())):
-                # ponytail: one throwaway probe only when the factory object
-                # itself is new; repeated reconciles with the same factory skip it
-                self.remount(name, factory)
-
-    def remount(self, name: str, factory: Callable[[], Component]) -> None:
-        """Transactional remount (paper Alg 10, single entry): on failure,
-        best-effort restore the previous component, then re-raise."""
-        old = self.modules.get(name)
-        if old is not None:
-            self.unmount(name)
-        try:
-            self.mount(factory())
-            self._factories[name] = factory
-        except Exception:
-            if old is not None:
-                try:
-                    self.mount(old)
-                except Exception:
-                    pass
-            raise
 
     def reload(self, stale: list[Entry],
                reimport: Callable[[Entry], Callable[[], Component]] | None = None) -> None:

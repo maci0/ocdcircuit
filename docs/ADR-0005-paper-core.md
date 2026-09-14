@@ -24,8 +24,9 @@ Paper: [arXiv:2608.25512](https://arxiv.org/abs/2608.25512) (Table 2, Algs 1–1
   disabled,args,kwargs}` entries, keyed diff, per-field dispatch —
   rebuild on url, realm-reassign+reload on isolate, in-place on intercept,
   `apply_config` handoff (rebuild fallback) on config,
-  retire/resume on disabled. `remount` is transactional single-entry
-  (restore-on-failure, Alg 10 shape).
+  retire/resume on disabled. Two-phase `reload` (Alg 10).
+  (Dead module-path `mount/unmount/reconcile/remount` deleted 2026-09-14:
+  zero callers, `declare`/`reload` cover it.)
 - HMR utils (Algs 8–9): `classify` + `stale_entries` as pure functions.
 - MCP `context` tool: fibers/get/set/unset for agents.
 
@@ -58,5 +59,5 @@ Remaining:
 
 `tests/test_paper.py` (LIFO fold, once-only dispose, guard Divert, proxy
 errors, fiber activate/withdraw/FAILED, provider-swap reactivation,
-isolate independence, classify/stale, transactional remount).
+isolate independence, classify/stale, two-phase reload, loader fuzz).
 `mypy strict` clean; `test_all` + snapshots unchanged.

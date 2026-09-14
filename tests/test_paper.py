@@ -338,26 +338,8 @@ st = stale_entries([Entry("e1", _fac, url="m1"), Entry("e2", _fac, url="m2")],
                    {"m1"}, set(), lambda u: {"m1"} if u == "m1" else set())
 assert [e.id for e in st] == ["e1"]
 
-# transactional remount: failed mount restores the old component
-ltr = Context()
-ld3 = Loader(ltr)
-
-
-def _good() -> Component:
-    return Component("g")
-
-
-def _bad() -> Component:
-    raise RuntimeError("boom")
-
-
-ld3.mount(_good())
-try:
-    ld3.remount("g", _bad)
-    raise AssertionError("should raise")
-except RuntimeError:
-    pass
-assert "g" in ld3.modules  # restored, not absent
+# Loader.reload is the transactional path (covered above: phase-1 and
+# phase-2 failures); the legacy single-entry remount is gone.
 
 # loader fuzz: random declare/reload/retire interleavings quiesce —
 # registry matches live fibers, realms drain, no FAILED, no dup uids

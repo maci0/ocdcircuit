@@ -7,7 +7,7 @@ import tempfile
 from typing import cast
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ocdcircuit import Board, Loader, Module
+from ocdcircuit import Board, Module
 from ocdcircuit import agent
 from ocdcircuit.core import Context, Plugin
 from ocdcircuit.types import Constraint
@@ -34,10 +34,10 @@ assert ctx.require("vcc") == 9
 
 # temporal composability: module mount/unmount removes exactly its parts
 b = Board("t", 40, 30)
-ld = Loader(b.ctx)
-ld.mount(PSU("psu"), b)
+_psu = PSU("psu")
+_psu.mount(b.ctx, b)
 assert "J1" in b.parts
-ld.unmount("psu")
+_psu.unmount(b.ctx)
 assert "J1" not in b.parts and "VCC" in b.nets  # nets persist, pins cleaned
 assert all(p[0] != "J1" for net in b.nets.values() for p in net.pins)
 
