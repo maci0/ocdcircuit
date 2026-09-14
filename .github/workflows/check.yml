@@ -1,0 +1,14 @@
+name: check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.14"}
+      - run: pip install mypy
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser
+        # studio gate skips its browser half when no chromium is found;
+        # the apt line keeps the full gate (screenshot + console-clean) live
+      - run: make check
