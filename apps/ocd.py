@@ -178,7 +178,9 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     _out().print(f"[bold]{b.name}[/bold]: cost=[yellow]{c:.1f}[/yellow] "
                  f"segs=[cyan]{n}[/cyan] "
                  f"errors={'[green]0[/green]' if ok else f'[red]{len(errors)}[/red]'} "
-                 f"warnings=[yellow]{len(warnings)}[/yellow]")
+                 f"warnings=[yellow]{len(warnings)}[/yellow] "
+                 f"({placer or b.plugins().active.get('placer')}/"
+                 f"{router or b.plugins().active.get('router')})")
     _table("fab output", [(f"{len(files)} files + {len(rendered)} renders", out)])
     if simwhat:
         try:
