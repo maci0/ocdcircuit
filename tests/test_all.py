@@ -1551,6 +1551,15 @@ _nlt = _spice.netlist(_nlb).splitlines()
 assert _nlt[0] == "* ocdcircuit: t" and _nlt[-1] == ".end"
 assert "RR1 VIN VO 10000" in _nlt and "CC1 VO 0 1e-07 ic=0" in _nlt
 assert "V1 VIN 0 dc 9" in _nlt
+# spice name/probe helpers: GND→0, sanitizer, explicit-else-all-non-GND
+assert (_spice._norm("GND"), _spice._norm("VSS"), _spice._norm("N-OUT!"),
+        _spice._norm("")) == ("0", "0", "N-OUT_", "N")
+_ppb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet A: R1.1\nnet B: R1.2\n"
+                   "net GND: R1.1\nsim probe A\n", base=EX)
+assert _spice._probes(_ppb) == ["A"]
+assert _spice._probes(agent.loads(
+    "board t 40x30 2L\npart R1 R0805 10k\nnet A: R1.1\nnet B: R1.2\n",
+    base=EX)) == ["A", "B"]
 if _sh3.which("ngspice") is not None:
     _ng0 = _simb2.simulate("ngspice", what="tran")
     _ngw = cast(list[float], cast(dict[str, object], _ng0["waves"])["VO"])
