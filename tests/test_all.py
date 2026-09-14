@@ -1170,6 +1170,15 @@ except ValueError:
 bu = agent.loads(open(os.path.join(EX, "usb_breakout.ocd")).read(), base=EX)
 assert "J1" in bu.parts and bu.parts["J1"].fp == "USB_C_EDGE_GCT"
 assert "A5" in bu.parts["J1"].pins_of(bu._lib())
+# connect rejects phantom pins (dumps must always reload)
+_bcn = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
+for _bargs in [("N", "GHOST", "9"), ("N", "R1", "99")]:
+    try:
+        _bcn.connect(*_bargs)
+        raise AssertionError(f"should have raised: {_bargs}")
+    except ValueError:
+        pass
+assert _bcn.nets["N"].pins == [("R1", "1"), ("R1", "2")]
 # Part rotation: rot parses + clamps, wh swaps on 90/270, rot_xy rotates offsets
 from ocdcircuit.circuit import Part as _Part
 _rp = _Part("R1", "R0805", "", 10, 10, 2.0, 1.0, attrs={"rot": "90"})

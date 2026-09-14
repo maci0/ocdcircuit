@@ -670,6 +670,15 @@ class Board(Component):
         return self.nets[name]
 
     def connect(self, netname: str, ref: str, pin: PinLike) -> None:
+        # phantom pins build boards whose dumps won't reload (_validate
+        # rejects unknown parts/pins at load): fail here instead, with
+        # the same ValueError spelling _validate uses.
+        p = self.parts.get(ref)
+        if p is None:
+            raise ValueError(f"net {netname}: unknown part {ref!r}")
+        from .parts import pads_of
+        if str(pin) not in pads_of(p.fp, self._lib()):
+            raise ValueError(f"net {netname}: {ref} has no pin {pin!r}")
         net = self.net(netname)
         entry = (ref, str(pin))
         if entry not in net.pins:
