@@ -5,7 +5,8 @@ Every metric returns 0..1 (higher = tidier), RAW (physical units), or None
 (undefined input — aggregators skip it). Stdlib only.
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from .circuit import Board
@@ -395,4 +396,7 @@ def _extent(board: Board) -> dict[str, object]:
     y1 = max(p.y + p.wh()[1] / 2 for p in parts)
     w, h = round(x1 - x0, 2), round(y1 - y0, 2)
     fill = round(w * h / max(1e-9, board.width * board.height), 3)
-    return {"w": w, "h": h, "fill": fill}
+    from .fab import get as _fab_get
+    edge = float(cast(float, _fab_get(board.fab).get("edge", 0.3)))
+    shrink = [math.ceil((w + 2 * edge) * 2) / 2, math.ceil((h + 2 * edge) * 2) / 2]
+    return {"w": w, "h": h, "fill": fill, "shrink": shrink}

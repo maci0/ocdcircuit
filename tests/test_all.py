@@ -225,8 +225,10 @@ assert _sch.count("<circle") >= sum(len(n.pins) for n in bj.nets.values())
 _ez = cast(str, bj.render("easyeda"))
 assert _ez.startswith("<svg") and "U1" in _ez and "#FFFF00" in _ez
 _ra = bj.render_all(tempfile.mkdtemp())
-assert len(_ra) == len(bj.plugins().list("renderer"))
+assert len(_ra) == len(bj.plugins().list("renderer")) - 1  # "all" excluded
 assert any(f.endswith(".easyeda.svg") for f in _ra)
+_allr = cast(list[str], bj.render("all", outdir=tempfile.mkdtemp(), keys=["svg", "png"]))
+assert sorted(f.split(".")[-1] for f in _allr) == ["png", "svg"]
 import shutil as _sh2
 if _sh2.which("kicad-cli") is not None:
     assert cast(bytes, bj.render("kicad"))[:8] == b"\x89PNG\r\n\x1a\n"
@@ -548,6 +550,8 @@ assert "coverage" in _call("score", {})
 assert cast(float, _call("score", {"tidy": False})["total"]) >= 0
 _ext = cast(dict[str, object], _call("score", {"tidy": False})["extent"])
 assert 0 < cast(float, _ext["fill"]) <= 1.0, _ext
+_sh = cast(list[float], _ext["shrink"])
+assert len(_sh) == 2 and all(v > 0 for v in _sh), _ext  # shrink suggestion rides extent
 assert _call("diff", {"text": open(os.path.join(EX, "blinky_555.ocd")).read(),
                        "base": EX}) == {"diff": ""}
 from ocdcircuit import diff as _diffmod
