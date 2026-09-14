@@ -138,7 +138,9 @@ def lint(board: Board) -> dict[str, object]:
             if not (pw / 2 <= x <= board.width - pw / 2
                     and ph / 2 <= y <= board.height - ph / 2):
                 warn(f"fix {c.get('ref')} off-board")
-        elif t == "sim" and c.get("kind") in ("vcc", "sine", "isrc", "probe", "clk", "expect"):
+        elif t == "sim" and c.get("net") is not None:
+            # any sim kind with a net (vcc/sine/isrc/probe/clk/expect/...):
+            # no kind allowlist to desync when new kinds land.
             if str(c.get("net", "")) not in board.nets:
                 warn(f"sim {c.get('kind')} on unknown net {c.get('net')}")
         elif t == "layer" and str(c.get("net", "")) in board.nets:
