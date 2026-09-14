@@ -1106,6 +1106,10 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.main(["ocd", "--help"]) == 0
     assert _ocd.main(["ocd"]) == 1
     assert _ocd.main(["ocd", "frobnicate"]) == 1
+    # every file-taking command answers --help (not "No such file")
+    assert _ocd.cmd_status(_ocd._boot(), ["--help"]) == 1
+    assert _ocd.cmd_score(_ocd._boot(), ["--help"]) == 1
+    assert _ocd.cmd_diff(_ocd._boot(), ["--help", "b.ocd"]) == 1
     # flags parse leading or trailing (GNU either way); last wins; dangling stays
     assert _ocd._flags(["--fab", "jlc", "b.ocd"]) == ("jlc", None, None, None, ["b.ocd"])
     assert _ocd._flags(["b.ocd", "--fab", "jlc"]) == ("jlc", None, None, None, ["b.ocd"])

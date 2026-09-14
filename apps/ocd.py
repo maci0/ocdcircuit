@@ -254,7 +254,7 @@ def _pour_line(b: object) -> str:
 
 def cmd_status(agent: object, args: list[str]) -> int:
     fab, placer, router, _sim, rest = _flags(args)
-    if len(rest) != 1:
+    if len(rest) != 1 or rest[0] in ("-h", "--help"):
         print("usage: ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>")
         return 1
     src = rest[0]
@@ -317,7 +317,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
 
 
 def cmd_diff(agent: object, args: list[str]) -> int:
-    if len(args) != 2:
+    if len(args) != 2 or args[0] in ("-h", "--help"):
         print("usage: ocd diff <a.ocd> <b.ocd>")
         return 1
     try:
@@ -332,7 +332,7 @@ def cmd_diff(agent: object, args: list[str]) -> int:
 
 def cmd_score(agent: object, args: list[str]) -> int:
     fab, placer, router, _sim, rest = _flags(args)
-    if len(rest) != 1:
+    if len(rest) != 1 or rest[0] in ("-h", "--help"):
         print("usage: ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>")
         return 1
     try:
