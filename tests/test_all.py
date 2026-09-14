@@ -805,6 +805,7 @@ with _tf.TemporaryDirectory() as _td:
     _sm = open(os.path.join(_td, "STATUS.md")).read()
     assert "tidy (12/15" in _sm, _sm[:200]
     assert "shrink →" in _sm, _sm[-300:]
+    assert "solved: diffusion/lroute @ jlc" in _sm, _sm[-500:]
     # STATUS.md reports pour planes (mitox GND on 0,3)
     shutil.copytree(os.path.join(EX, "mitox"), os.path.join(_td, "mitox"))
     assert _ocd.cmd_status(_ocd._boot(), [os.path.join(_td, "mitox", "mitox.ocd")]) == 0

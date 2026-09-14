@@ -286,6 +286,8 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + (f"{simline}\n" if simline else "")
            + f"parts: {len(b.parts)}, nets: {len(b.nets)}, "
            + f"traces: {len(b.traces)}, layers: {b.layers}\n"
+           + f"solved: {b.plugins().active.get('placer')}/"
+           + f"{b.plugins().active.get('router')} @ {b.fab}\n"
            + _pour_line(b)
            + f"extent: {_ext['w']}x{_ext['h']}mm "
            + f"({float(cast(float, _ext['fill'])) * 100:.0f}% of "
