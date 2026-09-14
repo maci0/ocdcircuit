@@ -205,6 +205,12 @@ _bare = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
 _bare.place(seeds=1, iters=30)
 _bare.route_board()
 assert cast(bytes, _pb.render("png")) != cast(bytes, _bare.render("png"))
+# plane flood insets by fab edge clearance (0.3), in Gerber + KiCad + state
+_pgd = tempfile.mkdtemp()
+_pgt = open([f for f in _pb.export("jlc", outdir=_pgd) if f.endswith(".GTL.gbr")][0]).read()
+assert "X0.3000Y0.3000D02*" in _pgt, _pgt[:200]
+_pkp = open([f for f in _pb.export("kicad", outdir=_pgd) if f.endswith(".kicad_pcb")][0]).read()
+assert "(xy 0.3000 0.3000)" in _pkp
 assert "<canvas" in cast(str, bj.render("html3d"))
 _sch = cast(str, bj.render("sch"))
 assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch

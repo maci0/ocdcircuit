@@ -21,6 +21,7 @@ import http.server
 import json
 import os
 import sys
+from typing import cast
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = ROOT
@@ -127,9 +128,10 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   const cols=['#e74c3c','#3498db','#2ecc71','#9b59b6'];
   const n=Math.ceil(st.traces.length*t);
   if(st.pours&&Object.values(st.pours).some(lls=>lls.includes(0))){
-    // top pour: translucent copper flood, cutouts punched back to bg
+    // top pour: translucent copper flood (fab edge inset), cutouts to bg
+    const e=st.edge||0.3;
     ctx.fillStyle=theme==='dark'?'rgba(185,120,40,0.35)':'rgba(185,120,40,0.25)';
-    ctx.fillRect(X(0),Y(st.bh),st.bw*s,st.bh*s);
+    ctx.fillRect(X(e),Y(st.bh-e),(st.bw-2*e)*s,(st.bh-2*e)*s);
     ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--bg');
     for(const r of (st.cuts&&st.cuts['0'])||[])ctx.fillRect(X(r[0]),Y(r[3]),(r[2]-r[0])*s,(r[3]-r[1])*s);
   }
@@ -504,14 +506,17 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
             sim_nets = {}
     from ocdcircuit.drc import pour_layers as _pours
     from ocdcircuit.export import plane_plots as _plots
+    from ocdcircuit.fab import get as _fab_get
     pours = {n: lls for n, lls in _pours(b).items()}
     cuts = {str(ll): [[round(v, 2) for v in r] for r in _plots(b).get(ll, [])]
             for lls in pours.values() for ll in lls}
+    edge = float(cast(float, _fab_get(b.fab).get("edge", 0.3)))
     return {"text": text, "parts": parts, "nets": nets, "fixed": fixed,
             "bw": b.width, "bh": b.height, "layers": b.layers,
             "frames": frames,
             "traces": traces, "cost": round(cost, 1), "sim": sim_nets,
             "sim_problems": sim_problems, "pours": pours, "cuts": cuts,
+            "edge": edge,
             "errors": drc["errors"], "warnings": drc["warnings"],
             "fab": drc.get("fab", "jlc"), "silk": 1, "sch": _sch_state(b)}
 

@@ -4,7 +4,7 @@ Text = 3x5 blocks per char (no font files)."""
 from __future__ import annotations
 import struct
 import zlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from .circuit import Board
@@ -115,8 +115,11 @@ def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
     from .export import plane_plots
     poured = pour_layers(board)
     if 0 in {ll for lls in poured.values() for ll in lls}:
-        # top pour: copper flood, then mask-green cutouts back out
-        c.rect(0, 0, board.width, board.height, board.height, (185, 120, 40))
+        # top pour: copper flood (fab edge inset, like Gerber), cutouts out
+        from .fab import get as _fab_get
+        _edge = float(cast(float, _fab_get(board.fab).get("edge", 0.3)))
+        c.rect(_edge, _edge, board.width - _edge, board.height - _edge,
+               board.height, (185, 120, 40))
         for x0, y0, x1, y1 in plane_plots(board).get(0, []):
             c.rect(x0, y0, x1, y1, board.height, (11, 61, 11))
     for t in board.traces:

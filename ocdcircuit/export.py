@@ -6,7 +6,7 @@ Not bit-identical to KiCad's own output, but parses and round-trips.
 """
 from __future__ import annotations
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 
 def _f(v: object) -> float:
@@ -143,18 +143,22 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
         draws[ll] = sorted(draws[ll])
         flashes[ll] = sorted(flashes[ll])
     # pours: negative plane (flood minus cutouts) replaces trace draws.
-    # The flood rect is the board outline; cutouts clear foreign copper.
+    # Flood insets by fab edge clearance (plane to outline shorts the specs
+    # DRC enforces on every other copper); cutouts clear foreign copper.
     from .drc import pour_layers as _pours
+    from .fab import get as _fab_get
     planes = plane_plots(board)
     poured_nets = {n: sorted(ll) for n, ll in _pours(board).items()}
+    edge = float(cast(float, _fab_get(board.fab).get("edge", 0.3)))
     for ll, nm in enumerate(layer_names(board.layers)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
         if ll in planes:
             # no flashes: flood connects own-net pads directly; cutouts
             # clear foreign copper (flashes would punch wrong-size voids)
             cuts = planes[ll]
-            flood = [(0.0, 0.0, board.width, 0.0), (board.width, 0.0, board.width, board.height),
-                     (board.width, board.height, 0.0, board.height), (0.0, board.height, 0.0, 0.0)]
+            x0, y0, x1, y1 = edge, edge, board.width - edge, board.height - edge
+            flood = [(x0, y0, x1, y0), (x1, y0, x1, y1),
+                     (x1, y1, x0, y1), (x0, y1, x0, y0)]
             open(fn, "w").write(_gerber([], flood + cuts, 0.4,
                                         negative=",".join(
                                             f"{n}@L{ll}" for n, lls in poured_nets.items() if ll in lls)))
@@ -608,13 +612,17 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
             _cmts(zone_at(board, c))
     # pours: copper zones (KiCad refills geometry on load; hatch marks intent)
     from .drc import pour_layers as _pours
+    from .fab import get as _fab_get2
+    zedge = float(cast(float, _fab_get2(board.fab).get("edge", 0.3)))
+    zx0, zy0, zx1, zy1 = zedge, zedge, W - zedge, H - zedge
     for pname, lls in _pours(board).items():
         zid = net_ids.get(pname, 0)
         for ll in lls:
             zln = layers[ll] if ll < len(layers) else layers[0]
             A(f'  (zone (net {zid}) (net_name {_sexp_str(pname)}) (layer {_sexp_str(zln)})'
               f' (uuid "{_uuid()}") (hatch edge 0.5)')
-            A(f'    (polygon (pts (xy 0 0) (xy {W:.4f} 0) (xy {W:.4f} {H:.4f}) (xy 0 {H:.4f})))')
+            A(f'    (polygon (pts (xy {zx0:.4f} {zy0:.4f}) (xy {zx1:.4f} {zy0:.4f})'
+              f' (xy {zx1:.4f} {zy1:.4f}) (xy {zx0:.4f} {zy1:.4f})))')
             A('    (fill (thermal_gap 0.5) (thermal_bridge_width 0.5)))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
