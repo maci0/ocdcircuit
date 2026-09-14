@@ -169,6 +169,18 @@ def main() -> None:
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
 
+        pico = open(os.path.join(ROOT, "boards", "pico_tmc2209",
+                                 "pico_tmc2209.ocd")).read()
+        dp = post(base, "/build", {"text": pico, "placer": "compact",
+                                   "router": "lroute"})
+        assert not dp.get("error"), dp.get("error")
+        pparts = cast(dict[str, dict[str, object]], dp["parts"])
+        owners = {str(p.get("owner", "")) for p in pparts.values()}
+        assert {"Z1_", "Z2_", "Z3_"} <= owners, owners  # instance groups exposed
+        print(f"instances ok (owners={sorted(o for o in owners if o)})")
+        post(base, "/build", {"text": text, "placer": "diffusion",
+                              "router": "maze"})
+
         chrom = (shutil.which("chromium") or shutil.which("chromium-browser")
                  or shutil.which("google-chrome") or shutil.which("chrome"))
         if not chrom:

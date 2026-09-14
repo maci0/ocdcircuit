@@ -16,7 +16,10 @@ OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
    (1 seed × 100 iters + `lroute` estimate, ~0.1s). Full quality comes
    from **solve ▶** (or Ctrl+Enter): 5 seeds × 500 iters + chosen router.
 2. **Drag parts** on the PCB → drops `fix REF at x y` into the source,
-   re-solves around it. Double-click a part to unpin.
+   re-solves around it. Double-click a part to unpin. Instanced parts
+   (`block`/`instance`) drag as a rigid group — one `fix` line per
+   member, double-click unpins the whole group. Groups show as dashed
+   outlines with `Z1`/`Z2`… tags (one hue each).
 3. **🎲** generates N candidate layouts (filmstrip) → click picks,
    drag nudges, re-run any engine.
 4. **Δ** shows what changed since the last edit (undo-history diff).

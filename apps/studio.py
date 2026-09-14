@@ -174,6 +174,18 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
     ctx.fillText(label,X(p.x),Y(p.y));
     ctx.textBaseline='alphabetic';
     if(st.silk!=='ref'&&p.value){ctx.fillStyle='#999';ctx.font=`${Math.min(9,fs)}px monospace`;ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}}
+  // instance groups (block stamping): shared dashed outline + tag, one hue per owner
+  const groups={};
+  for(const r in st.parts){const p=st.parts[r];if(!p.owner)continue;
+    const g=groups[p.owner]||(groups[p.owner]=[1e9,1e9,-1e9,-1e9]);
+    g[0]=Math.min(g[0],p.x-p.w/2);g[1]=Math.min(g[1],p.y-p.h/2);
+    g[2]=Math.max(g[2],p.x+p.w/2);g[3]=Math.max(g[3],p.y+p.h/2);}
+  const hues=Object.keys(groups);
+  hues.forEach((o,i)=>{const g=groups[o],c=`hsl(${(i*137)%360},70%,55%)`;
+    ctx.strokeStyle=c;ctx.setLineDash([5,3]);
+    ctx.strokeRect(X(g[0]-1),Y(g[3]+1),(g[2]-g[0]+2)*s,(g[3]-g[1]+2)*s);
+    ctx.setLineDash([]);ctx.fillStyle=c;ctx.font='10px monospace';ctx.textAlign='left';
+    ctx.fillText(o.replace(/_$/,''),X(g[0]-1),Y(g[3]+1)-3);});
   return {s,ox,oy};
 }
 let view={s:1,ox:0,oy:0};
@@ -422,27 +434,37 @@ function drawTidy(r){
 }
 function setEditor(t){$('ed').innerText=t;}
 // drag parts on pcb
-(()=>{const c=$('pcb');let drag=null;
+(()=>{const c=$('pcb');let drag=null,dragGroup=null;
 function hit(mx,my){for(const r in S.cur.parts){const p=S.cur.parts[r];
   const x=view.ox+p.x*view.s,y=view.oy+(S.bh-p.y)*view.s;
   if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4)return r;}return null;}
 c.addEventListener('mousedown',e=>{if(!S)return;const R=c.getBoundingClientRect();
-  drag=hit(e.clientX-R.left,e.clientY-R.top);});
+  drag=hit(e.clientX-R.left,e.clientY-R.top);
+  // rigid group: an instanced part drags its whole owner-group (offsets kept)
+  dragGroup=null;
+  if(drag){const o=S.cur.parts[drag].owner;
+    if(o)dragGroup=Object.keys(S.cur.parts).filter(r=>S.cur.parts[r].owner===o);}});
 c.addEventListener('mousemove',e=>{const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
   if(drag){const p=S.cur.parts[drag];
-    p.x=Math.round(((mx-view.ox)/view.s)*10)/10;p.y=Math.round((S.bh-(my-view.oy)/view.s)*10)/10;dirty=true;}
+    const nx=Math.round(((mx-view.ox)/view.s)*10)/10,ny=Math.round((S.bh-(my-view.oy)/view.s)*10)/10;
+    const dx=nx-p.x,dy=ny-p.y;p.x=nx;p.y=ny;
+    if(dragGroup)for(const r of dragGroup){if(r===drag)continue;
+      const q=S.cur.parts[r];q.x=Math.round((q.x+dx)*10)/10;q.y=Math.round((q.y+dy)*10)/10;}
+    dirty=true;}
   else if(S)S.cur.hover=hit(mx,my);});
-c.addEventListener('mouseup',async()=>{if(!drag)return;const r=drag;drag=null;
-  const p=S.cur.parts[r];
-  const lines=$('ed').innerText.split('\n').filter(l=>!/^fix\s+\S+\s+at\s/.test(l)||!l.startsWith('fix '+r+' '));
-  // drop fix line right after board/use block
+c.addEventListener('mouseup',async()=>{if(!drag)return;const moved=dragGroup||[drag];dragGroup=null;const r=drag;drag=null;
+  const gone=new Set(moved);
+  const lines=$('ed').innerText.split('\n').filter(l=>{const m=l.match(/^fix\s+(\S+)\s+at\s/);return !m||!gone.has(m[1]);});
+  // drop fix lines right after board/use block (group order kept)
   let idx=lines.findIndex(l=>/^(part|net|fix|keep|route|trace|power|silk)\b/.test(l));if(idx<0)idx=lines.length;
-  lines.splice(idx,0,`fix ${r} at ${p.x} ${p.y}`);
+  moved.forEach((rr,i)=>{const p=S.cur.parts[rr];lines.splice(idx+i,0,`fix ${rr} at ${p.x} ${p.y}`);});
   $('ed').innerText=lines.join('\n');push();});
-c.addEventListener('dblclick',()=>{ // unpin: remove fix, let solver place freely
+c.addEventListener('dblclick',()=>{ // unpin: remove fix (whole group if instanced)
   if(!S||!S.cur||!S.cur.hover)return;
-  const r=S.cur.hover,lines=$('ed').innerText.split('\n')
-    .filter(l=>!/^fix\s+\S+\s+at\s/.test(l)||!l.startsWith('fix '+r+' '));
+  const r=S.cur.hover,o=S.cur.parts[r].owner;
+  const gone=new Set(o?Object.keys(S.cur.parts).filter(k=>S.cur.parts[k].owner===o):[r]);
+  const lines=$('ed').innerText.split('\n')
+    .filter(l=>{const m=l.match(/^fix\s+(\S+)\s+at\s/);return !m||!gone.has(m[1]);});
   if(lines.length!==$('ed').innerText.split('\n').length){$('ed').innerText=lines.join('\n');push();}});
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value,full:true});if(r.error){statMsg(r.error);return;}statMsg('');applyState(r,true);};
@@ -573,7 +595,7 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 bd["dx"], bd["dy"] = p.rot_xy(cast(float, bd["dx"]),
                                               cast(float, bd["dy"]))
         parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
-                      "value": p.value, "h3d": h3d,
+                      "value": p.value, "h3d": h3d, "owner": p.owner or "",
                       "mat": mats[-1] if mats else "chip", "bodies": bds}
     nets = {n: [f"{r}.{pin}" for r, pin in net.pins] for n, net in b.nets.items()}
     fixed = {str(c["ref"]): True for c in b.constraints if c.get("t") == "fixed"}
