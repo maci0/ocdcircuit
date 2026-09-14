@@ -163,6 +163,9 @@ bo.place(seeds=1, iters=30, frames=pf, every=10)
 bo.route_board(frames=rf)
 assert len(pf) >= 2 and "pos" in pf[-1]
 assert len(rf) >= 1 and "segs" in rf[0]
+# power constraints widen routed copper (blinky: VCC/GND 0.5 vs 0.3 signal)
+assert {s.width for s in bo.traces if s.net in ("VCC", "GND")} == {0.5}
+assert {s.width for s in bo.traces if s.net not in ("VCC", "GND")} == {0.3}
 
 # JSON wire IR round-trips
 bj = agent.from_json(agent.to_json(bo))
