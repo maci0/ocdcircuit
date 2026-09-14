@@ -372,6 +372,10 @@ with tempfile.TemporaryDirectory() as d:
     assert any(f.endswith(".GTL.gbr") for f in files)
     assert any(f.endswith(".kicad_pcb") for f in files)
     assert any(f.endswith(".TXT") for f in files)
+    _gts = open([f for f in files if f.endswith(".GTS.gbr")][0]).read()
+    assert _gts.count("D03*") > 0  # mask openings over pads (never empty)
+    _gto = open([f for f in files if f.endswith(".GTO.gbr")][0]).read()
+    assert _gto.count("D01*") > 0  # silk outlines (never empty)
     import zipfile as _zf
     _zb = b.export("bundle", outdir=d)[0]
     assert _zb.endswith("-fab.zip")

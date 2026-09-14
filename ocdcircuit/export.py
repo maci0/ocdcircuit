@@ -78,15 +78,31 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
     open(fn, "w").write(_gerber(paste, [], 0.4))
     files.append(fn)
-    # mask / silk / outline (minimal but present; no bottom side on 1L)
-    bottom = [] if board.layers == 1 else ["GBS", "GBO"]
-    for nm, ap in (("GTS", 0.5), ("GTO", 0.2)):
-        fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
-        open(fn, "w").write(_gerber([], [], ap))
+    # mask: openings over pads (empty file = full mask = unsolderable).
+    # Bottom is pad-free (single-sided SMT), so empty GBS is correct there.
+    fn = os.path.join(outdir, f"{board.name}.GTS.gbr")
+    open(fn, "w").write(_gerber(flashes.get(0, []), [], 0.5))
+    files.append(fn)
+    if board.layers > 1:
+        fn = os.path.join(outdir, f"{board.name}.GBS.gbr")
+        open(fn, "w").write(_gerber([], [], 0.5))
         files.append(fn)
-    for nm, ap in zip(bottom, (0.5, 0.2)):
-        fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
-        open(fn, "w").write(_gerber([], [], ap))
+    # silk: courtyard outlines + pin-1 dots (no stroke font in this
+    # writer, so ref text stays in the KiCad export, not Gerber)
+    from .silk import labels as _silk_labels, level_of as _silk_level
+    sk = _silk_labels(board, max(_silk_level(board), 2))  # fab gets
+    # outlines + pin-1 dots even when the screen level shows refs only
+    silk_draws: list[Draw] = [(b.x0, b.y0, b.x1, b.y0) for b in sk.boxes]
+    silk_draws += [(b.x1, b.y0, b.x1, b.y1) for b in sk.boxes]
+    silk_draws += [(b.x1, b.y1, b.x0, b.y1) for b in sk.boxes]
+    silk_draws += [(b.x0, b.y1, b.x0, b.y0) for b in sk.boxes]
+    silk_fl: list[Flash] = [(d.x, d.y) for d in sk.dots]
+    fn = os.path.join(outdir, f"{board.name}.GTO.gbr")
+    open(fn, "w").write(_gerber(silk_fl, silk_draws, 0.2))
+    files.append(fn)
+    if board.layers > 1:
+        fn = os.path.join(outdir, f"{board.name}.GBO.gbr")
+        open(fn, "w").write(_gerber([], [], 0.2))
         files.append(fn)
     W, H = board.width, board.height
     fn = os.path.join(outdir, f"{board.name}.GKO.gbr")
