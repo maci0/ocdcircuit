@@ -410,6 +410,11 @@ class Board(Component):
     def add_part(self, ref: str, fp: str, value: str = "",
                  x: float | None = None, y: float | None = None,
                  attrs: dict[str, str] | None = None) -> None:
+        import math
+        if x is not None and not math.isfinite(x):
+            raise ValueError(f"add {ref}: non-finite x ({x})")
+        if y is not None and not math.isfinite(y):
+            raise ValueError(f"add {ref}: non-finite y ({y})")
         from .parts import resolve_fp
         fp = resolve_fp(fp)  # KiCad aliases land on stdlib names here
         lib = self._lib()

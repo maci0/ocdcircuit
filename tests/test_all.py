@@ -78,6 +78,13 @@ for _bop in _bops:
         pass
 assert (_bnan.parts["R1"].x, _bnan.parts["R1"].y) == (20.0, 15.0)
 assert "R2" not in _bnan.parts
+# add_part direct floats guarded too (from_ir + programmatic API funnel here)
+try:
+    _bnan.add_part("R3", "R0805", x=float("nan"))
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "non-finite" in str(e), str(e)
+assert "R3" not in _bnan.parts
 _bd = Board("td", 40, 30)
 _bd.add_part("R9", "R0805", "1k")
 _s0 = _bd.ctx.snapshot()
