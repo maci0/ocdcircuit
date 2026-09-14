@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Optional
 from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
-from .types import BBox, Constraint, PinLike, Undo, XY
+from .types import Constraint, PinLike, Undo, XY
 
 
 class Part:
@@ -49,11 +49,6 @@ class Part:
         if r == 270:
             return (dy, -dx)
         return (dx, dy)
-
-    def bbox(self) -> BBox:
-        w, h = self.wh()
-        return (self.x - w / 2, self.y - h / 2,
-                self.x + w / 2, self.y + h / 2)
 
     def pins_of(self, lib: object = None) -> list[str]:
         from typing import cast

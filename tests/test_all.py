@@ -947,6 +947,18 @@ except ValueError:
 bu = agent.loads(open(os.path.join(EX, "usb_breakout.ocd")).read(), base=EX)
 assert "J1" in bu.parts and bu.parts["J1"].fp == "USB_C_EDGE_GCT"
 assert "A5" in bu.parts["J1"].pins_of(bu._lib())
+# Part rotation: rot parses + clamps, wh swaps on 90/270, rot_xy rotates offsets
+from ocdcircuit.circuit import Part as _Part
+_rp = _Part("R1", "R0805", "", 10, 10, 2.0, 1.0, attrs={"rot": "90"})
+assert (_rp.rot, _rp.wh(), _rp.rot_xy(1, 0)) == (90, (1.0, 2.0), (0, 1))
+_rp.attrs["rot"] = "180"
+assert (_rp.rot, _rp.wh(), _rp.rot_xy(1, 0)) == (180, (2.0, 1.0), (-1, 0))
+_rp.attrs["rot"] = "270"
+assert (_rp.rot, _rp.wh(), _rp.rot_xy(1, 0)) == (270, (1.0, 2.0), (0, -1))
+_rp.attrs["rot"] = "45"
+assert (_rp.rot, _rp.wh(), _rp.rot_xy(1, 0)) == (45, (2.0, 1.0), (1, 0))
+_rp.attrs["rot"] = "bogus"
+assert _rp.rot == 0  # unparseable falls back, never raises
 bu.place(seeds=2, iters=100)
 bu.route_board()
 assert bu.check()["errors"] == [], bu.check()["errors"]  # edge overhang exempt
