@@ -57,6 +57,8 @@ SLOTS.register("toolbar", "actions",
                           '<label>Rt <input id=drt size=5 value=10k></label>'
                           '<label>Rb <input id=drb size=5 value=10k></label>'
                           '<div id=dout></div></details>'
+                          '<details id=doc title="tooling health"><summary>🩺</summary>'
+                          '<div id=docout>click to check</div></details>'
                           '<span id=feas title="routability per layer count"></span><span id=stat></span>'),
                order=0.0)
 SLOTS.register("view", "gallery",
@@ -510,6 +512,14 @@ function calcLive(){
   $('dout').textContent=(V>=0&&Rt>0&&Rb>0)?`Vout ${(V*Rb/(Rt+Rb)).toFixed(2)}V`:'';
 }
 ['ca','cdt','dv','drt','drb'].forEach(id=>$(id).addEventListener('input',calcLive));
+$('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
+  if(!$('doc').open||$('docout').dataset.done)return;
+  const r=await api('/doctor',{});
+  if(r.error){$('docout').textContent=r.error;return;}
+  $('docout').innerHTML=(r.ok?'<div class=ok>✓ all systems</div>':'<div class=warn>degraded: features fall back, nothing crashes</div>')
+    +r.checks.map(c=>`<div class=${c.ok?'ok':'err'}>${c.ok?'✓':'✗'} ${c.name}${c.detail?' <span class=dim>'+c.detail+'</span>':''}</div>`).join('');
+  $('docout').dataset.done='1';
+});
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
 async function hist(op){
   const r=await api(op,{});
@@ -810,6 +820,10 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.commit(H.src_text)
                     H.save()
                     self._send(self._build(H.src_text, False))
+            elif self.path == "/doctor":  # tooling health, no board needed
+                from ocdcircuit.circuit import Board as _B
+                r = _B("doctor").doctor()
+                self._send({"ok": r["ok"], "checks": r["checks"]})
             else:
                 self.send_response(404)
                 self.end_headers()

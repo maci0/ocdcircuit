@@ -30,7 +30,8 @@ OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
 solve ▶ · ⬇ fab (one-zip fab bundle) · 🎲 + count · undo/redo · Δ ·
 `⤓ svg` (cycles svg → sch → png, shift-click backwards) · `Ω`
 (trace/via/divider calculators, instant) · `⚡ dc` (simulate current
-board; shift-click toggles tran; needs `sim` lines or it tells you so) · placer/router/fab/silk
+board; shift-click toggles tran; needs `sim` lines or it tells you so) · `🩺`
+(tooling health: python, ngspice, plugins — lazy-checks on first open) · placer/router/fab/silk
 dropdowns · `route@1L ✓ 2L ✓` congestion hint per layer count
 (wirelength comparison — the real verdict is the DRC panel).
 
@@ -43,7 +44,7 @@ parser accepts (`<-->`-joined, attrs preserved).
 ## Endpoints (same shapes as MCP tools)
 
 `/init /build /solve /candidates /pick /render /export /diff_prev`
-`/simulate /undo /redo` (POST JSON) · `/slots` (plugin inventory). Any failure
+`/simulate /doctor /undo /redo` (POST JSON) · `/slots` (plugin inventory). Any failure
 returns `{"error": "Type: msg"}` — the server never 500s the UI thread.
 
 ## Perf contract (enforced by `tests/test_studio.py`)

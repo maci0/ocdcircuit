@@ -165,6 +165,13 @@ def main() -> None:
         tr = cast(list[object], tran["VO"])
         assert len(tr) == 500 and abs(cast(float, tr[-1]) - 5.0) < 0.05, tr[-3:]
         print(f"simulate dc+tran ok (VO final={tr[-1]}V)")
+
+        doc = post(base, "/doctor", {})
+        checks = cast(list[dict[str, object]], doc["checks"])
+        assert checks, doc
+        bad = [c["name"] for c in checks if not c["ok"]]
+        print(f"doctor ok={doc['ok']} ({len(checks)} checks"
+              + (f", degraded: {bad}" if bad else "") + ")")
         # rebuild blinky: /build saves to disk, screenshot must see blinky
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
