@@ -186,13 +186,11 @@ def t_feasible(a: dict[str, object]) -> dict[str, object]:
 
 
 def _fab_override(b: Board, a: dict[str, object]) -> None:
-    """Per-call fab pick (CLI --fab semantics): one-shot, not persisted."""
+    """Per-call fab pick (CLI --fab semantics): one-shot, not persisted.
+    Board.fab validates (unknown → ValueError, clean error at dispatch)."""
     fab = a.get("fab")
     assert fab is None or isinstance(fab, str)
     if fab is not None:
-        from ocdcircuit import fab as _fab
-        if fab not in _fab.list_fabs():
-            raise ValueError(f"unknown fab {fab!r} (have {_fab.list_fabs()})")
         b.fab = fab
 
 

@@ -906,6 +906,17 @@ assert _call("check", {})["errors"] == []
 assert _call("check", {"fab": "eurocircuits"})["fab"] == "eurocircuits"
 _rfab = _rpc("tools/call", {"name": "check", "arguments": {"fab": "acme"}})
 assert "unknown fab" in str(_rfab.get("error")), _rfab
+# Board.fab validates on every assignment (typo fails here, not deep in DRC)
+from ocdcircuit.circuit import Board as _Board2
+_bb2 = _Board2("t", 40, 30)
+try:
+    _bb2.fab = "jcl"
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "unknown fab" in str(e), str(e)
+assert _bb2.fab == "jlc"  # failed set doesn't stick
+_bb2.fab = "oshpark"
+assert _bb2.fab == "oshpark"
 # check-all falls back to board.toml drc picks when keys omitted
 with tempfile.TemporaryDirectory() as _md3:
     shutil.copy(os.path.join(EX, "psu.ocd"), os.path.join(_md3, "psu.ocd"))

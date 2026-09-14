@@ -90,7 +90,7 @@ class Board(Component):
         super().__init__(name)
         self.ctx = Context()
         self.width, self.height, self.layers = width, height, layers
-        self.fab: str = "jlc"
+        self._fab: str = "jlc"
         self.meta: dict[str, str] = {}  # `meta k v` lines: title/rev/desc/...
         self.proj: dict[str, object] = {}  # board.toml: placer/router/drc picks (never dumped)
         self.parts: dict[str, Part] = {}
@@ -137,6 +137,19 @@ class Board(Component):
         already ran them; the fiber chain must not replay."""
         while self._chain and self._chain[-1][0] > depth:
             self._chain.pop()
+
+    @property
+    def fab(self) -> str:
+        return self._fab
+
+    @fab.setter
+    def fab(self, key: str) -> None:
+        # every assignment validates: a typo'd fab fails here, not deep
+        # in DRC. (ValueError = fixable input, unfenced — retry works.)
+        from .fab import PROFILES
+        if key not in PROFILES:
+            raise ValueError(f"unknown fab {key!r} (have {sorted(PROFILES)})")
+        self._fab = key
 
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
         """Board domain edit: flat-stack undo + journal into the board
