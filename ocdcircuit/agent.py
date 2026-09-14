@@ -324,8 +324,12 @@ def dumps(board: Board) -> str:
         if not pins and any(net.pins):
             continue  # fully owned by an include — comes back via `use`
         attrs = "".join(f" {k}={v}" for k, v in sorted(net.attrs.items()))
-        layer = None if n in lay_bad else (net.layer if net.layer is not None else lay.get(n))
-        w0 = None if n in wid_bad else (net.width if net.width != 0.3 else wid.get(n, 0.3))
+        # constraints win over runtime assignment: net.layer/width are
+        # solver scratch (assign_layers), the constraint is the source.
+        # Otherwise save-after-solve silently rewrites route intent.
+        layer = None if n in lay_bad else (lay.get(n) if n in lay else net.layer)
+        w0 = None if n in wid_bad else (wid.get(n) if n in wid
+                                        else (net.width if net.width != 0.3 else 0.3))
         width: object = w0
         if layer is not None:
             attrs += f" L{layer}"

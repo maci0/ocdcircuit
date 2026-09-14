@@ -377,6 +377,18 @@ _fb = agent.loads("board f 60x20 2L\npart J1 PINHD4\npart U1 SOIC8 X\n"
                   "bend 30 10 6x20 r5\nstiffener 5 10 10x12 FR4 0.4\n"
                   "fix J1 at 8 10\nfix U1 at 50 10\n", base=EX)
 assert agent.dumps(agent.loads(agent.dumps(_fb), base=EX)) == agent.dumps(_fb)
+# save-after-solve keeps route intent: constraints beat runtime assignment
+# (assign_layers may park GND on L0; the route line must survive dumps)
+_rb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "VCC :: R1.1\nGND :: R1.2 C1.1 C1.2\nroute GND on 1\n", base=EX)
+_rb.place(seeds=1, iters=20)
+_rb.route_board()
+_rt = agent.dumps(_rb)
+assert "GND L1" in _rt, _rt
+_rb2 = agent.loads(_rt, base=EX)
+assert all(c["layer"] == 1 for c in _rb2.constraints
+           if c.get("t") == "layer" and c.get("net") == "GND")
+assert agent.dumps(_rb2) == _rt  # fixpoint
 _fb.fab = "jlc-flex"
 _fb.place(seeds=1, iters=30)
 _fb.route_board("maze")
