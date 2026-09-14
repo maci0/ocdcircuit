@@ -11,6 +11,7 @@ doctor:				# tooling self-check
 test:				# unit suite + golden snapshots + studio smoke gate
 	python tests/test_all.py
 	python tests/test_snapshot.py
+	python tests/test_paper.py
 	python tests/test_studio.py
 run:				# webui → http://localhost:8077
 	python -m apps.studio $(BOARD)
