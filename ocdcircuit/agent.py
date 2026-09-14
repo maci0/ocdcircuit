@@ -328,8 +328,7 @@ def dumps(board: Board) -> str:
         # solver scratch (assign_layers), the constraint is the source.
         # Otherwise save-after-solve silently rewrites route intent.
         layer = None if n in lay_bad else (lay.get(n) if n in lay else net.layer)
-        w0 = None if n in wid_bad else (wid.get(n) if n in wid
-                                        else (net.width if net.width != 0.3 else 0.3))
+        w0 = None if n in wid_bad else (wid.get(n) if n in wid else net.width)
         width: object = w0
         if layer is not None:
             attrs += f" L{layer}"

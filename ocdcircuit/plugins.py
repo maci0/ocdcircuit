@@ -227,7 +227,7 @@ class WireMaskRouter(Plugin[int]):
         masks = [{n: rng.randrange(board.layers) for n in cands} for _ in range(pop)]
         best: tuple[tuple[float, list[object]], dict[str, int]] | None = None
         snap = board.ctx.snapshot()  # evals emit undo entries; roll back to one
-        lay0 = {n: (net.layer, net.width) for n, net in board.nets.items()}
+        lay0 = {n: net.layer for n, net in board.nets.items()}
         try:
             for _ in range(gen):
                 scored = sorted(((eval_mask(m), m) for m in masks),
@@ -246,9 +246,9 @@ class WireMaskRouter(Plugin[int]):
             board.ctx.rollback(snap)
             # eval masks write net.layer directly (no emit): restore the
             # pre-eval assignment so an exception can't leave garbage layers
-            for n, (layer, width) in lay0.items():
+            for n, layer in lay0.items():
                 if n in board.nets:
-                    board.nets[n].layer, board.nets[n].width = layer, width
+                    board.nets[n].layer = layer
         assert best is not None
         # apply winning mask layers, final maze for real traces+frames
         _, win = best
