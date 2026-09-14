@@ -853,6 +853,13 @@ try:
 except OSError:
     pass
 _bf.import_fp("fp", path=os.path.join(EX, "usb_c_edge.fp"))  # retry works, unfenced
+# wrong kwarg type (AssertionError inside run) also retries clean
+try:
+    _bf.export("jlc", outdir=123)
+    raise AssertionError("should have raised")
+except AssertionError:
+    pass
+_bf.export("jlc", outdir=tempfile.mkdtemp())
 assert "importer:eagle-brd" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "exporter:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
