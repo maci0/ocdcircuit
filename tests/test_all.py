@@ -472,6 +472,11 @@ with tempfile.TemporaryDirectory() as d:
     _cb.route_board()
     assert _cb.nets["HV"].width == 0.8 and _cb.nets["LV"].width == 0.3
     assert _cb.check("erc")["errors"] == [], _cb.check("erc")["errors"]
+    # custom power rails shorted at a pin flag like AUTO_JOIN rails do
+    _ps = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                      "net VBUS: R1.1 C1.1\nnet VSYS: R1.1 C1.2\npower VBUS VSYS\n", base=EX)
+    assert any("power-short VSYS/VBUS at R1.1" in e
+               for e in cast(list[str], _ps.check("erc")["errors"]))
     _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     assert "10k (DNP),\"R2\"" in _cbom and _cbom.count("10k") == 2, _cbom

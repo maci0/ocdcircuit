@@ -289,7 +289,8 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
 def erc(board: Board) -> dict[str, object]:
     """Electrical rule check: netlist sanity before any copper.
     Errors: unconnected pins, single-pin nets, same-pin-twice, power nets
-    shorted together (VCC/GND/VDD/VSS/5V/3V3 sharing a pin), empty nets.
+    shorted together (AUTO_JOIN rails plus `power`-constraint nets sharing
+    a pin), empty nets.
     Warnings: pins sharing a footprint pad name across parts is fine —
     reported only when a net has >12 pins (smell: accidental global)."""
     from .agent import AUTO_JOIN
@@ -322,10 +323,16 @@ def erc(board: Board) -> dict[str, object]:
             if (ref, pin) not in connected and f"{ref}.{pin}" not in ncs \
                     and not pin.startswith("NC"):
                 errors.append(f"unconnected {ref}.{pin}")
-    # power nets sharing pins = shorted rails
+    # power nets sharing pins = shorted rails (AUTO_JOIN rails plus
+    # any net a `power` constraint marks as power — custom rails short too)
+    power_nets = set(AUTO_JOIN)
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "power":
+            for n in cast(list[str], c.get("nets", [])):
+                power_nets.add(str(n))
     owners: dict[tuple[str, str], str] = {}
     for n, net in board.nets.items():
-        if n in AUTO_JOIN:
+        if n in power_nets:
             for ref, pin in net.pins:
                 key = (ref, str(pin))
                 if key in owners:
