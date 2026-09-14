@@ -1099,6 +1099,17 @@ _thr2.Thread(target=_hsrv.serve_forever, daemon=True).start()
 assert _ezl2.page_ws(_hport) == "ws://x/page1"
 assert _ezl2.wait_ready(_hport, timeout=10.0) == "ws://x/page1"
 _hsrv.shutdown()
+# monster6502 converter pure fns: net sanitizer + block finder on the
+# real netlist (counts pinned — structural change should be deliberate)
+from benches.monster6502.convert import _safe_net, _find_blocks, _block_members
+assert (_safe_net("VDD!"), _safe_net(""), _safe_net("A0")) == ("VDD_", "N", "A0")
+import json as _js6
+_raw = _js6.load(open(os.path.join(EX, "..", "benches", "monster6502",
+                                   "netlist.json")))
+_inv, _psg = _find_blocks(_raw["components"])
+assert (len(_inv), len(_psg)) == (947, 778), (len(_inv), len(_psg))
+_ren, _internal = _block_members(_raw["components"])
+assert (len(_ren), len(_internal)) == (3450, 778), (len(_ren), len(_internal))
 # mitox convert end-to-end on a synthetic project: tsx + circuit.json →
 # harvested .fp + .ocd → loads, solves clean
 import json as _js2

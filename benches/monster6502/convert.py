@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MIL = 39.3701
@@ -48,12 +49,14 @@ def _find_blocks(comps: list[dict[str, object]]
     node2pd: dict[str, str] = {}
     for c in comps:
         if c.get("role") == "pulldown":
-            node2pd.setdefault(str(c["pins"]["3"]), str(c["ref"]))
+            pins = cast(dict[str, object], c["pins"])
+            node2pd.setdefault(str(pins["3"]), str(c["ref"]))
     inv: list[tuple[str, str]] = []
     used: set[str] = set()
     for c in comps:
         if c.get("role") == "pullup" and str(c["ref"]) not in used:
-            q = node2pd.get(str(c["pins"]["2"]))
+            pins = cast(dict[str, object], c["pins"])
+            q = node2pd.get(str(pins["2"]))
             if q and q not in used:
                 inv.append((str(c["ref"]), q))
                 used.update((str(c["ref"]), q))
