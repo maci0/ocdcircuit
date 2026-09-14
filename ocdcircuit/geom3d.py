@@ -5,7 +5,12 @@ tantalum yellow, electrolytic silver-blue, LED red-tinted, USB steel.
 Bodies carry optional "mat" (else inferred from footprint prefix).
 """
 from __future__ import annotations
+import base64
+import io
+import json
 import math
+import struct
+import zlib
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -159,10 +164,6 @@ def _tex(c1: tuple[int, int, int], c2: tuple[int, int, int],
          n: int = 64) -> str:
     """Procedural checker PNG (base64 data URI): subtle two-tone weave so
     PBR surfaces read as textured, not flat plastic. Stdlib (zlib)."""
-    import base64
-    import io as _io
-    import struct
-    import zlib
     raw = bytearray()
     for y in range(n):
         raw.append(0)
@@ -196,10 +197,6 @@ TEXTEX: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
 def to_gltf(board: Board, thick: float = 1.6) -> str:
     """glTF 2.0 asset: one mesh per material (flat shaded), each with
     procedural baseColorTexture + planar box UVs."""
-    import base64
-    import io
-    import json
-    import struct
     tris = build(board, thick)
     by_mat: dict[str, list[Tri]] = {}
     for t in tris:
