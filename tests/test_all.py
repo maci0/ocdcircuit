@@ -1008,6 +1008,27 @@ with tempfile.NamedTemporaryFile("w", suffix=".kicad_pcb", delete=False) as _pf:
 assert (_pos, _pw, _ph, _pfps) == (
     {"R1": (10.0, 30.0), "C1": (30.0, 10.0)}, 40.0, 50.0,
     {"R1": "R_0805", "C1": "C_0805"})
+# atopile convert end-to-end on a synthetic project: parse → elaborate →
+# emit .ocd → loads, solves clean
+import tempfile as _tf2
+from tools import atopile as _ato3
+_td2 = _tf2.mkdtemp()
+os.makedirs(os.path.join(_td2, "proj", "atopile", "parts"))
+open(os.path.join(_td2, "proj", "atopile", "main.ato"), "w").write(
+    "signal VCC\nsignal GND\n"
+    "r1 = new Resistor\nr1.package = \"R0805\"\n"
+    "c1 = new Capacitor\nc1.package = \"C0805\"\n"
+    "r1.p1 ~ VCC\nr1.p2 ~ c1.p1\nc1.p2 ~ GND\nr1.p1 ~ GND\n")
+open(os.path.join(_td2, "proj", "atopile", "parts", "r.ato"), "w").write(
+    "component Resistor:\n  signal p1 ~ pin 1\n  signal p2 ~ pin 2\n"
+    "component Capacitor:\n  signal p1 ~ pin 1\n  signal p2 ~ pin 2\n")
+_fn3 = _ato3.convert(os.path.join(_td2, "proj"), os.path.join(_td2, "out"))
+assert _fn3.endswith("proj.ocd")
+_ab = agent.loads(open(_fn3).read(), base=os.path.join(_td2, "out"))
+assert {p.fp for p in _ab.parts.values()} == {"R0805", "C0805"}
+_ab.place(seeds=1, iters=20)
+_ab.route_board()
+assert _ab.check()["errors"] == [], _ab.check()["errors"]
 # easyeda_live pro_source is pure (no client needed): NET + PRIMITIVE +
 # per-trace LINE/GEOM pairs, sequential tickets, 1-indexed layers
 import json as _js
