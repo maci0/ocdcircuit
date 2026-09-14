@@ -7,3 +7,4 @@ benches/monster6502/monster6502.ocd
 .mypy_cache/
 *-erc.rpt
 *-drc.rpt
+boards/*/STATUS.md
