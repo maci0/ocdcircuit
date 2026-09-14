@@ -54,7 +54,7 @@ b.ctx.rollback(s)
 assert "R1" not in b.parts
 # patch carries attrs both ways (lcsc/dnp/class were unreachable via patch)
 _bp = Board("t3", 40, 30)
-_sp = _bp.ctx.snapshot()
+_sp3 = _bp.ctx.snapshot()
 agent.apply_patch(_bp, [
     {"op": "add_part", "ref": "R1", "fp": "R0805", "value": "10k",
      "attrs": {"lcsc": "C1", "dnp": "1"}},
@@ -64,7 +64,7 @@ agent.apply_patch(_bp, [
 assert _bp.parts["R1"].attrs == {"lcsc": "C1", "dnp": "1"}
 assert _bp.nets["HV"].attrs == {"class": "hv"}
 assert "dnp=1" in agent.dumps(_bp) and "class=hv" in agent.dumps(_bp)
-_bp.ctx.rollback(_sp)
+_bp.ctx.rollback(_sp3)
 assert "R1" not in _bp.parts and "HV" not in _bp.nets
 # fuzz: seeded random ops always roll back to identical dumps (no state leaks)
 import random as _rng
