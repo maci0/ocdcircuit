@@ -841,6 +841,23 @@ assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active":
 with tempfile.TemporaryDirectory() as _md:
     assert len(cast(list[object], _call("export", {"key": "jlc", "outdir": _md})["files"])) >= 10
 assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
+# malformed stdio frames don't kill the server: garbage header bytes,
+# bogus length, and non-object bodies are dropped; server keeps answering
+assert mcp.stdin is not None and mcp.stdout is not None
+mcp.stdin.write(b"\xff\xfe bad\r\n\r\n")
+mcp.stdin.write(b"Content-Length: bogus\r\n\r\n")
+mcp.stdin.flush()
+_badbody = _json.dumps([1, 2]).encode()
+mcp.stdin.write(f"Content-Length: {len(_badbody)}\r\n\r\n".encode() + _badbody)
+mcp.stdin.flush()
+_midr = _mid[0] + 1
+_head = b""
+while not _head.endswith(b"\r\n\r\n"):
+    _head += mcp.stdout.read(1)
+_n = int([ln for ln in _head.decode().split("\r\n")
+          if ln.lower().startswith("content-length:")][0].split(":")[1])
+assert _json.loads(mcp.stdout.read(_n))["error"]["code"] == -32700
+assert _call("lint", {})["errors"] == []  # still alive
 # hung subprocesses time out clean (in-process: mock the run call —
 # the MCP server is a separate process, mocks don't cross it)
 import subprocess as _sp2

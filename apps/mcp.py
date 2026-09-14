@@ -445,15 +445,21 @@ def main() -> None:
             if not chunk:
                 return
             header += chunk
-        length = 0
-        for line in header.decode().split("\r\n"):
-            if line.lower().startswith("content-length:"):
-                length = int(line.split(":")[1].strip())
-        body = stdin.read(length)
-        if not body:
-            return
         try:
-            resp = handle(json.loads(body))
+            length = 0
+            for line in header.decode().split("\r\n"):
+                if line.lower().startswith("content-length:"):
+                    length = int(line.split(":")[1].strip())
+            body = stdin.read(length)
+            if not body:
+                return
+        except (UnicodeDecodeError, ValueError):
+            continue  # malformed frame: drop it, keep serving
+        try:
+            body_obj = json.loads(body)
+            if not isinstance(body_obj, dict):
+                raise ValueError("JSON-RPC body must be an object")
+            resp = handle(body_obj)
         except (ValueError, AssertionError) as e:
             resp = {"jsonrpc": "2.0", "id": None,
                     "error": {"code": -32700, "message": str(e)}}
