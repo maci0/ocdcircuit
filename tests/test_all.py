@@ -1057,6 +1057,16 @@ assert len(_mgolden(_mbiz)) == 8875, len(_mgolden(_mbiz))
 _mapply(_mbiz, {"R1": (1.0, 1.0)})  # unknown refs ignored
 _mapply(_mbiz, _mgolden(_mbiz))  # die-true positions: golden overlap floor
 assert _mov(_mbiz) == 957, _mov(_mbiz)
+# monster converter is deterministic: regenerate → byte-identical .ocd
+import hashlib as _hl
+from benches.monster6502 import convert as _mconv
+_mocd = os.path.join(EX, "..", "benches", "monster6502", "monster6502.ocd")
+_before = _hl.sha256(open(_mocd, "rb").read()).hexdigest()
+import io as _io
+import contextlib as _cl
+with _cl.redirect_stdout(_io.StringIO()):
+    _mconv.main()
+assert _hl.sha256(open(_mocd, "rb").read()).hexdigest() == _before
 # easyeda_live CDP framing vs a fake server: upgrade handshake, masked
 # client frame, unmasked reply matched by id, 16-bit length branch, close
 import socket as _sock
