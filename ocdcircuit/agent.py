@@ -695,9 +695,12 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         raise err(f"{ctx}{e}")
     # declarative placement: `part R1 R0805 1k x=3 y=15` ≡ `fix R1 at 3 15`
     if "x" in attrs or "y" in attrs:
+        import math
         try:
             px = float(attrs.get("x", "")) if "x" in attrs else b.parts[ref].x
             py = float(attrs.get("y", "")) if "y" in attrs else b.parts[ref].y
+            if not (math.isfinite(px) and math.isfinite(py)):
+                raise ValueError("non-finite coordinate")
         except ValueError:
             raise err(f"{ctx}bad x=/y= on part {ref}")
         b.constrain({"t": "fixed", "ref": ref, "x": px, "y": py})

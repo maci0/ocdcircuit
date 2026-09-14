@@ -50,6 +50,7 @@ def _s(v: object, default: str = "") -> str:
 
 def parse_value(s: str) -> float:
     """10k, 4k7, 4R7, 100n, 10u, 1m, 1M, 0.11 → float."""
+    import math
     t = s.strip().replace(" ", "")
     mult = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "K": 1e3,
             "M": 1e6, "G": 1e9, "R": 1.0}
@@ -61,10 +62,17 @@ def parse_value(s: str) -> float:
         if c in mult and i > 0 and t[i - 1].isdigit():
             head, tail = t[:i], t[i + 1:]
             if tail and tail[0].isdigit():
-                return float(head + "." + tail) * mult[c]
+                v = float(head + "." + tail) * mult[c]
+                if not math.isfinite(v):
+                    raise ValueError(f"non-finite value {s!r}")
+                return v
     if t[-1] in mult and not t[-1].isdigit():
-        return float(t[:-1] or "1") * mult[t[-1]]
-    return float(t)
+        v = float(t[:-1] or "1") * mult[t[-1]]
+    else:
+        v = float(t)
+    if not math.isfinite(v):
+        raise ValueError(f"non-finite value {s!r}")
+    return v
 
 
 def _sim_constraints(board: Board) -> list[dict[str, object]]:

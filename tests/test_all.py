@@ -1113,6 +1113,13 @@ for _vbad in ("", "abc"):
         raise AssertionError(f"should have raised: {_vbad!r}")
     except ValueError:
         pass
+# non-finite values rejected (nan/inf poison geometry + MNA silently)
+for _vinf in ("inf", "-inf", "1e999", "1e999k"):
+    try:
+        _pv(_vinf)
+        raise AssertionError(f"should have raised: {_vinf!r}")
+    except ValueError as e:
+        assert "non-finite" in str(e), str(e)
 # KiCad footprint aliases land on stdlib (bare + Lib: prefix); unknown stays loud
 from ocdcircuit.parts import resolve_fp, KICAD_ALIASES, FOOTPRINTS
 assert resolve_fp("Resistor_SMD:R_0603_1608Metric") == "R0603"
@@ -1560,6 +1567,7 @@ for _bbad, _bfrag in [
     ("board t 10x10\nblock a\nuse x.ocd\nend\n", "not allowed inside block"),
     ("board t 0x10 2L\n", "must be positive"),
     ("board t 40x30 0L\n", "≥1 layer"),
+    ("board t 40x30 2L\npart R1 R0805 10k x=nan y=5\nnet N: R1.1 R1.2\n", "bad x=/y="),
 ]:
     try:
         agent.loads(_bbad)
