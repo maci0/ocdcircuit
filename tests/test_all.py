@@ -340,6 +340,12 @@ with tempfile.TemporaryDirectory() as d:
     _cpl = open([f for f in _bb.export("jlc", outdir=tempfile.mkdtemp())
                  if f.endswith(".CPL.csv")][0]).read()
     assert "J3," in _cpl and ",180" in _cpl, _cpl
+    # BOM groups by (value, fp) with LCSC (ne555: 21× R0603 share C21190)
+    _nb = agent.loads(open(os.path.join(EX, "ne555", "ne555_discrete.ocd")).read(),
+                      base=os.path.join(EX, "ne555"))
+    _bom = open([f for f in _nb.export("jlc", outdir=tempfile.mkdtemp())
+                 if f.endswith(".BOM.csv")][0]).read()
+    assert '"J11' in _bom and _bom.count("C21190") == 1, _bom
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
 
