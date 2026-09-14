@@ -132,11 +132,11 @@ fix R7 at 9.4 48.5
 fix R8 at 14.6 48.5
 fix R9 at 22 22
 fix SW1 at 20.5 44
-fix TP1 at 3.11 8.4
-fix TP2 at 5.65 8.4
-fix TP3 at 8.19 8.4
-fix TP4 at 10.73 8.4
-fix TP5 at 13.27 8.4
+fix TP1 at 2.25 12.5
+fix TP2 at 2.25 9.96
+fix TP3 at 2.25 7.42
+fix TP4 at 2.25 4.88
+fix TP5 at 2.25 2.34
 fix U1 at 12 51
 fix U2 at 6 23
 fix U3 at 17.2 18.5
