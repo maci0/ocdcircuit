@@ -215,7 +215,7 @@ class WireMaskRouter(Plugin[int]):
             for _ in range(gen):
                 scored = sorted(((eval_mask(m), m) for m in masks),
                                 key=lambda t: t[0][0])
-                if best is None or scored[0][0] < best[0]:
+                if best is None or scored[0][0][0] < best[0][0]:
                     best = scored[0]
                 elite = [m for _, m in scored[: max(2, pop // 3)]]
                 masks = list(elite)
@@ -401,10 +401,12 @@ def ir_of(board: Board) -> dict[str, object]:
         "board": {"name": board.name, "w": board.width, "h": board.height,
                   "layers": board.layers, "fab": board.fab, "meta": dict(board.meta)},
         "parts": [{"ref": p.ref, "fp": p.fp, "value": p.value,
-                   "x": round(p.x, 3), "y": round(p.y, 3)}
+                   "x": round(p.x, 3), "y": round(p.y, 3),
+                   "attrs": dict(p.attrs)}
                   for p in board.parts.values()],
         "nets": {n: {"pins": [[r, pin] for r, pin in net.pins],
-                     "layer": net.layer, "width": net.width}
+                     "layer": net.layer, "width": net.width,
+                     "attrs": dict(net.attrs)}
                  for n, net in board.nets.items()},
         "constraints": board.constraints,
         "includes": board.includes,
@@ -433,12 +435,18 @@ def from_ir(doc: dict[str, object]) -> Board:
     for p in cast(list[dict[str, object]], doc.get("parts", [])):
         x = p.get("x")
         y = p.get("y")
+        attrs = p.get("attrs", {})
+        assert isinstance(attrs, dict)
         b.add_part(str(p["ref"]), str(p["fp"]), str(p.get("value", "")),
                    float(x) if isinstance(x, (int, float)) else None,
-                   float(y) if isinstance(y, (int, float)) else None)
+                   float(y) if isinstance(y, (int, float)) else None,
+                   attrs={str(k): str(v) for k, v in attrs.items()} or None)
     for n, net in cast(dict[str, dict[str, object]], doc.get("nets", {})).items():
         for ref, pin in cast(list[list[object]], net.get("pins", [])):
             b.connect(n, str(ref), str(pin))
+        nattrs = net.get("attrs", {})
+        assert isinstance(nattrs, dict)
+        b.nets[n].attrs.update({str(k): str(v) for k, v in nattrs.items()})
         if net.get("layer") is not None:
             layer = net["layer"]
             assert isinstance(layer, int)
@@ -1007,6 +1015,39 @@ class Html3dRenderer(Plugin[str]):
         return page(board, to_gltf(board, thick))
 
 
+class AllRenderer(Plugin[list[str]]):
+    """Every mounted renderer → outdir/<name><ext>. A raising renderer
+    is skipped with a warning (registry fences it). `keys=[…]` subsets."""
+    kind, key = "renderer", "all"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        import os
+        import subprocess
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        keys = k.get("keys")
+        assert keys is None or isinstance(keys, list)
+        os.makedirs(outdir, exist_ok=True)
+        written: list[str] = []
+        cands = list(keys) if keys is not None else board.plugins().list("renderer")
+        for key in cands:
+            if not isinstance(key, str) or key == "all":
+                continue
+            try:
+                out = board.render(key)
+            except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as e:
+                print(f"ocd: render {key} skipped: {e}")
+                continue
+            plug = board.plugins().get("renderer", key)
+            ext = str(getattr(plug, "ext", f".{key}"))
+            mode = "w" if isinstance(out, str) else "wb"
+            fn = os.path.join(outdir, board.name + ext)
+            with open(fn, mode) as f:
+                f.write(out)
+            written.append(fn)
+        return written
+
+
 class RefSilk(Plugin[dict[str, object]]):
     """Minimal silk for dense boards: refs only, nothing else."""
     kind, key = "silk", "ref"
@@ -1361,7 +1402,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              ScorePlugin, DiffPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
              PngRenderer, KicadRenderer, BlenderRenderer, PcbdrawRenderer,
-             EasyedaRenderer, Html3dRenderer)
+             EasyedaRenderer, Html3dRenderer, AllRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:

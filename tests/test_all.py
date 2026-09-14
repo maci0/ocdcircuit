@@ -256,6 +256,10 @@ assert {s.width for s in _tw.traces if s.net == "GND"} == {0.3}
 bj = agent.from_json(agent.to_json(bo))
 assert {p.ref for p in bj.parts.values()} == set(bo.parts)
 assert agent.to_json(bj).startswith("{")
+# JSON IR preserves part + net attrs (dnp/class drive fab/widths — silent loss breaks builds)
+_ja = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1 lcsc=C1\npart C1 C0805 100n\n"
+                  "HV class=highvolt :: R1.1 C1.1\nLV :: R1.2 C1.2\nclass highvolt width=0.8\n", base=EX)
+assert agent.dumps(agent.from_json(agent.to_json(_ja))) == agent.dumps(_ja)
 assert cast(str, bj.render("svg")).startswith("<svg")
 assert cast(str, bj.render("stl")).startswith("solid")
 assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
