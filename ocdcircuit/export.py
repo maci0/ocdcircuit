@@ -738,6 +738,11 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
           f'value="{_esc(p.value or p.fp)}" x="{p.x:.4f}" y="{p.y:.4f}"/>')
     A("</elements>")
     A("<signals>")
+    from .drc import pour_layers as _eagle_pours
+    from .fab import get as _eagle_fab
+    _epoured = _eagle_pours(board)
+    _eedge = float(cast(float, _eagle_fab(board.fab).get("edge", 0.3)))
+    _eiso = float(cast(float, _eagle_fab(board.fab).get("min_space", 0.09)))
     for n in sorted(board.nets):
         net = board.nets[n]
         A(f'<signal name="{_esc(n)}">')
@@ -748,6 +753,14 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
                 continue
             A(f'<wire x1="{t.x1:.4f}" y1="{t.y1:.4f}" x2="{t.x2:.4f}" y2="{t.y2:.4f}" '
               f'width="{t.width:.4f}" layer="{t.layer + 1}"/>')
+        for ll in _epoured.get(n, []):
+            x0, y0, x1, y1 = _eedge, _eedge, W - _eedge, H - _eedge
+            A(f'<polygon width="0.2" layer="{ll + 1}" rank="1" pour="solid" '
+              f'isolate="{_eiso:.4f}">'
+              f'<vertex x="{x0:.4f}" y="{y0:.4f}"/>'
+              f'<vertex x="{x1:.4f}" y="{y0:.4f}"/>'
+              f'<vertex x="{x1:.4f}" y="{y1:.4f}"/>'
+              f'<vertex x="{x0:.4f}" y="{y1:.4f}"/></polygon>')
         A("</signal>")
     A("</signals>")
     A("</board></drawing></eagle>")

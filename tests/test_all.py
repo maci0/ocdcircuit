@@ -891,6 +891,14 @@ _egf = _ebb.export("eagle", outdir=tempfile.mkdtemp())[0]
 assert _egf.endswith(".brd") and _ET.parse(_egf) is not None
 _egrt = agent.from_ir(foreign.eagle_brd(open(_egf).read()))
 assert sorted(_egrt.parts) == ["R1", "R2"] and sorted(_egrt.nets) == ["GND", "N"]
+# eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
+_mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
+                  base=os.path.join(EX, "mitox"))
+_mit.place(seeds=1, iters=30)
+_mit.route_board()
+_mef = _mit.export("eagle", outdir=tempfile.mkdtemp())[0]
+_mep = _ET.parse(_mef).getroot().findall(".//polygon")
+assert len(_mep) == 2 and all(p.get("pour") == "solid" for p in _mep)
 # kicad .sch export: same picture as the canvas, ERC-clean per kicad-cli
 _ksf = _ebb.export("kicad-sch", outdir=tempfile.mkdtemp())[0]
 assert _ksf.endswith(".kicad_sch") and "(global_label" in open(_ksf).read()
