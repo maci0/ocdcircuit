@@ -266,6 +266,36 @@ class FlexDrc(FabDrc):
         return drc.check(board, fab=fab or "jlc-flex")
 
 
+class AllDrc(Plugin[dict[str, object]]):
+    """Every mounted drc plugin, merged. Hits prefixed with the key
+    (`erc: unconnected…`); a raising entry is skipped (registry fences it).
+    `keys=[…]` runs a subset (board.toml `drc` list does this)."""
+    kind, key = "drc", "all"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from typing import cast
+        keys = k.get("keys")
+        assert keys is None or isinstance(keys, list)
+        errors: list[str] = []
+        warnings: list[str] = []
+        ran: list[str] = []
+        cands = list(keys) if keys is not None else board.plugins().list("drc")
+        for key in cands:
+            if not isinstance(key, str) or key == "all":
+                continue
+            try:
+                r = board.check(key)
+            except (ValueError, KeyError, RuntimeError):
+                continue
+            for e in cast(list[object], r.get("errors", [])):
+                errors.append(f"{key}: {e}" if not str(e).startswith(f"{key}:") else str(e))
+            for w in cast(list[object], r.get("warnings", [])):
+                warnings.append(f"{key}: {w}" if not str(w).startswith(f"{key}:") else str(w))
+            ran.append(key)
+        return {"errors": errors, "warnings": warnings, "ran": ran,
+                "fab": board.fab}
+
+
 class JlcExporter(Plugin[list[str]]):
     kind, key = "exporter", "jlc"
 
@@ -1219,6 +1249,48 @@ class DoctorPlugin(Plugin[dict[str, object]]):
         return _doctor.doctor(board)
 
 
+class TomlConfig(Plugin[dict[str, object]]):
+    """Project config: board.toml next to the .ocd. Keys map to existing
+    knobs only (fab/placer/router/drc/mask/style); unknown keys are an
+    error (a typo'd key silently doing nothing is worse). CLI flags win
+    (they apply after); missing file → {} (builtins stand). Applied picks
+    land in board.proj (+fab/meta); returns what was applied."""
+    kind, key = "config", "toml"
+
+    KEYS = ("fab", "placer", "router", "drc", "mask", "style")
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import os
+        import tomllib
+        base = k.get("base", os.getcwd())
+        assert isinstance(base, str)
+        fn = os.path.join(os.path.abspath(base), "board.toml")
+        try:
+            with open(fn, "rb") as f:
+                cfg = tomllib.load(f)
+        except FileNotFoundError:
+            return {}
+        for key in cfg:
+            if key not in self.KEYS:
+                raise ValueError(f"{fn}: unknown key {key!r} (have {list(self.KEYS)})")
+        applied: dict[str, object] = {}
+        if isinstance(cfg.get("fab"), str):
+            board.fab = cfg["fab"]
+            applied["fab"] = cfg["fab"]
+        for key in ("placer", "router"):
+            if isinstance(cfg.get(key), str):
+                applied[key] = cfg[key]
+        drc = cfg.get("drc")
+        if isinstance(drc, list) and all(isinstance(x, str) for x in drc):
+            applied["drc"] = list(drc)
+        for key in ("mask", "style"):
+            if isinstance(cfg.get(key), str):
+                board.meta[key] = cfg[key]
+                applied[key] = cfg[key]
+        board.proj.update(applied)
+        return applied
+
+
 class CalcPlugin(Plugin[dict[str, object]]):
     """Embedded calculators: trace width, via current, divider."""
     kind, key = "calc", "std"
@@ -1277,13 +1349,14 @@ class GatesPlugin(Plugin[dict[str, object]]):
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
-             FabDrc, Erc,
+             FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
              EagleExporter, EasyedaExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
              TscircuitImporter, PcbImporter, EasyedaImporter, SymImporter,
+             TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
