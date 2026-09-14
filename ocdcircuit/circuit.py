@@ -745,6 +745,12 @@ class Board(Component):
             if not 0 <= ll < self.layers:
                 raise ValueError(f"route {c.get('net')} on layer {ll} "
                                  f"(board has {self.layers}L)")
+        if t == "width":
+            # non-positive widths draw nothing (DRC flags them, but fail
+            # fast here instead of emitting dead copper).
+            w = c.get("width", 0.3)
+            if not isinstance(w, (int, float)) or not math.isfinite(w) or w <= 0:
+                raise ValueError(f"trace {c.get('net')} has bad width {w!r}")
         self._constrain_raw(c)
 
     def _constrain_raw(self, c: Constraint) -> None:

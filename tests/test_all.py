@@ -1275,6 +1275,14 @@ for _blc, _blfrag in [
     except ValueError as e:
         assert _blfrag in str(e), str(e)
 assert _blb.constraints == []
+# non-positive widths fail fast too (dead copper, not a silent emit)
+for _bwid in (0, -0.5, float("nan"), float("inf"), "x"):
+    try:
+        _blb.constrain({"t": "width", "net": "N", "width": _bwid})
+        raise AssertionError(f"should have raised: {_bwid}")
+    except ValueError as e:
+        assert "bad width" in str(e), str(e)
+assert _blb.constraints == []
 # CONSTRAINT_TYPES matches dumps arms exactly (new kinds must land in both
 # or they silently vanish on save — the class this guards)
 import re as _re2
