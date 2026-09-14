@@ -333,6 +333,13 @@ with tempfile.TemporaryDirectory() as d:
     assert any(f.endswith("BOM.csv") for f in files)
     assert any(f.endswith(".json") for f in files)
     assert any(f.endswith(".ocd") for f in files)
+    # part rotations reach the CPL (bme690 J3/J4 carry rot=180 upstream)
+    _bb = agent.loads(open(os.path.join(EX, "bme690", "bme690_carrier.ocd")).read(),
+                      base=os.path.join(EX, "bme690"))
+    _bb.place(seeds=1, iters=30)
+    _cpl = open([f for f in _bb.export("jlc", outdir=tempfile.mkdtemp())
+                 if f.endswith(".CPL.csv")][0]).read()
+    assert "J3," in _cpl and ",180" in _cpl, _cpl
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
 
