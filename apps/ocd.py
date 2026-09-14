@@ -206,6 +206,8 @@ def cmd_status(agent: object, args: list[str]) -> int:
     try:
         b = _load(agent, src)
         b.fab = fab
+        b.place()
+        b.route_board()
     except (OSError, ValueError, KeyError) as e:
         print(f"ocd: {e}")
         return 1
