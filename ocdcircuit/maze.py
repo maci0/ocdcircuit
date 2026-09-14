@@ -143,7 +143,10 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     grid, bend, via = P["grid"], P["bend"], P["via"]
     nx, ny = max(1, int(board.width / grid) + 1), max(1, int(board.height / grid) + 1)
     base_blocked = _blocked(board, grid)
-    # keepout/cutout zones are hard walls (all layers — conservative).
+    # keepout/cutout zones join the soft set (+15/cell, all layers):
+    # the maze prefers around but crosses when walled in, and DRC flags
+    # every crossing as keepout-trace (flagged, never silent). Hard walls
+    # would force jumpers where a warned crossing is the right call.
     # Rect fill is the legacy inclusive bounding box (bit-stable); round
     # zones filter by radius (legacy crashed on them — KeyError on w/h).
     from .drc import fp_keepouts, in_zone, zone_at
