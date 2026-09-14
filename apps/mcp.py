@@ -233,6 +233,23 @@ def t_import(a: dict[str, object]) -> dict[str, object]:
     return b.import_fp(key, path=path)
 
 
+def t_footprints(a: dict[str, object]) -> dict[str, object]:
+    from typing import cast
+    from ocdcircuit.parts import FOOTPRINTS, KICAD_ALIASES
+    q = str(a.get("q", "")).lower()
+    out = []
+    for name in sorted(FOOTPRINTS):
+        if q and q not in name.lower():
+            continue
+        fp = FOOTPRINTS[name]
+        assert isinstance(fp, dict)
+        pads = cast(dict[str, object], fp.get("pads", {}))
+        holes = cast(dict[str, object], fp.get("holes", {}))
+        out.append({"name": name, "w": fp["w"], "h": fp["h"],
+                    "pins": sorted(pads) or sorted(holes)})
+    return {"footprints": out, "aliases": len(KICAD_ALIASES)}
+
+
 def t_calc(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
@@ -309,6 +326,7 @@ TOOLS: dict[str, object] = {
     "export": (t_export, {"key": "exporter?", "outdir": "out"}),
     "render": (t_render, {"key": "renderer?"}),
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda", "path": "file"}),
+    "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
     "calc": (t_calc, {"what": "trace|amps|via|divider|pick", "amps": 1.0}),
     "simulate": (t_sim, {"what": "dc|tran"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
