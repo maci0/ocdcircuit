@@ -197,7 +197,6 @@ class WireMaskRouter(Plugin[int]):
                  and n not in ("vcc", "vss", "GND") and len(net.pins) >= 2]
         if not cands or board.layers < 2:
             return _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
-        saved_layers = {n: board.nets[n].layer for n in cands}
         old_traces = list(board.traces)
 
         def eval_mask(mask: dict[str, int]) -> tuple[float, list[object]]:
@@ -225,10 +224,6 @@ class WireMaskRouter(Plugin[int]):
                     child[n] = rng.randrange(board.layers)
                 masks.append(child)
         assert best is not None
-        for n, ll in saved_layers.items():
-            board.nets[n].layer = ll
-        for n in cands:
-            pass
         # apply winning mask layers, final maze for real traces+frames
         _, win = best
         assert isinstance(win, dict)
