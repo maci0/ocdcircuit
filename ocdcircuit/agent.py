@@ -314,7 +314,11 @@ def dumps(board: Board) -> str:
     for p in sorted(board.parts.values(), key=lambda q: q.ref):
         if p.owner:
             continue  # owned by an include/instance — dumped as use/instance
-        attrs = "".join(f" {k}={_q(v)}" for k, v in sorted(p.attrs.items()))
+        # x=/y= are input syntax (≡ fix); placement persists via `fix`
+        # lines below, so they never emit here (a reload would freeze
+        # unpinned parts the API merely positioned).
+        attrs = "".join(f" {k}={_q(v)}" for k, v in sorted(p.attrs.items())
+                        if k not in ("x", "y"))
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
     # fp/sym lines up front: must exist before parts use them
     fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
@@ -371,18 +375,8 @@ def dumps(board: Board) -> str:
         if t == "near":
             L.append(f"keep {c['a']} near {c['b']} {_f(c.get('w', 2)):g}")
         elif t == "fixed":
-            # x=/y= attrs already declare it on the part line — don't repeat
-            _p = board.parts.get(str(c["ref"]))
-            _ax, _ay = (_p.attrs.get("x") if _p else None,
-                        _p.attrs.get("y") if _p else None)
-            try:
-                _same = (_ax is not None and _ay is not None
-                         and abs(float(_ax) - float(cast(float, c["x"]))) < 1e-9
-                         and abs(float(_ay) - float(cast(float, c["y"]))) < 1e-9)
-            except (ValueError, TypeError):
-                _same = False
-            if not _same:
-                L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
+            # placement persists only here (x=/y= never emit on part lines)
+            L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
         elif t == "layer" and str(c["net"]) in board.nets and str(c["net"]) not in lay_bad:
             continue  # folded onto the net line above (or via `use`)
         elif t == "layer" and c.get("owner"):

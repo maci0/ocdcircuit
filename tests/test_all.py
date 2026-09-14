@@ -351,6 +351,18 @@ _jq2 = agent.loads(agent.dumps(_jq), base=EX)
 assert _jq2.parts["R1"].attrs["note"] == "hello world"
 assert _jq2.nets["N"].attrs["desc"] == 'a "quoted" thing'
 assert _jq2.constraints[-1]["note"] == "sp ace"
+# placement persists via `fix` lines only: x=/y= never emit on part lines
+# (a reload would otherwise freeze unpinned parts the API merely positioned)
+_bfx = agent.loads("board t 40x30 2L\npart R1 R0805 10k x=3 y=5\nN :: R1.1 R1.2\n", base=EX)
+_tfx = agent.dumps(_bfx)
+assert "fix R1 at 3 5" in _tfx.splitlines()
+assert not [ln for ln in _tfx.splitlines() if ln.startswith("part R1")][0].endswith("y=5")
+assert agent.dumps(agent.loads(_tfx, base=EX)) == _tfx
+_bfx2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+_bfx2.add_part("C1", "C0805", "100n", attrs={"x": "3", "y": "5"})
+_tfx2 = agent.dumps(_bfx2)
+assert "fix C1" not in _tfx2 and "x=3" not in _tfx2
+assert agent.dumps(agent.loads(_tfx2, base=EX)) == _tfx2
 # net names reject whitespace at creation (never survive dumps anyway)
 try:
     agent.loads("board t 40x30 2L\npart R1 R0805 10k\n\"My Net\" :: R1.1 R1.2\n", base=EX)
