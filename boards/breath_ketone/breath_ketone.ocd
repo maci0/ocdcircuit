@@ -1,8 +1,5 @@
 board breath_ketone 16.635x42.06 2L
 # ported from atopile main.ato — signals + ~ wiring preserved
-# NOTE: dense (12mm USB-C on 16mm width) — all placers leave 8-11 overlap
-# errors; author layout relied on exact hand placement. fix parts to the
-# .kicad_pcb coordinates to reproduce, or widen the board.
 fp fp/USB-C_SMD-TYPE-C-31-M-12_1.kicad_mod
 fp fp/SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR.kicad_mod
 fp fp/B5819W.kicad_mod
@@ -20,7 +17,7 @@ part J1 USB-C_SMD-TYPE-C-31-M-12_1 lcsc=C165948
 part J2 R0402 lcsc=C25905
 part J3 R0402 lcsc=C25905
 part J4 SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR lcsc=C14879
-part J5 R0402 lcsc=C25744
+part J5 R0402 lcsc=C25744 rot=90
 part J6 C0402 lcsc=C23733
 part J7 C0402 lcsc=C23733
 part J8 B5819W lcsc=C8598
@@ -33,7 +30,7 @@ part J14 R0402 lcsc=C25900
 part J15 LGA-8_L3.0-W3.0-P0.80_BME688 lcsc=C42431867
 part J16 C0402 lcsc=C1525
 part J17 C0402 lcsc=C1525
-part J18 Raytac_MDBT50Q lcsc=C5118826
+part J18 Raytac_MDBT50Q lcsc=C5118826 rot=180
 part J19 USBLC6-2SC6 lcsc=C7519
 part J20 C0402 lcsc=C1525
 part J21 C0402 lcsc=C1525
@@ -46,7 +43,7 @@ part J27 E6C0606RGB lcsc=C375569
 part J28 R0402 lcsc=C25104
 part J29 R0402 lcsc=C25076
 part J30 R0402 lcsc=C25076
-part J31 SWD_TestPads lcsc=HANDSOLDER
+part J31 SWD_TestPads lcsc=HANDSOLDER rot=90
 net GND: J1.A1B12 J10.1 J11.2 J12.2 J15.1 J15.5 J16.2 J17.2 J18.1 J19.2 J2.2 J20.2 J21.2 J22.2 J23.2 J24.2 J25.2 J26.2 J3.2 J31.2 J4.2 J5.2 J6.2 J7.2
 net SCL: J14.1 J15.4 J18.16 J24.3
 net SDA: J13.1 J15.3 J18.19 J24.4
@@ -70,35 +67,36 @@ net X_J31.4: J18.53 J31.4
 net X_J31.5: J18.40 J31.5
 net X_J4.1: J18.20 J4.1
 net X_J5.1: J4.5 J5.1
-fix J1 at 9.36 4.5
-# fix J10 at 12.76 21.5 — dropped: stale layout (overlap), solver places freely
-# fix J11 at 13.36 31.7 — dropped: stale layout (overlap), solver places freely
-# fix J12 at 13.36 24.9 — dropped: stale layout (overlap), solver places freely
-# fix J13 at 5.56 10.7 — dropped: stale layout (overlap), solver places freely
-# fix J14 at 13.16 10.7 — dropped: stale layout (overlap), solver places freely
-# fix J15 at 9.36 35.1 — dropped: stale layout (overlap), solver places freely
-# fix J16 at 4.96 31.7 — dropped: stale layout (overlap), solver places freely
-# fix J17 at 10.56 28.3 — dropped: stale layout (overlap), solver places freely
-# fix J18 at 9.36 29.8 — dropped: stale layout (overlap), solver places freely
-# fix J19 at 9.36 14.7 — dropped: stale layout (overlap), solver places freely
-# fix J2 at 10.16 20.2 — dropped: stale layout (overlap), solver places freely
-# fix J20 at 10.56 24.9 — dropped: stale layout (overlap), solver places freely
-# fix J21 at 7.76 24.9 — dropped: stale layout (overlap), solver places freely
-# fix J22 at 13.36 28.3 — dropped: stale layout (overlap), solver places freely
-# fix J23 at 7.76 28.3 — dropped: stale layout (overlap), solver places freely
-fix J24 at 9.36 39.3
-# fix J25 at 9.36 12.7 — dropped: stale layout (overlap), solver places freely
-# fix J26 at 9.36 10.7 — dropped: stale layout (overlap), solver places freely
-# fix J27 at 5.56 35.1 — dropped: stale layout (overlap), solver places freely
-# fix J28 at 5.56 33.1 — dropped: stale layout (overlap), solver places freely
-# fix J29 at 6.06 20.1 — dropped: stale layout (overlap), solver places freely
-fix J3 at 5.36 15.7
-# fix J30 at 10.56 31.7 — dropped: stale layout (overlap), solver places freely
-# fix J31 at 2.46 29.8 — dropped: stale layout (overlap), solver places freely
-# fix J4 at 5.96 21.5 — dropped: stale layout (overlap), solver places freely
-# fix J5 at 7.76 31.7 — dropped: stale layout (overlap), solver places freely
-# fix J6 at 5.16 24.9 — dropped: stale layout (overlap), solver places freely
-# fix J7 at 4.96 28.3 — dropped: stale layout (overlap), solver places freely
-# fix J8 at 5.16 18.1 — dropped: stale layout (overlap), solver places freely
-# fix J9 at 9.36 18.1 — dropped: stale layout (overlap), solver places freely
+# fix J1 at 6 36.8 — dropped: stale layout (off-board), solver places freely
+# fix J10 at 9.4 19.8 — dropped: stale layout (overlap), solver places freely
+# fix J11 at 7.2 13 — dropped: stale layout (overlap), solver places freely
+# fix J12 at 10 13 — dropped: stale layout (overlap), solver places freely
+# fix J13 at 4.4 9.6 — dropped: stale layout (overlap), solver places freely
+# fix J14 at 7.2 9.6 — dropped: stale layout (overlap), solver places freely
+# fix J15 at 6 6.2 — dropped: stale layout (overlap), solver places freely
+# fix J16 at 1.6 9.6 — dropped: stale layout (overlap), solver places freely
+# fix J17 at 10 9.6 — dropped: stale layout (overlap), solver places freely
+# fix J18 at 6 11.5 — dropped: stale layout (overlap), solver places freely
+# fix J19 at 6 26.6 — dropped: stale layout (overlap), solver places freely
+# fix J2 at 2.2 30.6 — dropped: stale layout (overlap), solver places freely
+# fix J20 at 10 16.4 — dropped: stale layout (overlap), solver places freely
+# fix J21 at 4.4 16.4 — dropped: stale layout (overlap), solver places freely
+# fix J22 at 7.2 16.4 — dropped: stale layout (overlap), solver places freely
+# fix J23 at 4.4 13 — dropped: stale layout (overlap), solver places freely
+fix J24 at 6 2
+# fix J25 at 6 28.6 — dropped: stale layout (overlap), solver places freely
+# fix J26 at 6 30.6 — dropped: stale layout (overlap), solver places freely
+# fix J27 at 2.2 6.2 — dropped: stale layout (overlap), solver places freely
+fix J28 at 2 25.6
+# fix J29 at 2.2 8.2 — dropped: stale layout (overlap), solver places freely
+# fix J3 at 9.8 30.6 — dropped: stale layout (overlap), solver places freely
+# fix J30 at 6.8 21.1 — dropped: stale layout (overlap), solver places freely
+# fix J31 at -0.9 11.5 — dropped: stale layout (off-board), solver places freely
+# fix J4 at 2.6 19.8 — dropped: stale layout (overlap), solver places freely
+# fix J5 at 2.7 21.2 — dropped: stale layout (overlap), solver places freely
+# fix J6 at 1.6 13 — dropped: stale layout (overlap), solver places freely
+# fix J7 at 1.8 16.4 — dropped: stale layout (overlap), solver places freely
+# fix J8 at 1.8 23.2 — dropped: stale layout (overlap), solver places freely
+# fix J9 at 6 23.2 — dropped: stale layout (overlap), solver places freely
 power GND
+nc J1.1 J1.2 J1.3 J1.B1A12 J1.B4A9 J15.7 J18.10 J18.11 J18.12 J18.13 J18.14 J18.15 J18.17 J18.18 J18.2 J18.21 J18.23 J18.24 J18.25 J18.26 J18.27 J18.29 J18.3 J18.31 J18.33 J18.4 J18.42 J18.43 J18.44 J18.45 J18.46 J18.47 J18.48 J18.49 J18.5 J18.50 J18.52 J18.54 J18.55 J18.56 J18.57 J18.58 J18.59 J18.6 J18.60 J18.61 J18.7 J18.8 J18.9

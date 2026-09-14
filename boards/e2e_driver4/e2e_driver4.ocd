@@ -5,7 +5,7 @@ fp fp/CAP-TH_BD5.0-P2.00-D0.8-FD.kicad_mod
 fp fp/R_Axial_P7.62.kicad_mod
 fp fp/TO-92-3_L4.6-W3.6-P1.27-L_1.kicad_mod
 fp fp/LED-TH_BD5.9-P2.54-RD_RED.kicad_mod
-part J1 HDR-TH_2P-P2.54-V-M lcsc=C492401
+part J1 HDR-TH_2P-P2.54-V-M lcsc=C492401 rot=90
 part J2 CAP-TH_BD5.0-P2.00-D0.8-FD lcsc=C88726
 part J3 R_Axial_P7.62 lcsc=C5618323
 part J4 TO-92-3_L4.6-W3.6-P1.27-L_1 lcsc=C2874602
@@ -41,7 +41,7 @@ net X_h1_VIN: J3.1 J5.1
 net X_h2_VIN: J7.1 J9.1
 net X_h3_VIN: J11.1 J13.1
 net X_h4_VIN: J15.1 J17.1
-# fix J1 at 2.5 22.4 — dropped: stale layout (overlap), solver places freely
+# fix J1 at 6 23 — dropped: stale layout (overlap), solver places freely
 fix J10 at 39.5 35.4
 fix J11 at 12.5 35.4
 fix J12 at 21.5 35.4
@@ -51,7 +51,7 @@ fix J14 at 39.5 24.4
 fix J16 at 21.5 24.4
 fix J17 at 30.5 24.4
 fix J18 at 39.5 13.4
-# fix J2 at 7.5 22.4 — dropped: stale layout (overlap), solver places freely
+# fix J2 at 11 23 — dropped: stale layout (overlap), solver places freely
 fix J3 at 12.5 13.4
 fix J4 at 21.5 13.4
 fix J5 at 30.5 13.4

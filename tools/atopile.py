@@ -413,6 +413,21 @@ def convert(projdir: str, outdir: str) -> str:
                          f"({'overlap' if clash else 'off-board'}), solver places freely")
     if "GND" in named:
         L.append("power GND")
+    # footprint pads with no .ato signal at all are mechanical NCs
+    # (USB-C shells, mounting holes) — exempt them so lint stays quiet.
+    # Ato-declared-but-unwired pins keep their unconnected warning.
+    # Singleton nets never emit (see net loop above) so they don't count.
+    from ocdcircuit.parts import pads_of
+    _touched = {pp for net, pinlist in named.items()
+                if len(pinlist) >= 2 or net in ("GND",) for pp in pinlist}
+    _declared = {f"{refs[v]}.{p}" for v, m in pinmap.items() for p in m.values()
+                 if v in refs}
+    _ncs = sorted({f"{ref}.{pin}" for ref in probe.parts
+                   for pin in pads_of(probe.parts[ref].fp, probe._lib())
+                   if f"{ref}.{pin}" not in _touched and f"{ref}.{pin}" not in _declared
+                   and not str(pin).startswith("NC")})
+    if _ncs:
+        L.append("nc " + " ".join(_ncs))
     fn = os.path.join(outdir, f"{name}.ocd")
     open(fn, "w").write("\n".join(L) + "\n")
     return fn
