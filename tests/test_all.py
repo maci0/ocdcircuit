@@ -115,6 +115,23 @@ assert wc is not None and wc["width"] == 0.5
 cc = agent.parse_constraint("class highvolt width=0.8 clearance=0.5 note=x")
 assert cc is not None and cc["t"] == "class" and cc["width"] == 0.8 \
     and cc["clearance"] == 0.5 and cc["note"] == "x"
+# codec fixpoint: every grammar production dumps→parses→dumps identically
+_pre = ("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+        "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")
+for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6",
+              "route-grid 0.2", "power N GND", "class hv width=0.8",
+              "match N GND", "diff N GND gap 0.5", "silk 2", "nc R1.1",
+              "pour GND on 0", "keepout 20 15 6x6", "keepout 20 15 d6",
+              "keepout near R1 d4", "cutout 20 15 6x6", "hole 20 15 1.2",
+              "bend 20 15 10x10 r2", "stiffener 20 15 10x6 FR4 0.4",
+              "sim vcc N 5", "sim sine N 1 1 1000", "sim isrc N 0.01",
+              "sim tran 0.01 100", "sim probe N", "sim clk N 2",
+              "sim expect N == 5", "sim r R1 10k", "sim op N V 0 5",
+              "sim lib x.lib", "sim ac 10 1000 5"]:
+    _cb2 = agent.loads(_pre + _line + "\n", base=EX)
+    _rt = agent.dumps(_cb2)
+    assert agent.parse_constraint(_line) is not None, _line
+    assert agent.dumps(agent.loads(_rt, base=EX)) == _rt, _line
 
 # hot-swap: mount alt plugin, use(), undo → back to default
 class AltPlacer(Plugin[float]):
