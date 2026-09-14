@@ -369,6 +369,8 @@ class Board(Component):
         if (not isinstance(w, (int, float)) or not isinstance(h, (int, float))
                 or not (math.isfinite(w) and math.isfinite(h))):
             raise ValueError(f"footprint {name!r} needs numeric w/h (got {w!r}, {h!r})")
+        if name in self._lib() and name not in self.custom_fp:
+            raise ValueError(f"footprint {name!r} shadows std lib (rename it)")
         had = name in self.custom_fp
         old = self.custom_fp.get(name)
         old_src = self.fp_src.get(name)
@@ -402,6 +404,9 @@ class Board(Component):
             raise ValueError(
                 f"symbol {name!r} needs numeric w/h + pins dict "
                 f"(got {w!r}, {h!r}, {pins!r})")
+        from .symbol import SYMBOLS
+        if name in SYMBOLS and name not in self.custom_sym:
+            raise ValueError(f"symbol {name!r} shadows std lib (rename it)")
         had = name in self.custom_sym
         old = self.custom_sym.get(name)
         old_src = self.sym_src.get(name)

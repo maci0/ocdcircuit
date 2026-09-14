@@ -1119,12 +1119,10 @@ class FabSilk(Plugin[dict[str, object]]):
 
 
 def _guarded_add(board: Board, name: str, meta: object, path: str) -> None:
-    """Strict shadowing: custom footprints may override each other, never
-    the std lib (rename it). Shared by file importers (fp-line semantics)."""
+    """File importers (fp-line semantics): Board.add_footprint owns the
+    shape + shadowing rules; this just casts and forwards."""
     from typing import cast
     from .types import Footprint
-    if name in board._lib() and name not in board.custom_fp:
-        raise ValueError(f"footprint {name!r} shadows std lib (rename it)")
     board.add_footprint(name, cast(Footprint, meta), path)
 
 
@@ -1137,9 +1135,6 @@ class SymImporter(Plugin[dict[str, object]]):
         path = k.get("path", "")
         assert isinstance(path, str) and path
         name, meta = _sym.load_file(path)
-        from .symbol import SYMBOLS
-        if name in SYMBOLS and name not in board.custom_sym:
-            raise ValueError(f"symbol {name!r} shadows std lib (rename it)")
         board.add_symbol(name, meta, path)
         return {"name": name}
 

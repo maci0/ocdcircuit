@@ -502,6 +502,21 @@ for _badfp in _badfps:
     except ValueError as e:
         assert "numeric w/h" in str(e), str(e)
 assert "BAD" not in _kb.custom_fp
+# stdlib shadowing rejected at the method (importers inherit it)
+try:
+    _kb.add_footprint("R0805", {"w": 1.0, "h": 1.0})
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "shadows std lib" in str(e), str(e)
+try:
+    _kb.add_symbol("R", {"w": 1.0, "h": 1.0, "pins": {}})
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "shadows std lib" in str(e), str(e)
+# custom-over-custom override still allowed (fresh name, no shared state)
+_kb.add_footprint("K9X", {"w": 9.0, "h": 9.0})
+_kb.add_footprint("K9X", {"w": 8.0, "h": 8.0})
+assert _kb.custom_fp["K9X"]["w"] == 8.0
 # add_symbol validates too (not KeyError 'w' at symbol_of)
 _badsyms: list[dict[str, object]] = [{}, {"w": 1}, {"w": 1, "h": 2, "pins": "x"}]
 for _badsym in _badsyms:
