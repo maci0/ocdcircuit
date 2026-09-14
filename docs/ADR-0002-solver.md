@@ -19,6 +19,11 @@ run N seeds, keep the best.
 - `router:maze` (`maze.py`): A* wavefront, part/pad/copper obstacles, vias,
   per-net frames. Honest trade: slower (~0.6s demo) for fewer DRC warnings
   (compact+maze = zero warnings on blinky).
+- Router ladder (blinky @ seeds=2, measured): lroute instant/14 warnings
+  (estimate) → coarse instant/23 warnings (10× maze speed for 1000+ part
+  boards, refine with maze after) → maze 0.3s/clean (default) → wiremask
+  0.9s/clean (EA layer assignment; same quality, 3× time — use when layer
+  choice, not geometry, is the bottleneck).
 - Placer objective knobs (`pull`/`spread`/`edge`/`thermal`) + plugin presets:
   diffusion (default), compact (area), thermal (big bodies drift to edges
   for heatsinking + repel harder; separation wins are board-dependent —
