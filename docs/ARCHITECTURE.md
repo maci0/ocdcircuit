@@ -17,8 +17,10 @@ apps/mcp.py ───┘         │                        │                 
 - **Board** (`circuit.py`): model (parts/nets/traces/constraints/meta) +
   one dispatch method per plugin kind (`place/route_board/check/export/
   render/silk/import_fp/calc/simulate/lint/score/doctor/diff`). Never calls
-  engines directly. `_run()` funnels all dispatch: a raising plugin is
+  engines directly. `_run()` funnels all dispatch: a crashing plugin is
   marked failed, the previous entry keeps serving, explicit `use()` re-arms.
+  Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`)
+  bypass the fence — retry works without re-arm.
 - **Registry** (`core.py`): `items[(kind,key)]`, one `active` per kind,
   `failed` map. `UiSlots` beside it: named UI slots (`toolbar/panel-left/
   panel-right/view/status`), plugins register render fns, crash abdicates.

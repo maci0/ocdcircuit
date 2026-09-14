@@ -20,6 +20,8 @@ configs, `Board.declare()` diffs board state. No mutation outside
 - `Registry.failed`: a raising plugin is fenced, `get()` refuses it, active
   falls back to the next healthy entry; explicit `use()` re-arms. All
   `Board` dispatch funnels through `_run()` (harness-loader shape).
+  Refined: fixable input errors (`ValueError`/`KeyError`/`OSError`/
+  `AssertionError`) bypass the fence — retry works without re-arm.
 - `UiSlots` beside the registry: shell declares slot names, plugins
   register render fns, crash abdicates to the next survivor, `/slots`
   exposes the ledger. Studio's page is four view registrations.
