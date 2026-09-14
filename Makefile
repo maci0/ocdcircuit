@@ -1,6 +1,6 @@
 BOARD ?= boards/blinky_555.ocd
 
-.PHONY: check run lint doctor test snap bench clean
+.PHONY: check run lint doctor test snap bench farm clean
 
 check: lint test			# everything green before commit
 lint:				# types + source lint (no place/route)
@@ -17,5 +17,13 @@ snap:				# re-pin goldens after intended geometry change
 	SNAP=1 python tests/test_snapshot.py
 bench:				# 5420-part stress (~5 min, not in check)
 	python benches/monster6502/bench.py 1 5
+farm:				# every board loads+solves (breath-ketone density excepted)
+	python -c "import sys, glob; sys.path.insert(0, '.'); \
+	from ocdcircuit import agent; \
+	[(_b := agent.loads(open(f).read(), base=f.rsplit('/', 1)[0]), \
+	_b.place(seeds=2, iters=100), _b.route_board(), \
+	print(f, len(_b.check()['errors']), 'errors')) \
+	for f in sorted(glob.glob('boards/*.ocd') + glob.glob('boards/*/*.ocd')) \
+	if '/out/' not in f]"
 clean:
 	rm -rf boards/out/* __pycache__ apps/__pycache__ */__pycache__ .mypy_cache
