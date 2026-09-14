@@ -1339,15 +1339,27 @@ class TomlConfig(Plugin[dict[str, object]]):
         for key in cfg:
             if key not in self.KEYS:
                 raise ValueError(f"{fn}: unknown key {key!r} (have {list(self.KEYS)})")
+        reg = board.plugins()
+        from . import fab as _fab
         applied: dict[str, object] = {}
         if isinstance(cfg.get("fab"), str):
+            if cfg["fab"] not in _fab.list_fabs():
+                raise ValueError(f"{fn}: unknown fab {cfg['fab']!r} "
+                                 f"(have {_fab.list_fabs()})")
             board.fab = cfg["fab"]
             applied["fab"] = cfg["fab"]
-        for key in ("placer", "router"):
-            if isinstance(cfg.get(key), str):
-                applied[key] = cfg[key]
+        for kind in ("placer", "router"):
+            if isinstance(cfg.get(kind), str):
+                if cfg[kind] not in reg.list(kind):
+                    raise ValueError(f"{fn}: unknown {kind} {cfg[kind]!r} "
+                                     f"(have {reg.list(kind)})")
+                applied[kind] = cfg[kind]
         drc = cfg.get("drc")
         if isinstance(drc, list) and all(isinstance(x, str) for x in drc):
+            bad = [x for x in drc if x not in reg.list("drc")]
+            if bad:
+                raise ValueError(f"{fn}: unknown drc {bad!r} "
+                                 f"(have {reg.list('drc')})")
             applied["drc"] = list(drc)
         for key in ("mask", "style"):
             if isinstance(cfg.get(key), str):
