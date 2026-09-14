@@ -198,6 +198,11 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
 2. Does a second rip-up pass close the airwire-fallback gap on dense demo
    boards (pico: ~197 maze warnings w/ fallbacks vs 26 lroute clearance
    warnings)? Count fallbacks, not warnings.
+   ANSWERED (round 77): yes — gated 2nd round took pico 79→4 jumpers
+   (route-grid 0.2 closed the last 4; pico now 0/0/0). Gate matters:
+   unconditional round 2 churns good routes into jumpers (measured 27 vs
+   4 on identical input); round 2 runs only when round 1 strictly shrank
+   the failed set.
 3. Length-matching currently penalizes *pad-distance* estimates pre-route; when
    should `_match_cost` switch to routed length, and are meanders ever needed?
 4. Exact CP-SAT scale numbers, DPLL/CDCL primary methods, solver benchmark
