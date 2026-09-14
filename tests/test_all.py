@@ -1322,6 +1322,11 @@ def _serve() -> None:
         if big:
             res["result"] = {"echo": q["method"], "pad": "x" * 200}
         conn.sendall(_frame(_js4.dumps(res).encode()))
+        if not big:
+            # garbage frames must not kill the read loop: non-JSON text
+            # + wrong opcode are skipped, the next call still answers
+            conn.sendall(_frame(b"not json{{{"))
+            conn.sendall(_frame(b"\x00\x01", opcode=0x2))
     conn.sendall(_frame(b"", opcode=0x8))  # close → _loop exits
     conn.close()
 
