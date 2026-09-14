@@ -1120,6 +1120,10 @@ def assign_layers(board: Board) -> None:
     (Layer/width assignment used to leak through place/route undo —
     caught by the undo fuzzer.)"""
     snap = {n: (net.layer, net.width) for n, net in board.nets.items()}
+    # reset first: layer/width are runtime caches, not state. Without this
+    # a removed constraint leaves its last assignment behind forever.
+    for net in board.nets.values():
+        net.layer, net.width = None, 0.3
     for c in board.constraints:
         if c.get("t") == "layer" and c["net"] in board.nets:
             board.nets[str(c["net"])].layer = int(cast(int, c["layer"]))

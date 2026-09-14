@@ -510,6 +510,8 @@ with tempfile.TemporaryDirectory() as _td:
     assert _tc.fab == "oshpark" and _tc.meta["mask"] == "blue"
     assert _tc.proj["drc"] == ["erc"]
     assert _tc.configure("toml", base=EX) == {}
+    open(os.path.join(_td, "board.toml"), "w").write('placer = "compact"\n')
+    assert _tc.configure("toml", base=_td) == {"placer": "compact"}  # retry works
     # config values are validated at load, not at solve: typos fail here,
     # unfenced (ValueError = fixable input — retry works without re-arm)
     for _bad_toml, _frag in [
@@ -526,6 +528,24 @@ with tempfile.TemporaryDirectory() as _td:
             assert _frag in str(e), str(e)
     open(os.path.join(_td, "board.toml"), "w").write('placer = "compact"\n')
     assert _tc.configure("toml", base=_td) == {"placer": "compact"}  # retry works
+
+# layer/width are runtime caches: removing the constraint releases them
+# on next route (no stale assignment)
+_al = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "N :: R1.1 C1.2\nroute N on 1\n", base=EX)
+_al.place(seeds=1, iters=10)
+_al.route_board()
+assert _al.nets["N"].layer == 1
+_al.unconstrain({"t": "layer", "net": "N", "layer": 1})
+_al.route_board()
+assert _al.nets["N"].layer == 0, _al.nets["N"].layer
+_aw = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n"
+                  "power N\n", base=EX)
+_aw.route_board()
+assert _aw.nets["N"].width == 0.5
+_aw.unconstrain({"t": "power", "nets": ["N"]})
+_aw.route_board()
+assert _aw.nets["N"].width == 0.3, _aw.nets["N"].width
 
 # mix-and-match: every placer × every router × every silk resolves + runs
 for pl in ["diffusion", "compact", "thermal"]:
