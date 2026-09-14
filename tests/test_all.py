@@ -85,6 +85,14 @@ try:
 except ValueError as e:
     assert "non-finite" in str(e), str(e)
 assert "R3" not in _bnan.parts
+# from_ir rejects non-\w+ refs (dumps must always reload)
+try:
+    agent.from_ir({"board": {"name": "t", "w": 40, "h": 30},
+                   "parts": [{"ref": "../../x", "fp": "R0805"}],
+                   "nets": {}})
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad part ref" in str(e), str(e)
 _bd = Board("td", 40, 30)
 _bd.add_part("R9", "R0805", "1k")
 _s0 = _bd.ctx.snapshot()

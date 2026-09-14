@@ -1,6 +1,7 @@
 """Everything is a plugin: placers, routers, layers, drc, exporters,
 parts libraries, renderers (svg + 3D stl). Stdlib only, one file."""
 from __future__ import annotations
+import re
 import sys
 from typing import TYPE_CHECKING, cast
 
@@ -456,11 +457,17 @@ def from_ir(doc: dict[str, object]) -> Board:
         if fn not in b._lib():
             b.add_footprint(fn, meta)
     for p in cast(list[dict[str, object]], doc.get("parts", [])):
+        pref = str(p["ref"])
+        # .ocd refs must survive fix/net/nc round-trips (fix is \w+):
+        # reject foreign refs outside that space instead of building
+        # a board whose dumps won't reload.
+        if not re.fullmatch(r"\w+", pref):
+            raise ValueError(f"bad part ref {pref!r} (want \\w+)")
         x = p.get("x")
         y = p.get("y")
         attrs = p.get("attrs", {})
         assert isinstance(attrs, dict)
-        b.add_part(str(p["ref"]), str(p["fp"]), str(p.get("value", "")),
+        b.add_part(pref, str(p["fp"]), str(p.get("value", "")),
                    float(x) if isinstance(x, (int, float)) else None,
                    float(y) if isinstance(y, (int, float)) else None,
                    attrs={str(k): str(v) for k, v in attrs.items()} or None)
