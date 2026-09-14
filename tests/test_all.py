@@ -1106,6 +1106,12 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.main(["ocd", "--help"]) == 0
     assert _ocd.main(["ocd"]) == 1
     assert _ocd.main(["ocd", "frobnicate"]) == 1
+    # flags parse leading or trailing (GNU either way); last wins; dangling stays
+    assert _ocd._flags(["--fab", "jlc", "b.ocd"]) == ("jlc", None, None, None, ["b.ocd"])
+    assert _ocd._flags(["b.ocd", "--fab", "jlc"]) == ("jlc", None, None, None, ["b.ocd"])
+    assert _ocd._flags(["b.ocd", "--fab"]) == (None, None, None, None, ["b.ocd", "--fab"])
+    assert _ocd.main(["ocd", "run", os.path.join(_np, "newproj.ocd"),
+                      "--placer", "compact"]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["placer"]) == 0
     assert _ocd.cmd_plugins(_ocd._boot(), ["bogus"]) == 1
     # score + lint commands exit 0 on the scaffold; usage errors exit 1

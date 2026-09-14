@@ -143,21 +143,27 @@ def cmd_new(args: list[str]) -> int:
 
 
 def _flags(args: list[str]) -> tuple[str | None, str | None, str | None, str | None, list[str]]:
+    """Leading or trailing --flag value pairs (GNU order either way)."""
     fab: str | None = None
     placer: str | None = None
     router: str | None = None
     simwhat: str | None = None
     rest = list(args)
-    while len(rest) >= 2 and rest[0] in ("--fab", "--placer", "--router", "--sim"):
-        if rest[0] == "--fab":
-            fab = rest[1]
-        elif rest[0] == "--placer":
-            placer = rest[1]
-        elif rest[0] == "--sim":
-            simwhat = rest[1]
-        else:
-            router = rest[1]
-        rest = rest[2:]
+    for flag in ("--fab", "--placer", "--router", "--sim"):
+        while flag in rest:
+            i = rest.index(flag)
+            if i + 1 >= len(rest):
+                break  # dangling flag: leave it, caller reports usage
+            val = rest[i + 1]
+            del rest[i:i + 2]
+            if flag == "--fab":
+                fab = val
+            elif flag == "--placer":
+                placer = val
+            elif flag == "--sim":
+                simwhat = val
+            else:
+                router = val
     return fab, placer, router, simwhat, rest
 
 
