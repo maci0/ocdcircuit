@@ -56,7 +56,7 @@ def t_patch(a: dict[str, object]) -> dict[str, object]:
     ops = cast(list[dict[str, object]], a["ops"])
     try:
         n = agent.apply_patch(b, ops)
-    except (ValueError, KeyError) as e:
+    except (ValueError, KeyError, AssertionError) as e:
         return {"applied": 0, "error": str(e)}
     return {"applied": n}
 
@@ -273,7 +273,7 @@ def t_sim(a: dict[str, object]) -> dict[str, object]:
         from ocdcircuit import sim as _sim
         try:
             out["problems"] = _sim.expect(b)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, AssertionError):
             out["problems"] = []
     return out
 

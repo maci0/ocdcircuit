@@ -330,7 +330,7 @@ def expect(board: Board) -> list[str]:
         return []
     try:
         sol = dc(board)
-    except (ValueError, KeyError):
+    except (ValueError, KeyError, AssertionError):
         return ["sim failed — cannot evaluate expectations"]
     out: list[str] = []
     for c in wants:

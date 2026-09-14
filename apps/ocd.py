@@ -185,7 +185,7 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     if simwhat:
         try:
             res = b.simulate(what=simwhat)
-        except (ValueError, KeyError) as e:
+        except (ValueError, KeyError, AssertionError) as e:
             _out().print(f"[red]ocd: sim: {e}[/red]")
             return 1
         if "nets" in res:
@@ -268,7 +268,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
             _fails = _simexp.expect(b)
             if _fails:
                 simline += "sim FAIL: " + "; ".join(_fails) + "\n"
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, AssertionError):
             simline = "sim: error\n"
     trows = "\n".join(f"| {k} | {_tidy_md(v)} |" for k, v in t.items()
                         if k not in ("coverage", "routed_segs"))

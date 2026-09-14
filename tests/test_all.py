@@ -823,6 +823,10 @@ assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
 assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
 assert _call("undo", {})["undone"] == 1  # patch reverted, board intact
+# malformed patch returns a clean error, not a 500 (asserts are fixable input)
+_badp = _call("apply_patch", {"ops": [{"op": "add_part", "ref": "RX",
+                                       "fp": "R0805", "attrs": "nope"}]})
+assert _badp["applied"] == 0 and "error" in _badp, _badp
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
 assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
