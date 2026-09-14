@@ -144,6 +144,17 @@ def lint(board: Board) -> dict[str, object]:
             if not (pw / 2 <= x <= board.width - pw / 2
                     and ph / 2 <= y <= board.height - ph / 2):
                 warn(f"fix {c.get('ref')} off-board")
+        if t in ("hole", "cutout", "bend", "stiffener") or (
+                t == "keepout" and c.get("ref") is None):
+            # geometry with explicit x/y: same off-board smell as fix
+            # (keepout-near-ref anchors to its part, always on-board)
+            try:
+                gx, gy = float(cast(float, c.get("x", 0))), float(cast(float, c.get("y", 0)))
+            except (TypeError, ValueError):
+                err(f"{t} has non-numeric position")
+                continue
+            if not (0 <= gx <= board.width and 0 <= gy <= board.height):
+                warn(f"{t} off-board")
         elif t == "layer" and str(c.get("net", "")) in board.nets:
             try:
                 ll = int(cast(int, c.get("layer", 0)))

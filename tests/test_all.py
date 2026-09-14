@@ -2189,6 +2189,13 @@ _lm.meta["mask"] = "gren"
 assert any("unknown mask" in w for w in cast(list[str], _lm.lint()["warnings"]))
 _lm.meta["mask"] = "red"
 assert not [w for w in cast(list[str], _lm.lint()["warnings"]) if "mask" in w]
+# off-board geometry warns (same smell as fix off-board)
+_lg = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n"
+                  "hole 9999 9999 1\ncutout 9999 9999 5x5\nbend 5 5 4x4 r1\n", base=EX)
+_gw = cast(list[str], _lg.lint()["warnings"])
+assert any("hole off-board" in w for w in _gw), _gw
+assert any("cutout off-board" in w for w in _gw), _gw
+assert not [w for w in _gw if w.startswith("bend")]
 # sim lint covers clk/expect too (not just vcc/sine/isrc/probe)
 _ls = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n"
                   "sim clk GHOST 10\nsim expect PHANTOM == 1\n", base=EX)
