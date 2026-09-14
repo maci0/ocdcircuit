@@ -12,6 +12,7 @@ Global flags (run/score): --fab --placer --router --sim. `ocd <file>` = run.
 """
 from __future__ import annotations
 import os
+import re
 import sys
 from typing import Callable, cast
 
@@ -79,7 +80,6 @@ class _Printer:
             print_fn = getattr(self._c, "print")
             print_fn(*a)
         else:
-            import re
             print(re.sub(r"\[(/?[a-z_ ]*|#[0-9a-f]*)\]", "",
                          " ".join(str(x) for x in a)))
 

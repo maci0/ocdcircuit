@@ -6,6 +6,7 @@ Not bit-identical to KiCad's own output, but parses and round-trips.
 """
 from __future__ import annotations
 import os
+import re
 from typing import TYPE_CHECKING, cast
 
 
@@ -414,8 +415,6 @@ def _model_for(fp: str) -> str | None:
     KICAD10_3DMODEL_DIR resolves on the viewer's machine). Candidates
     are probed against the local model dir; first hit wins, else a
     static fallback (pads + silk still render)."""
-    import os
-    import re
     M = "${KICAD10_3DMODEL_DIR}"
     local = os.environ.get("KICAD10_3DMODEL_DIR", "/usr/share/kicad/3dmodels")
 

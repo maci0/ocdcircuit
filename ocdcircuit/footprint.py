@@ -15,6 +15,7 @@ maze walls + DRC warnings follow it through placement (rot-aware).
 """
 from __future__ import annotations
 import os
+import re
 from .types import Footprint
 
 
@@ -36,7 +37,6 @@ def loads(text: str) -> tuple[str, Footprint]:
 
         kw = line.split(None, 1)[0].lower()
         if kw == "footprint":
-            import re
             m = re.match(r"^footprint\s+(\S+)\s+([\d.]+)x([\d.]+)(\s+edge)?$", line, re.I)
             if not m:
                 raise err("want: footprint NAME WxH [edge]")
@@ -70,7 +70,6 @@ def loads(text: str) -> tuple[str, Footprint]:
             else:
                 raise err("want: body box w h z [at dx dy ...] | body cyl r z")
         elif kw == "keepout":
-            import re
             m = re.match(r"^keepout\s+([\d.\-]+)\s+([\d.\-]+)\s+"
                          r"(?:([\d.]+)x([\d.]+)|d([\d.]+))(?:\s+([\w,]+))?$",
                          line, re.I)

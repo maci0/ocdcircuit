@@ -16,6 +16,7 @@ Format (one fact per line, # comments) — mirrors .fp:
 the `sym=` attr; otherwise the footprint's default symbol applies.
 """
 from __future__ import annotations
+import re
 
 Side = str  # left|right|top|bottom
 # Symbol = {"w": float, "h": float, "pins": {num: (side, order, label)},
@@ -40,7 +41,6 @@ def loads(text: str) -> tuple[str, Symbol]:
 
         kw = line.split(None, 1)[0].lower()
         if kw == "symbol":
-            import re
             m = re.match(r"^symbol\s+(\S+)(?:\s+([\d.]+)x([\d.]+))?$", line, re.I)
             if not m:
                 raise err("want: symbol NAME [WxH]")
