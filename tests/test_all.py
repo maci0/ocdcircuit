@@ -1008,6 +1008,22 @@ with tempfile.NamedTemporaryFile("w", suffix=".kicad_pcb", delete=False) as _pf:
 assert (_pos, _pw, _ph, _pfps) == (
     {"R1": (10.0, 30.0), "C1": (30.0, 10.0)}, 40.0, 50.0,
     {"R1": "R_0805", "C1": "C_0805"})
+# monster bench helpers: fix-path golden on a toy board; layout.json path
+# + overlap counter on the real 5420-part netlist (no solving — fast)
+from benches.monster6502.bench import golden as _mgolden
+from benches.monster6502.bench import apply_golden as _mapply
+from benches.monster6502.bench import overlaps as _mov
+_tb2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                   "net N: R1.1 C1.2\nfix R1 at 3 5\nfix C1 at 8 5\n", base=EX)
+assert _mgolden(_tb2) == {"R1": (3.0, 5.0), "C1": (8.0, 5.0)}
+_mbiz = agent.loads(open(os.path.join(EX, "..", "benches", "monster6502",
+                                      "monster6502.ocd")).read(),
+                    base=os.path.join(EX, "..", "benches", "monster6502"))
+assert len(_mbiz.parts) == 5420, len(_mbiz.parts)
+assert len(_mgolden(_mbiz)) == 8875, len(_mgolden(_mbiz))
+_mapply(_mbiz, {"R1": (1.0, 1.0)})  # unknown refs ignored
+_mapply(_mbiz, _mgolden(_mbiz))  # die-true positions: golden overlap floor
+assert _mov(_mbiz) == 957, _mov(_mbiz)
 # easyeda_live CDP framing vs a fake server: upgrade handshake, masked
 # client frame, unmasked reply matched by id, 16-bit length branch, close
 import socket as _sock

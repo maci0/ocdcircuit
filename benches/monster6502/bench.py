@@ -17,6 +17,7 @@ import time
 
 from ocdcircuit import agent
 from ocdcircuit import solver
+from typing import cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE_SEEDS, BASE_ITERS = 1, 5  # SOURCES.md baseline config
@@ -29,7 +30,7 @@ def golden(b: object) -> dict[str, tuple[float, float]]:
     import json
     from ocdcircuit.circuit import Board
     assert isinstance(b, Board)
-    fix = {str(c["ref"]): (float(c["x"]), float(c["y"]))
+    fix = {str(c["ref"]): (float(cast(float, c["x"])), float(cast(float, c["y"])))
            for c in b.constraints if c.get("t") == "fixed"}
     if fix and len(fix) >= len(b.parts):
         return fix
@@ -65,7 +66,8 @@ def apply_golden(b: object, g: dict[str, tuple[float, float]]) -> None:
 def overlaps(b: object) -> int:
     from ocdcircuit.circuit import Board
     assert isinstance(b, Board)
-    return sum(1 for e in b.check()["errors"] if str(e).startswith("overlap"))
+    errs = cast(list[str], b.check()["errors"])
+    return sum(1 for e in errs if str(e).startswith("overlap"))
 
 
 def main() -> None:
@@ -92,7 +94,8 @@ def main() -> None:
     ov = overlaps(b)
     # floating nets are file-static (5953 single-pin nets in the netlist),
     # not placement signal — errors counts the placeable rest.
-    errs = sum(1 for e in b.check()["errors"] if not str(e).startswith("floating"))
+    all_errs = cast(list[str], b.check()["errors"])
+    errs = sum(1 for e in all_errs if not str(e).startswith("floating"))
     print(f"seeds={seeds} iters={iters} time={dt:.1f}s cost={cost:.0f}")
     print(f"wirelength placed={placed_wl:.0f} golden={golden_wl:.0f} "
           f"ratio={placed_wl / max(1.0, golden_wl):.2f}")
