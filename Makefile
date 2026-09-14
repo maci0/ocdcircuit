@@ -1,6 +1,6 @@
 BOARD ?= boards/blinky_555.ocd
 
-.PHONY: check run lint doctor test snap bench farm clean
+.PHONY: check run lint doctor test snap bench farm fabsweep clean
 
 check: lint test			# everything green before commit
 lint:				# types + source lint (no place/route)
@@ -23,6 +23,15 @@ farm:				# every board loads+solves (breath-ketone density excepted)
 	[(_b := agent.loads(open(f).read(), base=f.rsplit('/', 1)[0]), \
 	_b.place(seeds=2, iters=100), _b.route_board(), \
 	print(f, len(_b.check()['errors']), 'errors')) \
+	for f in sorted(glob.glob('boards/*.ocd') + glob.glob('boards/*/*.ocd')) \
+	if '/out/' not in f]"
+fabsweep:			# every board x every fab (profile discrimination check)
+	python -c "import sys, glob; sys.path.insert(0, '.'); \
+	from ocdcircuit import agent, fab; \
+	[(_b := agent.loads(open(f).read(), base=f.rsplit('/', 1)[0]), \
+	_b.place(seeds=2, iters=100), _b.route_board(), \
+	print(f.split('/')[-1], ' '.join(f'{g}={len(_b.check(\"fab\", fab=g)[\"errors\"])}' \
+	for g in fab.list_fabs()))) \
 	for f in sorted(glob.glob('boards/*.ocd') + glob.glob('boards/*/*.ocd')) \
 	if '/out/' not in f]"
 clean:
