@@ -574,6 +574,8 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for p in sorted(board.parts.values(), key=lambda q: q.ref):
         uuid = _uuid()
         A(f'  (footprint {_sexp_str(p.fp)} (layer "F.Cu") (uuid "{uuid}")')
+        if p.attrs.get("dnp"):
+            A('    (attr dnp)')  # KiCad excludes from BOM/PnP, like our CPL
         A(f"    (at {p.x:.4f} {p.y:.4f})")
         A(f'    (descr {_sexp_str(p.value or p.fp)})')
         _pw, _ph = p.wh()
