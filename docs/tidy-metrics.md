@@ -195,7 +195,7 @@ Conventions (normative for any implementation — review round 1):
 | T9 | Spacing uniformity | 1 − CV of neighbor gaps; `None` if <2 parts or mean gap 0 (conflicts with T7 by design — aligned groups score low here) | →1 (J) | 🔧 |
 | T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | 🔧 |
 | T11 | Copper tile variance | RAW tile σ + layer Δ over 5mm tiles (trace length; None if unrouted) | Δ≤20% (F) | ✅ |
-| T12 | Acid-trap scan | RAW # acute <90° copper wedges (always 0 under Manhattan-only routing — placeholder) | 0 (F) | 🏗️ |
+| T12 | Acid-trap scan | RAW # acute <90° wedges at trace joins (0 under Manhattan-only routing — tripwire for leaked non-Manhattan geometry); `None` if unrouted | 0 (F) | ✅ |
 | T13 | Schematic crossings/jogs | RAW drop-line × rail crossings + jogs in `sch_layout` geometry | min (L — the one valid Purchase transfer) | ✅ |
 | T14 | Silk overlap | RAW text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents); **scored, never veto-gated** until precision is measured | 0 (F) | 🔧 |
 | T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field; deterministic offsets → ~100% until placer changes — non-discriminative) | →1 (J) | 🔧 |

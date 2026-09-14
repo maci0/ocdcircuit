@@ -259,6 +259,37 @@ def _ov(a: tuple[float, float, float, float],
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
+def _t12_acid_traps(board: Board) -> int | None:
+    """RAW # acute (<90°) copper wedges at trace joins. Joins are read as
+    outgoing centerline pairs from the joint: a pair <90° apart subtends
+    a <90° inner copper wedge (etchant trap). Manhattan routing makes
+    only 0°/90°/180° pairs, so nonzero means non-Manhattan geometry
+    leaked in. None if unrouted."""
+    if not _routed(board):
+        return None
+    import math
+    segs = [s for s in board.traces
+            if not getattr(s, "jumper", False) and (s.x1, s.y1) != (s.x2, s.y2)]
+    if not segs:
+        return None
+    at: dict[tuple[float, float], list[tuple[float, float]]] = {}
+    for s in segs:
+        for px, py, qx, qy in ((s.x1, s.y1, s.x2, s.y2), (s.x2, s.y2, s.x1, s.y1)):
+            at.setdefault((px, py), []).append((qx - px, qy - py))
+    n = 0
+    for dirs in at.values():
+        for i in range(len(dirs)):
+            for j in range(i + 1, len(dirs)):
+                (ax, ay), (bx, by) = dirs[i], dirs[j]
+                la, lb = math.hypot(ax, ay), math.hypot(bx, by)
+                if la == 0 or lb == 0:
+                    continue
+                cos = max(-1.0, min(1.0, (ax * bx + ay * by) / (la * lb)))
+                if math.degrees(math.acos(cos)) < 90.0 - 1e-9:
+                    n += 1
+    return n
+
+
 def _t11_copper_balance(board: Board) -> dict[str, object] | None:
     """Copper tile density sigma + layer delta (RAW). Trace length per
     5mm tile; None if unrouted. JLC warpage wants layer delta <= 20%."""
@@ -358,9 +389,9 @@ def tidy(board: Board) -> dict[str, object]:
         "T8_gridsnap_mm": _t8_gridsnap(board),
         "T9_spacing": _t9_spacing(board),
         "T10_orientation": _t10_orient(board),
-        # T12: geometry-engine tier — reported as None (unmeasurable)
+        # T12: acute-wedge scan (0 under Manhattan-only routing — tripwire)
         "T11_copper_balance": _t11_copper_balance(board),
-        "T12_acid_traps": None,
+        "T12_acid_traps": _t12_acid_traps(board),
         "T13_schematic": _t13_schematic(board),
         "T14_silk_overlap": _t14_silk(board),
         "T15_silk_consistency": _t15_silk_consistency(board),

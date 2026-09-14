@@ -799,7 +799,7 @@ from apps import studio as _studio
 _st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
                        {"placer": "diffusion", "router": "lroute"})
 assert _st["errors"] == [], _st["errors"]
-assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
+assert cast(dict[str, object], _st["tidy"])["coverage"] == "13/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
 assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export button
 _spp = _studio.H._build("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
@@ -821,7 +821,7 @@ with _tf.TemporaryDirectory() as _td:
     shutil.copy(os.path.join(EX, "psu.ocd"), _sp)
     assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
     _sm = open(os.path.join(_td, "STATUS.md")).read()
-    assert "tidy (12/15" in _sm, _sm[:200]
+    assert "tidy (13/15" in _sm, _sm[:200]
     assert "shrink →" in _sm, _sm[-300:]
     assert "solved: diffusion/lroute @ jlc" in _sm, _sm[-500:]
     # STATUS.md reports pour planes (mitox GND on 0,3)
@@ -1027,7 +1027,17 @@ assert _tt["T4_vias"] == {"total": 0, "per_net": {}}
 assert _tt["T7_alignment"] == 1.0
 assert cast(dict[str, object], _tt["T10_orientation"])["cardinal"] == 1.0
 assert set(cast(dict[str, object], _tt["T11_copper_balance"])) == {"tile_sigma", "layer_delta"}
-assert _tt["T12_acid_traps"] is None
+assert _tt["T12_acid_traps"] == 0  # Manhattan routing makes no acute wedges
+# T12 fires on genuinely acute joins: V with 58° inner wedge scores 1;
+# a 45° direction turn (135° inner copper) is not a trap
+from ocdcircuit.circuit import Seg as _Seg0
+_wb = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+_wb.traces = [_Seg0("N", 0, 0, 10, 0, 0, 0.3), _Seg0("N", 10, 0, 5, 8, 0, 0.3)]
+assert _wb.score(tidy=True)["T12_acid_traps"] == 1
+_wb.traces = [_Seg0("N", 5, 5, 10, 5, 0, 0.3), _Seg0("N", 10, 5, 13, 8, 0, 0.3)]
+assert _wb.score(tidy=True)["T12_acid_traps"] == 0
+assert agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.2\n"
+                   ).score(tidy=True)["T12_acid_traps"] is None  # unrouted
 assert cast(dict[str, object], _tt["T13_schematic"])["jogs"] == 0
 assert isinstance(cast(dict[str, object], _tt["T13_schematic"])["crossings"], int)
 assert _tt["T15_silk_consistency"] == 1.0
