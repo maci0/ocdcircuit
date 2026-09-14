@@ -385,6 +385,7 @@ for net, pins in nets.items():
     for ref, pin in pins:
         b.connect(net, ref, pin)
 b.constrain(cast(Constraint, {"t": "fixed", "ref": "J1", "x": 3.0, "y": 15.0}))
+b.constrain(cast(Constraint, {"t": "power", "nets": ["VCC", "GND"]}))
 b.place(seeds=3, iters=200)
 b.route_board()
 chk = b.check()
