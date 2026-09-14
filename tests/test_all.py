@@ -1775,6 +1775,10 @@ assert ("B_C", "1") in _bb.nets["GND"].pins and ("B_U", "1") in _bb.nets["GND"].
 assert ("A_C", "1") in _bb.nets["GND"].pins  # GND auto-joins even unlisted
 assert "block ch" in agent.dumps(_bb) and "instance ch as B join GND" in agent.dumps(_bb)
 assert agent.dumps(agent.loads(agent.dumps(_bb))) == agent.dumps(_bb)
+# hostile instance prefixes stay contained (dumps still reloads)
+_bhp = agent.loads("board t 60x40 2L\nblock ch\npart R R0805 10k\npart C C0805 100n\n"
+                   "net RC: R.1 C.1\nend\ninstance ch as ../../x\n", base=EX)
+assert agent.dumps(agent.loads(agent.dumps(_bhp), base=EX)) == agent.dumps(_bhp)
 # block constraints remap on stamp (pour/route/trace survive, joins stay global)
 _bc = agent.loads("board t 60x40 2L\nblock ch\npart R R0805 10k\npart C C0805 100n\n"
                   "net N: R.1 C.1\nnet GND: R.2 C.2\npour GND on 0\nroute N on 1\ntrace N 0.6\nend\n"
