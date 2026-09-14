@@ -196,6 +196,19 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     return 0
 
 
+def _pour_line(b: object) -> str:
+    """STATUS.md plane row: `planes: GND on 0,3` or empty string."""
+    from ocdcircuit.drc import pour_layers
+    from ocdcircuit.circuit import Board
+    assert isinstance(b, Board)
+    poured = pour_layers(b)
+    if not poured:
+        return ""
+    return "planes: " + ", ".join(
+        f"{n} on {','.join(str(ll) for ll in lls)}"
+        for n, lls in sorted(poured.items())) + "\n"
+
+
 def cmd_status(agent: object, args: list[str]) -> int:
     fab, _placer, _router, _sim, rest = _flags(args)
     if len(rest) != 1:
@@ -243,6 +256,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + (f"{simline}\n" if simline else "")
            + f"parts: {len(b.parts)}, nets: {len(b.nets)}, "
            + f"traces: {len(b.traces)}, layers: {b.layers}\n"
+           + _pour_line(b)
            + f"extent: {_ext['w']}x{_ext['h']}mm "
            + f"({float(cast(float, _ext['fill'])) * 100:.0f}% of "
            + f"{b.width:g}x{b.height:g} board)\n")

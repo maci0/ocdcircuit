@@ -600,6 +600,10 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
     _sm = open(os.path.join(_td, "STATUS.md")).read()
     assert "tidy (12/15" in _sm, _sm[:200]
+    # STATUS.md reports pour planes (mitox GND on 0,3)
+    shutil.copytree(os.path.join(EX, "mitox"), os.path.join(_td, "mitox"))
+    assert _ocd.cmd_status(_ocd._boot(), [os.path.join(_td, "mitox", "mitox.ocd")]) == 0
+    assert "planes: GND on 0,3" in open(os.path.join(_td, "mitox", "STATUS.md")).read()
     # ocd new scaffolds + ocd diff spots the delta + plugins lists kinds
     _np = os.path.join(_td, "newproj")
     assert _ocd.cmd_new([_np]) == 0
@@ -785,6 +789,20 @@ assert _sim.expect(_sime) == ["sim VO=2.878V, want == 5V"], _sim.expect(_sime)
 assert agent.dumps(agent.loads(agent.dumps(_sime), base=EX)) == agent.dumps(_sime)
 assert agent.parse_constraint("sim expect VO ~ 2.88 tol 1%") == {
     "t": "sim", "kind": "expect", "net": "VO", "op": "~", "value": "2.88", "tol": "1%"}
+# gates plugin: NAND truth + DFF divide + clk grammar + round-trip
+_simg = agent.loads("board t 40x30\npart U1 SOIC14 NAND logic=NAND\n"
+                    "net A: U1.1\nnet B: U1.2\nnet Y: U1.3\n"
+                    "sim vcc A 1\nsim vcc B 0\n")
+assert cast(dict[str, int], _simg.simulate("gates")["nets"])["Y"] == 1
+_simg2 = agent.loads("board t 40x30\npart U1 SOIC14 DFF logic=DFF\n"
+                     "net D: U1.1\nnet CLK: U1.2\nnet Q: U1.3\nnet QN: U1.4\n"
+                     "sim vcc D 1\nsim clk CLK 4\nsim tran 0.01 100\n")
+_gr = _simg2.simulate("gates", ticks=10)
+assert cast(dict[str, int], _gr["nets"])["Q"] == 1
+assert cast(list[int], cast(dict[str, object], _gr["waves"])["Q"]) == [1] * 10
+assert agent.parse_constraint("sim clk CLK 4") == {
+    "t": "sim", "kind": "clk", "net": "CLK", "period": 4.0, "duty": 0.5}
+assert agent.dumps(agent.loads(agent.dumps(_simg2))) == agent.dumps(_simg2)
 # ngspice plugin: same shape as mna + analog mna cannot do (skip if no binary)
 import shutil as _sh
 if _sh.which("ngspice") is not None:
