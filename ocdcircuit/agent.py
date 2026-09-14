@@ -790,7 +790,10 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
                 raise err(f"{ctx}bad net attribute {a!r} (want L<n>, w<n>, or k=v)")
             b.constrain({"t": "width", "net": name, "width": w})
     if nattrs:
-        b.net(name).attrs.update(nattrs)
+        try:
+            b.net(name).attrs.update(nattrs)
+        except ValueError as e:
+            raise err(f"{ctx}{e}")
     for tok in pins.replace("<-->", " ").split():
         ref, dot, pin = tok.partition(".")
         if not dot or not ref or not pin:
@@ -798,7 +801,10 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         # order-free: parts may be declared later in the file; _validate
         # checks existence at the end (unlike Board.connect, which is
         # immediate and validates now)
-        net = b.net(name)
+        try:
+            net = b.net(name)
+        except ValueError as e:
+            raise err(f"{ctx}{e}")
         entry = (ref, pin)
         if entry not in net.pins:
             net.pins.append(entry)

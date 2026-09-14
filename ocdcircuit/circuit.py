@@ -710,6 +710,10 @@ class Board(Component):
     # -- nets --
     def net(self, name: str) -> Net:
         if name not in self.nets:
+            # whitespace never survives a dumps round-trip (net lines
+            # split on it): reject at creation, not at save.
+            if not name or any(ch.isspace() for ch in name):
+                raise ValueError(f"bad net name {name!r} (no whitespace)")
             n = Net(name)
 
             def _add() -> None:

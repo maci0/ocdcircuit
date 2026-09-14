@@ -351,6 +351,19 @@ _jq2 = agent.loads(agent.dumps(_jq), base=EX)
 assert _jq2.parts["R1"].attrs["note"] == "hello world"
 assert _jq2.nets["N"].attrs["desc"] == 'a "quoted" thing'
 assert _jq2.constraints[-1]["note"] == "sp ace"
+# net names reject whitespace at creation (never survive dumps anyway)
+try:
+    agent.loads("board t 40x30 2L\npart R1 R0805 10k\n\"My Net\" :: R1.1 R1.2\n", base=EX)
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad net name" in str(e), str(e)
+_bnn = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+try:
+    _bnn.net("a b")
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad net name" in str(e), str(e)
+assert sorted(_bnn.nets) == ["N"]
 # JSON IR carries custom footprints (else round-trips dangle parts)
 _jc = agent.from_ir({"board": {"name": "t", "w": 40, "h": 30},
                      "parts": [{"ref": "R1", "fp": "X1", "x": 5, "y": 5}],
