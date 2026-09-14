@@ -589,7 +589,7 @@ _mt = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
                   "net GND: R2.2 C1.2\nmatch A B\ndiff A B gap 0.5\n", base=EX)
 _mt.place(seeds=2, iters=100)
 _mt.route_board()
-_t6 = cast(dict[str, object], _mt.score(tidy=True)["T6_skew"])
+_t6 = cast(dict[str, dict[str, object]], _mt.score(tidy=True)["T6_skew"])
 assert _t6["match:A+B"]["estimated"] is False, _t6
 assert _t6["diff:A/B"]["estimated"] is False, _t6
 # meta lines: title/rev/desc round-trip, flow into IR + KiCad title
