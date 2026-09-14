@@ -955,6 +955,19 @@ _ezfp: dict[str, object] = {"head": "4~1.7.5", "title": "EZ1",
                             "shape": ["PAD~RECT~0~0~9~5~1~~1~~0~g1",
                                       "PAD~RECT~20~0~9~5~1~~2~~0~g2"]}
 assert cast(list[tuple[str, object]], foreign.easyeda_doc(_ezfp))[0][0] == "EZ1"
+# tsx porter pure fns (no upstream project needed): fp map + tsx parts
+from tools import tscircuit as _tsc
+assert _tsc.map_fp("0805", "resistor") == "R0805"
+assert _tsc.map_fp("0805", "capacitor") == "C0805"
+assert _tsc._guess_fp("R7") == "R0805" and _tsc._guess_fp("J2") == "PINHD4"
+assert _tsc.tsx_parts(
+    '<resistor name="R1" footprint="0805" resistance="10k" />') == {
+    "R1": {"kind": "resistor", "fp": "0805", "value": "10k"}}
+try:
+    _tsc.map_fp("QFN-99", "chip")
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
 _ebb = agent.loads("board t 20x20\npart R1 R0805 1k\npart R2 R0805 1k\n"
                    "net N: R1.2 R2.1\nnet GND: R1.1 R2.2\n")
 _ebb.place()
