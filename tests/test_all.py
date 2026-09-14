@@ -62,6 +62,15 @@ assert len(_bc.traces) == 0
 # NL constraints
 c0 = agent.parse_constraint("keep U1 near C1")
 assert c0 is not None and c0["t"] == "near"
+# near pulls in cost space: same layout cheaper when the pair is close
+from ocdcircuit.solver import cost as _cost
+_nc = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 10k\n"
+                   "net N: R1.1 R2.1\nkeep R1 near R2 5\n", base=EX)
+_nc.parts["R1"].x, _nc.parts["R1"].y = 5, 5
+_nc.parts["R2"].x, _nc.parts["R2"].y = 10, 5
+_c_near = _cost(_nc)
+_nc.parts["R2"].x, _nc.parts["R2"].y = 35, 25
+assert _cost(_nc) > _c_near
 c1 = agent.parse_constraint("fix J1 at 3 10")
 assert c1 is not None and c1["t"] == "fixed"
 assert agent.parse_constraint("route GND on bottom") == {"t": "layer", "net": "GND", "layer": 1}
