@@ -22,12 +22,15 @@ Draw = tuple[float, float, float, float]
 
 def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float,
               negative: str | None = None,
-              widths: list[float] | None = None) -> str:
+              widths: list[float] | None = None,
+              fsizes: list[float] | None = None) -> str:
     """Positive plot, or negative plane (flood minus `negative` cutouts).
     `widths` parallels `draws`: one aperture per distinct width (D10, D11,
-    ...), so 0.5 power traces don't render at the 0.4 default."""
+    ...), so 0.5 power traces don't render at the 0.4 default. `fsizes`
+    parallels `flashes`: flash aperture per pad (mask openings exceed the
+    pad; a single circle under-opens every SMD pad)."""
     groups: dict[float, int] = {}
-    for w in (widths or []):
+    for w in (widths or []) + (fsizes or []):
         if w not in groups:
             groups[w] = 11 + len(groups)  # D10 is the base aperture
     if negative is None:
@@ -42,7 +45,15 @@ def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float,
         out = ["G04 ocdcircuit*", "%FSLAX46Y46*%", "%MOMM*%", "%LPC*%",
                f"%ADD10C,{aperture:.3f}*%", "D10*",
                f"G04 plane {negative}*"]
-    for x, y in flashes:
+    forder = sorted(range(len(flashes)),
+                    key=lambda i: groups[(fsizes or [])[i]] if fsizes else 10)
+    cur = -1
+    for i in forder:
+        code = groups[(fsizes or [])[i]] if fsizes else 10
+        x, y = flashes[i]
+        if code != cur:
+            out.append(f"D{code:02d}*")
+            cur = code
         out.append(f"X{x:.4f}Y{y:.4f}D03*")
     # one aperture select per width group (D01 draws with current aperture)
     order = sorted(range(len(draws)),
@@ -149,10 +160,14 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     draws: dict[int, list[Draw]] = {ll: [] for ll in range(board.layers)}
     lib = {k: v for k, v in board._lib().items()}
     paste: list[Flash] = []
+    from .parts import pad_size
+    msizes: list[float] = []  # mask opening per top pad (pad + 0.1 each side)
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
             x, y = board.pad_pos(p.ref, pin)
             flashes[0].append((x, y))  # SMD pads on top
+            pw, ph = pad_size(p.fp, pin, lib)
+            msizes.append(round(max(pw, ph) + 0.1, 3))
             from .parts import hole_drill
             if not hole_drill(p.fp, pin, lib):
                 paste.append((x, y))  # SMD only — PTH gets no paste
@@ -164,7 +179,13 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
         order = sorted(range(len(draws[ll])), key=lambda i: (draws[ll][i], widths[ll][i]))
         draws[ll] = [draws[ll][i] for i in order]
         widths[ll] = [widths[ll][i] for i in order]
-        flashes[ll] = sorted(flashes[ll])
+        if ll == 0:
+            # keep mask sizes aligned with sorted flashes
+            paired = sorted(zip(flashes[ll], msizes))
+            flashes[ll] = [p[0] for p in paired]
+            msizes = [p[1] for p in paired]
+        else:
+            flashes[ll] = sorted(flashes[ll])
     # pours: negative plane (flood minus cutouts) replaces trace draws.
     # Flood insets by fab edge clearance (plane to outline shorts the specs
     # DRC enforces on every other copper); cutouts clear foreign copper.
@@ -196,7 +217,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     # mask: openings over pads (empty file = full mask = unsolderable).
     # Bottom is pad-free (single-sided SMT), so empty GBS is correct there.
     fn = os.path.join(outdir, f"{board.name}.GTS.gbr")
-    open(fn, "w").write(_gerber(flashes.get(0, []), [], 0.5))
+    open(fn, "w").write(_gerber(flashes.get(0, []), [], 0.5, fsizes=msizes))
     files.append(fn)
     if board.layers > 1:
         fn = os.path.join(outdir, f"{board.name}.GBS.gbr")
