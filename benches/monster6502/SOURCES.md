@@ -41,18 +41,20 @@
    FETs at identical x/y. ocd placement is 2D single-side → ~957 residual
    `overlap` errors at golden positions. Placement scoring must use
    wirelength/benchmark metrics, not DRC-zero.
-2. **Baseline** (flat diffusion, seeds=1 iters=5, fixed harness):
+2. **Baseline** (flat diffusion, seeds=1 iters=5, fixed harness —
+   pinned at HEAD `ceab5c7`, 2026-09-14; re-pin on solver changes):
    320.9 s, cost 3647492514 (deterministic — same cost across runs;
    wall-clock varies by machine), placed WL 1492514 vs golden 1075333
    (ratio 1.39 — flat diffusion *loses* to die-true hierarchy),
    mean displacement 151.90 mm (similarity, secondary),
    overlaps 2548 vs golden floor 957 (above_floor 1591). The headroom
    to beat: close the WL ratio toward 1.0 and the 1591 avoidable overlaps.
-3. **Multilevel** (`placer:multilevel`, seeds=1 iters=2, same harness):
-   10.6 s, WL ratio 1.64, overlaps 682 vs floor 957 (above_floor −275 —
-   *below* the stacking floor). 30× faster than flat diffusion at iters=5
-   with fewer overlaps; WL ratio trails because 2 rigid-body iters don't
-   spread as far. Multilevel is the default recommendation past ~1000 parts.
+   Later runs (r4/r5) moved with WL-model + repair changes — superseded,
+   see `baseline_r3.txt` history, not quoted here.
+3. **Multilevel** (`placer:multilevel`, seeds=1 iters=2, same harness,
+   same pin as above): 10.6 s, WL ratio 1.64, overlaps 682 vs floor 957.
+   Fewer overlaps + worse WL = different tradeoff (leaves die-true stacking),
+   not dominance — read both numbers, not one.
 4. **Rotations ignored** (layout.json has rot 0/90/180 + B-side parts);
    ocd parts are axis-aligned.
 4. Single-pin TP nets and DNP ballast excluded from strictness.

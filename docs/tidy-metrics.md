@@ -10,11 +10,10 @@
 evidence anchor is Purchase 1997: crossings dominate comprehension, bends and
 symmetry matter less, grid-fixing was non-significant
 ([record](https://eprints.gla.ac.uk/35804/), 493 cites). Draft `tidy(board)`
-scorecard below: 1 metric already computable (~0 lines, T3 orthogonality),
-11 at ~10 lines each (T10 included — `Part.rot` exists), rest behind a
-geometry engine. T13 now measures `sch_layout` drop-line × rail crossings.
-Report the component vector + weights, never a
-bare scalar; never compare scalars across boards.
+scorecard below is implemented (`ocdcircuit/score.py`: `tidy()` components
+plus a `score()` 0–100/grade badge for CLI display). Report the component
+vector; the badge is display-only — never compare badges across boards
+(different boards define different metric subsets via None-coverage).
 
 ## Background
 
@@ -24,7 +23,8 @@ bend 1.5 + via 8.0. DRC (`drc.py` + fab profiles) reports pass/fail errors and
 coarse warnings (skew~mm, clearance). None of these measure *tidiness*: a
 zero-warning board can still snake, stagger, and scatter labels. The scorecard
 fills that gap as continuous 0..1 (or physical-unit) metrics, stdlib only,
-O(n)/O(n²) at tens of parts. Research only — no implementation this round.
+O(n)/O(n²) at tens of parts. Implemented; conventions below are normative
+for the implementation.
 
 ## Findings
 
@@ -157,9 +157,9 @@ O(n)/O(n²) at tens of parts. Research only — no implementation this round.
   (ink area / board area, distinct sizes ≤ levels).
 - **Composite scores**: prior art aggregates normalized aesthetics
   ([ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S0020025515003874#1),
-  abstracts only — flagged); weights are always author-chosen. Lesson:
-  **publish components + weights, never a bare scalar; never compare scalars
-  across boards.**
+  abstracts only — flagged); weights are always author-chosen. Lesson applied:
+  `tidy()` publishes components; `score()` badge carries its weights visibly
+  and is display-only (see Summary).
 
 ## Draft `tidy(board)` scorecard
 

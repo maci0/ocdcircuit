@@ -14,4 +14,6 @@ Each op runs through `Context` → fully undoable; returns applied count.
 "trace VCC 0.5" · "board 30 x 20". Regexes only — LLM does the real parsing,
 this is the deterministic fallback.
 
-## Open (v1): length-matching/diff-pair constraints, keepout-by-net-class.
+## Open (v1): ~~length-matching/diff-pair constraints, keepout-by-net-class~~
+   SHIPPED (`match`/`diff` placer cost + DRC skew; `keepout` maze walls +
+   DRC). Remaining: keepout-by-net-class.

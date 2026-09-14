@@ -1,9 +1,10 @@
 """Circuit simulation: Modified Nodal Analysis (MNA), stdlib only.
 
-Supports: resistors, capacitors, inductors (transient, trapezoidal),
-independent V/I sources (DC + step + sine), diodes (Shockley, Newton).
+Supports: resistors, capacitors (transient, Backward Euler),
+independent V/I sources (DC + step + sine). L-prefix footprints map to
+R (no inductive transient); no diodes/transistors (use simulate:ngspice).
 Nets GND/VSS/0 = ground. Parts map by footprint prefix:
-R*→R from value, C*→C, L*→L, V*? No — sources come from `sim` constraints.
+R*→R from value, C*→C, V*? No — sources come from `sim` constraints.
 
 Front door is constraints, not parts:
   sim vcc VCC 5        # 5V source VCC→GND
@@ -209,7 +210,7 @@ def dc(board: Board) -> dict[str, float]:
 
 def tran(board: Board, t_end: float | None = None,
          steps: int | None = None) -> dict[str, list[float]]:
-    """Transient: trapezoidal C, sine/step sources. Returns {net: [v...]}."""
+    """Transient: Backward-Euler C, sine/step sources. Returns {net: [v...]}."""
     t_end_v = 0.01
     steps_v = 1000
     for c in _sim_constraints(board):

@@ -209,7 +209,8 @@ dense BGA.
 
 1. VPSC-style 1D separation legalizer (~50 lines, §3).
 2. Min-conflicts repair loop (~20 lines, §4), then LNS ruin-recreate.
-3. Rectilinear-MST/Steiner net decomposition before maze (~50 lines, §5).
+3. ~~Rectilinear-MST/Steiner decomposition~~ — SHIPPED (`_mst_pairs` trunk
+   routing in `maze.py`); remaining: measured wirelength/via delta (Open Q2).
 4. Per-iteration clamp/projection one-liners (§3) + cooling tuning (prior brief).
 5. Skyline/BLF for compact mode + greedy compaction (§2).
 6. Symmetry/matching placer terms; Sugiyama-lite schematic (§5).

@@ -1,9 +1,12 @@
-# ADR-0002 — Constraint solver: stochastic hill-climb, not ILP/MILP
+# ADR-0002 — Constraint solver: diffusion + maze, not ILP/MILP
 
 ## Decision
-Placement = seeded random hill-climbing on
-`wirelength + overlap×BIG + keepout/edge penalties`; layer assignment = greedy
-bbox-overlap minimization; routing = ordered L-routes. Zero dependencies.
+Placement = Langevin diffusion (net-spring drift + repulsion + decaying
+noise, multi-seed best-of) on
+`wirelength + overlap×BIG + edge penalties` (+ keepout as maze walls/DRC,
+not a placer term); layer assignment = greedy
+bbox-overlap minimization; routing = ordered L-routes, A* maze default.
+Zero dependencies.
 
 ## Why
 Boards here are tens of parts: an ILP solver dependency buys nothing v0.

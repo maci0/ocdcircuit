@@ -191,12 +191,11 @@ interop (methods brief), MPN→SPICE registry (simulators brief OQ).
   `sym=` per-part override with footprint→symbol default map, SchRenderer
   draws bodies + pin stubs + labels. KiCad `.kicad_sym` import deferred (no
   consumer pressure yet); studio canvas reuse comes free via `sch_layout`.
-- **SPICE pin-mapping is the missing link** (for the simulators brief):
-  `.SUBCKT` node order is positional and rarely equals footprint pin numbers.
-  tscircuit solves it with explicit `spicePinMapping` + exactly-one-port
-  validation ([docs](https://docs.tscircuit.com/elements/spicemodel)); KiCad
-  users hit the same wall (alternate-node-sequence reassignment). ocd should
-  copy this: a pin-map table attr, not heuristics. TI (TLV9052/OPA4383 pages)
+- **SPICE pin-mapping: minimal path shipped, table deferred** (review round 1):
+  `sim op REF MODEL PINS...` carries positional pins per part today; the
+  `spicepin=` attr name is reserved in OCD.md but unconsumed — wire it or
+  drop the doc line. tscircuit's `spicePinMapping` remains the model for a
+  full table. TI (TLV9052/OPA4383 pages)
   and ADI/LTspice model hosting confirmed this round; Nexperia/onsemi URLs
   NOT re-verified — flagged. **No open MPN→SPICE-URL registry found**
   (JitPCB open-components-database adjacent, SPICE coverage unverified).
@@ -251,8 +250,8 @@ for Y" boolean, so ocdcircuit models verdicts instead of computing them.
   either.
 - **Data model for ocd (ranked, judgment)**: (i) `alternates` attr on the
   part — `part U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN,TLC555CP` —
-  BOM exporter emits it as an extra column; ERC/placer/sim ignore (same
-  footprint+value by construction); footprint equality checked at load,
+  PROPOSED (BOM exporter does not yet emit the column; OCD.md documents the
+  attr); ERC/placer/sim ignore (same footprint+value by construction); footprint equality checked at load,
   **pinout compatibility stays a human attestation**. Covers ~90% of real
   need (stock-outs) in ~10 lines. (ii) Passive equivalence needs no syntax:
   BOM already groups by (value, footprint) — "any 10k 0603" is procurement

@@ -1,6 +1,8 @@
 # SaaS — beating Flux.ai (feature map + our two options)
 
-Position: Flux is expensive and the Copilot output disappoints. Our verified
+Position (opinion, not measurement — no controlled Copilot bake-off exists;
+proof path: §8.2 Copilot-over-MCP config): Flux is expensive and the Copilot
+output disappoints. Our verified
 workflow — DeepSeek/Claude + tscircuit + ocdcircuit — already beats it on
 price (free/local), iteration (unmetered), and agent-operability
 (git-diffable `.ocd` + MCP). This doc maps Flux, prices the field, and shows
@@ -46,8 +48,9 @@ impedance, Gerber viewer.
    Pro ~$140+/editor/mo. Free lane = public projects only.
 2. **The meter rations iteration.** ACUs burn on every Copilot action, so
    exploration — the thing hardware design *is* — gets budgeted instead of
-   done. Two identical teams pay different bills depending on how hard they
-   think ([Quilter's model guide](https://www.quilter.ai/blog/generative-pcb-design-tool-pricing-in-2026-a-guide-to-saas-credits-and-subscriptions#1#1)
+   done. Teams plan is $158/editor/mo with 100 pooled ACUs and $2 overage,
+   so a 5-editor team iterating hard can double its bill in overage alone.
+   ([Quilter's model guide](https://www.quilter.ai/blog/generative-pcb-design-tool-pricing-in-2026-a-guide-to-saas-credits-and-subscriptions#1#1)
    calls this out as the industry's core budgeting headache).
 3. **Copilot quality doesn't justify the price.** Hands-on verdict: useless
    output at premium price. Market confirms the churn risk — the whole
@@ -62,21 +65,44 @@ impedance, Gerber viewer.
    ([Slashdot](https://yro.slashdot.org/story/26/06/02/1647209/adafruit-pauses-blog-after-demand-letter-from-fluxais-lawyers)).
    Suing the maker community's paper of record is not a trust strategy.
 
-## 3. What everyone charges (Sept 2026 shape)
+## 3. What everyone charges (Sept 2026, verified this round)
+
+Sources: [Flux pricing page](https://www.flux.ai/p/pricing) (JS-rendered; hard
+numbers via [Wayback 2026-08-23](https://web.archive.org/web/20260823143038/https://www.flux.ai/p/pricing)),
+[ProtoFlow Flux breakdown](https://www.protoflow.ai/blog/flux-ai-pricing),
+[DeepPCB pricing](https://deeppcb.ai/pricing/),
+[Quilter pricing](https://www.quilter.ai/pricing) + [free tier](https://www.quilter.ai/free-ai-pcb-design) + [startups](https://www.quilter.ai/ai-pcb-design-for-startups),
+[Vendr Altium data](https://www.vendr.com/marketplace/altium),
+[GoEngineer Cadence guide](https://www.goengineer.com/guide-to-buying-cadence-pcb-design),
+[Siemens Xpedition Standard](https://blogs.sw.siemens.com/electronic-systems-design/2025/05/22/introducing-xpedition-standard-scalable-pcb-design-power-for-growing-teams/),
+[CELUS](https://www.celus.io/), [Circuit Mind](https://www.circuitmind.io/product),
+[JITX plans](https://www.jitx.com/plans), [EasyEDA std-vs-pro](https://prodocs.easyeda.com/en/introduction/std-vs-pro/),
+[KiCad 9 notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/),
+[tscircuit registry API](https://docs.tscircuit.com/web-apis/the-registry-api).
 
 | Tool | Model | Entry price | What you get free |
 |------|-------|-------------|-------------------|
-| Flux | per-seat + ACU meter | ~$20/editor/mo, Pro ~$140+ | public projects; manual edit unlimited, AI credits limited |
-| Quilter | seat-free, pay-per-download (pin-count) | free tier, unlimited iterations | iterate free, pay on download |
-| DeepPCB | pay-as-you-go time meter | $30/1hr, $280/10hr, $800/30hr ([pricing](https://deeppcb.ai/pricing/)) | 30-min trial (1 board, ≤4L, 150 airwires) |
-| EasyEDA | free, JLCPCB/LCSC-tied | free (Std), Pro adds features | full browser ECAD free |
-| Altium | seat license | $7–9k/seat perpetual | nothing |
-| KiCad | open source | $0 | everything, local |
-| tscircuit | open source (MIT) + registry | $0 | code→board, exports (below), KiCad handoff |
-| **ocdcircuit (us)** | **open, local, unmetered** | **$0** | **everything in §5, forever (funnel)** |
+| Flux | per-editor + ACU meter | Explore $20/mo → Build $60/mo → Pro $200/mo → Teams $158/editor/mo (100 ACUs, $2 overage, pooled) → Enterprise custom. 14-day trial, then private/edit/export/AI all paywalled | public projects only |
+| Quilter | seat-free, pay-per-project by **unrouted pin count** | quote-only, no public $ (talk to sales). Unlimited iterations + parallel jobs + guided onboarding per project; BOM drift >10% = new project. Cloud (SOC 2) or self-hosted K8s+GPU (higher cost) | $0 tier: unlimited iterations, all features — but academic/personal/<10 ppl/<$50K only, public cloud, and **board metadata trains their models** |
+| DeepPCB | pay-as-you-go time meter | $30/1hr, $280/10hr, $800/30hr | 30-min trial (1 board, ≤4L, 150 airwires) |
+| CELUS | credit sub by complexity, enterprise sales | no public pricing page (/pricing 404s); self-serve signup + sales motion | trial-ish signup only |
+| Circuit Mind ACE | demo-gated, unpublished | "Individual/Professional/Enterprise" named, zero numbers; arrange-a-demo funnel only | none (existing-user login only) |
+| JITX | hybrid: free self-serve + enterprise sales | Free tier = open-source (CERN OHL-P v2) designs only, free indefinitely; proprietary/PLM/air-gapped = talk to sales | free tier above |
+| ProtoFlow | free desktop AI capture | $0, no seats/meter/export gate | everything (capture only, no routing) |
+| EasyEDA Std + Pro | free, JLCPCB/LCSC-tied | **both free** — monetizes via fab orders, not licenses | full browser+desktop ECAD, LCSC live stock/price, one-click JLC order |
+| Altium Designer | seat license | sub $4.5–7.5k/seat/yr; perpetual $7–9k + 17–22%/yr maint; median buyer $17,955/yr. CircuitStudio $1.5–3k; Altium 365 +$1–2.5k bundled ($2.5–5k standalone) | CircuitMaker (free community), 15-day trial, Launchpad startups, academic ~70–90% off |
+| Cadence OrCAD X / Allegro X | seat lease | OrCAD X from $2,088/yr; Allegro X from $5,707/yr lease (~$18,390 perpetual). ~10–20% under Altium | OrCAD X 30-day commercial trial + 6-mo academic |
+| Siemens Xpedition / PADS | seat + quote | Xpedition Standard $2,999/seat/yr (SMB tier, May 2025). Enterprise + PADS Pro = quote-only | PADS Pro Premium+DFM free cloud trial; Xcelerator for Startups |
+| KiCad 9 | open source (GPL) | $0 | everything, local. Jobsets, ODB++, ngspice45, IPC API for plugins |
+| tscircuit | open source (MIT) + registry | $0, pre-monetization (sponsorships/bounties; backers Konvoy, f4) | web + registry + docs free |
+| atopile | open source, bootstrapped | $0 compiler, no SaaS page | everything (pre-1.0, PyPI 0.11.x) |
+| **ocdcircuit (us)** | **open, local, unmetered** | **$0** | **everything in §6, forever (funnel)** |
 
-Takeaway: every paid tool meters *iteration* (ACUs, minutes, downloads).
-Nobody sells unmetered local solve. That's the gap we own.
+Takeaway: every paid tool meters *iteration* (ACUs, minutes, pins,
+downloads) or hides price behind sales. Nobody sells unmetered local solve.
+That's the gap we own. Flux repriced upward by Aug 2026 (ProtoFlow's
+~$20/10-ACU/$2.50 numbers now read stale vs official $60–200 tiers) —
+verify live in a browser before quoting anyone.
 
 ## 4. Other players — full field map (Sept 2026 shape)
 
@@ -87,17 +113,19 @@ priced or positioned against that spectrum.
 
 | Player | What it is | Price / access | Verdict for us |
 |--------|------------|----------------|----------------|
-| [Quilter](https://www.quilter.ai/blog/series-b?trk=public_post_comment-text#1) | L3 autonomous place+route, physics/RL, own CAD kernel. $25M Series B Oct 2025 (Index, Benchmark). Project Speedrun: i.MX8 Mini computer, fabbed + booted. ≤8L/~500 parts in 10–30 min | Seat-free, pay-per-download (pin-count), unlimited-iteration free tier | Downstream router, needs a schematic in — complementary. Cloud vs our local/unmetered is the fight |
+| [Quilter](https://www.quilter.ai/blog/series-b?trk=public_post_comment-text#1) | L3 autonomous place+route, physics/RL, own CAD kernel. $25M Series B Oct 2025 (Index, Benchmark; earlier $10M Feb 2024). Speedrun (vendor-run, no independent replication): NXP i.MX8 Mini, 8L HDI, 843 parts/5,141 pins, 27h runtime, 98% completion, booted Linux, no respins | Quote-only per-project by unrouted pin count; no public $. Free tier trains on your metadata (see §3) | Downstream router, needs a schematic in — complementary. Cloud vs our local/unmetered is the fight |
 | [DeepPCB](https://deeppcb.ai/pricing/) (InstaDeep) | L3 RL cloud router | Pay-as-you-go: $30/1hr, $280/10hr, $800/30hr; 30-min trial (1 board, ≤4L, 150 airwires, 100 comps) | Same slot as Quilter, burst-friendly. Benchmark against our maze router |
-| [ProtoFlow](https://www.protoflow.ai/compare/flux-ai-alternative) | Free desktop AI capture (prompt → part-backed schem → KiCad), LCSC/DigiKey/Mouser, DRC/ERC | Free, no seats/meter/export gate | Closest philosophy; capture-only (no routing). Validates our model — differentiate on local solvers |
-| [CELUS](https://www.celus.io/news/reducing-bom-cost-early-a-practical-walkthrough-with-the-celus-design-platform) | Requirements → schematic/BOM, deterministic (not LLM), digital-twin library, exports to Altium/Cadence/Siemens/Zuken | Credit subscription by complexity, enterprise sales | Pre-layout only, no layout. Enterprise lane we skip |
-| [Circuit Mind](https://agentaya.com/ai-review/circuitmind/#1) (ACE) | Block-diagram → schematic, cost/size/power trade sliders, live supply chain | No public pricing, demo-gated, no trial | Same slot as CELUS, pro-teams only. Skip |
-| [JITX](https://www.jitx.com/?utm_content=328363650&utm_medium=social&utm_source=linkedin&hss_channel=lis-R66mIFj2pp) | Code-first hardware (Stanza), YC S18, constraint-driven | Enterprise-leaning, no public pricing | Church-adjacent (circuits-as-code). Watch, stay `.ocd`/tsx-compatible |
-| atopile | OSS Python HDL, modules/interfaces, KiCad-bound. We already port it (`tools/atopile.py`: bme690, ne555, breath_ketone, e2e_driver4) | Free OSS | Ally, like tscircuit |
-| Copperhead | "Cursor for PCBs" — KiCad AI verification agent | Early/prototype, claims disputed | Watch — closest to our MCP-in-KiCad play, unproven |
-| [EasyEDA Pro](https://drmachine.tech/en/wiki/easyeda-pro-01-intro) (JLCEDA) | Free browser+desktop ECAD, LCSC catalog + one-click JLCPCB, push-shove/diff pairs/buried vias, NGSpice, 3D | Free (Std + Pro); monetizes via fab, not seats | The free incumbent. Integration target #2; copy the fab-affiliate model |
-| KiCad 9 | Free OSS, vendor-neutral, action-plugin API | $0 | Home turf for Option B |
-| Altium / Cadence Allegro X AI / Siemens Xpedition | Enterprise EDA + ML routing, sim ecosystems (Sigrity/Clarity), BGA escape 2000+ pins | Altium ~$7–9k/seat perpetual; others quote-based | Skip until a paid pilot demands it |
+| [ProtoFlow](https://www.protoflow.ai/compare/flux-ai-alternative) | Free desktop AI capture (prompt → part-backed schem → KiCad + ProtoRoute autoroute), LCSC/DigiKey/Mouser, DRC/ERC | Free, no seats/meter/export gate | Closest philosophy; capture + basic route. Validates our model — differentiate on local solvers |
+| [CELUS](https://www.celus.io/) | AI platform: specs → schematics + PCB layout + BOM ("~90% faster"), Renesas Winning Combos, distributor integration (AGS). €25M Series A Jul 2022 (Earlybird; ~$27.4M total). Founded 2018 Munich | No public pricing (/pricing 404s); signup + sales | Capture+layout but enterprise-motion. Verify ECAD export list before claiming overlap |
+| [Circuit Mind](https://www.circuitmind.io/product) (ACE) | Arch/block-diagram → candidate schematics + BOM + verification, cost/size/power sliders, live availability. Customers incl. BAE, Legrand, NI, LANL case study. London | Demo-gated, zero public numbers | Capture only (no layout claim on product page). Skip |
+| [JITX](https://www.jitx.com/plans) | Code-first "software-defined electronics" in Python → AI edits code → schem + routing + HFSS-in-the-loop (56 GHz PCIe Gen7 demo). Local on customer infra. $12M Series A Sep 2022 (Sequoia). Customers: Honeywell, Lockheed, Northrop, OpenAI | Free tier (open-source designs only) + enterprise sales | Church-adjacent. Exports KiCad + Altium (both tiers), Siemens Enterprise-only. Watch |
+| atopile | OSS Python HDL, modules/interfaces, KiCad-bound. We already port it (`tools/atopile.py`: bme690, ne555, breath_ketone, e2e_driver4) | Free OSS, bootstrapped, pre-1.0 (PyPI 0.11.x) | Ally, like tscircuit |
+| Copperhead | "Cursor for PCBs" — open-source KiCad AI verification/design agent | Early/prototype, claims disputed | Watch — closest to our MCP-in-KiCad play, unproven |
+| [EasyEDA Pro](https://prodocs.easyeda.com/en/introduction/std-vs-pro/) (JLCEDA) | Free browser+desktop ECAD. Pro adds hierarchy/design-blocks, stronger DRC, diff-pair/length routing, DXF, panelizing, 3D+enclosure, collab/versions, Altium/KiCad/Eagle import, ODB++/IPC-356A export, API scripting. LCSC live stock/price + one-click JLC order (deepest fab tie of any tool) | Std + Pro both free; pays via fab | The free incumbent. Integration target #2; copy the fab-affiliate model |
+| KiCad 9 (Feb 2025) | Free OSS. Jobsets (CLI+GUI output pipelines), ODB++, ngspice 45, pad stacks, multi-track push-shove, creepage DRC, component classes, reusable design blocks, schematic tables | $0 | Home turf for Option B. Plugin route: legacy SWIG `pcbnew` action plugins + **new v9 IPC API (protobuf)** + PCM distribution (commercial fab plugins need a kicad.org contract). AI ecosystem: community MCP servers only, none blessed |
+| Altium Designer + 365 | Flagship EDA. AI: cloud DFM (acid traps/slivers/annular ring), generative placement, ML supply-chain predictions, ValiAssistant requirements agent | §3 prices; median $17,955/yr | Skip until a paid pilot demands it |
+| Cadence OrCAD X / Allegro X AI | ML predictive routing (12L/2400-net demo 23 min, 97.2%), constraint inference, thermal-aware routing, generative placement. Sigrity/Clarity sim ecosystem | OrCAD X from $2,088/yr; Allegro X from $5,707/yr | Same verdict |
+| Siemens Xpedition / PADS | Xpedition Standard (SMB tier) has AI task automation; 2026 push with **Quilter partnership** toward AI layout; Enterprise 2504/2510 + HyperLynx SI/thermal | Standard $2,999/seat/yr; Enterprise/PADS quote-only | Enterprise lane we skip; note Siemens↔Quilter alliance |
 | Eagle/Fusion 360 | [EAGLE dead June 7, 2026](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/Autodesk-EAGLE-Announcement-Next-steps-and-FAQ.html#1) — sales/support ended | — | Migration pool: ex-Eagle users picking KiCad/EasyEDA now. Target them |
 
 Net: L3 routers (Quilter/DeepPCB) need schematics and charge per compute —
@@ -109,11 +137,16 @@ Circuit Mind) stop at schematic — we finish the board. Free tools
 
 What tscircuit is (verified in [export docs](https://docs.tscircuit.com/command-line/tsci-export)):
 React/TS circuits-as-code, `tsci` CLI (`init/dev/build/check/simulate/
-snapshot/export`), package registry (`tsci add/search`), `tsci export`
-→ Gerbers, schematic/PCB/assembly SVG, `specctra-dsn`, `spice`,
-`kicad_sch`/`kicad_pcb`/`kicad_zip`, `gltf`/`glb`/`step`, plus
-[autorouting API](https://github.com/tscircuit/docs/blob/7363f75c3810df0c3a7bf62b906b3ade06103af6/docs/web-apis/autorouting-api.mdx#1),
+snapshot/export`), npm-compatible registry (`@tsci/<author>.<pkg>`,
+[registry API](https://docs.tscircuit.com/web-apis/the-registry-api)),
+`tsci export` → Gerbers, schematic/PCB/assembly SVG, `specctra-dsn`,
+`spice`, `kicad_sch`/`kicad_pcb`/`kicad_zip`, `gltf`/`glb`/`step`, plus
+[autorouting API](https://github.com/tscircuit/docs/blob/7363f75c3810df0c3a7bf62b906b3ade06103af6/docs/web-apis/autorouting-api.mdx#1)
+(per-board `autorouter={{serverUrl, serverMode, inputFormat}}`,
+`SimpleRouteJson` in/out, custom in-process routers),
 `<analogsimulation>`, KiCad import guides, JLCPCB footprints.
+Company: tscircuit Inc (founder Seve Ibáñez; backers Konvoy, f4) —
+$0, pre-monetization via sponsorships/bounties.
 
 Why it matters to us:
 - **Interop already works.** `tools/tscircuit.py` ports tsx + circuit.json
@@ -128,7 +161,9 @@ Why it matters to us:
 - **Same church.** Open-source, code-first, KiCad-compatible, local files.
   Their users are our users. Alliance posture: stay port-compatible both
   ways (we import tsx today; keep KiCad as the shared interchange so their
-  export is our import and vice versa).
+  export is our import and vice versa). Bonus: their `SimpleRouteJson`
+  autorouter API is a ready-made contract — our maze router could serve it
+  as a local/cloud endpoint later.
 
 ## 6. Our stack — why DeepSeek/Claude + ocdcircuit beats Copilot
 

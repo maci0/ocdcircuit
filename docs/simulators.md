@@ -2,33 +2,36 @@
 
 ## Summary
 
-ocdcircuit today simulates with a stdlib MNA engine (DC + transient, R/C/L,
-V/I/sine sources, Shockley diode — `ocdcircuit/sim.py`, `simulate:mna`
-plugin, `sim` constraints). That covers sizing checks; everything with real
-silicon needs an external simulator. Ranked integration order:
-1. **Pure-stdlib `.cir` exporter** from Board state (zero new deps,
-   golden-file testable without ngspice installed).
-2. **Subprocess runner** (`ngspice -b -o -r`, ASCII raw parse, graceful
-   not-found path) + result back-annotation into board nets.
-3. **`.SUBCKT` include path** for analog ICs (the entire IC story is one
-   primitive: `.include` + X-line) + behavioral B-sources as fallback.
-4. **Tiny built-in gate sim** (~50–100 lines, unit-delay, 74xx glue) — the
-   digital answer that needs no JVM, no dep.
-5. **XSPICE code models via ngspice** for truly mixed boards (no second
-   simulator). Everything else (shared-lib fast path, Xyce, Verilator,
-   Renode/QEMU, IBIS) is conditional-or-never. Whole-board simulation =
+ocdcircuit today simulates with a stdlib MNA engine (DC + transient, R/C,
+V/I/sine sources, Backward-Euler C — `ocdcircuit/sim.py`, `simulate:mna`
+plugin, `sim` constraints). L-prefix footprints map to R; no
+diodes/transistors (use ngspice). That covers sizing checks; everything
+with real silicon needs an external simulator. Integration status
+(research → shipped):
+1. **Pure-stdlib `.cir` exporter** — SHIPPED (`ocdcircuit/spice.py`
+   netlist writer; golden-file testable without ngspice installed).
+2. **Subprocess runner** — SHIPPED (`ngspice -b` + `wrdata` ASCII parse,
+   graceful not-found path) + result back-annotation into board nets.
+3. **`.SUBCKT` include path** — SHIPPED (`sim lib` + `sim op REF MODEL
+   PINS...` positional X-line; `spicepin=` attr) + behavioral B-sources.
+4. **Tiny built-in gate sim** — SHIPPED (`ocdcircuit/gates.py`, 181 lines,
+   unit-delay event-driven; `simulate:gates`; `sim clk`; `logic=` attr).
+5. **XSPICE code models via ngspice** — NEXT (no second simulator; bridge
+   model names still to confirm in the manual). Everything else (shared-lib
+   fast path, Xyce, Verilator, Renode/QEMU, IBIS) is conditional-or-never. Whole-board simulation =
    block-by-block with an explicit model-less-part policy, never a single
    "simulate PCB" button.
 
 ## Background
 
-Current surface: `sim.py` (319 lines, MNA nodal analysis, Backward-Euler
+Current surface: `sim.py` (MNA nodal analysis, Backward-Euler
 companions, Gaussian elimination), `SimPlugin` (`plugins.py`, `simulate:mna`),
-`Board.simulate()` dispatch, `sim vcc/sine/tran/probe/r/c` constraints
-(`docs/OCD.md`), MCP exposure. No transistors, no subcircuits, no AC/noise,
-no digital, no external models. The `simulate` plugin kind already exists, so
-new backends (`simulate:ngspice`, …) slot into the hot-swap architecture with
-zero refactoring.
+`spice.py` (ngspice netlist + subprocess + wrdata parse,
+`simulate:ngspice`), `gates.py` (unit-delay logic, `simulate:gates`),
+`Board.simulate()` dispatch, `sim vcc/sine/tran/probe/r/c/clk/op/ac/lib`
+constraints (`docs/OCD.md`), MCP exposure. No on-board transistors (ngspice
+covers silicon), no AC/noise in stdlib (ngspice covers it), no external
+models in stdlib. Remaining: XSPICE bridges, shared-lib fast path.
 
 ## Key findings (by theme)
 

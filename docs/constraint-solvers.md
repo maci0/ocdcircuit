@@ -11,9 +11,9 @@ at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
 (`outputs/dense-demo-experiment.md`). Exact
 methods (CP-SAT, ILP/MILP) buy optimality proofs but cost a dependency plus a
 linearized/disjunctive formulation the true objective doesn't need yet. The
-cheapest upgrades, in order: (1) second rip-up & reroute pass in
-the maze router (ordering + one bounded retry already exist — maze falls back
-to airwires on contested dense nets while lroute stays instant); (2) a greedy legalization/overlap-removal pass after diffusion;
+cheapest upgrades, in order: (1) negotiated-congestion-lite in
+the maze router (gated 2-round rip-up retry already shipped — remaining gain
+is per-cell history across iterations); (2) a greedy legalization/overlap-removal pass after diffusion;
 (3) cooling-schedule tuning. Skip: ILP dependency, ePlace/RePlAce
 reimplementation, ML placers, push-and-shove.
 
@@ -166,10 +166,9 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   [shove](https://docs.kicad.org/doxygen/classPNS_1_1SHOVE.html),
   [diff-pair](https://docs.kicad.org/doxygen/pns__diff__pair__placer_8cpp_source.html)).
 - Relevance: current A* + bend/via + soft terrain already covers the basics.
-  Upgrades in order: (a) second rip-up & reroute pass (ordering + one bounded
-  retry already exist in `maze.py`; biggest remaining completion gain is a 2nd
-  pass); (b) negotiated-congestion-lite
-  (per-cell history + present-usage adder across iterations); (c) skip Hadlock
+  Upgrades in order: (a) negotiated-congestion-lite (gated 2-round rip-up
+  retry already shipped in `maze.py`; remaining gain is per-cell history +
+  present-usage adder across iterations); (b) skip Hadlock
   re-tuning while the heuristic is admissible. Length meanders only if
   skew-driven routing is required; else keep reporting skew via DRC warnings.
 
