@@ -36,4 +36,4 @@ fabsweep:			# every board x every fab (profile discrimination check)
 	for f in sorted(glob.glob('boards/*.ocd') + glob.glob('boards/*/*.ocd')) \
 	if '/out/' not in f]"
 clean:
-	rm -rf boards/out/* __pycache__ apps/__pycache__ */__pycache__ .mypy_cache
+	rm -rf boards/out boards/*/out *-erc.rpt *-drc.rpt __pycache__ apps/__pycache__ */__pycache__ .mypy_cache
