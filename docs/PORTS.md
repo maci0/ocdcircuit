@@ -2,6 +2,10 @@
 
 One-shot converters in `tools/`. Each emits a board dir (`.ocd` + `fp/`)
 that then lives on its own — re-port only when upstream changes.
+Refresh rule: re-port to a scratch dir, diff, and keep hand improvements
+(`boards/pico_tmc2209` is hand-restructured into blocks — raw porter output
+would destroy that; `pico_tmc2209-atopile` correctly refuses on 6 packageless
+LEDs until upstream adds `.package` lines).
 
 ## atopile (`tools/atopile.py`)
 
