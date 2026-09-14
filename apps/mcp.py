@@ -44,12 +44,12 @@ def t_load(a: dict[str, object]) -> dict[str, object]:
     if isinstance(a.get("fab"), str):
         BOARD.fab = str(a["fab"])
     return {"board": BOARD.name, "parts": len(BOARD.parts),
-            "nets": len(BOARD.nets)}
+            "nets": len(BOARD.nets), "proj": dict(BOARD.proj)}
 
 
 def t_state(a: dict[str, object]) -> dict[str, object]:
     b = _board()
-    return {"ir": agent.ir(b), "text": agent.dumps(b)}
+    return {"ir": agent.ir(b), "text": agent.dumps(b), "proj": dict(b.proj)}
 
 
 def t_patch(a: dict[str, object]) -> dict[str, object]:

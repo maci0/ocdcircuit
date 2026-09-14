@@ -828,6 +828,8 @@ _badp = _call("apply_patch", {"ops": [{"op": "add_part", "ref": "RX",
                                        "fp": "R0805", "attrs": "nope"}]})
 assert _badp["applied"] == 0 and "error" in _badp, _badp
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["proj"] == {}
+assert _call("get_state", {})["proj"] == {}
 assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
 assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
 assert _call("lint", {})["errors"] == []
