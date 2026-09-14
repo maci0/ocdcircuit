@@ -1,10 +1,10 @@
 """Maze (A*) router: grid wavefront with obstacle avoidance + vias.
 
-Grid 0.25mm; blocked cells = part courtyards (+gap) + foreign-net copper.
+Grid 0.25mm (route-grid constraint overrides; coarse router uses 2mm);
+blocked cells = part courtyards (+gap) + foreign-net copper.
 Cost: step + bend penalty + layer-change (via) penalty. Multi-pin nets route
 pin-to-pin (chain), reusing own-net copper as free terrain. One undoable
 effect; streams frames like the L-router.
-# ponytail: O(cells) per pin pair; grid 0.25 fixed — coarser when boards grow.
 """
 from __future__ import annotations
 import heapq
