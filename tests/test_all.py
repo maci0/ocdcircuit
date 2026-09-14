@@ -1061,6 +1061,46 @@ assert os.path.isfile(os.path.join(_td3, "out", "fp", "FP_R3.fp"))  # harvested
 _mb.place(seeds=1, iters=20)
 _mb.route_board()
 assert _mb.check()["errors"] == [], _mb.check()["errors"]
+# tscircuit convert end-to-end: tsx + dist circuit.json → .ocd text →
+# loads, solves clean (pcb centers are board-centered in tscircuit output)
+import json as _js3
+from tools import tscircuit as _tsc2
+_td4 = tempfile.mkdtemp()
+os.makedirs(os.path.join(_td4, "dist", "index"))
+open(os.path.join(_td4, "index.circuit.tsx"), "w").write(
+    '<board width="30mm" height="20mm">\n'
+    '<resistor name="R1" footprint="0805" resistance="10k" />\n'
+    '<capacitor name="C1" footprint="0805" capacitance="100n" />\n'
+    "</board>\n")
+_cj2 = [
+    {"type": "source_component", "source_component_id": "s1", "name": "R1"},
+    {"type": "source_component", "source_component_id": "s2", "name": "C1"},
+    {"type": "source_port", "source_port_id": "p1",
+     "source_component_id": "s1", "pin_number": "1"},
+    {"type": "source_port", "source_port_id": "p2",
+     "source_component_id": "s1", "pin_number": "2"},
+    {"type": "source_port", "source_port_id": "p3",
+     "source_component_id": "s2", "pin_number": "1"},
+    {"type": "source_port", "source_port_id": "sp4",
+     "source_component_id": "s2", "pin_number": "2"},
+    {"type": "source_net", "source_net_id": "n1", "name": "GND"},
+    {"type": "source_trace", "connected_source_port_ids": ["p2", "p3"],
+     "connected_source_net_ids": ["n1"], "display_name": ""},
+    {"type": "pcb_component", "source_component_id": "s1",
+     "center": {"x": -5, "y": 0}},
+    {"type": "pcb_component", "source_component_id": "s2",
+     "center": {"x": 5, "y": 0}},
+]
+open(os.path.join(_td4, "dist", "index", "circuit.json"), "w").write(
+    _js3.dumps(_cj2))
+_tx = _tsc2.convert(_td4)
+_tb = agent.loads(_tx, base=_td4)
+assert sorted(_tb.parts) == ["C1", "R1"] and "GND" in _tb.nets
+assert any(c == {"t": "fixed", "ref": "R1", "x": 10.0, "y": 10.0}
+           for c in _tb.constraints)  # centered (-5,0) + (15,10)
+_tb.place(seeds=1, iters=20)
+_tb.route_board()
+assert _tb.check()["errors"] == [], _tb.check()["errors"]
 # atopile convert end-to-end on a synthetic project: parse → elaborate →
 # emit .ocd → loads, solves clean
 import tempfile as _tf2
