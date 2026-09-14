@@ -40,6 +40,7 @@ SLOTS.register("toolbar", "solver-selects",
                           "<select id=silk title=silk></select>"))
 SLOTS.register("toolbar", "actions",
                lambda s: ('<button id=theme>light</button><button id=solve>solve ▶</button>'
+                          '<button id=fab_dl title="download fab bundle zip">⬇ fab</button>'
                           '<button id=dice title="generate N candidate layouts">🎲</button>'
                           '<input id=ncand value=4 size=1 title="candidate count">'
                           '<button id=undo title="undo (Ctrl+Z)">↩</button>'
@@ -390,6 +391,13 @@ c.addEventListener('mousemove',e=>{if(!S||drag)return;const R=c.getBoundingClien
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value});applyState(r,true);};
 $('dice').onclick=genCands;
+$('fab_dl').onclick=async()=>{
+  const r=await api('/export',{});
+  if(r.error){$('stat').textContent=r.error;$('stat').className='err';return;}
+  const a=document.createElement('a');
+  a.href='data:application/zip;base64,'+r.zip;a.download=r.name;a.click();
+  $('stat').textContent=`${r.name} (${(r.bytes/1024).toFixed(0)}KB)`;$('stat').className='';
+};
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
 async function hist(op){
   const r=await api(op,{});
@@ -611,6 +619,16 @@ class H(http.server.BaseHTTPRequestHandler):
                 H.commit(H.src_text)
                 H.save()
                 self._send(st)
+            elif self.path == "/export":
+                import base64
+                import tempfile as _tf
+                b = agent.loads(H.src_text, base=BASE)
+                with _tf.TemporaryDirectory() as td:
+                    zfn = b.export("bundle", outdir=td)[0]
+                    raw = open(zfn, "rb").read()
+                self._send({"zip": base64.b64encode(raw).decode(),
+                            "name": f"{b.name}-fab.zip",
+                            "bytes": len(raw)})
             elif self.path == "/undo":
                 if len(H.hist) < 2:
                     self._send({"error": "nothing to undo"})

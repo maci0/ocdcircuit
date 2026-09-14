@@ -546,6 +546,7 @@ _st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
 assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
+assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export button
 assert cast(dict[int, dict[str, object]], _st["feasible"])[2]["ok"] is True  # badge
 assert _st["sim_problems"] == []  # psu has no sim lines
 _sv = _studio.H._build("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
