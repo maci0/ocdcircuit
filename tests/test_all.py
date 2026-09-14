@@ -995,4 +995,6 @@ _docr = cast(dict[str, object], _doc.run(_lb))
 assert _docr["ok"] is True, _docr
 assert any(str(c.get("name")) == "plugin:lint"
            and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
+assert any(str(c.get("name")) == "kicad-cli"
+           and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
 print("ALL OK")

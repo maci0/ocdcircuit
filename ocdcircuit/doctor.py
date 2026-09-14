@@ -26,6 +26,9 @@ def doctor(board: Board | None = None) -> dict[str, object]:
     ng = shutil.which("ngspice")
     add("ngspice", ng is not None,
         ng or "missing (simulate:ngspice unavailable, mna still works)")
+    kc = shutil.which("kicad-cli")
+    add("kicad-cli", kc is not None,
+        kc or "missing (sch ERC + pcb DRC validation skipped in tests)")
     try:
         import rich  # noqa: F401
         add("rich", True, "pretty CLI on")
