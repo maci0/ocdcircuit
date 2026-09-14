@@ -343,6 +343,7 @@ class Fiber:
     ACTIVE = "ACTIVE"
     UNLOADING = "UNLOADING"
     INACTIVE = "INACTIVE"
+    FAILED = "FAILED"
 
     _uids = count()
 
@@ -362,6 +363,7 @@ class Fiber:
         self.dispose: Undo = lambda: None
         self.inertia = False
         self._retired = False
+        self.error: Exception | None = None  # FAILED outcome (paper §4.4)
         parent._fibers.append(self)
 
     def target_of(self) -> tuple[int, ...] | None:
@@ -387,7 +389,9 @@ class Fiber:
 
     def refresh(self, force: bool = False) -> None:
         """Recompute target; (un)load on change. Idempotent: neutral
-        changes are harmless (paper §5.1.2)."""
+        changes are harmless (paper §5.1.2). A raising apply parks the
+        fiber FAILED with target ⊥ (paper Table 2) instead of breaking
+        the notify loop mid-reconciliation."""
         t = self.target_of()
         if not force and t == self.target:
             return
@@ -402,16 +406,23 @@ class Fiber:
             else:
                 self.state = Fiber.LOADING
                 self._reload()
+        except Exception as e:
+            self.error = e
+            self.target = None
+            self.committed = None
+            self.state = Fiber.FAILED
         finally:
             self.inertia = False
 
     def retire(self) -> None:
         """Administrative disable (paper: O-Retire); re-enable via resume."""
         self._retired = True
+        self.error = None
         self.refresh(force=True)
 
     def resume(self) -> None:
         self._retired = False
+        self.error = None
         self.refresh(force=True)
 
     def _reload(self) -> None:

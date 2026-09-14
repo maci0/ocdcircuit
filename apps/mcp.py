@@ -301,7 +301,7 @@ def t_plugins(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_ctx(a: dict[str, object]) -> dict[str, object]:
-    """Paper §5.1 context ops: get/set/unprovide a coeffect, or list fibers.
+    """Paper §5.1 context ops: get/set/unset a coeffect, or list fibers.
     Lets agents probe reactive state (what provides key? who is ACTIVE?)."""
     from ocdcircuit.core import Context
     b = _board()
@@ -314,7 +314,7 @@ def t_ctx(a: dict[str, object]) -> dict[str, object]:
     if op == "set":
         b.ctx.set(str(a["key"]), a.get("value"))
         return {"key": str(a["key"]), "set": True}
-    if op == "unprovide":
+    if op == "unset":
         b.ctx.unset(str(a["key"]))
         return {"key": str(a["key"]), "withdrawn": True}
     fibs: list[dict[str, object]] = []
@@ -373,7 +373,7 @@ TOOLS: dict[str, object] = {
     "simulate": (t_sim, {"what": "dc|tran"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
-    "context": (t_ctx, {"op": "fibers|get|set|unprovide", "key?": "coeffect key"}),
+    "context": (t_ctx, {"op": "fibers|get|set|unset", "key?": "coeffect key"}),
     "solve": (t_solve, {"placer?": "key", "router?": "key"}),
 }
 

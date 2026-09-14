@@ -154,6 +154,29 @@ ch.isolate("clk")
 ch.set("clk", "b")
 assert iso.get("clk") == "a" and ch.get("clk") == "b"
 
+# FAILED: raising apply parks the fiber (target ⊥) without breaking notify
+frt = Context()
+
+
+def _boom() -> Component:
+    m = Component("boom")
+    orig = m.mount
+
+    def _m(ctx: Context, *a: object, **k: object) -> None:
+        orig(ctx)
+        raise RuntimeError("bad apply")
+    m.mount = _m  # type: ignore[method-assign]
+    return m
+
+
+fld = Loader(frt)
+fld.declare([{"id": "bad", "factory": _boom, "url": "bad"}])
+bad_fib = fld.entries["bad"].fiber
+assert bad_fib is not None and bad_fib.state == Fiber.FAILED
+assert isinstance(bad_fib.error, RuntimeError) and bad_fib.target is None
+fld.declare([])  # reconcile survives the failed entry
+assert "bad" not in fld.entries
+
 # Alg 8/9: classify + stale detection
 acc, dec = classify({"a"}, {"ext"}, {"a": {"b", "c"}, "b": {"c"}, "c": set(), "z": {"ext"}})
 assert "b" in acc and "z" in dec and "c" not in dec | acc or True
