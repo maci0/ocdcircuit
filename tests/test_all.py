@@ -1532,7 +1532,9 @@ import subprocess as _sp9
 for _mod, _usage in [
         ("tools.tscircuit", "tools.tscircuit"),
         ("benches.monster6502.convert", "monster6502.convert"),
-        ("benches.monster6502.bench", "monster6502.bench")]:
+        ("benches.monster6502.bench", "monster6502.bench"),
+        ("ocdcircuit.raster", "preview.png"),
+        ("ocdcircuit.view3d", "preview3d.html")]:
     _hr = _sp9.run([sys.executable, "-m", _mod, "--help"], capture_output=True,
                    timeout=60, cwd=os.path.join(EX, ".."))
     assert _usage in (_hr.stdout.decode() + _hr.stderr.decode()), (_mod, _hr)

@@ -157,6 +157,9 @@ def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
 
 if __name__ == "__main__":
     import sys
+    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+        print("usage: python -m ocdcircuit.raster <board.ocd>  # writes preview.png")
+        raise SystemExit(1)
     from ocdcircuit import agent
     b = agent.loads(open(sys.argv[1]).read())
     b.place()
