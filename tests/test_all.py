@@ -325,6 +325,23 @@ ro = bo.check()
 assert ro["fab"] == "oshpark"
 bo.fab = "jlc"
 assert not cast(list[str], bo.check()["errors"])
+# drc:all merges siblings with key prefixes; keys= subsets
+_all = bo.check("all")
+assert set(cast(list[str], _all["ran"])) >= {"fab", "erc"}
+assert all(":" in str(e) for e in cast(list[str], _all["errors"]) + cast(list[str], _all["warnings"]))
+_sub = bo.check("all", keys=["erc"])
+assert cast(list[str], _sub["ran"]) == ["erc"]
+assert bo.check_all()["ran"] == cast(list[str], _all["ran"])
+# config:toml applies board.toml, missing file → {}
+with tempfile.TemporaryDirectory() as _td:
+    open(os.path.join(_td, "board.toml"), "w").write(
+        'fab = "oshpark"\nplacer = "compact"\ndrc = ["erc"]\nmask = "blue"\n')
+    _tc = agent.loads(ocd, base=EX)
+    assert _tc.configure("toml", base=_td) == {
+        "fab": "oshpark", "placer": "compact", "drc": ["erc"], "mask": "blue"}
+    assert _tc.fab == "oshpark" and _tc.meta["mask"] == "blue"
+    assert _tc.proj["drc"] == ["erc"]
+    assert _tc.configure("toml", base=EX) == {}
 
 # mix-and-match: every placer × every router × every silk resolves + runs
 for pl in ["diffusion", "compact", "thermal"]:
