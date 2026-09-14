@@ -121,7 +121,6 @@ def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
 
 if __name__ == "__main__":
     import sys
-    sys.path.insert(0, ".")
     from ocdcircuit import agent
     b = agent.loads(open(sys.argv[1]).read())
     b.place()

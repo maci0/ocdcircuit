@@ -104,7 +104,6 @@ canvas{{display:block;cursor:grab}}</style></head><body>
 
 if __name__ == "__main__":
     import sys
-    sys.path.insert(0, ".")
     from ocdcircuit import agent
     from ocdcircuit.geom3d import to_gltf
     b = agent.loads(open(sys.argv[1]).read())
