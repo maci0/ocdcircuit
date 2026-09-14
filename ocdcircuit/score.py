@@ -13,28 +13,7 @@ if TYPE_CHECKING:
 
 EPS = 0.1  # T7 alignment tolerance, mm (placeholder per doc — uncalibrated)
 
-
-def _grid_pairs(bbox: list[tuple[float, float, float, float]],
-                cell: float) -> list[tuple[int, int]]:
-    """Index pairs sharing a grid cell (uniform spatial hash). Every pair
-    whose boxes overlap shares ≥1 cell, so callers testing a box-overlap
-    precondition lose nothing.
-    # ponytail: O(n·k) not O(n²); k = items per cell. cell ≈ typical size."""
-    grid: dict[tuple[int, int], list[int]] = {}
-    for i, (x0, y0, x1, y1) in enumerate(bbox):
-        for gx in range(int(x0 // cell), int(x1 // cell) + 1):
-            for gy in range(int(y0 // cell), int(y1 // cell) + 1):
-                grid.setdefault((gx, gy), []).append(i)
-    seen: set[tuple[int, int]] = set()
-    out: list[tuple[int, int]] = []
-    for members in grid.values():
-        for ai in range(len(members)):
-            for b in members[ai + 1:]:
-                pair = (members[ai], b)
-                if pair not in seen:
-                    seen.add(pair)
-                    out.append(pair)
-    return out
+from .drc import _grid_pairs  # shared spatial hash (lives with _seg_dist)
 
 
 def _routed(board: Board) -> bool:

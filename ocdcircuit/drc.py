@@ -91,6 +91,29 @@ def fp_keepouts(board: Board, ref: str) -> list[dict[str, object]]:
     return out
 
 
+def _grid_pairs(bbox: list[tuple[float, float, float, float]],
+                cell: float) -> list[tuple[int, int]]:
+    """Index pairs sharing a grid cell (uniform spatial hash). Every pair
+    whose boxes overlap shares ≥1 cell, so callers testing a box-overlap
+    precondition lose nothing.
+    # ponytail: O(n·k) not O(n²); k = items per cell. cell ≈ typical size."""
+    grid: dict[tuple[int, int], list[int]] = {}
+    for i, (x0, y0, x1, y1) in enumerate(bbox):
+        for gx in range(int(x0 // cell), int(x1 // cell) + 1):
+            for gy in range(int(y0 // cell), int(y1 // cell) + 1):
+                grid.setdefault((gx, gy), []).append(i)
+    seen: set[tuple[int, int]] = set()
+    out: list[tuple[int, int]] = []
+    for members in grid.values():
+        for ai in range(len(members)):
+            for b in members[ai + 1:]:
+                pair = (members[ai], b)
+                if pair not in seen:
+                    seen.add(pair)
+                    out.append(pair)
+    return out
+
+
 def _seg_dist(a: tuple[float, float, float, float],
               b: tuple[float, float, float, float]) -> float:
     (x1, y1, x2, y2), (x3, y3, x4, y4) = a, b
@@ -147,14 +170,16 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     if board.width > max_w or board.height > max_h:
         errors.append(f"size {board.width:g}x{board.height:g} exceeds {P['name']}")
     parts = list(board.parts.values())
-    for i in range(len(parts)):
-        for j in range(i + 1, len(parts)):
-            a, b = parts[i], parts[j]
-            aw, ah = a.wh()
-            bw, bh = b.wh()
-            if (abs(a.x - b.x) < (aw + bw) / 2 + 0.1 and
-                    abs(a.y - b.y) < (ah + bh) / 2 + 0.1):
-                errors.append(f"overlap {a.ref}-{b.ref}")
+    sizes = [p.wh() for p in parts]
+    boxes = [(p.x - w / 2 - 0.1, p.y - h / 2 - 0.1, p.x + w / 2 + 0.1, p.y + h / 2 + 0.1)
+             for p, (w, h) in zip(parts, sizes)]
+    for i, j in _grid_pairs(boxes, 5.0):
+        a, b = parts[i], parts[j]
+        aw, ah = sizes[i]
+        bw, bh = sizes[j]
+        if (abs(a.x - b.x) < (aw + bw) / 2 + 0.1 and
+                abs(a.y - b.y) < (ah + bh) / 2 + 0.1):
+            errors.append(f"overlap {a.ref}-{b.ref}")
     lib = board._lib()
     for p in parts:
         if lib.get(p.fp, {}).get("edge"):
@@ -276,17 +301,34 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
         return need
 
     tr = board.traces
-    for i in range(len(tr)):
-        for j in range(i + 1, len(tr)):
-            sa, sb = tr[i], tr[j]
-            if sa.layer != sb.layer or sa.net == sb.net:
-                continue
-            if sa.layer in poured.get(sa.net, []) or sb.layer in poured.get(sb.net, []):
-                continue  # plane copper never clearances against traces
-            if _seg_dist((sa.x1, sa.y1, sa.x2, sa.y2),
-                         (sb.x1, sb.y1, sb.x2, sb.y2)) < _need(sa.net, sb.net):
-                warnings.append(f"clearance {sa.net}-{sb.net}")
-                break
+    by_layer: dict[int, list[int]] = {}
+    for i, s in enumerate(tr):
+        by_layer.setdefault(s.layer, []).append(i)
+    # pad: a clearance hit needs dist < need, so boxes grown by max need
+    # share a cell with every true hit (same argument as _grid_pairs docs)
+    max_need = min_space
+    if classes:
+        max_need = max([min_space] + list(classes.values()))
+    for members in by_layer.values():
+        boxes = [(min(tr[i].x1, tr[i].x2) - max_need, min(tr[i].y1, tr[i].y2) - max_need,
+                  max(tr[i].x1, tr[i].x2) + max_need, max(tr[i].y1, tr[i].y2) + max_need)
+                 for i in members]
+        cand: dict[int, list[int]] = {}
+        for pa, pb in _grid_pairs(boxes, 5.0):
+            ia, ib = members[pa], members[pb]
+            cand.setdefault(min(ia, ib), []).append(max(ia, ib))
+        for i in sorted(cand):
+            sa = tr[i]
+            for j in sorted(cand[i]):
+                sb = tr[j]
+                if sa.net == sb.net:
+                    continue
+                if sa.layer in poured.get(sa.net, []) or sb.layer in poured.get(sb.net, []):
+                    continue  # plane copper never clearances against traces
+                if _seg_dist((sa.x1, sa.y1, sa.x2, sa.y2),
+                             (sb.x1, sb.y1, sb.x2, sb.y2)) < _need(sa.net, sb.net):
+                    warnings.append(f"clearance {sa.net}-{sb.net}")
+                    break
     return {"errors": errors, "warnings": warnings, "fab": key}
 
 
