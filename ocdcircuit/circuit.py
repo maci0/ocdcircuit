@@ -99,12 +99,9 @@ class Block:
 class Board(Component):
     def __init__(self, name: str = "board", width: float = 40.0,
                  height: float = 30.0, layers: int = 2) -> None:
-        if not (math.isfinite(width) and math.isfinite(height) and width > 0 and height > 0):
-            raise ValueError(f"board size must be positive (got {width}x{height})")
-        if layers < 1:
-            raise ValueError(f"board needs ≥1 layer (got {layers})")
         super().__init__(name)  # name setter validates (no path separators)
         self.ctx = Context()
+        # property setters validate (positive + finite size, ≥1 layer)
         self.width, self.height, self.layers = width, height, layers
         self._fab: str = "jlc"
         self.meta: dict[str, str] = {}  # `meta k v` lines: title/rev/desc/...
@@ -178,6 +175,36 @@ class Board(Component):
         if not name or "/" in name or "\\" in name or ".." in name or "\x00" in name:
             raise ValueError(f"bad board name {name!r} (export filenames derive from it)")
         self._name = name
+
+    @property
+    def width(self) -> float:
+        return self._width
+
+    @width.setter
+    def width(self, w: float) -> None:
+        if not isinstance(w, (int, float)) or not math.isfinite(w) or w <= 0:
+            raise ValueError(f"board width must be positive (got {w!r})")
+        self._width = w
+
+    @property
+    def height(self) -> float:
+        return self._height
+
+    @height.setter
+    def height(self, h: float) -> None:
+        if not isinstance(h, (int, float)) or not math.isfinite(h) or h <= 0:
+            raise ValueError(f"board height must be positive (got {h!r})")
+        self._height = h
+
+    @property
+    def layers(self) -> int:
+        return self._layers
+
+    @layers.setter
+    def layers(self, n: int) -> None:
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            raise ValueError(f"board needs ≥1 layer (got {n!r})")
+        self._layers = n
 
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
         """Board domain edit: flat-stack undo + journal into the board

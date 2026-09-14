@@ -1052,6 +1052,15 @@ try:
 except ValueError as e:
     assert "bad board name" in str(e), str(e)
 assert _bb2.name == "t"  # failed set doesn't stick (name untouched)
+# board size/layers validate on every assignment (not just set_board)
+for _sattr, _sval in [("width", -5), ("height", 0), ("layers", 0),
+                       ("width", float("nan")), ("layers", "2")]:
+    try:
+        setattr(_bb2, _sattr, _sval)
+        raise AssertionError(f"should have raised: {_sattr}={_sval}")
+    except ValueError:
+        pass
+assert (_bb2.width, _bb2.height, _bb2.layers) == (40.0, 30.0, 2)
 # check-all falls back to board.toml drc picks when keys omitted
 with tempfile.TemporaryDirectory() as _md3:
     shutil.copy(os.path.join(EX, "psu.ocd"), os.path.join(_md3, "psu.ocd"))
