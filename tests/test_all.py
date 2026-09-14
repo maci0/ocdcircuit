@@ -500,6 +500,12 @@ _ext = cast(dict[str, object], _call("score", {"tidy": False})["extent"])
 assert 0 < cast(float, _ext["fill"]) <= 1.0, _ext
 assert _call("diff", {"text": open(os.path.join(EX, "blinky_555.ocd")).read(),
                        "base": EX}) == {"diff": ""}
+from ocdcircuit import diff as _diffmod
+_da = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
+_db = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.1 R1.2\nnet GND: R1.2 C1.2\npour GND on 0\nroute-grid 0.2\n", base=EX)
+_dd = _diffmod.diff(_da, _db)
+assert "+ part C1" in _dd and "+ pour" in _dd and "route-grid" in _dd, _dd
 solved = _call("solve", {"placer": "compact", "router": "maze"})
 assert solved["errors"] == [] and solved["warnings"] == [], solved
 _g = _call("candidates", {"n": 2, "seed": 3, "seeds": 1, "iters": 30})

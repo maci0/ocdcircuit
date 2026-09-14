@@ -30,4 +30,17 @@ def diff(a: Board, b: Board) -> str:
     for n in sorted(set(an) & set(bn)):
         if an[n] != bn[n]:
             out.append(f"~ net {n}: {' '.join(an[n])} → {' '.join(bn[n])}")
+
+    def _canon(c: object) -> str:
+        # constraint identity without the parser (diff must not import agent)
+        assert isinstance(c, dict)
+        return str(c.get("t", "?")) + " " + " ".join(
+            f"{k}={v}" for k, v in sorted(c.items()) if k != "t")
+
+    ac = sorted(_canon(c) for c in a.constraints)
+    bc = sorted(_canon(c) for c in b.constraints)
+    for c in sorted(set(ac) - set(bc)):
+        out.append(f"- {c}")
+    for c in sorted(set(bc) - set(ac)):
+        out.append(f"+ {c}")
     return "\n".join(out)
