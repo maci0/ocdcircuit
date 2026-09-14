@@ -618,11 +618,11 @@ with tempfile.TemporaryDirectory() as d:
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
     assert '(net 0 "")' in kc  # KiCad requires the unconnected net declared
     # DNP parts carry (attr dnp) in KiCad too (excluded from BOM/PnP there)
-    _kd = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1\npart C1 C0805 100n\n"
-                      "N :: R1.1 C1.1\nGND :: R1.2 C1.2\n", base=EX)
-    _kd.place(seeds=1, iters=20)
-    _kd.route_board()
-    _kk = open([f for f in _kd.export("kicad", outdir=tempfile.mkdtemp())
+    _kdd = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1\npart C1 C0805 100n\n"
+                       "N :: R1.1 C1.1\nGND :: R1.2 C1.2\n", base=EX)
+    _kdd.place(seeds=1, iters=20)
+    _kdd.route_board()
+    _kk = open([f for f in _kdd.export("kicad", outdir=tempfile.mkdtemp())
                 if f.endswith(".kicad_pcb")][0]).read()
     assert _kk.count("(attr dnp)") == 1, _kk.count("(attr dnp)")
     # net classes reach KiCad (net_class with clearance/width + member nets)
