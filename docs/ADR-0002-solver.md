@@ -24,6 +24,8 @@ run N seeds, keep the best.
   boards, refine with maze after) → maze 0.3s/clean (default) → wiremask
   0.9s/clean (EA layer assignment; same quality, 3× time — use when layer
   choice, not geometry, is the bottleneck).
+- Auto-select at 1000+ parts (no flags): placer → multilevel, router →
+  coarse. Explicit flags always win; the default path follows the ladder.
 - Placer objective knobs (`pull`/`spread`/`edge`/`thermal`) + plugin presets:
   diffusion (default), compact (area), thermal (big bodies drift to edges
   for heatsinking + repel harder; separation wins are board-dependent —
