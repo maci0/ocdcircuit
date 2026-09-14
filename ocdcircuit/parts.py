@@ -324,6 +324,48 @@ FOOTPRINTS = {
     "MOUNT_M3": mounting_hole(), "FIDUCIAL": fiducial(),
 }
 
+# KiCad library names → stdlib (research brief rec #1: alias, don't rename).
+# Covers the common KiCad footprints; full lib names keep their `Lib:` prefix
+# form too (`Resistor_SMD:R_0603_1608Metric`). Unknown names still fail loud
+# at load (no silent wrong-size substitution — a 0603 is not a 0402).
+KICAD_ALIASES = {
+    "R_0201_0603Metric": "R0201", "R_0402_1005Metric": "R0402",
+    "R_0603_1608Metric": "R0603", "R_0805_2012Metric": "R0805",
+    "R_1206_3216Metric": "R1206", "R_1210_3225Metric": "R1210",
+    "R_2512_6332Metric": "R2512",
+    "C_0201_0603Metric": "C0201", "C_0402_1005Metric": "C0402",
+    "C_0603_1608Metric": "C0603", "C_0805_2012Metric": "C0805",
+    "C_1206_3216Metric": "C1206", "C_1210_3225Metric": "C1210",
+    "LED_0402_1005Metric": "LED0402", "LED_0603_1608Metric": "LED0603",
+    "LED_0805_2012Metric": "LED0805", "LED_1206_3216Metric": "LED1206",
+    "D_SOD-323": "D_SOD323", "D_SOD-123": "D_SOD123",
+    "D_SMA": "D_SMA", "D_SMB": "D_SMB", "D_SMC": "D_SMC",
+    "L_0805_2012Metric": "L0805", "L_1206_3216Metric": "L1206",
+    "SOT-23": "SOT23", "SOT-363_SC-70-6": "SOT363", "SOT-89": "SOT89",
+    "SOT-223": "SOT223", "TO-252-2_DPAK": "DPAK", "TO-263-2_D2PAK": "D2PAK",
+    "SOIC-8_3.9x4.9mm_P1.27mm": "SOIC8", "SOIC-14_3.9x8.7mm_P1.27mm": "SOIC14",
+    "SOIC-16_3.9x9.9mm_P1.27mm": "SOIC16",
+    "QFP-32_7x7mm_P0.8mm": "QFP32", "QFP-44_10x10mm_P0.8mm": "QFP44",
+    "QFP-48_7x7mm_P0.5mm": "QFP48", "QFP-64_10x10mm_P0.5mm": "QFP64",
+    "QFN-28_5x5mm_P0.5mm": "QFN28", "QFN-32_5x5mm_P0.5mm": "QFN32",
+    "QFN-48_7x7mm_P0.5mm": "QFN48",
+    "PinHeader_1x02_P2.54mm_Horizontal": "PINHD2",
+    "PinHeader_1x04_P2.54mm_Vertical": "PINHD4",
+    "USB_C_Receptacle_GCT_USB4075": "USB_C",
+    "Crystal_SMD_3225-4Pin_3.2x2.5mm": "XTAL_3225",
+}
+
+
+def resolve_fp(name: str) -> str:
+    """Stdlib name for a footprint reference: direct hit, KiCad alias
+    (bare or `Lib:Footprint`), else the name unchanged (caller fails loud)."""
+    if name in FOOTPRINTS:
+        return name
+    base = name.split(":")[-1]
+    if base in FOOTPRINTS:
+        return base
+    return KICAD_ALIASES.get(base, name)
+
 def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
     """{pin: (dx, dy)} pad centers — what solver/DRC/export need.
     Merges SMD pads AND PTH holes (mixed footprints like USB-C exist)."""

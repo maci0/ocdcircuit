@@ -846,6 +846,14 @@ assert abs(calc.trace_width(1.0) - 0.3) < 0.05
 assert abs(calc.trace_amps(calc.trace_width(1.0)) - 1.0) < 0.01  # inverse round-trips
 assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
+# KiCad footprint aliases land on stdlib (bare + Lib: prefix); unknown stays loud
+from ocdcircuit.parts import resolve_fp
+assert resolve_fp("Resistor_SMD:R_0603_1608Metric") == "R0603"
+assert resolve_fp("SOT-23") == "SOT23" and resolve_fp("R0805") == "R0805"
+assert resolve_fp("Nope:Foo_Bar") == "Nope:Foo_Bar"
+_ab = Board("talias", 40, 30)
+_ab.add_part("R1", "Resistor_SMD:R_0805_2012Metric", "10k")
+assert _ab.parts["R1"].fp == "R0805"
 
 # foreign: kicad_mod + eagle lbr/brd + tscircuit JSON + easyeda Std
 from ocdcircuit import foreign

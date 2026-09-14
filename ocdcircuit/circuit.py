@@ -341,6 +341,8 @@ class Board(Component):
     def add_part(self, ref: str, fp: str, value: str = "",
                  x: float | None = None, y: float | None = None,
                  attrs: dict[str, str] | None = None) -> None:
+        from .parts import resolve_fp
+        fp = resolve_fp(fp)  # KiCad aliases land on stdlib names here
         lib = self._lib()
         if fp not in lib:
             raise KeyError(f"unknown footprint {fp}")
