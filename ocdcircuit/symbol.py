@@ -8,6 +8,7 @@ get auto-stubs stacked on the right edge.
 Format (one fact per line, # comments) — mirrors .fp:
   symbol NAME [WxH]      # body box; default sizes to pins
   pin NUM SIDE [LABEL]   # SIDE = left|right|top|bottom, stub position
+  label TEXT             # body caption ({ref} {value} {fp} interpolate)
   notch                  # pin-1 / polarity dot marker (ICs)
   zigzag                 # draw resistor zigzag instead of box (R only)
 
@@ -27,6 +28,7 @@ def loads(text: str) -> tuple[str, Symbol]:
     w = h = 0.0
     pins: dict[str, tuple[str, int, str]] = {}
     counts: dict[str, int] = {}
+    label = ""
     notch = zigzag = False
     for ln, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
@@ -53,13 +55,19 @@ def loads(text: str) -> tuple[str, Symbol]:
             pins[toks[1]] = (side, counts[side] - 1, " ".join(toks[3:]))
         elif kw == "notch":
             notch = True
+        elif kw == "label":
+            toks = line.split(None, 1)
+            if len(toks) != 2 or not toks[1].strip():
+                raise err("want: label TEXT (supports {ref} {value} {fp})")
+            label = toks[1].strip()
         elif kw == "zigzag":
             zigzag = True
         else:
             raise err("unknown statement")
     if not name:
         raise ValueError("missing symbol header")
-    return name, {"w": w, "h": h, "pins": pins, "notch": notch, "zigzag": zigzag}
+    return name, {"w": w, "h": h, "pins": pins, "notch": notch,
+                   "zigzag": zigzag, "label": label}
 
 
 def load_file(path: str) -> tuple[str, Symbol]:
@@ -105,7 +113,8 @@ def sized(sym: Symbol, n_pins: int) -> Symbol:
             2)
         w, h = (w or 6.0), (h or max(4.0, float(rows)))
     return {"w": w, "h": h, "pins": dict(pins),
-            "notch": bool(sym["notch"]), "zigzag": bool(sym["zigzag"])}
+            "notch": bool(sym["notch"]), "zigzag": bool(sym["zigzag"]),
+            "label": str(sym.get("label", ""))}
 
 
 def _box(pins: list[str], notch: bool = False) -> Symbol:
@@ -115,26 +124,26 @@ def _box(pins: list[str], notch: bool = False) -> Symbol:
         d[p] = ("left", i, "")
     for i, p in enumerate(right):
         d[p] = ("right", i, "")
-    return {"w": 0.0, "h": 0.0, "pins": d, "notch": notch, "zigzag": False}
+    return {"w": 0.0, "h": 0.0, "pins": d, "notch": notch, "zigzag": False, "label": ""}
 
 
 SYMBOLS: dict[str, Symbol] = {
     # 2-pin passives: zigzag R, plain C/L/D/LED boxes
     "R": {"w": 4.0, "h": 2.0, "pins": {"1": ("left", 0, ""), "2": ("right", 0, "")},
-          "notch": False, "zigzag": True},
+          "notch": False, "zigzag": True, "label": ""},
     "C": {"w": 2.0, "h": 2.0, "pins": {"1": ("left", 0, ""), "2": ("right", 0, "")},
-          "notch": False, "zigzag": False},
+          "notch": False, "zigzag": False, "label": ""},
     "L": {"w": 4.0, "h": 2.0, "pins": {"1": ("left", 0, ""), "2": ("right", 0, "")},
-          "notch": False, "zigzag": False},
+          "notch": False, "zigzag": False, "label": ""},
     "D": {"w": 3.0, "h": 2.0, "pins": {"1": ("left", 0, ""), "2": ("right", 0, "")},
-          "notch": False, "zigzag": False},
+          "notch": False, "zigzag": False, "label": ""},
     "Q3": {"w": 4.0, "h": 4.0, "pins": {"1": ("left", 0, "B"), "2": ("left", 1, "E"),
                                         "3": ("right", 0, "C")},
-           "notch": False, "zigzag": False},
+           "notch": False, "zigzag": False, "label": ""},
     "OPAMP": {"w": 6.0, "h": 6.0, "pins": {"1": ("left", 0, "OUT"), "2": ("left", 1, "IN-"),
                                            "3": ("left", 2, "IN+"), "4": ("top", 0, "V+"),
                                            "5": ("bottom", 0, "V-")},
-              "notch": False, "zigzag": False},
+              "notch": False, "zigzag": False, "label": ""},
     "IC8": _box([str(i) for i in range(1, 9)], notch=True),
     "IC14": _box([str(i) for i in range(1, 15)], notch=True),
     "IC16": _box([str(i) for i in range(1, 17)], notch=True),
@@ -169,7 +178,7 @@ def resolve(fp: str, sym_attr: str = "",
     for prefix, sname in sorted(FP_SYMBOLS, key=lambda t: -len(t[0])):
         if fp.startswith(prefix):
             return SYMBOLS[sname]
-    return {"w": 0.0, "h": 0.0, "pins": {}, "notch": False, "zigzag": False}
+    return {"w": 0.0, "h": 0.0, "pins": {}, "notch": False, "zigzag": False, "label": ""}
 
 
 if __name__ == "__main__":

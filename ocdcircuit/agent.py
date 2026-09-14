@@ -283,7 +283,18 @@ def dumps(board: Board) -> str:
         if t == "near":
             L.append(f"keep {c['a']} near {c['b']} {_f(c.get('w', 2)):g}")
         elif t == "fixed":
-            L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
+            # x=/y= attrs already declare it on the part line — don't repeat
+            _p = board.parts.get(str(c["ref"]))
+            _ax, _ay = (_p.attrs.get("x") if _p else None,
+                        _p.attrs.get("y") if _p else None)
+            try:
+                _same = (_ax is not None and _ay is not None
+                         and abs(float(_ax) - float(cast(float, c["x"]))) < 1e-9
+                         and abs(float(_ay) - float(cast(float, c["y"]))) < 1e-9)
+            except (ValueError, TypeError):
+                _same = False
+            if not _same:
+                L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
         elif t == "layer" and str(c["net"]) in board.nets:
             continue  # folded onto the net line above (or via `use`)
         elif t == "layer":
@@ -599,6 +610,14 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         b.add_part(ref, fp, value, attrs=attrs or None)
     except (KeyError, ValueError) as e:
         raise err(f"{ctx}{e}")
+    # declarative placement: `part R1 R0805 1k x=3 y=15` ≡ `fix R1 at 3 15`
+    if "x" in attrs or "y" in attrs:
+        try:
+            px = float(attrs.get("x", "")) if "x" in attrs else b.parts[ref].x
+            py = float(attrs.get("y", "")) if "y" in attrs else b.parts[ref].y
+        except ValueError:
+            raise err(f"{ctx}bad x=/y= on part {ref}")
+        b.constrain({"t": "fixed", "ref": ref, "x": px, "y": py})
 
 
 def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
@@ -620,6 +639,12 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
     for a in attrs:
         if a[0] in "Ll" and a[1:].isdigit():
             b.constrain({"t": "layer", "net": name, "layer": int(a[1:])})
+        elif a.startswith("pour="):
+            # declarative pour: `GND pour=0 :: ...` ≡ `pour GND on 0`
+            _pv = a.partition("=")[2].lower()
+            _pl = {"top": 0, "bottom": b.layers - 1}.get(_pv, _pv)
+            assert str(_pl).isdigit(), f"{ctx}bad pour layer {a!r}"
+            b.constrain({"t": "pour", "net": name, "layer": int(_pl)})
         elif "=" in a:
             k, _, v = a.partition("=")
             if not k or not v:

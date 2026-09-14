@@ -286,6 +286,30 @@ class KicadExporter(Plugin[list[str]]):
         return export.export_kicad(board, outdir)
 
 
+class EagleExporter(Plugin[list[str]]):
+    """Eagle .brd XML: libraries, elements, signals. Round-trips through
+    importer:eagle-brd."""
+    kind, key = "exporter", "eagle"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_eagle(board, outdir)
+
+
+class KicadSchExporter(Plugin[list[str]]):
+    """KiCad .kicad_sch: box symbols on the shared sch_layout grid, one
+    wire per pin-to-rail drop, one global_label per net. ERC-clean."""
+    kind, key = "exporter", "kicad-sch"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_kicad_sch(board, outdir)
+
+
 class BundleExporter(Plugin[list[str]]):
     """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready."""
     kind, key = "exporter", "bundle"
@@ -555,6 +579,18 @@ def sch_layout(board: Board) -> dict[str, object]:
             "H": top + len(nets) * 26 + 30 + 40}
 
 
+def _cap(sym: dict[str, object], p: object) -> str:
+    """Body caption: symbol `label` template ({ref} {value} {fp}), else ref."""
+    from typing import cast
+    ref = str(getattr(p, "ref", ""))
+    tmpl = str(sym.get("label", ""))
+    if not tmpl:
+        return ref
+    return tmpl.replace("{ref}", ref).replace(
+        "{value}", str(getattr(p, "value", ""))).replace(
+        "{fp}", str(getattr(p, "fp", "")))
+
+
 class SchRenderer(Plugin[str]):
     """Schematic SVG, Sugiyama-lite (research §5): parts as symbol bodies in
     one barycenter-ordered row (shared nets pull together), nets as vertical
@@ -600,7 +636,7 @@ class SchRenderer(Plugin[str]):
                     el.append(f'<circle cx="{x0 + 4:.1f}" cy="{y0 + 4:.1f}" r="2" '
                               f'fill="{text}"/>')
             el.append(f'<text x="{px[r]}" y="{top - 40}" fill="{text}" font-size="11" '
-                      f'text-anchor="middle">{r}</text>')
+                      f'text-anchor="middle">{_cap(sym, p)}</text>')
             # pin stubs + labels around the body edges
             pins = cast(dict[str, tuple[str, int, str]], sym["pins"])
             extra = 0
@@ -619,7 +655,8 @@ class SchRenderer(Plugin[str]):
                               f'x2="{ax + ox:.1f}" y2="{ay + oy:.1f}" stroke="{text}"/>')
                     el.append(f'<circle cx="{ax + ox:.1f}" cy="{ay + oy:.1f}" r="2" '
                               f'fill="{text}"/>')
-                    lbl = pins.get(str(pin), ("", 0, ""))[2] or str(pin)
+                    lbl = (p.attrs.get(f"pin{pin}") or
+                           pins.get(str(pin), ("", 0, ""))[2] or str(pin))
                     el.append(f'<text x="{ax + ox * 1.6:.1f}" y="{ay + oy * 1.6 + 3:.1f}" '
                               f'fill="{text}" font-size="8" text-anchor="middle" '
                               f'font-family="monospace">{lbl}</text>')
@@ -1138,7 +1175,8 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
              FabDrc, Erc,
-             FlexDrc, JlcExporter, KicadExporter, EasyedaExporter,
+             FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
+             EagleExporter, EasyedaExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,

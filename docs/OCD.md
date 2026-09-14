@@ -12,7 +12,7 @@ VCC :: J1.1 <--> U1.8 <--> R1.1  # net flow: NAME [attrs] :: REF.PIN <--> ...
 GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> = layer, w<n> = width mm
 HV class=highvolt :: J1.3 <--> U1.2  # k=v net attrs (class= names a class…)
 class highvolt width=0.8 clearance=0.5  # …defined once: width floor + DRC gap
-fix J1 at 3 15                 # pin a part at x y
+fix J1 at 3 15                 # pin a part at x y (or x=/y= on the part line)
 keep U1 near C1 3              # pull parts together (weight, default 2)
 route GND on 1                 # force net to layer (folds onto net line)
 trace VCC 0.5                  # trace width mm (folds onto net line)
@@ -29,8 +29,8 @@ silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
 fp exotic.fp                 # custom footprint file (pads/holes/3D/keepouts)
-sym opamp.sym                # custom symbol file (body + pin stubs)
-part U1 SOIC8 TL072 sym=OPX  # sym= override (default: footprint map)
+sym opamp.sym                # custom symbol file (body + pin stubs + label)
+part U1 SOIC8 TL072 sym=OPX pin2=VFB  # sym= override; pinN= per-part pin label
 block driver               # reusable unit: local refs, stamped per instance
   part U QFN28             #   (indented lines: part/net/constraints only)
 end
@@ -38,7 +38,7 @@ instance driver as Z1      # stamp with PREFIX_; repeat as needed
 instance driver as Z2 join VCC GND  # joined nets merge, rest stay local
 part C1 C0402 100n lcsc=C1525 rot=90  # trailing k=v attrs (LCSC, rotation)
 part R9 R0603 0 dnp=1        # do-not-place: in BOM as DNP row, ERC-exempt
-pour GND on 0                # copper pour (top=0, bottom=layers-1)
+pour GND on 0                # copper pour (or pour=0 on the net line)
 keepout 11.5 47 15.7x1.9     # rect keepout, center x y WxH [+ on layers]
 keepout 20 15 d6           # round keepout, center x y dia [+ on layers]
 keepout near F1 d4         # deadzone follows part (fiducial); WxH or dN,

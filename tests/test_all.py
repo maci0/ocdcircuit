@@ -620,6 +620,23 @@ _ezrt = foreign.easyeda_doc(_jj.loads(open(_ezf).read()))
 assert isinstance(_ezrt, dict)
 assert {p["ref"] for p in cast(list[dict[str, object]], _ezrt["parts"])} == {"R1", "R2"}
 assert set(cast(dict[str, object], _ezrt["nets"])) == {"N", "GND"}
+# eagle .brd export round-trips through our own importer (refs + nets)
+import xml.etree.ElementTree as _ET
+_egf = _ebb.export("eagle", outdir=tempfile.mkdtemp())[0]
+assert _egf.endswith(".brd") and _ET.parse(_egf) is not None
+_egrt = agent.from_ir(cast(dict[str, object], foreign.eagle_brd(open(_egf).read())))
+assert sorted(_egrt.parts) == ["R1", "R2"] and sorted(_egrt.nets) == ["GND", "N"]
+# kicad .sch export: same picture as the canvas, ERC-clean per kicad-cli
+_ksf = _ebb.export("kicad-sch", outdir=tempfile.mkdtemp())[0]
+assert _ksf.endswith(".kicad_sch") and "(global_label" in open(_ksf).read()
+if shutil.which("kicad-cli") is not None:
+    import glob as _glob
+    _ercd = tempfile.mkdtemp()
+    subprocess.run(["kicad-cli", "sch", "erc", _ksf],
+                   capture_output=True, cwd=_ercd)
+    _erct = open(_glob.glob(os.path.join(_ercd, "*-erc.rpt"))[0]).read()
+    _ercsum = next(l for l in _erct.splitlines() if "ERC messages" in l)
+    assert "Errors 0" in _ercsum, _ercsum
 
 # textured 3D: glTF materials + shared mesh builder
 import json as _jj
@@ -870,10 +887,12 @@ assert "<polyline" in _svg and _svg.count("<circle") >= 4  # zigzag + stubs
 with tempfile.TemporaryDirectory() as _d:
     _symfp = os.path.join(_d, "op.sym")
     open(_symfp, "w").write("symbol OPX\npin 1 left IN+\npin 2 left IN-\n"
-                         "pin 3 right OUT\nnotch\n")
-    _sb = agent.loads(f"board s2 20x10\nsym {_symfp}\npart U1 SOIC8 TL072 sym=OPX\n"
+                         "pin 3 right OUT\nlabel {ref} {value}\nnotch\n")
+    _sb = agent.loads(f"board s2 20x10\nsym {_symfp}\npart U1 SOIC8 TL072 sym=OPX pin2=VFB\n"
                       "net A: U1.1\nnet B: U1.2\n")
     assert cast(dict[str, object], _sb.symbol_of("U1")["pins"])["3"] == ("right", 0, "OUT")
+    _ssvg = cast(str, _sb.render("sch"))
+    assert "U1 TL072" in _ssvg and "VFB" in _ssvg  # label template + pin override
     assert "sym " in agent.dumps(_sb)  # round-trips
     _sb2 = agent.loads("board s3 20x10\npart U1 SOIC8 TL072\nnet A: U1.1\n")
     _s0 = _sb2.ctx.snapshot()
