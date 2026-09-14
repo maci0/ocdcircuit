@@ -192,6 +192,13 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"sim\s+probe\s+(\w+)$", t, re.I)
     if m:
         return {"t": "sim", "kind": "probe", "net": m.group(1)}
+    m = re.match(r"sim\s+expect\s+(\w+)\s*(==|!=|<=|>=|<|>|~)\s*(\S+)(?:\s+tol\s+(\S+))?$", t, re.I)
+    if m:
+        e: Constraint = {"t": "sim", "kind": "expect", "net": m.group(1),
+                         "op": m.group(2), "value": m.group(3)}
+        if m.group(4) is not None:
+            e["tol"] = m.group(4)
+        return e
     m = re.match(r"sim\s+([rcldq])\s+(\w+)\s+(\S+)$", t, re.I)
     if m:
         return {"t": "sim", "kind": m.group(1), "ref": m.group(2), "value": m.group(3)}
@@ -243,9 +250,10 @@ def dumps(board: Board) -> str:
             continue  # owned by an include/instance — dumped as use/instance
         attrs = "".join(f" {k}={v}" for k, v in sorted(p.attrs.items()))
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
-    # fp lines up front: footprints must exist before parts use them
+    # fp/sym lines up front: must exist before parts use them
     fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
-    L[1:1] = fps
+    syms = [f"sym {board.sym_src[name]}" for name in sorted(board.custom_sym) if name in board.sym_src]
+    L[1:1] = fps + syms
     # fold layer/width constraints onto the net line (first wins on dupes)
     lay: dict[str, object] = {}
     wid: dict[str, object] = {}
@@ -347,6 +355,11 @@ def _dump_sim(c: Constraint) -> str:
         return f"sim tran {_f(c.get('t_end', 0.01)):g} {_i(c.get('steps'), 1000)}"
     if k == "probe":
         return f"sim probe {c['net']}"
+    if k == "expect":
+        s = f"sim expect {c['net']} {c.get('op', '==')} {c.get('value', '0')}"
+        if c.get("tol") is not None:
+            s += f" tol {c['tol']}"
+        return s
     if k == "op":
         return f"sim op {c.get('ref', '')} {c.get('value', '')}"
     if k == "lib":
@@ -460,6 +473,17 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 b.import_fp(key, path=fn)
             except (OSError, ValueError, KeyError) as e:
                 raise err(e)
+        elif kw == "sym":
+            toks = line.split(None, 1)
+            if len(toks) != 2:
+                raise err("want: sym PATH/to/part.sym")
+            import os as _os
+            fn = _os.path.normpath(_os.path.join(base, toks[1]))
+            try:
+                b.import_sym(path=fn)
+            except (OSError, ValueError, KeyError) as e:
+                raise err(e)
+            continue
         elif kw == "part":
             _exec_part(b, line, err)
         elif kw == "meta":

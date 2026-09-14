@@ -103,6 +103,8 @@ class Board(Component):
         self.includes: list[dict[str, object]] = []  # {path, prefix, join}
         self.custom_fp: dict[str, dict[str, object]] = {}  # from `fp` lines
         self.fp_src: dict[str, str] = {}  # fp name -> source path
+        self.custom_sym: dict[str, dict[str, object]] = {}  # from `sym` lines
+        self.sym_src: dict[str, str] = {}  # sym name -> source path
         self.blocks: dict[str, Block] = {}  # block templates
         self.instances: list[dict[str, object]] = []  # {block, prefix, join}
         self._block_open: str | None = None  # parser scratch (not dumped)
@@ -211,6 +213,12 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
+    def import_sym(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Import: sym (native .sym)."""
+        out = self._run("importer", key or "sym", **k)
+        assert isinstance(out, dict)
+        return out
+
     def calc(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Embedded calculators: trace width, via current, divider."""
         out = self._run("calc", key, **k)
@@ -285,6 +293,40 @@ class Board(Component):
                 self.fp_src.pop(name, None)
 
         self.ctx.emit(_do, _undo)
+
+    def add_symbol(self, name: str, sym: dict[str, object],
+                   src: str | None = None) -> None:
+        """Register a custom (.sym) symbol. Undoable like everything.
+        src: originating file path, so dumps() can re-emit the `sym` line."""
+        had = name in self.custom_sym
+        old = self.custom_sym.get(name)
+        old_src = self.sym_src.get(name)
+
+        def _do() -> None:
+            self.custom_sym[name] = sym
+            if src is not None:
+                self.sym_src[name] = src
+
+        def _undo() -> None:
+            if had and old is not None:
+                self.custom_sym[name] = old
+                if old_src is not None:
+                    self.sym_src[name] = old_src
+            else:
+                self.custom_sym.pop(name, None)
+                self.sym_src.pop(name, None)
+
+        self.ctx.emit(_do, _undo)
+
+    def symbol_of(self, ref: str) -> dict[str, object]:
+        """Resolved + sized symbol for a part (`sym=` attr wins, else fp map)."""
+        from . import symbol as _sym
+        p = self.parts[ref]
+        lib = dict(_sym.SYMBOLS)
+        lib.update(self.custom_sym)
+        s = _sym.resolve(p.fp, p.attrs.get("sym", ""), lib)
+        pins = {str(q) for n in self.nets.values() for r, q in n.pins if r == ref}
+        return _sym.sized(s, max(len(pins), 1))
 
     def _pin_offset(self, fp: str, pin: PinLike) -> XY:
         try:

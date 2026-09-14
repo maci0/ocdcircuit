@@ -29,6 +29,8 @@ silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
 fp exotic.fp                 # custom footprint file (pads/holes/3D/keepouts)
+sym opamp.sym                # custom symbol file (body + pin stubs)
+part U1 SOIC8 TL072 sym=OPX  # sym= override (default: footprint map)
 block driver               # reusable unit: local refs, stamped per instance
   part U QFN28             #   (indented lines: part/net/constraints only)
 end

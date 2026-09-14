@@ -401,8 +401,10 @@ def from_ir(doc: dict[str, object]) -> Board:
 
 class SvgRenderer(Plugin[str]):
     kind, key = "renderer", "svg"
+    ext = ".svg"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
+        from xml.sax.saxutils import escape
         S = _f(k.get("scale", 10))
         theme = str(k.get("theme", "dark"))
         silk_key = k.get("silk")
@@ -411,40 +413,77 @@ class SvgRenderer(Plugin[str]):
         layers = cast(list[str], th["layers"])
         W, H = board.width * S, board.height * S
         el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
-              f'viewBox="0 0 {W} {H}">',
+              f'viewBox="0 0 {W} {H}" font-family="monospace">',
+              f'<title>{escape(board.name)} — {len(board.parts)} parts, '
+              f'{len(board.nets)} nets</title>',
               f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["bg"]}" '
-              f'stroke="{th["edge"]}"/>']
+              f'stroke="{th["edge"]}" stroke-width="2" rx="6"/>']
         for t in board.traces:
+            if getattr(t, "via", False):
+                continue
             c = layers[t.layer % len(layers)]
             el.append(f'<line x1="{t.x1 * S}" y1="{H - t.y1 * S}" x2="{t.x2 * S}" '
-                      f'y2="{H - t.y2 * S}" stroke="{c}" stroke-width="{max(1, t.width * S)}"/>')
+                      f'y2="{H - t.y2 * S}" stroke="{c}" stroke-width="{max(1.5, t.width * S)}" '
+                      f'stroke-linecap="round"/>')
+        vr, hr = 0.4 * S, 0.2 * S
+        for t in board.traces:
+            if not getattr(t, "via", False):
+                continue
+            el.append(f'<circle cx="{t.x1 * S:.1f}" cy="{(H - t.y1 * S):.1f}" r="{vr:.1f}" '
+                      f'fill="#d9a821" stroke="#8a6d00" stroke-width="1"/>'
+                      f'<circle cx="{t.x1 * S:.1f}" cy="{(H - t.y1 * S):.1f}" r="{hr:.1f}" '
+                      f'fill="{th["bg"]}" stroke="none"/>')
+        from .parts import hole_drill, pad_size, pads_of
+        lib = board._lib()
+        for p in board.parts.values():
+            for pin, (dx, dy) in pads_of(p.fp, lib).items():
+                rx, ry = p.rot_xy(dx, dy)
+                cx, cy = (p.x + rx) * S, H - (p.y + ry) * S
+                pw, ph = pad_size(p.fp, pin, lib)
+                if p.rot in (90, 270):
+                    pw, ph = ph, pw
+                el.append(f'<rect x="{cx - pw * S / 2:.1f}" y="{cy - ph * S / 2:.1f}" '
+                          f'width="{pw * S:.1f}" height="{ph * S:.1f}" rx="1" '
+                          f'fill="#d9a821" stroke="#8a6d00" stroke-width="1"/>')
+                drill = hole_drill(p.fp, pin, lib)
+                if drill > 0:
+                    el.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{drill * S / 2:.1f}" '
+                              f'fill="{th["bg"]}" stroke="#8a6d00" stroke-width="1"/>')
         for p in board.parts.values():
             pw, ph = p.wh()
             x, y = (p.x - pw / 2) * S, (H - (p.y + ph / 2) * S)
-            part, court = str(th["part"]), str(th["courtyard"])
+            part = str(th["part"])
             el.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{pw * S:.1f}" '
-                      f'height="{ph * S:.1f}" fill="{part}" stroke="{court}"/>')
+                      f'height="{ph * S:.1f}" rx="1.5" fill="{part}" '
+                      f'stroke="{th["text"]}" stroke-width="1"/>')
+            pads = pads_of(p.fp, lib)
+            if "1" in pads:
+                dx, dy = p.rot_xy(*pads["1"])
+                el.append(f'<circle cx="{(p.x + dx) * S:.1f}" cy="{(H - (p.y + dy) * S):.1f}" '
+                          f'r="{max(1.5, 0.25 * S):.1f}" fill="{th["courtyard"]}" stroke="none"/>')
         sk = board.silk(silk_key if isinstance(silk_key, str) else None)
         if isinstance(silk_key, int):
             from . import silk as _silk
             lv = _silk.labels(board, silk_key)
             sk = {"texts": list(lv.texts), "dots": list(lv.dots), "boxes": list(lv.boxes)}
-        fs = 4 * S / 10
+        fs = max(7.0, S * 0.9)
         silk = str(th["silk"])
         silk_dim = str(th["silk_dim"])
         from .silk import Box, Dot, Text
         for tx in cast(list[Text], sk["texts"]):
             fill = {"silk-ref": silk, "silk-val": silk_dim,
                     "silk-net": silk_dim}[tx.cls]
+            size = fs if tx.cls == "silk-ref" else fs * 0.85
             el.append(f'<text x="{tx.x * S:.1f}" y="{(H - tx.y * S):.1f}" fill="{fill}" '
-                      f'font-size="{fs:.1f}" text-anchor="middle">{tx.s}</text>')
+                      f'font-size="{size:.1f}" text-anchor="middle">{escape(tx.s)}</text>')
         for d in cast(list[Dot], sk["dots"]):
             el.append(f'<circle cx="{d.x * S:.1f}" cy="{(H - d.y * S):.1f}" '
-                      f'r="{max(1, 0.3 * S):.1f}" fill="{silk}"/>')
+                      f'r="{max(1, 0.3 * S):.1f}" fill="{silk}" stroke="none"/>')
         for bx in cast(list[Box], sk["boxes"]):
             el.append(f'<rect x="{bx.x0 * S:.1f}" y="{(H - bx.y1 * S):.1f}" '
                       f'width="{(bx.x1 - bx.x0) * S:.1f}" height="{(bx.y1 - bx.y0) * S:.1f}" '
-                      f'fill="none" stroke="{silk_dim}" stroke-width="0.5"/>')
+                      f'fill="none" stroke="{th["courtyard"]}" stroke-width="0.7" '
+                      f'stroke-dasharray="3 2"/>')
         el.append("</svg>")
         return "\n".join(el)
 
@@ -453,6 +492,7 @@ class AssemblyRenderer(Plugin[str]):
     """Assembly drawing: white page, part outlines + REF + value + pin-1
     dots. For hand-assembly and inspection (replaces assembly-top/bottom)."""
     kind, key = "renderer", "assembly"
+    ext = ".assembly.svg"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
         S = _f(k.get("scale", 12))
@@ -516,12 +556,14 @@ def sch_layout(board: Board) -> dict[str, object]:
 
 
 class SchRenderer(Plugin[str]):
-    """Schematic SVG, Sugiyama-lite (research §5): parts as nodes in one
-    barycenter-ordered row (shared nets pull together), nets as vertical
+    """Schematic SVG, Sugiyama-lite (research §5): parts as symbol bodies in
+    one barycenter-ordered row (shared nets pull together), nets as vertical
     rails with pin dots at intersections. Structure for humans."""
     kind, key = "renderer", "sch"
+    ext = ".sch.svg"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
+        from . import symbol as _sym
         theme = str(k.get("theme", "dark"))
         th = THEMES.get(theme, THEMES["dark"])
         layers = cast(list[str], th["layers"])
@@ -537,14 +579,50 @@ class SchRenderer(Plugin[str]):
               f'viewBox="0 0 {W} {H}">',
               f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["panel"]}"/>']
         text = str(th["text"])
+        unit = 9.0  # px per symbol unit
         for r in order:
             p = board.parts[r]
-            el.append(f'<rect x="{px[r] - 50}" y="{top - 34}" width="100" height="30" '
-                      f'fill="{th["part"]}" stroke="{text}"/>')
-            el.append(f'<text x="{px[r]}" y="{top - 20}" fill="{text}" font-size="11" '
+            sym = board.symbol_of(r)
+            w = float(cast(float, sym["w"])) * unit
+            h = float(cast(float, sym["h"])) * unit
+            x0, y0 = px[r] - w / 2, top - 34
+            if bool(sym["zigzag"]):
+                # resistor zigzag: 6 peaks across the body width
+                pts = [f"{x0:.1f},{y0 + h / 2:.1f}"]
+                for i in range(1, 7):
+                    pts.append(f"{x0 + w * i / 6:.1f},{y0 + (h / 4 if i % 2 else 3 * h / 4):.1f}")
+                el.append(f'<polyline points="{" ".join(pts)}" fill="none" '
+                          f'stroke="{text}" stroke-width="1.5"/>')
+            else:
+                el.append(f'<rect x="{x0:.1f}" y="{y0:.1f}" width="{w:.1f}" height="{h:.1f}" '
+                          f'fill="{th["part"]}" stroke="{text}"/>')
+                if bool(sym["notch"]):
+                    el.append(f'<circle cx="{x0 + 4:.1f}" cy="{y0 + 4:.1f}" r="2" '
+                              f'fill="{text}"/>')
+            el.append(f'<text x="{px[r]}" y="{top - 40}" fill="{text}" font-size="11" '
                       f'text-anchor="middle">{r}</text>')
-            el.append(f'<text x="{px[r]}" y="{top - 8}" fill="{text}" font-size="9" '
-                      f'text-anchor="middle">{p.fp}</text>')
+            # pin stubs + labels around the body edges
+            pins = cast(dict[str, tuple[str, int, str]], sym["pins"])
+            extra = 0
+            for net in nets:
+                for ref, pin in board.nets[net].pins:
+                    if ref != r:
+                        continue
+                    sx, sy, side = _sym.pin_pos(sym, str(pin),
+                                                extra if str(pin) not in pins else 0)
+                    if str(pin) not in pins:
+                        extra += 1
+                    ax, ay = x0 + sx * unit, y0 + sy * unit
+                    ox = {"left": -8.0, "right": 8.0}.get(side, 0.0)
+                    oy = {"top": -8.0, "bottom": 8.0}.get(side, 0.0)
+                    el.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" '
+                              f'x2="{ax + ox:.1f}" y2="{ay + oy:.1f}" stroke="{text}"/>')
+                    el.append(f'<circle cx="{ax + ox:.1f}" cy="{ay + oy:.1f}" r="2" '
+                              f'fill="{text}"/>')
+                    lbl = pins.get(str(pin), ("", 0, ""))[2] or str(pin)
+                    el.append(f'<text x="{ax + ox * 1.6:.1f}" y="{ay + oy * 1.6 + 3:.1f}" '
+                              f'fill="{text}" font-size="8" text-anchor="middle" '
+                              f'font-family="monospace">{lbl}</text>')
         for i, n in enumerate(nets):
             y = rail_y[n]
             xs = sorted(px[r] for r, _ in board.nets[n].pins if r in px)
@@ -568,6 +646,7 @@ class SchRenderer(Plugin[str]):
 class StlRenderer(Plugin[str]):
     """3D exporter: ASCII STL, board slab + real part bodies. No deps."""
     kind, key = "renderer", "stl"
+    ext = ".stl"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
         from .geom3d import build
@@ -587,6 +666,7 @@ class GltfRenderer(Plugin[str]):
     """3D exporter: glTF 2.0 with PBR materials (mask/copper/silk/parts).
     Textured 3D for viewers + mechanical checks. No deps."""
     kind, key = "renderer", "gltf"
+    ext = ".gltf"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
         from .geom3d import to_gltf
@@ -597,16 +677,170 @@ class GltfRenderer(Plugin[str]):
 class PngRenderer(Plugin[bytes]):
     """2D raster: top-down PNG preview (mask/traces/pads/silk). Stdlib."""
     kind, key = "renderer", "png"
+    ext = ".png"
 
     def run(self, board: Board, *a: object, **k: object) -> bytes:
         from .raster import render_top
         return render_top(board, _f(k.get("pxmm", 10.0)))
 
 
+class KicadRenderer(Plugin[bytes]):
+    """Photorealistic PNG via kicad-cli's 3D raytracer (needs KiCad 9+;
+    missing binary → RuntimeError naming the apt package). Exports the
+    board to .kicad_pcb, renders, returns PNG bytes. Mask color follows
+    `meta mask <color>` (green/red/blue/black/white/purple/yellow)."""
+    kind, key = "renderer", "kicad"
+    ext = ".ray.png"
+
+    def run(self, board: Board, *a: object, **k: object) -> bytes:
+        import shutil
+        import subprocess
+        import tempfile
+        from .export import MASK_COLORS, export_kicad
+        exe = shutil.which("kicad-cli")
+        if exe is None:
+            raise RuntimeError("kicad-cli not found (apt install kicad); "
+                               "use renderer png for the stdlib preview")
+        side = str(k.get("side", "top"))
+        w = _i(k.get("width"), 1200)
+        h = _i(k.get("height"), 800)
+        mask = MASK_COLORS.get(str(board.meta.get("mask", "green")).lower(),
+                               MASK_COLORS["green"])
+        with tempfile.TemporaryDirectory() as tmp:
+            export_kicad(board, tmp)
+            src = f"{tmp}/{board.name}.kicad_pcb"
+            out = f"{tmp}/{board.name}.png"
+            cmd = [exe, "pcb", "render", "--side", side, "--width", str(w),
+                   "--height", str(h), "--quality", "high", "--floor",
+                   "--perspective", "--background", "opaque",
+                   "--light-top", "0.7", "--light-bottom", "0.3",
+                   "--output", out, src]
+            self._render_with_mask(cmd, mask, out)
+            with open(out, "rb") as f:
+                return f.read()
+
+    @staticmethod
+    def _render_with_mask(cmd: list[str], mask: tuple[int, int, int],
+                          out: str) -> None:
+        """Run kicad-cli with the board's soldermask color patched into
+        the 3D-viewer preset (restored after). No mask patch = KiCad's
+        default drab olive."""
+        import json
+        import os
+        import subprocess
+        cfg = os.path.expanduser("~/.config/kicad/10.0/3d_viewer.json")
+        try:
+            d = json.load(open(cfg))
+        except (OSError, ValueError):
+            subprocess.run(cmd, capture_output=True, check=True)
+            return
+        presets = d.get("layer_presets", [])
+        if not presets:
+            subprocess.run(cmd, capture_output=True, check=True)
+            return
+        saved = json.dumps(presets[0].get("colors", []))
+        try:
+            for c in presets[0].get("colors", []):
+                if c.get("layer") in ("soldermask_top", "soldermask_bottom"):
+                    r, g, b = mask
+                    c["color"] = f"rgba({r}, {g}, {b}, 0.831)"
+            json.dump(d, open(cfg, "w"), indent=2)
+            subprocess.run(cmd, capture_output=True, check=True)
+        finally:
+            d["layer_presets"][0]["colors"] = json.loads(saved)
+            json.dump(d, open(cfg, "w"), indent=2)
+        if not os.path.isfile(out):
+            raise RuntimeError("kicad-cli did not produce a rendered image")
+
+
+class PcbdrawRenderer(Plugin[str]):
+    """Stylized fabrication drawing via pcbdraw (needs `pip install pcbdraw`;
+    missing → RuntimeError). Exports .kicad_pcb, plots styled SVG.
+    Style follows `meta style <name>` (default jlcpcb-green-enig)."""
+    kind, key = "renderer", "pcbdraw"
+    ext = ".fab.svg"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        import shutil
+        import subprocess
+        import tempfile
+        from .export import export_kicad
+        exe = shutil.which("pcbdraw")
+        if exe is None:
+            raise RuntimeError("pcbdraw not found (pip install pcbdraw); "
+                               "use renderer svg for the stdlib drawing")
+        style = str(k.get("style", board.meta.get("style", "jlcpcb-green-enig")))
+        side = str(k.get("side", "front"))
+        with tempfile.TemporaryDirectory() as tmp:
+            export_kicad(board, tmp)
+            src = f"{tmp}/{board.name}.kicad_pcb"
+            out = f"{tmp}/{board.name}.svg"
+            subprocess.run([exe, "plot", "-s", style, "--side", side,
+                            "--silent", src, out],
+                           capture_output=True, check=True)
+            return open(out).read()
+
+
+class EasyedaRenderer(Plugin[str]):
+    """EasyEDA-editor-look SVG: black canvas, red/blue copper, yellow pads
+    — the colors you see after importing our .easyeda.json. Stdlib, parses
+    our own Std JSON export back (no client, no bridge)."""
+    kind, key = "renderer", "easyeda"
+    ext = ".easyeda.svg"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        import json
+        import tempfile
+        from .export import export_easyeda
+        from xml.sax.saxutils import escape
+        S = _f(k.get("scale", 10))
+        with tempfile.TemporaryDirectory() as tmp:
+            fn = export_easyeda(board, tmp)[0]
+            doc = json.load(open(fn))
+        W, H = board.width * S, board.height * S
+        mm = 1 / 0.254  # export units: 10-mil
+        el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+              f'viewBox="0 0 {W} {H}" font-family="monospace">',
+              f'<title>{escape(board.name)} — EasyEDA view</title>',
+              f'<rect x="0" y="0" width="{W}" height="{H}" fill="black"/>']
+        copper = {"1": "#FF0000", "2": "#0000FF"}
+        for sh in doc["shape"]:
+            parts = sh.split("~")
+            if parts[0] == "TRACK":
+                _w, layer = float(parts[1]) * 0.254, parts[2]
+                x1, y1, x2, y2 = (float(v) / mm * S for v in parts[4].split())
+                c = copper.get(layer, "#FF0000")
+                el.append(f'<line x1="{x1:.1f}" y1="{H - y1:.1f}" x2="{x2:.1f}" '
+                          f'y2="{H - y2:.1f}" stroke="{c}" '
+                          f'stroke-width="{max(1.5, _w * S):.1f}" '
+                          f'stroke-linecap="round"/>')
+            elif parts[0] == "VIA":
+                x, y = float(parts[1]) / mm * S, H - float(parts[2]) / mm * S
+                el.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{0.4 * S:.1f}" '
+                          f'fill="none" stroke="#FFFF00" stroke-width="1.5"/>')
+            elif parts[0] == "LIB":
+                bx, by = float(parts[1]) / mm * S, H - float(parts[2]) / mm * S
+                for kid in sh.split("#@$")[1:]:
+                    f = kid.split("~")
+                    if f[0] == "PAD":
+                        px, py = bx + float(f[2]) / mm * S, by - float(f[3]) / mm * S
+                        pw, ph = float(f[4]) / mm * S, float(f[5]) / mm * S
+                        el.append(f'<rect x="{px - pw / 2:.1f}" y="{py - ph / 2:.1f}" '
+                                  f'width="{pw:.1f}" height="{ph:.1f}" '
+                                  f'fill="#FFFF00" stroke="#CCAA00" stroke-width="0.7"/>')
+                    elif f[0] == "TEXT":
+                        el.append(f'<text x="{bx:.1f}" y="{by - 8:.1f}" fill="white" '
+                                  f'font-size="{max(7.0, S * 0.9):.1f}" '
+                                  f'text-anchor="middle">{escape(f[10])}</text>')
+        el.append("</svg>")
+        return "\n".join(el)
+
+
 class Html3dRenderer(Plugin[str]):
     """Interactive 3D: self-contained HTML page (WebGL, orbit/zoom, no CDN)
     with the board's glTF embedded. Double-click to open, drag to orbit."""
     kind, key = "renderer", "html3d"
+    ext = ".3d.html"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
         from .geom3d import to_gltf
@@ -655,10 +889,25 @@ def _guarded_add(board: Board, name: str, meta: object, path: str) -> None:
     board.add_footprint(name, cast(Footprint, meta), path)
 
 
+class SymImporter(Plugin[dict[str, object]]):
+    """Symbol importer: native .sym (custom schematic bodies)."""
+    kind, key = "importer", "sym"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import symbol as _sym
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        name, meta = _sym.load_file(path)
+        from .symbol import SYMBOLS
+        if name in SYMBOLS and name not in board.custom_sym:
+            raise ValueError(f"symbol {name!r} shadows std lib (rename it)")
+        board.add_symbol(name, meta, path)
+        return {"name": name}
+
+
 class FpImporter(Plugin[dict[str, object]]):
     """Footprint importer: native .fp (re-exported for plugin listing)."""
     kind, key = "importer", "fp"
-
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .footprint import load_file
         path = k.get("path", "")
@@ -893,11 +1142,12 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
-             TscircuitImporter, PcbImporter, EasyedaImporter,
+             TscircuitImporter, PcbImporter, EasyedaImporter, SymImporter,
              CalcPlugin, SimPlugin, NgspicePlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
-             PngRenderer, Html3dRenderer)
+             PngRenderer, KicadRenderer, PcbdrawRenderer,
+             EasyedaRenderer, Html3dRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:

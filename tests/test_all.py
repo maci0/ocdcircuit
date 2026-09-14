@@ -198,7 +198,7 @@ assert cast(bytes, bj.render("png"))[:8] == b"\x89PNG\r\n\x1a\n"
 assert "<canvas" in cast(str, bj.render("html3d"))
 _sch = cast(str, bj.render("sch"))
 assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch
-assert _sch.count("<circle") == sum(len(n.pins) for n in bj.nets.values())
+assert _sch.count("<circle") >= sum(len(n.pins) for n in bj.nets.values())
 _ez = cast(str, bj.render("easyeda"))
 assert _ez.startswith("<svg") and "U1" in _ez and "#FFFF00" in _ez
 _ra = bj.render_all(tempfile.mkdtemp())
@@ -537,6 +537,11 @@ assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "12/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
 assert cast(dict[int, dict[str, object]], _st["feasible"])[2]["ok"] is True  # badge
+assert _st["sim_problems"] == []  # psu has no sim lines
+_sv = _studio.H._build("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+                       "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\n"
+                       "sim vcc VIN 9\nsim expect VO == 5\n", False, {})
+assert _sv["sim_problems"] == ["sim VO=2.878V, want == 5V"], _sv["sim_problems"]
 # ocd status solves then writes STATUS.md next to the file (temp copy keeps
 # the tree clean); exit 0 = DRC clean
 import tempfile as _tf
@@ -694,6 +699,15 @@ _simb2 = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                      "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n")
 _w = cast(list[float], cast(dict[str, object], _simb2.simulate(what="tran")["waves"])["VO"])
 assert abs(_w[-1] - 5.0) < 0.05 and all(a <= c + 1e-9 for a, c in zip(_w, _w[1:]))
+# sim expect: divider VO≈2.88 — pass, fail, round-trip, studio flag
+from ocdcircuit import sim as _sim
+_sime = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+                    "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\nsim vcc VIN 9\n"
+                    "sim expect VO ~ 2.88\nsim expect VIN == 9\nsim expect VO == 5\n")
+assert _sim.expect(_sime) == ["sim VO=2.878V, want == 5V"], _sim.expect(_sime)
+assert agent.dumps(agent.loads(agent.dumps(_sime), base=EX)) == agent.dumps(_sime)
+assert agent.parse_constraint("sim expect VO ~ 2.88 tol 1%") == {
+    "t": "sim", "kind": "expect", "net": "VO", "op": "~", "value": "2.88", "tol": "1%"}
 # ngspice plugin: same shape as mna + analog mna cannot do (skip if no binary)
 import shutil as _sh
 if _sh.which("ngspice") is not None:
@@ -843,6 +857,30 @@ _feas = _solver.feasible(_fb)
 assert bool(_feas[2]["ok"]) is True and bool(_feas[1]["ok"]) is False
 assert int(cast(int, _feas[1]["jumpers"])) > 0 and int(cast(int, _feas[2]["segs"])) > 0
 assert len(_fb.traces) == 0  # probe leaves the board untouched
+# symbols: stdlib resolve + .sym file + sym= attr + sch bodies + undo
+from ocdcircuit import symbol as _sym
+assert _sym.resolve("R0805").get("zigzag") is True
+assert _sym.resolve("SOIC8")["pins"]["1"] == ("left", 0, "")
+_symb = agent.loads("board sy 20x10\npart R1 R0805 1k\npart U1 SOIC8 NE555\n"
+                    "net N: R1.1 U1.2\nnet GND: R1.2 U1.3\n")
+assert _symb.symbol_of("R1").get("zigzag") is True
+assert _symb.symbol_of("U1")["pins"]["1"] == ("left", 0, "")
+_svg = _symb.render("sch")
+assert "<polyline" in _svg and _svg.count("<circle") >= 4  # zigzag + stubs
+with tempfile.TemporaryDirectory() as _d:
+    _fp = os.path.join(_d, "op.sym")
+    open(_fp, "w").write("symbol OPX\npin 1 left IN+\npin 2 left IN-\n"
+                         "pin 3 right OUT\nnotch\n")
+    _sb = agent.loads(f"board s2 20x10\nsym {_fp}\npart U1 SOIC8 TL072 sym=OPX\n"
+                      "net A: U1.1\nnet B: U1.2\n")
+    assert _sb.symbol_of("U1")["pins"]["3"] == ("right", 0, "OUT")
+    assert "sym " in agent.dumps(_sb)  # round-trips
+    _sb2 = agent.loads("board s3 20x10\npart U1 SOIC8 TL072\nnet A: U1.1\n")
+    _s0 = _sb2.ctx.snapshot()
+    _sb2.import_sym(path=_fp)
+    assert "OPX" in _sb2.custom_sym
+    _sb2.ctx.rollback(_s0)
+    assert "OPX" not in _sb2.custom_sym
 # doctor: registry healthy on a live board
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)

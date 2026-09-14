@@ -150,11 +150,7 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
     files = (b.export("jlc", outdir=out) + b.export("kicad", outdir=out)
              + b.export("ocd", outdir=out))
-    open(os.path.join(out, b.name + ".svg"), "w").write(cast(str, b.render("svg")))
-    open(os.path.join(out, b.name + ".stl"), "w").write(cast(str, b.render("stl")))
-    open(os.path.join(out, b.name + ".png"), "wb").write(cast(bytes, b.render("png")))
-    open(os.path.join(out, b.name + ".3d.html"), "w").write(cast(str, b.render("html3d")))
-    open(os.path.join(out, b.name + ".gltf"), "w").write(cast(str, b.render("gltf")))
+    rendered = b.render_all(out)
     errors = cast(list[object], r["errors"])
     warnings = cast(list[object], r["warnings"])
     ok = not errors
@@ -162,7 +158,7 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
                  f"segs=[cyan]{n}[/cyan] "
                  f"errors={'[green]0[/green]' if ok else f'[red]{len(errors)}[/red]'} "
                  f"warnings=[yellow]{len(warnings)}[/yellow]")
-    _table("fab output", [(f"{len(files)} files + svg/png/3d/stl/gltf", out)])
+    _table("fab output", [(f"{len(files)} files + {len(rendered)} renders", out)])
     if simwhat:
         try:
             res = b.simulate(what=simwhat)
@@ -176,6 +172,10 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
                 assert isinstance(v, (int, float))
                 rows.append((k, f"{float(v):.3f}V"))
             _table("sim dc", rows)
+            if simwhat == "dc":
+                from ocdcircuit import sim as _sim
+                for p in _sim.expect(b):
+                    _out().print(f"  [red]⚡✗ {p}[/red]")
         else:
             waves = cast(dict[str, list[float]], res["waves"])
             rows = [(k, f"final={v[-1]:.3f}V min={min(v):.3f} max={max(v):.3f} ({len(v)} pts)")

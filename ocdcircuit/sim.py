@@ -317,3 +317,43 @@ def run(board: Board, what: str = "dc", **k: object) -> dict[str, object]:
                      int(s) if s is not None else None)
         return {"waves": waves, "t_end": t, "steps": s}
     return {"nets": dc(board)}
+
+
+def expect(board: Board) -> list[str]:
+    """Evaluate `sim expect NET <op> VALUE` against the DC solve.
+    Returns problem strings (`N_OUT=0.02V, want == 2.5V`); empty = all
+    pass. Ops: ==, !=, <, >, <=, >=, ~ (within ±tol, tol default 5%)."""
+    wants = [c for c in _sim_constraints(board) if c.get("kind") == "expect"]
+    if not wants:
+        return []
+    try:
+        sol = dc(board)
+    except (ValueError, KeyError):
+        return ["sim failed — cannot evaluate expectations"]
+    out: list[str] = []
+    for c in wants:
+        net = str(c.get("net", ""))
+        op = str(c.get("op", "=="))
+        try:
+            want = parse_value(str(c.get("value", "0")))
+            ts = str(c.get("tol", "5%"))
+            tol = float(ts[:-1]) / 100.0 if ts.endswith("%") else parse_value(ts)
+        except ValueError:
+            out.append(f"sim expect {net}: bad value")
+            continue
+        if net not in sol:
+            out.append(f"sim expect {net}: unknown net")
+            continue
+        got = sol[net]
+        ok = (abs(got - want) <= abs(want) * tol + 1e-9 if op == "~" else
+              got == want if op == "==" else
+              got != want if op == "!=" else
+              got < want if op == "<" else
+              got > want if op == ">" else
+              got <= want if op == "<=" else
+              got >= want if op == ">=" else None)
+        if ok is None:
+            out.append(f"sim expect {net}: bad op {op!r}")
+        elif not ok:
+            out.append(f"sim {net}={got:.3f}V, want {op} {want:g}V")
+    return out

@@ -229,7 +229,14 @@ def t_sim(a: dict[str, object]) -> dict[str, object]:
     key = a.get("key")
     assert key is None or isinstance(key, str)
     args = {k: v for k, v in a.items() if k != "key"}
-    return b.simulate(key, **args)
+    out = dict(b.simulate(key, **args))
+    if args.get("what", "dc") == "dc":
+        from ocdcircuit import sim as _sim
+        try:
+            out["problems"] = _sim.expect(b)
+        except (ValueError, KeyError):
+            out["problems"] = []
+    return out
 
 
 def t_lint(a: dict[str, object]) -> dict[str, object]:
