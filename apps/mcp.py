@@ -300,6 +300,36 @@ def t_plugins(a: dict[str, object]) -> dict[str, object]:
     return {"plugins": reg.list()}
 
 
+def t_ctx(a: dict[str, object]) -> dict[str, object]:
+    """Paper §5.1 context ops: get/set/unprovide a coeffect, or list fibers.
+    Lets agents probe reactive state (what provides key? who is ACTIVE?)."""
+    from ocdcircuit.core import Context
+    b = _board()
+    op = str(a.get("op", "fibers"))
+    if op == "get":
+        v = b.ctx.get(str(a["key"]))
+        if not isinstance(v, (str, int, float, bool, list, dict)) and v is not None:
+            v = repr(v)  # services (e.g. Registry) aren't JSON-wireable
+        return {"key": str(a["key"]), "value": v}
+    if op == "set":
+        b.ctx.set(str(a["key"]), a.get("value"))
+        return {"key": str(a["key"]), "set": True}
+    if op == "unprovide":
+        b.ctx.unprovide(str(a["key"]))
+        return {"key": str(a["key"]), "withdrawn": True}
+    fibs: list[dict[str, object]] = []
+    seen: set[int] = set()
+    c: Context | None = b.ctx
+    while c is not None:
+        for f in c._all_fibers():
+            if f.uid not in seen:
+                seen.add(f.uid)
+                fibs.append({"uid": f.uid, "inject": list(f.inject),
+                             "state": f.state, "provides": sorted(f.provided)})
+        break  # _all_fibers already walks the tree
+    return {"fibers": fibs}
+
+
 def t_solve(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     pk = a.get("placer")
@@ -343,6 +373,7 @@ TOOLS: dict[str, object] = {
     "simulate": (t_sim, {"what": "dc|tran"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
+    "context": (t_ctx, {"op": "fibers|get|set|unprovide", "key?": "coeffect key"}),
     "solve": (t_solve, {"placer?": "key", "router?": "key"}),
 }
 

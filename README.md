@@ -108,11 +108,16 @@ cockpit, not report; motion is the product; one concept, one hue.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (26 tools:
-  load/solve/patch/set_state/undo/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render/footprints/fabs/…)
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (27 tools:
+  load/solve/patch/set_state/undo/context/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render/footprints/fabs/…)
   — any MCP client can drive boards, gallery-pick layouts, probe routability,
-  and browse footprints + fab profiles.
+  browse footprints + fab profiles, and inspect live fiber/coeffect state.
   `match`/`diff` constraints cover length + diff pairs.
+- **Context paradigm** ([the paper](https://arxiv.org/abs/2608.25512)):
+  every edit carries its inverse (`Context.effect`, fires once), every module
+  declares its deps (`Fiber` LOADING→ACTIVE→UNLOADING→INACTIVE,
+  dependents drain before recovery). Loader reconciles declarative entries
+  per-field; HMR classifies + reloads transactionally. Undo is total.
 
 Ports: `tools/tscircuit.py` converts tscircuit projects (tsx + circuit.json)
 to `.ocd` — see `boards/pico_tmc2209/` (Pico + 3×TMC2209, 20 parts).

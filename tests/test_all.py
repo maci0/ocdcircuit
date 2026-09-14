@@ -668,7 +668,7 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 26
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 27
 assert len(cast(list[object], _call("footprints", {})["footprints"])) >= 100
 assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
            _call("footprints", {"q": "R0805"})["footprints"]))
@@ -678,6 +678,8 @@ assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
 assert _call("undo", {})["undone"] == 1  # patch reverted, board intact
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
+assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
 assert _call("lint", {})["errors"] == []
 assert _call("doctor", {})["ok"] is True
 assert _call("import_footprint", {"key": "fp",

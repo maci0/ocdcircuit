@@ -331,6 +331,27 @@ class Context:
         self.emit(_do, _undo)
         self.notify([name])
 
+    def unprovide(self, name: str) -> None:
+        """Withdraw an externally provided service (inverse of provide):
+        dependents deactivate ahead of the removal (paper §5.1.3 — the
+        provider stops providing before its bindings go away)."""
+        if name not in self.services:
+            return
+        old = self.services[name]
+
+        def _do() -> None:
+            self.services.pop(name, None)
+            cur = self._root()._providers.get(name)
+            if cur is not None and cur[0] is None:
+                self._root()._providers.pop(name, None)
+
+        def _undo() -> None:
+            self.services[name] = old
+            self._root()._providers[name] = (None, self._realm_of(name), old)
+
+        self.emit(_do, _undo)
+        self.notify([name])
+
     def require(self, name: str) -> object:
         if name not in self.services:
             raise KeyError(f"unsatisfied service: {name}")
@@ -655,6 +676,14 @@ class Plugin(Component, Generic[Out]):
 
     def run(self, board: Board, *a: object, **k: object) -> Out:
         raise NotImplementedError
+
+    def unmount(self, ctx: Context) -> None:
+        """Compensate mount: drop the registry entry (idempotent — a stale
+        mount-undo hitting the same entry is a masked no-op)."""
+        svc = ctx.services.get("plugins")
+        if isinstance(svc, Registry):
+            svc._drop(self.kind, self.key)
+        super().unmount(ctx)
 
 
 class Entry:

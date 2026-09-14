@@ -110,7 +110,10 @@ class Board(Component):
         self.instances: list[dict[str, object]] = []  # {block, prefix, join}
         self._block_open: str | None = None  # parser scratch (not dumped)
         self._block_lines: list[str] | None = None
-        self.ctx.services["plugins"] = Registry()
+        self.ctx._store["plugins"] = Registry()
+        self.ctx.services["plugins"] = self.ctx._store["plugins"]
+        self.ctx._providers["plugins"] = (None, "plugins",
+                                          self.ctx._store["plugins"])
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)
 
@@ -619,13 +622,16 @@ class Board(Component):
 
 
 class Module(Component):
-    """Hierarchical subcircuit (atopile-style). Tracks refs it added so
-    unmount removes exactly those (temporal composability)."""
+    """Hierarchical subcircuit (atopile-style). Mount spawns a Fiber in
+    the board ctx: teardown orders dependent-drain before recovery, so a
+    withdrawn module deactivates its dependents while its nets still
+    read (paper §5.1.3). Tracks refs it added as the legacy fallback."""
 
     def __init__(self, name: str) -> None:
         super().__init__(name)
         self._refs: list[str] = []
         self._board: Optional[Board] = None
+        self._fiber: object | None = None
 
     def add(self, board: Board, ref: str, fp: str, value: str = "",
             x: float | None = None, y: float | None = None) -> str:
@@ -634,16 +640,37 @@ class Module(Component):
         return ref
 
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
+        from .core import Fiber as _Fiber
         super().mount(ctx)
         board = a[0] if a else k.get("board")
         assert isinstance(board, Board)
         self._board = board
+        refs_before = set(board.parts)
         self.build(board)
+        mine = [r for r in board.parts if r not in refs_before or r in self._refs]
+        self._refs = list(dict.fromkeys(self._refs + mine))
+        provide = getattr(self, "provides", ())
+        assert isinstance(provide, tuple)
+
+        def _apply(_fctx: Context) -> object:
+            return lambda: None  # build already ran; loader-owned fibers only
+
+        fiber = _Fiber(ctx, self.requires, _apply, capture=False)
+        fiber.refresh(force=True)
+        self._mounted = fiber.state == _Fiber.ACTIVE
+        self._fiber = fiber
 
     def build(self, board: Board) -> None:
         pass
 
     def unmount(self, ctx: Context, board: Board | None = None) -> None:
+        from .core import Fiber as _Fiber
+        fiber = self._fiber
+        if isinstance(fiber, _Fiber):
+            fiber.retire()  # ordered withdrawal: dependents drain first
+            if fiber in ctx._fibers:
+                ctx._fibers.remove(fiber)
+            self._fiber = None
         bd = board if board is not None else self._board
         if bd is not None:
             for ref in self._refs:
