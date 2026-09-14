@@ -215,6 +215,8 @@ def export_bundle(board: Board, outdir: str = "out") -> list[str]:
     import zipfile
     files = export_jlc(board, outdir)
     files += export_kicad(board, outdir)
+    files += export_kicad_sch(board, outdir)
+    files += export_eagle(board, outdir)
     zfn = os.path.join(outdir, f"{board.name}-fab.zip")
     with zipfile.ZipFile(zfn, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:

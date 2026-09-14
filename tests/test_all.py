@@ -372,6 +372,7 @@ with tempfile.TemporaryDirectory() as d:
     assert _zb.endswith("-fab.zip")
     _zn = _zf.ZipFile(_zb).namelist()
     assert any(n.endswith(".GTL.gbr") for n in _zn) and any(n.endswith(".CPL.csv") for n in _zn)
+    assert any(n.endswith(".kicad_sch") for n in _zn) and any(n.endswith(".brd") for n in _zn)
     # drill file carries PTH holes (J1=PINHD2), grouped by tool diameter
     drl = open([f for f in files if f.endswith(".TXT")][0]).read()
     assert "M48" in drl and "M30" in drl
