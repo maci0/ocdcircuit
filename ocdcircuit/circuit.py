@@ -661,6 +661,8 @@ class Board(Component):
 
     # -- board-level --
     def set_board(self, w: float, h: float) -> None:
+        if not (w > 0 and h > 0):
+            raise ValueError(f"board size must be positive (got {w}x{h})")
         ow, oh = self.width, self.height
 
         def _do() -> None:

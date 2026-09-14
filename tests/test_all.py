@@ -1566,6 +1566,14 @@ for _bbad, _bfrag in [
         raise AssertionError(f"should have raised: {_bbad!r}")
     except ValueError as e:
         assert _bfrag in str(e), f"{_bfrag!r} not in {e}"
+# set_board/declare reject non-positive sizes too (same guard, API path)
+_sb2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
+try:
+    _sb2.declare({"board": {"w": 0, "h": 10}})
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "must be positive" in str(e), str(e)
+assert (_sb2.width, _sb2.height) == (40.0, 30.0)  # failed resize doesn't stick
 # workspace: score + diff go through the plugin registry like prod code
 _sb = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\nfix C1 at 8 5\n")
