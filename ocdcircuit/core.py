@@ -557,13 +557,12 @@ class Fiber:
 class Component:
     def __init__(self, name: str) -> None:
         self.name = name
-        self._mounted = False
 
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
-        self._mounted = True
+        pass
 
     def unmount(self, ctx: Context) -> None:
-        self._mounted = False
+        pass
 
 
 class UiSlots:
@@ -687,7 +686,6 @@ class Plugin(Component, Generic[Out]):
         reg._add(self.kind, self.key, self)
         if prev is None:
             reg.active[self.kind] = self.key
-        self._mounted = True
 
         def _undo() -> None:
             svc = ctx.get("plugins")
@@ -724,7 +722,6 @@ class Plugin(Component, Generic[Out]):
         svc = ctx.get("plugins")
         if isinstance(svc, Registry):
             svc._drop(self.kind, self.key)
-        super().unmount(ctx)
 
 
 class Entry:

@@ -693,7 +693,6 @@ class Module(Component):
 
     def mount(self, ctx: Context, *a: object, **k: object) -> None:
         from .core import Fiber as _Fiber
-        super().mount(ctx)
         board = a[0] if a else k.get("board")
         assert isinstance(board, Board)
         self._board = board
@@ -714,7 +713,6 @@ class Module(Component):
 
         fiber = ctx.use((), _apply)
         assert isinstance(fiber, _Fiber)
-        self._mounted = fiber.state == _Fiber.ACTIVE
         self._fiber = fiber
 
     def build(self, board: Board) -> None:
@@ -728,4 +726,3 @@ class Module(Component):
             fiber._insert()  # undo O-Insert: ordered withdrawal + part removal
             self._fiber = None
         self._refs = []
-        super().unmount(ctx)
