@@ -578,6 +578,11 @@ for frag in ("match on unknown net NZZZ", "pour on unknown net NONET",
              "outside sane range"):
     assert any(frag in w for w in cast(list[str], _l2r["warnings"])), (_l2r, frag)
 assert len(cast(list[str], _l2r["warnings"])) == len(set(cast(list[str], _l2r["warnings"])))
+# pour on a KNOWN net warns decorative (no consumer renders copper yet)
+_lp = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                  "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\npour GND on 0\n", base=EX)
+assert any("pour GND on 0 not rendered" in w
+           for w in cast(list[str], _lp.lint()["warnings"])), _lp.lint()
 # meta lines: title/rev/desc round-trip, flow into IR + KiCad title
 _mb = agent.loads("board t 40x30\nmeta title Blinky 555\nmeta rev A\n"
                   "part R1 R0805 10k\nnet N: R1.1 R1.2\n")

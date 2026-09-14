@@ -107,6 +107,8 @@ def lint(board: Board) -> dict[str, object]:
                 continue
             if not lo <= num <= hi:
                 warn(f"{t} {k}={num:g} outside sane range [{lo:g}..{hi:g}]")
+        if t == "pour" and str(c.get("net", "")) in board.nets:
+            warn(f"pour {c.get('net')} on {c.get('layer')} not rendered (decorative)")
         if t == "fixed" and str(c.get("ref", "")) in board.parts:
             p = board.parts[str(c.get("ref"))]
             pw, ph = p.wh()
