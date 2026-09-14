@@ -183,6 +183,11 @@ def t_check(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
+    if key == "all":
+        keys = a.get("keys")
+        ks = list(keys) if isinstance(keys, list) else None
+        assert ks is None or all(isinstance(x, str) for x in ks)
+        return b.check("all", keys=cast(list[str] | None, ks))
     return b.check(key)
 
 
@@ -215,6 +220,8 @@ def t_render(a: dict[str, object]) -> dict[str, object]:
     if isinstance(out, bytes):
         return {"key": key, "encoding": "base64",
                 "data": base64.b64encode(out).decode()}
+    if isinstance(out, list):
+        return {"key": key, "encoding": "files", "data": out}
     return {"key": key, "encoding": "text", "data": out}
 
 
@@ -284,8 +291,8 @@ TOOLS: dict[str, object] = {
     "load_board": (t_load, {"text": "ocd source (or path)", "fab": "fab key"}),
     "get_state": (t_state, {}),
     "apply_patch": (t_patch, {"ops": "patch op list (undoable, atomic)"}),
-    "set_state": (t_state_set, {"parts": "{ref: {fp, value?}}",
-                                "nets": "{net: [REF.PIN]}",
+    "set_state": (t_state_set, {"parts": "{ref: {fp, value?, attrs?}}",
+                                "nets": "{net: [REF.PIN]} or {net: {pins, attrs?}}",
                                 "constraints": "[...] (declarative, idempotent)"}),
     "undo": (t_undo, {"n": "effects to revert (default 1)"}),
     "parse_constraint": (t_parse, {"text": "NL constraint"}),

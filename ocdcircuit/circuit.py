@@ -376,6 +376,38 @@ class Board(Component):
 
         self.ctx.emit(_do, _undo)
 
+    def set_attrs(self, ref: str, attrs: dict[str, str]) -> None:
+        """Replace a part's attrs wholesale. Undoable (declare reconciles)."""
+        p = self.parts[ref]
+        old = dict(p.attrs)
+        new = dict(attrs)
+
+        def _do() -> None:
+            p.attrs.clear()
+            p.attrs.update(new)
+
+        def _undo() -> None:
+            p.attrs.clear()
+            p.attrs.update(old)
+
+        self.ctx.emit(_do, _undo)
+
+    def set_net_attrs(self, net: str, attrs: dict[str, str]) -> None:
+        """Replace a net's attrs wholesale. Undoable (declare reconciles)."""
+        n = self.nets[net]
+        old = dict(n.attrs)
+        new = dict(attrs)
+
+        def _do() -> None:
+            n.attrs.clear()
+            n.attrs.update(new)
+
+        def _undo() -> None:
+            n.attrs.clear()
+            n.attrs.update(old)
+
+        self.ctx.emit(_do, _undo)
+
     def remove_part(self, ref: str) -> None:
         p = self.parts[ref]
         affected = [(n, list(net.pins)) for n, net in self.nets.items()
@@ -422,17 +454,24 @@ class Board(Component):
             assert isinstance(spec, dict)
             fp = str(spec.get("fp", ""))
             value = str(spec.get("value", ""))
+            want_attrs = spec.get("attrs", {})
+            assert isinstance(want_attrs, dict)
+            want_attrs = {str(k): str(v) for k, v in want_attrs.items()}
             if ref not in self.parts:
-                self.add_part(str(ref), fp, value)
+                self.add_part(str(ref), fp, value, attrs=want_attrs or None)
                 counts["added"] += 1
             else:
                 p = self.parts[str(ref)]
                 if p.fp != fp or p.value != value:
                     self.remove_part(str(ref))
-                    self.add_part(str(ref), fp, value)
+                    self.add_part(str(ref), fp, value, attrs=want_attrs or None)
+                    counts["updated"] += 1
+                elif p.attrs != want_attrs:
+                    self.set_attrs(str(ref), want_attrs)
                     counts["updated"] += 1
         want_pins: dict[str, set[tuple[str, str]]] = {}
-        for n, pins in nets.items():
+        for n, spec in nets.items():
+            pins = spec.get("pins", []) if isinstance(spec, dict) else spec
             assert isinstance(pins, list)
             want_pins[str(n)] = {(str(r), str(q)) for tok in pins
                                  for r, q in [str(tok).split(".")]}
@@ -450,6 +489,14 @@ class Board(Component):
                 counts["nets"] += 1
             for ref, pin in cur - pins:
                 self.disconnect(n, ref, pin)
+                counts["nets"] += 1
+        for n, spec in nets.items():
+            # net spec is [pins...] or {"pins": [...], "attrs": {...}}
+            na: object = spec.get("attrs", {}) if isinstance(spec, dict) else {}
+            assert isinstance(na, dict)
+            na = {str(k): str(v) for k, v in na.items()}
+            if n in self.nets and self.nets[n].attrs != na:
+                self.set_net_attrs(str(n), na)
                 counts["nets"] += 1
         # constraints: exact-set semantics (order-independent)
         cur_c = [self._ckey(c) for c in self.constraints]

@@ -667,6 +667,16 @@ _ss2 = _call("set_state", {"parts": {"QX": {"fp": "R0805", "value": "1k"}},
 assert _ss2["applied"] == {"added": 0, "removed": 0, "updated": 0, "nets": 0}, _ss2
 _bad = _call("set_state", {"parts": {"QY": {"fp": "NOPE"}}})
 assert "error" in _bad, _bad  # atomic: nothing applied
+_ssa = _call("set_state", {"parts": {"QX": {"fp": "R0805", "value": "1k",
+                                            "attrs": {"lcsc": "C9"}}},
+                           "nets": {"QN": {"pins": ["QX.1", "QX.2"],
+                                            "attrs": {"class": "hv"}}},
+                           "constraints": []})
+assert cast(dict[str, object], _ssa["applied"])["updated"] == 1, _ssa
+_sta = _call("get_state", {})
+_ap = [p for p in cast(list[dict[str, object]],
+       cast(dict[str, object], _sta["ir"])["parts"]) if p["ref"] == "QX"][0]
+assert _ap["attrs"] == {"lcsc": "C9"}, _ap  # attrs survive IR round-trip
 _st = _call("get_state", {})
 assert any(p["ref"] == "QX" for p in cast(list[dict[str, object]],
            cast(dict[str, object], _st["ir"])["parts"]))  # QX survived rollback
