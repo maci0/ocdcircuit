@@ -131,7 +131,7 @@ def tidy_ga(board: Board, pop: int = 8, gen: int = 6, seed: int = 0,
                 board.parts[r].x, board.parts[r].y = x, y
         board.traces[:] = old_traces
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
     return best[0]
 
 

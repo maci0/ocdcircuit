@@ -259,7 +259,7 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                     _rebuild_blocked(copper, halo, cells_of)
                     still.append(fname)
         failed = still
-    board.ctx.emit(lambda: board.traces.__setitem__(slice(None), new),
+    board.emit(lambda: board.traces.__setitem__(slice(None), new),
                    lambda: board.traces.__setitem__(slice(None), old))
     return len(new)
 

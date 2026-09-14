@@ -438,7 +438,7 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
             if r in board.parts:
                 board.parts[r].x, board.parts[r].y = x, y
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
     return best
 
 
@@ -474,7 +474,7 @@ def candidates(board: Board, n: int = 4, key: str | None = None,
             if r in board.parts:
                 board.parts[r].x, board.parts[r].y = x, y
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
     out.sort(key=lambda c: cast(float, c["cost"]))
     return out
 
@@ -496,7 +496,7 @@ def restore_candidate(board: Board, cand: dict[str, object]) -> None:
             if r in board.parts:
                 board.parts[r].x, board.parts[r].y = x, y
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
 
 
 def feasible(board: Board, layers: list[int] | None = None) -> dict[int, dict[str, object]]:
@@ -618,7 +618,7 @@ def hierarchical(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
             if r in board.parts:
                 board.parts[r].x, board.parts[r].y = x, y
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
     return best
 
 
@@ -1076,7 +1076,7 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
             if r in board.parts:
                 board.parts[r].x, board.parts[r].y = x, y
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
     return best
 
 
@@ -1136,7 +1136,7 @@ def assign_layers(board: Board) -> None:
         def _do() -> None:
             pass  # already applied; redo is re-run, not replay
 
-        board.ctx.emit(_do, _undo)
+        board.emit(_do, _undo)
 
 
 def route(board: Board, frames: list[Frame] | None = None) -> int:
@@ -1179,5 +1179,5 @@ def route(board: Board, frames: list[Frame] | None = None) -> int:
     def _undo() -> None:
         board.traces[:] = old
 
-    board.ctx.emit(_do, _undo)
+    board.emit(_do, _undo)
     return len(new)

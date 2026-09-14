@@ -188,7 +188,109 @@ wuid = wf.uid
 ld4.declare([])
 assert wuid not in ldt.registry  # O-Remove clears; stale views resolve nothing
 
-# FAILED: raising apply parks the fiber (target ⊥) without breaking notify
+# managed realms: local (True) is per-entry, global (str) is shared,
+# both discarded when unnamed; local survives entry respawn (tagged by id)
+from ocdcircuit.core import Component as _C
+
+
+def _prov(val: str) -> Component:
+    m = _C("p-" + val)
+    orig = m.mount
+
+    def _m(ctx: Context, *a: object, **k: object) -> None:
+        orig(ctx)
+        ctx.set("bus", val)
+    m.mount = _m  # type: ignore[method-assign]
+    return m
+
+
+rctx = Context()
+rld = Loader(rctx)
+rld.declare([{"id": "a", "factory": lambda: _prov("A"), "url": "pa",
+              "isolate": {"bus": True}},
+             {"id": "b", "factory": lambda: _prov("B"), "url": "pb",
+              "isolate": {"bus": True}}])
+fa, fb = rld.entries["a"].fiber, rld.entries["b"].fiber
+assert fa is not None and fb is not None
+# independent local bindings despite the same key
+assert fa.ctx.get("bus") == "A" and fb.ctx.get("bus") == "B"
+assert "a" in rld._realms and "b" in rld._realms
+# global realm: both entries share one binding (last writer wins, same symbol)
+rld.declare([{"id": "a", "factory": lambda: _prov("A"), "url": "pa",
+              "isolate": {"bus": "g"}},
+             {"id": "b", "factory": lambda: _prov("B"), "url": "pb",
+              "isolate": {"bus": "g"}}])
+assert "a" not in rld._realms and "g" in rld._realms
+rld.declare([])
+assert "g" not in rld._realms and "b" not in rld._realms  # discarded
+
+# Alg 10: multi-entry reload is transactional — failed reimport
+# restores every swapped entry, never half-reloaded
+hctx = Context()
+hld = Loader(hctx)
+calls: list[str] = []
+
+
+def _ok(name: str) -> Callable[[], Component]:
+    def _f() -> Component:
+        m = Component(name)
+        orig = m.mount
+
+        def _m(ctx: Context, *a: object, **k: object) -> None:
+            orig(ctx)
+            calls.append(name)
+        m.mount = _m  # type: ignore[method-assign]
+        return m
+    return _f
+
+
+hld.declare([{"id": "x", "factory": _ok("x"), "url": "x"},
+             {"id": "y", "factory": _ok("y"), "url": "y"}])
+hld.reload(list(hld.entries.values()))  # clean reload, same factories
+assert hld.entries["x"].fiber is not None
+assert hld.entries["x"].fiber.state == Fiber.ACTIVE
+assert hld.entries["y"].fiber is not None
+
+
+def _reimport(e: object) -> Callable[[], Component]:
+    assert isinstance(e, Entry)
+    if e.id == "y":
+        raise RuntimeError("import boom")
+    return _ok(e.id + "-v2")
+
+
+try:
+    hld.reload(list(hld.entries.values()), _reimport)
+    raise AssertionError("should raise")
+except RuntimeError:
+    pass
+# x swapped then restored; y never swapped — both ACTIVE on old factories
+assert hld.entries["x"].fiber is not None
+assert hld.entries["x"].fiber.state == Fiber.ACTIVE
+assert hld.entries["y"].fiber is not None
+assert hld.entries["y"].fiber.state == Fiber.ACTIVE
+# phase-2 failure (mount raises mid-swap): the broken entry parks
+# FAILED (paper §4.4) with its error recorded; the healthy swap stands —
+# rolling back working code because a sibling's new code is broken would
+# hide the diagnosis. Import-time failure (phase 1) stays transactional.
+hld.reload(list(hld.entries.values()))  # healthy again
+
+
+def _badf() -> Component:
+    raise RuntimeError("mount boom")
+
+
+def _reimport2(e: object) -> Callable[[], Component]:
+    assert isinstance(e, Entry)
+    return _badf if e.id == "y" else _ok(e.id + "-v3")
+
+
+hld.reload(list(hld.entries.values()), _reimport2)
+assert hld.entries["x"].fiber is not None
+assert hld.entries["x"].fiber.state == Fiber.ACTIVE
+yf = hld.entries["y"].fiber
+assert yf is not None and yf.state == Fiber.FAILED
+assert isinstance(yf.error, RuntimeError)
 frt = Context()
 
 

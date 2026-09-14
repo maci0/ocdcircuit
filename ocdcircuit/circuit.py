@@ -4,10 +4,11 @@ Circuits are written in plain Python (this API) or in JSON (agent.ir
 snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
 """
 from __future__ import annotations
+from collections.abc import Callable
 from typing import Optional
-from .core import Context, Component, Registry, Plugin
+from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
-from .types import BBox, Constraint, PinLike, XY
+from .types import BBox, Constraint, PinLike, Undo, XY
 
 
 class Part:
@@ -111,8 +112,29 @@ class Board(Component):
         self._block_open: str | None = None  # parser scratch (not dumped)
         self._block_lines: list[str] | None = None
         self.ctx.set("plugins", Registry())
+        # board-owned fiber (paper Alg 4): every domain edit chains into
+        # its dispose, so unloading the board reverts all board state.
+        # The flat undo stack is untouched — snapshots/rollback keep working.
+        def _noop(_fctx: Context) -> object:
+            return lambda: None
+
+        self._fiber = self.ctx.use((), _noop)
         from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
         mount_defaults(self)
+
+    def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
+        """Board domain edit: flat-stack undo + chain into the board
+        fiber's dispose (paper §5.1.1 — unload reverts). All board/engine
+        mutations go through here, never ctx.emit directly."""
+        d = self.ctx.emit(do, undo)
+        prev = self._fiber.dispose
+
+        def _chained() -> None:
+            undo()
+            prev()
+
+        self._fiber.dispose = _chained
+        return d
 
     # -- plugin dispatch: Board never calls solver/drc/export directly --
     def plugins(self) -> Registry:
@@ -295,7 +317,7 @@ class Board(Component):
                 self.custom_fp.pop(name, None)
                 self.fp_src.pop(name, None)
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     def add_symbol(self, name: str, sym: dict[str, object],
                    src: str | None = None) -> None:
@@ -319,7 +341,7 @@ class Board(Component):
                 self.custom_sym.pop(name, None)
                 self.sym_src.pop(name, None)
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     def symbol_of(self, ref: str) -> dict[str, object]:
         """Resolved + sized symbol for a part (`sym=` attr wins, else fp map)."""
@@ -368,7 +390,7 @@ class Board(Component):
             else:
                 self.parts.pop(ref, None)
 
-        self.ctx.emit(_add, _drop)
+        self.emit(_add, _drop)
 
     def move_part(self, ref: str, x: float, y: float) -> None:
         p = self.parts[ref]
@@ -380,7 +402,7 @@ class Board(Component):
         def _undo() -> None:
             p.x, p.y = ox, oy
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     def set_attrs(self, ref: str, attrs: dict[str, str]) -> None:
         """Replace a part's attrs wholesale. Undoable (declare reconciles)."""
@@ -396,7 +418,7 @@ class Board(Component):
             p.attrs.clear()
             p.attrs.update(old)
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     def set_net_attrs(self, net: str, attrs: dict[str, str]) -> None:
         """Replace a net's attrs wholesale. Undoable (declare reconciles)."""
@@ -412,7 +434,7 @@ class Board(Component):
             n.attrs.clear()
             n.attrs.update(old)
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     def remove_part(self, ref: str) -> None:
         p = self.parts[ref]
@@ -429,7 +451,7 @@ class Board(Component):
             for n, pins in affected:
                 self.nets[n].pins[:] = pins
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     # -- declarative desired-state (reconcile, not verbs) --
     def declare(self, want: dict[str, object]) -> dict[str, int]:
@@ -534,7 +556,7 @@ class Board(Component):
             def _add() -> None:
                 net.pins.append(entry)
 
-            self.ctx.emit(_drop, _add)
+            self.emit(_drop, _add)
 
     def drop_net(self, name: str) -> None:
         """Remove an empty net."""
@@ -548,7 +570,7 @@ class Board(Component):
         def _add() -> None:
             self.nets[name] = n
 
-        self.ctx.emit(_drop, _add)
+        self.emit(_drop, _add)
 
     def unconstrain(self, c: Constraint) -> None:
         """Remove one constraint (inverse of constrain)."""
@@ -559,7 +581,7 @@ class Board(Component):
             def _add() -> None:
                 self.constraints.append(c)
 
-            self.ctx.emit(_drop, _add)
+            self.emit(_drop, _add)
 
     # -- nets --
     def net(self, name: str) -> Net:
@@ -572,7 +594,7 @@ class Board(Component):
             def _drop() -> None:
                 self.nets.pop(name, None)
 
-            self.ctx.emit(_add, _drop)
+            self.emit(_add, _drop)
         return self.nets[name]
 
     def connect(self, netname: str, ref: str, pin: PinLike) -> None:
@@ -585,7 +607,7 @@ class Board(Component):
             def _drop() -> None:
                 net.pins.remove(entry)
 
-            self.ctx.emit(_add, _drop)
+            self.emit(_add, _drop)
 
     # -- board-level --
     def set_board(self, w: float, h: float) -> None:
@@ -597,7 +619,7 @@ class Board(Component):
         def _undo() -> None:
             self.width, self.height = ow, oh
 
-        self.ctx.emit(_do, _undo)
+        self.emit(_do, _undo)
 
     def constrain(self, c: Constraint) -> None:
         def _add() -> None:
@@ -609,7 +631,7 @@ class Board(Component):
             if c in self.constraints:
                 self.constraints.remove(c)
 
-        self.ctx.emit(_add, _drop)
+        self.emit(_add, _drop)
 
     def pad_pos(self, ref: str, pin: PinLike) -> XY:
         p = self.parts[ref]

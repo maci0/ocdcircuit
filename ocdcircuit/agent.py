@@ -47,7 +47,7 @@ def apply_patch(board: Board, ops: list[dict[str, object]]) -> int:
                         else:
                             board.nets[_n].attrs[k] = v
 
-                board.ctx.emit(_do, _undo)
+                board.emit(_do, _undo)
         elif k == "constrain":
             c = op["c"]
             assert isinstance(c, dict)
@@ -76,7 +76,7 @@ def apply_patch(board: Board, ops: list[dict[str, object]]) -> int:
             board.use(str(op["kind"]), str(op["key"]))
         elif k == "plugin":
             from .core import Plugin, Registry
-            reg = board.ctx.require("plugins")
+            reg = board.ctx.get("plugins")
             assert isinstance(reg, Registry)
             args = op.get("args", {})
             assert isinstance(args, dict)

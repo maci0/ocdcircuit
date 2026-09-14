@@ -34,19 +34,23 @@ Paper: [arXiv:2608.25512](https://arxiv.org/abs/2608.25512) (Table 2, Algs 1–1
 Closed since: `ctx.use` O-Insert (tracked callback, revert = retire +
 O-Remove), `ctx.registry` + uid clearing, isolate-as-scope (no inverse;
 loader respawns on scope change), intercept consulted at read (`hidden`
-mask, child-overridable), Module build inside fiber apply.
+mask, child-overridable), Module build inside fiber apply, Board domain
+edits chained into a board-owned fiber (unload reverts all board state;
+flat undo stack untouched), managed realms (local `True` tagged by id,
+global string refcounted, discarded when unnamed), two-phase `reload`
+(reimport failure tears nothing down; mount failure parks FAILED).
 Remaining:
 
-1. **No parent-cascade for domain state**: parts/nets/traces emit on the
-   board ctx directly, not through fibers — unloading a component fiber
-   retires its own apply-inverse but sibling domain edits interleave on
-   the same undo stack. Per-part fibers have no paper basis (fibers are
-   component instantiations); closing this means routing domain edits
-   through the owning fiber's ctx, a big-bang engine rewrite.
-2. **Alg 7 managed realms + delimiters**: isolate dicts are raw values,
-   no local-vs-global scoping or entry-move semantics.
-3. **Alg 10 is single-entry**: no cross-entry atomicity, no module cache
-   invalidation (`sys.modules` untouched).
+1. **No parent-cascade for engine-internal scratch**: solver/maze evals
+   use snapshot/rollback on the flat stack — correct, just not fiber
+   terms. Per-part fibers have no paper basis; the board fiber covers
+   unload-reverts.
+2. **Alg 7 surgical migration**: reassignment respawns (retire +
+   reinsert, the paper's revision composite) instead of moving live
+   bindings with delimiter tags. Same endpoint, coarser route.
+3. **Alg 10 has no module-cache layer**: `reimport` is host-supplied;
+   `sys.modules` invalidation is the caller's job (Node ESM/CJS caches
+   have no Python analogue here).
 4. Prior skips stand: async `create_task`, group/include components,
    file-watcher HMR engine, compile-time `ctx[key]` (§6.4), §6.2/6.3/6.6.
 

@@ -755,6 +755,7 @@ class Entry:
         self.kwargs = dict(kwargs or {})
         self.fiber: Fiber | None = None
         self.component: Component | None = None
+        self.scope: dict[str, object] = {}  # resolved managed realms
 
 
 def classify(stashed: set[str], externals: set[str],
@@ -826,6 +827,9 @@ class Loader:
         self.modules: dict[str, Component] = {}
         self.entries: dict[str, Entry] = {}
         self._factories: dict[str, Callable[[], Component]] = {}
+        # managed realms (paper §5.2.1): global name → shared symbol;
+        # local realms live on the entry (tagged by id, die with it).
+        self._realms: dict[str, tuple[object, int]] = {}
 
     def mount(self, mod: Component, *a: object, **k: object) -> None:
         mod.mount(self.ctx, *a, **k)
@@ -869,6 +873,47 @@ class Loader:
                     pass
             raise
 
+    def reload(self, stale: list[Entry],
+               reimport: Callable[[Entry], Callable[[], Component]] | None = None) -> None:
+        """Two-phase reload (paper Alg 10): phase 1 resolves all fresh
+        factories up front — a reimport failure tears nothing down.
+        Phase 2 swaps each entry (retire + reinsert). A mount failure
+        parks that entry FAILED with its error recorded (paper §4.4);
+        healthy swaps stand. Truly unexpected errors roll every swapped
+        entry back to its previous factory, then re-raise.
+        reimport maps an entry to its fresh factory (default: same
+        factory — a new enablement, e.g. after the host invalidates
+        sys.modules)."""
+        reimport = reimport or (lambda e: e.factory)
+        live = [e for e in stale if e.id in self.entries]
+        fresh = {e.id: reimport(e) for e in live}  # may raise: nothing torn down
+        backup = {e.id: e.factory for e in live}
+        swapped: list[Entry] = []
+        try:
+            for e in live:
+                if e.fiber is not None:
+                    e.fiber.retire()
+                    e.fiber._insert()
+                    e.fiber = None
+                e.factory = fresh[e.id]
+                if not e.disabled:
+                    e.fiber = self._spawn(e)
+                swapped.append(e)
+        except Exception:
+            for e in swapped:
+                try:
+                    if e.fiber is not None:
+                        e.fiber.retire()
+                        e.fiber._insert()
+                        e.fiber = None
+                    if e.id in backup:
+                        e.factory = backup[e.id]
+                        if not e.disabled:
+                            e.fiber = self._spawn(e)
+                except Exception:
+                    pass
+            raise
+
     # --- declarative entries (paper §5.2.1): per-field least-disruptive ---
     def declare(self, specs: list[dict[str, object]]) -> dict[str, int]:
         """Keyed diff over entry ids: add missing, drop stale, per-field
@@ -888,6 +933,47 @@ class Loader:
                 counts["updated"] += self._update_entry(spec)
         return counts
 
+    def _resolve_isolate(self, entry: Entry) -> dict[str, object]:
+        """Managed realms (paper §5.2.1): True → local realm private to
+        the entry (tagged by id, carried across its respawns, discarded
+        with it); string → global realm shared by every entry naming it
+        (refcounted, discarded when unnamed); raw object → as-is.
+        Called when the isolate spec is (re)installed, paired with
+        _release_isolate on scope replacement / entry drop."""
+        out: dict[str, object] = {}
+        for k, v in entry.isolate.items():
+            if v is True:
+                if entry.id not in self._realms:
+                    self._realms[entry.id] = (object(), 0)
+                sym, n = self._realms[entry.id]
+                self._realms[entry.id] = (sym, n + 1)
+                out[k] = sym
+            elif isinstance(v, str):
+                if v not in self._realms:
+                    self._realms[v] = (object(), 0)
+                sym, n = self._realms[v]
+                self._realms[v] = (sym, n + 1)
+                out[k] = sym
+            else:
+                out[k] = v
+        return out
+
+    def _release_isolate(self, entry: Entry) -> None:
+        """Release realm refs; discard a realm once no entry names it."""
+        seen: set[str] = set()
+        for v in entry.isolate.values():
+            name = entry.id if v is True else v if isinstance(v, str) else None
+            if name is None or name in seen:
+                continue
+            seen.add(name)
+            cur = self._realms.get(name)
+            if cur is not None:
+                sym, n = cur
+                if n <= 1:
+                    self._realms.pop(name, None)
+                else:
+                    self._realms[name] = (sym, n - 1)
+
     def _spawn(self, entry: Entry) -> Fiber:
         def _apply(fctx: Context) -> object:
             comp = entry.factory()
@@ -899,22 +985,26 @@ class Loader:
                     apply_cfg(entry.config)
             return lambda: comp.unmount(fctx)
 
-        fiber = self.ctx.use(entry.inject, _apply, isolate=entry.isolate or None,
+        fiber = self.ctx.use(entry.inject, _apply, isolate=entry.scope or None,
                              intercept=entry.intercept or None)
         return fiber
 
     def _add_entry(self, spec: dict[str, object]) -> None:
         entry = self._entry_of(spec)
         self.entries[entry.id] = entry
+        entry.scope = self._resolve_isolate(entry)
         if not entry.disabled:
             entry.fiber = self._spawn(entry)
 
     def _drop_entry(self, eid: str) -> None:
         entry = self.entries.pop(eid, None)
-        if entry is not None and entry.fiber is not None:
+        if entry is None:
+            return
+        if entry.fiber is not None:
             entry.fiber.retire()  # O-Retire: ordered withdrawal, then dispose
             entry.fiber._insert()  # undo the O-Insert: retire + O-Remove
             entry.fiber = None
+        self._release_isolate(entry)
 
     def _update_entry(self, spec: dict[str, object]) -> int:
         """Per-field dispatch: url/factory/scope → rebuild; intercept-only
@@ -938,9 +1028,11 @@ class Loader:
                 entry.fiber = self._spawn(entry)
             changed = 1
         if new.isolate != entry.isolate:
-            # scope changed: retire + reinsert under a fresh scope
-            # (isolate derives a child ctx — scopes aren't mutated in place)
+            # scope changed: release, re-resolve, retire + reinsert under
+            # the fresh scope (scopes aren't mutated in place)
+            self._release_isolate(entry)
             entry.isolate = dict(new.isolate)
+            entry.scope = self._resolve_isolate(entry)
             entry.intercept = dict(new.intercept)
             if entry.fiber is not None:
                 entry.fiber.retire()
