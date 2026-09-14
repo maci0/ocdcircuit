@@ -174,7 +174,7 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
 - **`.ocd` is LLM-native; Flux's canvas is not.** One fact per line,
   git-diffable, byte-round-tripped (goldens enforce). An LLM can read,
   patch, and review a board as text — no screenshots, no clicking.
-- **MCP is the Copilot without the rent.** `apps/mcp.py`: 24 tools
+- **MCP is the Copilot without the rent.** `apps/mcp.py`: 27 tools
   (load/solve/patch/set_state/undo/place/candidates/apply_candidate/
   feasible/route/check/score/diff/export/render/simulate/…). Any MCP
   client (Claude, DeepSeek agents, anything) drives boards today.

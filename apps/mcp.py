@@ -442,7 +442,7 @@ def handle(msg: dict[str, object]) -> dict[str, object] | None:
 def main() -> None:
     if any(a in ("-h", "--help") for a in sys.argv[1:]):
         print("usage: python -m apps.mcp  # MCP stdio server, no args; "
-              "27 tools over JSON-RPC (see TOOLS)")
+              f"{len(TOOLS)} tools over JSON-RPC (see TOOLS)")
         return
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
