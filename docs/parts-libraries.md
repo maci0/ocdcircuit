@@ -193,8 +193,9 @@ interop (methods brief), MPN→SPICE registry (simulators brief OQ).
   consumer pressure yet); studio canvas reuse comes free via `sch_layout`.
 - **SPICE pin-mapping: minimal path shipped, table deferred** (review round 1):
   `sim op REF MODEL PINS...` carries positional pins per part today; the
-  `spicepin=` attr name is reserved in OCD.md but unconsumed — wire it or
-  drop the doc line. tscircuit's `spicePinMapping` remains the model for a
+  `spicepin=` attr name was reserved in OCD.md but unconsumed — dropped
+  from the docs (round 162) until a board needs default pin orders; the
+  name stays free. tscircuit's `spicePinMapping` remains the model for a
   full table. TI (TLV9052/OPA4383 pages)
   and ADI/LTspice model hosting confirmed this round; Nexperia/onsemi URLs
   NOT re-verified — flagged. **No open MPN→SPICE-URL registry found**
