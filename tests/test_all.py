@@ -882,6 +882,13 @@ assert _badp["applied"] == 0 and "error" in _badp, _badp
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["proj"] == {}
 assert _call("get_state", {})["proj"] == {}
+# large payloads survive stdio framing: 300KB monster board loads intact
+_mtext = open(os.path.join(EX, "..", "benches", "monster6502",
+                           "monster6502.ocd")).read()
+_mload = _call("load_board", {"text": _mtext, "base": os.path.join(
+    EX, "..", "benches", "monster6502")})
+assert _mload["parts"] == 5420 and _mload["nets"] == 9493, _mload
+assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
 assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
 assert _call("lint", {})["errors"] == []
