@@ -239,6 +239,9 @@ assert not [s for s in _ch.traces
 _drl = open([f for f in _ch.export("jlc", outdir=tempfile.mkdtemp())
              if f.endswith(".TXT")][0]).read()
 assert "X30.000Y8.000" in _drl, _drl
+_gko = open([f for f in _ch.export("jlc", outdir=tempfile.mkdtemp())
+             if f.endswith(".GKO.gbr")][0]).read()
+assert "X17.0000" in _gko and "X23.0000" in _gko, _gko
 _dzbad = agent.loads("board t 40x30\npart F1 FIDUCIAL\npart R1 R0805 1k\n"
                      "fix F1 at 20 15\nfix R1 at 20 15\nnet N: R1.1 R1.2\n"
                      "keepout near F1 d4\n", base=EX)

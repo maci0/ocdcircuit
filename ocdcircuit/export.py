@@ -92,6 +92,16 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.GKO.gbr")
     outl: list[Draw] = [(0.0, 0.0, W, 0.0), (W, 0.0, W, H),
                         (W, H, 0.0, H), (0.0, H, 0.0, 0.0)]
+    from .drc import zone_at as _za
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "cutout":
+            z = _za(board, c)
+            hw, hh = _f(z["w"]) / 2, _f(z["h"]) / 2
+            cx, cy = _f(z["x"]), _f(z.get("y", 0.0))
+            outl += [(cx - hw, cy - hh, cx + hw, cy - hh),
+                     (cx + hw, cy - hh, cx + hw, cy + hh),
+                     (cx + hw, cy + hh, cx - hw, cy + hh),
+                     (cx - hw, cy + hh, cx - hw, cy - hh)]
     open(fn, "w").write(_gerber([], outl, 0.1))
     files.append(fn)
     # drill: PTH holes (soldering) + vias (layer changes).
