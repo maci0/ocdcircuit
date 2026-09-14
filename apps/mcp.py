@@ -363,7 +363,8 @@ def t_solve(a: dict[str, object]) -> dict[str, object]:
 
 
 TOOLS: dict[str, object] = {
-    "load_board": (t_load, {"text": "ocd source (or path)", "fab": "fab key"}),
+    "load_board": (t_load, {"text": "ocd source (or path)", "fab": "fab key",
+                             "base?": "dir use/fp paths resolve against"}),
     "get_state": (t_state, {}),
     "apply_patch": (t_patch, {"ops": "patch op list (undoable, atomic)"}),
     "set_state": (t_state_set, {"parts": "{ref: {fp, value?, attrs?}}",
@@ -378,7 +379,8 @@ TOOLS: dict[str, object] = {
     "route": (t_route, {"key": "router?", "frames?": True}),
     "check": (t_check, {"key": "drc?", "fab?": "one-shot fab override"}),
     "score": (t_score, {"tidy": "include tidy scorecard?"}),
-    "diff": (t_diff, {"text": ".ocd source to compare against"}),
+    "diff": (t_diff, {"text": ".ocd source to compare against",
+                      "base?": "dir use/fp paths resolve against"}),
     "lint": (t_lint, {}),
     "doctor": (t_doctor, {}),
     "export": (t_export, {"key": "exporter?", "outdir": "out", "fab?": "one-shot fab override"}),
@@ -387,7 +389,9 @@ TOOLS: dict[str, object] = {
     "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
     "fabs": (t_fabs, {}),
     "calc": (t_calc, {"what": "trace|amps|via|divider|pick", "amps": 1.0}),
-    "simulate": (t_sim, {"what": "dc|tran"}),
+    "simulate": (t_sim, {"what": "dc|tran", "key?": "mna|ngspice|gates",
+                           "t_end?": "tran end", "steps?": "tran steps",
+                           "ticks?": "gates ticks"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
     "context": (t_ctx, {"op": "fibers|get|set|unset", "key?": "coeffect key"}),
