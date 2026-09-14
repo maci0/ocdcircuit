@@ -1,5 +1,8 @@
 board breath_ketone 16.635x42.06 2L
 # ported from atopile main.ato — signals + ~ wiring preserved
+# NOTE: dense (12mm USB-C on 16mm width) — all placers leave 8-11 overlap
+# errors; author layout relied on exact hand placement. fix parts to the
+# .kicad_pcb coordinates to reproduce, or widen the board.
 fp fp/USB-C_SMD-TYPE-C-31-M-12_1.kicad_mod
 fp fp/SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR.kicad_mod
 fp fp/B5819W.kicad_mod
