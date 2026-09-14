@@ -23,6 +23,14 @@ Kinds (see `plugins.py` for keys): `placer placer→float` · `router→int` ·
 `layers` · `drc/erc→dict` · `exporter→[files]` · `renderer→str|bytes` ·
 `silk/importer/calc/simulate/lint/score/doctor→dict` · `diff→str` · `parts`.
 
+Current keys (from a live registry — count, don't hand-edit):
+`placer` compact/diffusion/hierarchical/multilevel/thermal ·
+`router` coarse/lroute/maze/wiremask · `exporter`
+bundle/eagle/easyeda/jlc/json/kicad/kicad-sch/ocd · `importer`
+eagle/eagle-brd/easyeda/fp/kicad/pcb/sym/tscircuit · `renderer`
+assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg ·
+`simulate` mna/ngspice · `silk` fab/full/ref · `drc` erc/fab/jlc-flex.
+
 Rules: engine imports inside `run()` (keeps `import ocdcircuit` light);
 failure memory means `run` may raise — the registry fences it, no cleanup
 needed. UI slots (`UiSlots` in `core.py`, served by `apps/studio.py`) work

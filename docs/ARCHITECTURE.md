@@ -27,12 +27,12 @@ apps/mcp.py ───┘         │                        │                 
   Mounted per-Board by `mount_defaults` (swappable per board, undoable).
 - **Engines**: `solver` (diffusion place + min-conflicts repair), `maze`
   (A* route, per-layer copper/halo, MST legs, rip-up), `drc` (fab-profile
-  checks + shared `in_zone`), `export` (gerber/kicad/easyeda), `agent`
-  (.ocd text ⇄ IR), `foreign` (kicad/eagle/easyeda/tscircuit import),
+  checks + shared `in_zone`), `export` (gerber/kicad/kicad-sch/eagle/easyeda),
+  `agent` (.ocd text ⇄ IR), `foreign` (kicad/eagle/easyeda/tscircuit import),
   `score/silk/sim/spice/calc/lint/doctor/diff` (analysis), `geom3d/raster/
   view3d` (3D), `parts/footprint/fab` (data).
 - **Apps** (`apps/`): `ocd` (CLI), `studio` (webui, slot-composed page),
-  `mcp` (18-tool agent server). `tools/` holds one-shot porters
+  `mcp` (23-tool agent server). `tools/` holds one-shot porters
   (tscircuit/atopile/mitox); `boards/` one dir per board; `benches/`
   monster6502 stress; `tests/` suite + geometry goldens.
 

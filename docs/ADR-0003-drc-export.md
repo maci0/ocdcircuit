@@ -16,5 +16,14 @@ Demo must reach zero *errors*. Warnings are the visible router-debt meter.
   `Board.fab` selects, DRC reports which fab it checked.
 - Import: Eagle `.brd` boards, EasyEDA Std JSON (footprint + PCB docs);
   export adds EasyEDA Std PCB JSON. All as `importer`/`exporter` plugins.
+
+## Update (schematic + Eagle export, bundle)
+- `exporter:kicad-sch` writes `.kicad_sch` from the shared `sch_layout`
+  grid (per-pin-count box symbols, segmented rails, grid-exact pins) —
+  `kicad-cli sch erc` reports 0 errors on the demo board.
+- `exporter:eagle` writes `.brd` XML; verified by export→import round-trip
+  (refs + nets identical through `importer:eagle-brd`).
+- `exporter:bundle` zips Gerbers + drill + BOM + CPL + `.kicad_pcb` +
+  `.kicad_sch` + `.brd`: one file to fab.
 - Lint (`lint.py`) covers the full constraint grammar (net/part refs,
   numeric ranges, layer bounds), dedupes, never crashes on junk input.
