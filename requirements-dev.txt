@@ -1,0 +1,11 @@
+# Dev-only dependencies: the gate `make check` runs. Install with
+#   python -m pip install -r requirements-dev.txt
+# Bump deliberately — CI installs exactly this file, so a new checker cannot
+# change the gate on its own:
+#   python -m pip install -U mypy && mypy && edit the pin here.
+mypy==2.3.1
+
+# Optional runtime extras, deliberately NOT pinned (the code imports them
+# opportunistically and degrades without them — see ocdcircuit/doctor.py):
+#   rich   15.0.0   pretty CLI tables (plain-text fallback otherwise)
+#   numpy  2.5.3    SIMD placer hot loops + kb vector ranking (scalar fallback)
