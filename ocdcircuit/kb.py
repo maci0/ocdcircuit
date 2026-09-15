@@ -398,14 +398,17 @@ class KB:
     def _load_vectors(self, name: str) -> tuple[array[float], list[tuple[int, int]], int]:
         """(flat float32 vectors, [(start, end)] line ranges, dim) for one doc,
         or empty when stale/missing (mtime + size + embedder must match: an
-        edited note or a new model re-embeds).
+        edited note or a new model re-embeds). A cache written by an older
+        layout reads as stale, so `index()` rebuilds it.
 
         Packed, not JSON float lists: a 30-datasheet kb is 2610 passages ≈ 2M
         floats, and parsing those as JSON cost 273ms on every load (that WAS
         recall's latency). Same numbers — float32 is what the models emit and
         what cosine ranking needs. Passage text is not stored either: it is the
         document's own lines, so recall re-reads the top k by line range.
-        A v1 (JSON list) cache is migrated on read rather than re-embedded."""
+        `unit` marks float32 vectors already normalized; a cache without it is
+        re-normalized in place (a raw-vector dot product would rank wrongly,
+        silently). Anything else unknown reads as stale and gets re-embedded."""
         p = self._vec_path(name)
         if not os.path.isfile(p):
             return array("f"), [], 0
@@ -422,20 +425,11 @@ class KB:
             blob = doc.get("vec32")
             if isinstance(blob, str) and dim:
                 vec.frombytes(base64.b64decode(blob))
-                if doc.get("unit") is not True:  # written before unit storage
+                if doc.get("unit") is not True:
                     vec = _unit(vec, dim)
                     self._write_vectors(name, vec, ranges, dim)
                 return vec, ranges, dim
-            rows = doc.get("rows", [])  # v1: [{start, end, text, vec: [floats]}]
-            assert isinstance(rows, list)
-            for r in rows:
-                vec.extend(cast(list[float], cast(dict[str, object], r)["vec"]))
-            if not vec:
-                return array("f"), [], 0
-            dim = len(cast(list[float], cast(dict[str, object], rows[0])["vec"]))
-            vec = _unit(vec, dim)
-            self._write_vectors(name, vec, ranges, dim)  # upgrade, once
-            return vec, ranges, dim
+            return array("f"), [], 0  # no usable vector payload: treat as stale
         except (OSError, ValueError, AssertionError, TypeError):
             return array("f"), [], 0
 

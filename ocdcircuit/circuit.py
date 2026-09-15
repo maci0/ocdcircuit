@@ -175,7 +175,7 @@ class Seg:
     `jumper` the wire bridge DRC exempts, `drill` a via's hole.
 
     These three used to be set after construction and read back through
-    `getattr(x, "via", False)` in 25 places across nine modules — an attribute
+    `getattr(x, "via", False)` in 24 places across nine modules — an attribute
     the type checker could not see, which is how such a field goes missing."""
 
     net: str

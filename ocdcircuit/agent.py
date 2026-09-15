@@ -7,7 +7,8 @@ import math
 import os
 import re
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
 from .types import Constraint, Undo
@@ -473,7 +474,8 @@ def _dump_sim(c: Constraint) -> str:
     return f"sim {k} {c.get('ref', '')} {c.get('value', '')}"
 
 
-class _quiet_gc:
+@contextmanager
+def _quiet_gc() -> Iterator[None]:
     """Pause cyclic GC for an allocation-heavy parse, restore it after.
 
     A 5420-part board allocates ~680k GC-tracked objects — 28k undo entries,
@@ -483,19 +485,17 @@ class _quiet_gc:
     GC off, 331ms with the thresholds raised. Nothing here creates garbage that
     refcounting cannot free, cycles included: they wait for the next natural
     collection. Semantics are untouched — same objects, same undo stack, same
-    lazy mount decisions. A caller that had GC off keeps it off."""
+    lazy mount decisions. A caller that had GC off keeps it off.
 
-    def __enter__(self) -> None:
-        self.armed = gc.isenabled()
-        if self.armed:
-            gc.disable()
-
-    def __exit__(self, *exc: object) -> None:
-        if self.armed:
-            # No collect here: the board just built is *all* gen0, so an
-            # explicit collect(0) walks every one of those ~680k objects and
-            # cost 400ms — more than it saved. Cycles the parse left behind are
-            # freed by the next natural collection, exactly as before.
+    No collect on exit: the board just built is *all* gen0, so collect(0) walks
+    every one of those ~680k objects and cost 400ms — more than it saved."""
+    armed = gc.isenabled()
+    if armed:
+        gc.disable()
+    try:
+        yield
+    finally:
+        if armed:
             gc.enable()
 
 
