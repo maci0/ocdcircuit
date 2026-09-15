@@ -18,7 +18,7 @@ run:				# webui → http://localhost:8077
 snap:				# re-pin goldens after intended geometry change
 	SNAP=1 python tests/test_snapshot.py
 bench:				# 5420-part stress (~5 min, not in check)
-	python -m benches.monster6502.bench 1 5
+	python -m benches.discrete6502.bench 1 5
 farm:				# every board loads+solves (breath-ketone density excepted)
 	python -c "import sys, glob; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent; \

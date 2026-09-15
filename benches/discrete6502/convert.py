@@ -11,7 +11,7 @@ Mapping: 4051 FETs -> FET_SOT323 (.fp, true 2.0x1.25); R/C0402 -> CHIP0402
 Positions: layout.json mm (netlist.json pos units are NOT mil — ignored).
 Board 291x322 6L. DNP ballast excluded.
 
-Usage: python -m benches.monster6502.convert  # writes monster6502.ocd (needs netlist.json + layout.json)
+Usage: python -m benches.discrete6502.convert  # writes discrete6502.ocd (needs netlist.json + layout.json)
 """
 from __future__ import annotations
 import json
@@ -107,8 +107,8 @@ def _block_members(comps: list[dict[str, object]]
 
 def main() -> None:
     import argparse
-    argparse.ArgumentParser(prog="python -m benches.monster6502.convert",
-                            description="Convert netlist/layout JSON to monster6502.ocd.").parse_args()
+    argparse.ArgumentParser(prog="python -m benches.discrete6502.convert",
+                            description="Convert netlist/layout JSON to discrete6502.ocd.").parse_args()
     raw = json.load(open(os.path.join(HERE, "netlist.json")))
     lay = json.load(open(os.path.join(HERE, "layout.json")))
     # positions: layout.json is authoritative (true mm, matches board 290.8x322.1)
@@ -121,7 +121,7 @@ def main() -> None:
             continue
         used_fp.add(str(c["footprint"]))
     assert set(used_fp) <= set(FP), f"unmapped: {set(used_fp) - set(FP)}"
-    L = ["board monster6502 291x322 6L",
+    L = ["board discrete6502 291x322 6L",
          "fp fet_sot323.fp", "fp chip0402.fp", "fp testpoint.fp"]
     members = _block_members(comps)  # (ren, internal nets) — computed first
     ren, internal = members
@@ -164,7 +164,7 @@ def main() -> None:
                       for r, p in kept)
         L.append(f"net {nm}: {ps}")
     L.append("power vcc vss")
-    open(os.path.join(HERE, "monster6502.ocd"), "w").write("\n".join(L) + "\n")
+    open(os.path.join(HERE, "discrete6502.ocd"), "w").write("\n".join(L) + "\n")
     print(f"parts={len(comps)} nets={len(nets)} pins={sum(len(v) for v in nets.values())}")
 
 

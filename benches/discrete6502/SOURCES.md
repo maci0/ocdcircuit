@@ -14,9 +14,9 @@
 
 ## Files here
 
-- `convert.py` — netlist.json + layout.json → `monster6502.ocd`
-  (run: `python -m benches.monster6502.convert`; needs `netlist.json` + `layout.json` beside it)
-- `monster6502.ocd` — generated, 5420 parts / 2593 nets / ~14.9k pins
+- `convert.py` — netlist.json + layout.json → `discrete6502.ocd`
+  (run: `python -m benches.discrete6502.convert`; needs `netlist.json` + `layout.json` beside it)
+- `discrete6502.ocd` — generated, 5420 parts / 2593 nets / ~14.9k pins
   (raw: 5421 comps / 2624 nets; DNP Pico U1 + 31 pico-private/single-pin nets
   dropped; vcc/vss kept)
 - `fet_sot323.fp`, `chip0402.fp`, `testpoint.fp` — true-size footprints
@@ -61,6 +61,6 @@
 
 ## License note
 
-`netlist.json`/`layout.json` are CC BY-NC-SA 4.0 (upstream). `monster6502.ocd`
+`netlist.json`/`layout.json` are CC BY-NC-SA 4.0 (upstream). `discrete6502.ocd`
 is a mechanical format conversion — same license applies to it. Raw JSON is
 committed alongside (small enough, needed to regenerate).

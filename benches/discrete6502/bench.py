@@ -6,7 +6,7 @@ Scores placer output against die-true golden positions:
   2-sided hierarchy-aware, NOT wirelength-optimal),
   overlaps above the golden floor (golden itself scores GOLDEN_OV via
   front/back stacking; 0 is NOT the target),
-  runtime. Run: python -m benches.monster6502.bench [seeds] [iters]  (defaults reproduce SOURCES baseline)
+  runtime. Run: python -m benches.discrete6502.bench [seeds] [iters]  (defaults reproduce SOURCES baseline)
 """
 from __future__ import annotations
 import os
@@ -32,7 +32,7 @@ def golden(b: object) -> dict[str, tuple[float, float]]:
     if fix and len(fix) >= len(b.parts):
         return fix
     # block board: fixes cover stragglers only — map members via layout.json
-    from benches.monster6502.convert import _find_blocks
+    from benches.discrete6502.convert import _find_blocks
     raw = json.load(open(os.path.join(HERE, "netlist.json")))
     lay = json.load(open(os.path.join(HERE, "layout.json")))
     pos = {it["ref"]: (float(it["x"]), float(it["y"])) for it in lay["items"]}
@@ -69,7 +69,7 @@ def overlaps(b: object) -> int:
 
 def main() -> None:
     import argparse
-    ap = argparse.ArgumentParser(prog="python -m benches.monster6502.bench",
+    ap = argparse.ArgumentParser(prog="python -m benches.discrete6502.bench",
                                  description="Score placer output vs die-true golden positions.")
     ap.add_argument("seeds", type=int, nargs="?", default=BASE_SEEDS)
     ap.add_argument("iters", type=int, nargs="?", default=BASE_ITERS)
@@ -77,9 +77,9 @@ def main() -> None:
     a = ap.parse_args()
     seeds, iters, placer = a.seeds, a.iters, a.placer
     try:
-        b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
+        b = agent.loads(open(os.path.join(HERE, "discrete6502.ocd")).read(), base=HERE)
     except OSError:
-        raise SystemExit("monster6502.ocd missing (generated, gitignored) — run: python -m benches.monster6502.convert")
+        raise SystemExit("discrete6502.ocd missing (generated, gitignored) — run: python -m benches.discrete6502.convert")
     g = golden(b)
     # golden baselines first (same WL model + same overlap counter both sides)
     apply_golden(b, g)
