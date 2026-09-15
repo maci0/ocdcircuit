@@ -9,7 +9,7 @@ import math
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from .circuit import Board
+    from .circuit import Board, Seg
 
 EPS = 0.1  # T7 alignment tolerance, mm (placeholder per doc — uncalibrated)
 
@@ -17,7 +17,7 @@ from .drc import _grid_pairs  # shared spatial hash (lives with _seg_dist)
 
 
 def _routed(board: Board) -> bool:
-    return any(not getattr(s, "jumper", False) for s in board.traces)
+    return any(not s.jumper for s in board.traces)
 
 
 def _t1_crossings(board: Board) -> int | None:
@@ -25,7 +25,7 @@ def _t1_crossings(board: Board) -> int | None:
     if not _routed(board):
         return None
     from .drc import _seg_dist
-    segs = [s for s in board.traces if not getattr(s, "jumper", False)]
+    segs = [s for s in board.traces if not s.jumper]
     n = 0
     by_layer: dict[int, list[int]] = {}
     for i, s in enumerate(segs):
@@ -44,10 +44,10 @@ def _t1_crossings(board: Board) -> int | None:
     return n
 
 
-def _cross(a: object, b: object) -> bool:
+def _cross(a: Seg, b: Seg) -> bool:
     """Proper segment intersection (touching at shared endpoints excluded)."""
-    ax1, ay1, ax2, ay2 = a.x1, a.y1, a.x2, a.y2  # type: ignore[attr-defined]
-    bx1, by1, bx2, by2 = b.x1, b.y1, b.x2, b.y2  # type: ignore[attr-defined]
+    ax1, ay1, ax2, ay2 = a.x1, a.y1, a.x2, a.y2
+    bx1, by1, bx2, by2 = b.x1, b.y1, b.x2, b.y2
     if len({(ax1, ay1), (ax2, ay2), (bx1, by1), (bx2, by2)}) < 4:
         return False
 
@@ -64,7 +64,7 @@ def _t2_bends(board: Board) -> float | None:
     if not _routed(board):
         return None
     segs = [s for s in board.traces
-            if not getattr(s, "jumper", False) and (s.x1, s.y1) != (s.x2, s.y2)]
+            if not s.jumper and (s.x1, s.y1) != (s.x2, s.y2)]
     if not segs:
         return None
     bends = 0
@@ -86,7 +86,7 @@ def _t3_ortho(board: Board) -> float | None:
     if not _routed(board):
         return None
     segs = [s for s in board.traces
-            if not getattr(s, "jumper", False) and (s.x1, s.y1) != (s.x2, s.y2)]
+            if not s.jumper and (s.x1, s.y1) != (s.x2, s.y2)]
     if not segs:
         return None
     tot = sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)
@@ -102,7 +102,7 @@ def _t4_vias(board: Board) -> dict[str, object] | None:
         return None
     per: dict[str, int] = {}
     for s in board.traces:
-        if getattr(s, "via", False):
+        if s.via:
             per[s.net] = per.get(s.net, 0) + 1
     if not per:
         return {"total": 0, "per_net": {}}
@@ -118,7 +118,7 @@ def _t5_headroom(board: Board) -> float | None:
     from .drc import _seg_dist
     P = get(board.fab or "jlc")
     ms = float(P["min_space"])  # type: ignore[arg-type]
-    segs = [s for s in board.traces if not getattr(s, "jumper", False)]
+    segs = [s for s in board.traces if not s.jumper]
     best = float("inf")
     by_layer: dict[int, list[int]] = {}
     for i, s in enumerate(segs):
@@ -269,7 +269,7 @@ def _t12_acid_traps(board: Board) -> int | None:
         return None
     import math
     segs = [s for s in board.traces
-            if not getattr(s, "jumper", False) and (s.x1, s.y1) != (s.x2, s.y2)]
+            if not s.jumper and (s.x1, s.y1) != (s.x2, s.y2)]
     if not segs:
         return None
     at: dict[tuple[float, float], list[tuple[float, float]]] = {}
@@ -293,7 +293,7 @@ def _t12_acid_traps(board: Board) -> int | None:
 def _t11_copper_balance(board: Board) -> dict[str, object] | None:
     """Copper tile density sigma + layer delta (RAW). Trace length per
     5mm tile; None if unrouted. JLC warpage wants layer delta <= 20%."""
-    segs = [s for s in board.traces if not getattr(s, "jumper", False)]
+    segs = [s for s in board.traces if not s.jumper]
     if not segs:
         return None
     tile = 5.0

@@ -225,7 +225,7 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                 fnet = board.nets[fname]
                 fpts = [(r, board.pad_pos(r, q)) for r, q in fnet.pins if r in board.parts]
                 if len(fpts) >= 2:
-                    _fallback(board, fnet, fpts, new)
+                    _fallback(fnet, fpts, new)
             break
         still: list[str] = []
         for fname in failed:
@@ -247,7 +247,7 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                     best, best_hit = oname, hit
             if best_hit <= 0:
                 if _round == 1:
-                    _fallback(board, fnet, fpts, new)
+                    _fallback(fnet, fpts, new)
                 else:
                     still.append(fname)
                 continue
@@ -264,17 +264,17 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                         board, bnet, grid, bend, via, nx, ny, base_blocked,
                         pad_cells, copper, halo, cells_of, new, frames, hist):
                     if _round == 1:
-                        _fallback(board, bnet, bpts, new)
+                        _fallback(bnet, bpts, new)
                     else:
                         still.append(best)
             else:
                 for _cell in victim_cells:  # victim's cells congested this retry
                     hist[_cell] = hist.get(_cell, 0.0) + 1.0
                 if _round == 1:
-                    _fallback(board, fnet, fpts, new)
+                    _fallback(fnet, fpts, new)
                     for s in ripped:  # restore ripped net as flagged fallback
                         j = Seg(s.net, s.x1, s.y1, s.x2, s.y2, s.layer, s.width)
-                        j.jumper = True  # type: ignore[attr-defined]
+                        j.jumper = True
                         new.append(j)
                 else:
                     new.extend(ripped)  # victim back untouched, retry later
@@ -362,7 +362,7 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
         path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via, novia, hist)
         if path is None:
             return False
-        new.extend(_path_segs(board, net.name, path, grid, net.width))
+        new.extend(_path_segs(net.name, path, grid, net.width))
         own.update(path)
     cells_of[net.name] = set(own)
     for (gx, gy, ll) in own:
@@ -382,7 +382,7 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
     return True
 
 
-def _fallback(board: Board, net: Net, pts: list[tuple[str, XY]], new: list[Seg]) -> None:
+def _fallback(net: Net, pts: list[tuple[str, XY]], new: list[Seg]) -> None:
     """Straight-L fallback (never fail a build). Flagged jumper for DRC."""
     from .circuit import Seg as S
     layer = net.layer if net.layer is not None else 0
@@ -392,7 +392,7 @@ def _fallback(board: Board, net: Net, pts: list[tuple[str, XY]], new: list[Seg])
         for aa, bb in ((hub, mid), (mid, pt)):
             if aa != bb:
                 j = S(net.name, aa[0], aa[1], bb[0], bb[1], layer, net.width)
-                j.jumper = True  # type: ignore[attr-defined]
+                j.jumper = True
                 new.append(j)
 
 
@@ -413,7 +413,7 @@ def _rebuild_blocked(copper: set[tuple[int, int, int]],
                         halo.add((hx, hy, ll))
 
 
-def _path_segs(board: Board, net: str, path: list[tuple[int, int, int]],
+def _path_segs(net: str, path: list[tuple[int, int, int]],
                grid: float, width: float) -> list[Seg]:
     """Collapse grid path into Manhattan segs; split on direction/layer change."""
     from .circuit import Seg as S
@@ -429,7 +429,7 @@ def _path_segs(board: Board, net: str, path: list[tuple[int, int, int]],
                 out.append(S(net, ax * grid, ay * grid, bx * grid, by * grid, bl, width))
             if ll != bl:
                 v = S(net, bx * grid, by * grid, bx * grid, by * grid, bl, width)
-                v.via = True  # type: ignore[attr-defined]
+                v.via = True
                 out.append(v)
             ax, ay, al = bx, by, ll
             dx, dy = gx - bx, gy - by
@@ -507,11 +507,3 @@ def _meander(board: Board, new: list[Seg], grid: float,
                     grew = True
             if not grew:
                 break
-
-
-def _dir(px: int, py: int, sx: int, sy: int, gx: int, gy: int) -> tuple[int, int]:
-    dx, dy = (1 if gx > px else -1 if gx < px else 0), (1 if gy > py else -1 if gy < py else 0)
-    if sx == px and sy == py:
-        return (dx, dy)
-    return (1 if px > sx else -1 if px < sx else 0,
-            1 if py > sy else -1 if py < sy else 0)

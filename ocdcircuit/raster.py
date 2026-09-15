@@ -123,12 +123,12 @@ def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
         for x0, y0, x1, y1 in plane_plots(board).get(0, []):
             c.rect(x0, y0, x1, y1, board.height, (11, 61, 11))
     for t in board.traces:
-        if getattr(t, "via", False):
+        if t.via:
             continue
         c.line(t.x1, t.y1, t.x2, t.y2, board.height, max(0.2, t.width),
                cols[t.layer % 4])
     for t in board.traces:
-        if getattr(t, "via", False):
+        if t.via:
             c.disc(t.x1, t.y1, board.height, 0.4, (217, 168, 50))
             c.disc(t.x1, t.y1, board.height, 0.2, (11, 61, 11))
     for p in board.parts.values():

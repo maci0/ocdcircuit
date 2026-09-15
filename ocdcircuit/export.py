@@ -5,6 +5,7 @@ footprints with SMD pads + PTH holes, segments, vias at segment joints.
 Not bit-identical to KiCad's own output, but parses and round-trips.
 """
 from __future__ import annotations
+import csv
 import os
 import re
 from typing import TYPE_CHECKING, cast
@@ -109,7 +110,7 @@ def plane_plots(board: Board) -> dict[int, list[Draw]]:
                     r = max(1.0, dr + 0.3) / 2 + gap
                     cuts.append((x - r, y - r, x + r, y + r))
             for t in board.traces:
-                if getattr(t, "via", False) and t.net != net:
+                if t.via and t.net != net:
                     r = 0.2 + gap
                     cuts.append((t.x1 - r, t.y1 - r, t.x1 + r, t.y1 + r))
             for c in board.constraints:
@@ -282,7 +283,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
                 x, y = board.pad_pos(p.ref, pin)
                 drills.setdefault(dr, set()).add((round(x, 3), round(y, 3)))
     for t in board.traces:
-        if getattr(t, "via", False):
+        if t.via:
             drills.setdefault(0.4, set()).add((round(t.x1, 3), round(t.y1, 3)))
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "hole":
@@ -314,26 +315,34 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     for p in board.parts.values():
         groups.setdefault((p.value, p.fp, str(p.attrs.get("lcsc", "")),
                            "DNP" if p.attrs.get("dnp") else ""), []).append(p.ref)
-    lines = ["Comment,Designator,Footprint,LCSC,Alternates"]
     byref = {p.ref: p for p in board.parts.values()}
-    for (value, fp, lcsc, dnp), refs in sorted(groups.items()):
-        comment = f"{value} (DNP)" if dnp else value
-        # alternates: curated per-part substitute lists (stock-outs);
-        # unioned across the row, empties dropped. JLC ignores the extra
-        # column; pinout compatibility stays a human attestation.
-        alts = sorted({a.strip() for r in refs
-                       for a in str(byref[r].attrs.get("alternates", "")).split(",")
-                       if a.strip()})
-        lines.append(f"{comment},\"{','.join(sorted(refs))}\",{fp},{lcsc}"
-                     f"{',' + ';'.join(alts) if alts else ''}")
-    open(fn, "w").write("\n".join(lines) + "\n")
+    # csv.writer, not ",".join: a value carrying a comma (`1k,1%`) used to shift
+    # every column (JLC read Designator="1%"), and quoting by hand is a bug per
+    # field. lineterminator keeps the LF the rest of the bundle uses.
+    with open(fn, "w", newline="") as f:
+        cw = csv.writer(f, lineterminator="\n")
+        cw.writerow(["Comment", "Designator", "Footprint", "LCSC", "Alternates"])
+        for (value, fp, lcsc, dnp), refs in sorted(groups.items()):
+            comment = f"{value} (DNP)" if dnp else value
+            # alternates: curated per-part substitute lists (stock-outs);
+            # unioned across the row, empties dropped. JLC ignores the extra
+            # column; pinout compatibility stays a human attestation.
+            alts = sorted({a.strip() for r in refs
+                           for a in str(byref[r].attrs.get("alternates", "")).split(",")
+                           if a.strip()})
+            cw.writerow([comment, ",".join(sorted(refs)), fp, lcsc, ";".join(alts)])
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
     # DNP excluded: CPL drives the pick-and-place machine, BOM marks the
     # row do-not-place — listing both would place what must stay empty.
-    open(fn, "w").write("Designator,Mid X,Mid Y,Layer,Rotation\n" + "".join(
-        f"{p.ref},{p.x:.3f}mm,{p.y:.3f}mm,Top,{int(p.attrs.get('rot', 0))}\n"
-        for p in board.parts.values() if not p.attrs.get("dnp")))
+    with open(fn, "w", newline="") as f:
+        cw = csv.writer(f, lineterminator="\n")
+        cw.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
+        for p in board.parts.values():
+            if p.attrs.get("dnp"):
+                continue
+            cw.writerow([p.ref, f"{p.x:.3f}mm", f"{p.y:.3f}mm", "Top",
+                        int(p.attrs.get("rot", 0))])
     files.append(fn)
     return files
 
@@ -369,7 +378,7 @@ def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
                      + "".join("#@$" + k for k in kids))
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         pts = f"{t.x1 * mm:.1f} {t.y1 * mm:.1f} {t.x2 * mm:.1f} {t.y2 * mm:.1f}"
-        if getattr(t, "via", False):
+        if t.via:
             shape.append(f"VIA~{t.x1 * mm:.1f}~{t.y1 * mm:.1f}~3.2~{t.net}~0.8~gvia")
         else:
             shape.append(f"TRACK~{t.width / 0.254:.1f}~{t.layer + 1}~{t.net}~{pts}~gt{t.layer}")
@@ -643,7 +652,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         ln = layers[t.layer] if t.layer < len(layers) else layers[0]
         nid = _sexp_str(t.net)
-        if getattr(t, "via", False):
+        if t.via:
             A(f'  (via (at {t.x1:.4f} {t.y1:.4f}) (size 0.8) (drill 0.4) '
               f'(layers {_sexp_str(layers[0])} {_sexp_str(layers[-1])}) (net {nid}) (uuid "{_uuid()}"))')
             continue
@@ -758,7 +767,7 @@ def export_altium(board: Board, outdir: str = "out") -> list[str]:
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         ni = nets.get(t.net, -1)
         lay = layers[t.layer] if 0 <= t.layer < len(layers) else "TOPLAYER"
-        if getattr(t, "via", False):
+        if t.via:
             dr = getattr(t, "drill", 0.4)
             A(f"|RECORD=Via|X={t.x1}mm|Y={t.y1}mm|DIAMETER={dr + 0.4}mm"
               f"|HOLESIZE={dr}mm|STARTLAYER=TOPLAYER|ENDLAYER=BOTTOMLAYER|NET={ni}|")
@@ -835,7 +844,7 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
         for r, q in net.pins:
             A(f'<contactref element="{_esc(r)}" pad="{_esc(str(q))}"/>')
         for t in board.traces:
-            if t.net != n or getattr(t, "via", False):
+            if t.net != n or t.via:
                 continue
             A(f'<wire x1="{t.x1:.4f}" y1="{t.y1:.4f}" x2="{t.x2:.4f}" y2="{t.y2:.4f}" '
               f'width="{t.width:.4f}" layer="{t.layer + 1}"/>')

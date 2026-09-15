@@ -210,7 +210,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     for t in board.traces:
         if t.width < min_trace:
             errors.append(f"trace-width {t.net}")
-        if getattr(t, "jumper", False):
+        if t.jumper:
             if board.layers == 1:
                 warnings.append(f"jumper {t.net} (wire bridge needed)")
             else:
@@ -271,7 +271,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             for t in board.traces:
                 # traces must cross bends (that's the point); vias must not
                 # (dynamic bends: strict error; static: covered vias tolerated)
-                if getattr(t, "via", False) and c.get("dynamic", True):
+                if t.via and c.get("dynamic", True):
                     if abs(t.x1 - cx) < hw and abs(t.y1 - cy) < hh:
                         errors.append(f"bend-via {t.net}")
             for p in parts:

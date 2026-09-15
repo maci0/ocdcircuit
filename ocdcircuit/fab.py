@@ -98,10 +98,10 @@ PROFILES: dict[str, FabProfile] = {
     },
 }
 
-DEFAULT = "jlc"
+DEFAULT = "jlc"  # the fallback profile when a board names none
 
 
-def get(key: str = "jlc") -> FabProfile:
+def get(key: str = DEFAULT) -> FabProfile:
     try:
         return PROFILES[key]
     except KeyError:

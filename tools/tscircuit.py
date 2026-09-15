@@ -253,17 +253,6 @@ def convert(projdir: str) -> str:
     return "\n".join(L) + "\n"
 
 
-def _guess_fp(cname: str) -> str:
-    """Fallback by naming convention when tsx intent is missing."""
-    if cname.startswith("R"):
-        return "R0805"
-    if cname.startswith("C"):
-        return "C0805"
-    if cname.startswith("J"):
-        return "PINHD4"
-    raise ValueError(f"no footprint intent for {cname!r}")
-
-
 def main() -> None:
     if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
         print("usage: python -m tools.tscircuit <project-dir>", file=sys.stderr)

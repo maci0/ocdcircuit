@@ -503,7 +503,7 @@ _fb.fab = "jlc-flex"
 _fb.place(seeds=1, iters=30)
 _fb.route_board("maze")
 assert _fb.check("jlc-flex")["errors"] == [], _fb.check("jlc-flex")["errors"]
-assert not [t for t in _fb.traces if getattr(t, "via", False) and 27 <= t.x1 <= 33]
+assert not [t for t in _fb.traces if t.via and 27 <= t.x1 <= 33]
 _tb = agent.loads("board t 40x30\npart R1 R0805 1k\nbend 20 15 10x10 r1\nfix R1 at 20 15\n", base=EX)
 errs = cast(list[str], _tb.check("jlc-flex")["errors"])
 assert any(e.startswith("bend-part") for e in errs) and any(e.startswith("bend-radius") for e in errs)
@@ -662,7 +662,7 @@ assert set(cast(list[str], _all["ran"])) >= {"fab", "erc"}
 assert all(":" in str(e) for e in cast(list[str], _all["errors"]) + cast(list[str], _all["warnings"]))
 _sub = bo.check("all", keys=["erc"])
 assert cast(list[str], _sub["ran"]) == ["erc"]
-assert bo.check_all()["ran"] == cast(list[str], _all["ran"])
+assert bo.check("all")["ran"] == cast(list[str], _all["ran"])
 # config:toml applies board.toml, missing file → {}
 with tempfile.TemporaryDirectory() as _td:
     open(os.path.join(_td, "board.toml"), "w").write(
@@ -902,7 +902,10 @@ with tempfile.TemporaryDirectory() as d:
                for e in cast(list[str], _ps.check("erc")["errors"]))
     _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
-    assert "10k (DNP),\"R2\"" in _cbom and _cbom.count("10k") == 2, _cbom
+    # csv.writer quotes a field only when it must: a single designator stays
+    # bare, a multi-ref row (`"J11,J12"`) is quoted, and a value with a comma
+    # (`1k,1%`) can no longer shift every column.
+    assert "10k (DNP),R2,R0805" in _cbom and _cbom.count("10k") == 2, _cbom
     _ccpl = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".CPL.csv")][0]).read()
     assert "R2," not in _ccpl and "R1," in _ccpl  # DNP never reaches PnP
@@ -1658,7 +1661,6 @@ assert _ezparts2["R2"].get("attrs") == {}
 from tools import tscircuit as _tsc
 assert _tsc.map_fp("0805", "resistor") == "R0805"
 assert _tsc.map_fp("0805", "capacitor") == "C0805"
-assert _tsc._guess_fp("R7") == "R0805" and _tsc._guess_fp("J2") == "PINHD4"
 assert _tsc.tsx_parts(
     '<resistor name="R1" footprint="0805" resistance="10k" />') == {
     "R1": {"kind": "resistor", "fp": "0805", "value": "10k"}}

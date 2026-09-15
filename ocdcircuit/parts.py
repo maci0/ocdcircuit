@@ -155,7 +155,7 @@ def pinheader(n: int, pitch: float = 2.54, h3d: float = 8.5, hole: float = 1.0) 
                        {"box": (0.64, 0.64, h3d), "at": [(i * pitch, 0) for i in range(n)], "z": 2.5}]}
 
 
-def pinheader2x(n: int, pitch: float = 2.54, h3d: float = 8.5, hole: float = 1.0) -> Footprint:
+def pinheader2x(n: int, pitch: float = 2.54, hole: float = 1.0) -> Footprint:
     """2-row header: pins 1..n top row, n+1..2n bottom."""
     holes = {}
     for i in range(n):
@@ -199,11 +199,6 @@ def osc4(h3d: float = 1.0) -> Footprint:
             "pads": {"1": (-1.55, -0.8, 1.0, 0.9), "2": (1.55, -0.8, 1.0, 0.9),
                      "3": (1.55, 0.8, 1.0, 0.9), "4": (-1.55, 0.8, 1.0, 0.9)},
             "bodies": [{"box": (5.0, 3.2, h3d)}]}
-
-
-def inductor(body: tuple[float, float], h: float, h3d: float = 1.2) -> Footprint:
-    w, hh = body
-    return chip(w, hh, h3d=h3d)
 
 
 def fiducial(d: float = 1.0) -> Footprint:
@@ -260,10 +255,6 @@ def terminal2(h3d: float = 9.0, pitch: float = 5.08) -> Footprint:
 def mounting_hole(d: float = 3.2) -> Footprint:
     return {"w": d + 2.0, "h": d + 2.0, "holes": {"1": (0, 0, d)}, "bodies": []}
 
-
-# pad-stack defaults per family for fab export
-PTH_DRILL = 0.8
-PTH_ANNULAR = 0.35
 
 FOOTPRINTS = {
     # chips: R/C/L/LED/diode (0201/0402/0603/0805/1206/1210/2512)

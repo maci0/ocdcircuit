@@ -1010,12 +1010,3 @@ def from_json(text: str) -> Board:
     raw = json.loads(text)
     assert isinstance(raw, dict)
     return from_ir(raw)
-
-
-def to_ocd(board: Board) -> str:
-    """Alias: dumps is the human-readable language (see dumps docstring)."""
-    return dumps(board)
-
-
-def from_ocd(text: str, base: str | os.PathLike[str] | None = None) -> Board:
-    return loads(text, base=base)

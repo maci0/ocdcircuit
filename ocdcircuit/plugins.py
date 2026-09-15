@@ -225,7 +225,7 @@ class WireMaskRouter(Plugin[int]):
                 board.nets[n].layer = ll
             board.traces = []
             _maze.maze(board)
-            vias = sum(1 for s in board.traces if getattr(s, "via", False))
+            vias = sum(1 for s in board.traces if s.via)
             wl = sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in board.traces)
             return vias * 50.0 + wl, list(board.traces)
 
@@ -564,7 +564,7 @@ class SvgRenderer(Plugin[str]):
               f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["bg"]}" '
               f'stroke="{th["edge"]}" stroke-width="2" rx="6"/>']
         for t in board.traces:
-            if getattr(t, "via", False):
+            if t.via:
                 continue
             c = layers[t.layer % len(layers)]
             el.append(f'<line x1="{t.x1 * S}" y1="{H - t.y1 * S}" x2="{t.x2 * S}" '
@@ -572,7 +572,7 @@ class SvgRenderer(Plugin[str]):
                       f'stroke-linecap="round"/>')
         vr, hr = 0.4 * S, 0.2 * S
         for t in board.traces:
-            if not getattr(t, "via", False):
+            if not t.via:
                 continue
             el.append(f'<circle cx="{t.x1 * S:.1f}" cy="{(H - t.y1 * S):.1f}" r="{vr:.1f}" '
                       f'fill="#d9a821" stroke="#8a6d00" stroke-width="1"/>'
@@ -1405,8 +1405,8 @@ def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
         if t.get("via"):
             x, y = float(cast(float, t["x"])), float(cast(float, t["y"]))
             seg = Seg(str(t.get("net", "")), x, y, x, y, 0, 0.8)
-            seg.via = True  # type: ignore[attr-defined]
-            seg.drill = float(cast(float, t.get("drill", 0.4)))  # type: ignore[attr-defined]
+            seg.via = True
+            seg.drill = float(cast(float, t.get("drill", 0.4)))
             segs.append(seg)
         else:
             lay = t.get("layer", 0)

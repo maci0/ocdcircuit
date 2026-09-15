@@ -271,13 +271,6 @@ class KB:
                     hits.append(ref)
         return sorted(hits)  # the single-pass version listed refs in ref order
 
-    def parts_for(self, name: str) -> list[str]:
-        """Board refs this doc belongs to: lcsc code or ref/MPN as a filename
-        token (`C1525_100n.pdf`, `U3_sensor.md`) — the part→datasheet join."""
-        if not self.parts:
-            return []
-        return self._parts_of(name, self._part_index())
-
     def _title(self, name: str) -> str:
         try:
             with open(self._path(name), encoding="utf-8", errors="replace") as f:

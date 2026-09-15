@@ -115,12 +115,6 @@ class Context:
         self._undos.append(dispose)
         return dispose
 
-    def dispose_all(self) -> None:
-        """Run the accumulated inverse once (parent-cascade teardown)."""
-        d = self._dispose
-        self._dispose = lambda: None
-        d()
-
     def emit(self, do: Callable[[], None], undo: Undo) -> Undo:
         """Two-lambda call form of effect: do() runs now, undo is its
         inverse. One primitive underneath (paper Alg 1)."""

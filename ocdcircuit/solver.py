@@ -97,7 +97,7 @@ def _keepout_cost(board: Board) -> float:
 def cost(board: Board) -> float:
     parts = list(board.parts.values())
     c = wirelength(board)
-    # Overlap scan is O(n^2) — 14.7M pairs on monster6502, each asking for two
+    # Overlap scan is O(n^2) — 14.7M pairs on discrete6502, each asking for two
     # boxes four times. Precompute (x, y, w/2+0.2, h/2+0.2) per part once;
     # aw+bw then equals (aw+bw)/2+0.4 exactly, so placements do not move.
     box = [(p.x, p.y, p.wh()[0] / 2 + 0.2, p.wh()[1] / 2 + 0.2)
@@ -913,7 +913,7 @@ def _pad_cache(board: Board) -> dict[tuple[str, str], XY]:
 
 
 def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
-                   seed: int, rng: random.Random, m: float,
+                   rng: random.Random, m: float,
                    pull: float, spread: float,
                    frames: list[Frame] | None, every: int) -> None:
     """Rigid-body diffusion over arbitrary groups (level-2 core, reused by
@@ -963,7 +963,7 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
             goy = sum(board.parts[r].y for r in gorefs) / len(gorefs)
             cgrid.setdefault((int(gox / CELL), int(goy / CELL)), []).append(go)
         # Packing geometry for this iteration. `wh()` is a call per part-pair
-        # (32M of them on monster6502): the box is fixed within an iteration
+        # (32M of them on discrete6502): the box is fixed within an iteration
         # and the boundary clamp re-reads it, so read each part's once here.
         # Kept as (w, h) and summed exactly as before — folding it into one
         # "radius" is cheaper but not algebraically identical, which moves
@@ -1128,10 +1128,10 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
                 p.y = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
         # level 2: super-group rigid diffuse (coarse — ~40 bodies, not 4000)
         super_groups = _coarsen(board, groups)
-        _rigid_diffuse(board, super_groups, max(20, iters // 4), seed + s,
+        _rigid_diffuse(board, super_groups, max(20, iters // 4),
                        rng, m, pull, spread, frames, every)
         # level 3: per-instance rigid refine
-        _rigid_diffuse(board, groups, max(20, iters // 2), seed + s,
+        _rigid_diffuse(board, groups, max(20, iters // 2),
                        rng, m, pull, spread, frames, every)
         # level 4: short per-part relax (few iters, keeps instances ~rigid
         # via near-group springs already on the board). Skipped at scale:

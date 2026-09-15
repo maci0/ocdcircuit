@@ -5,6 +5,7 @@ snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
 """
 from __future__ import annotations
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Optional
 import json
 import math
@@ -158,11 +159,25 @@ class Net:
         self.attrs: dict[str, str] = dict(attrs or {})  # class=, etc.
 
 
+@dataclass(eq=False)  # eq=False: identity semantics, as before dataclass
 class Seg:
-    def __init__(self, net: str, x1: float, y1: float, x2: float, y2: float,
-                 layer: int, width: float) -> None:
-        self.net, self.x1, self.y1, self.x2, self.y2 = net, x1, y1, x2, y2
-        self.layer, self.width = layer, width
+    """One routed copper segment. `via` marks the zero-length layer change,
+    `jumper` the wire bridge DRC exempts, `drill` a via's hole.
+
+    These three used to be set after construction and read back through
+    `getattr(x, "via", False)` in 25 places across nine modules — an attribute
+    the type checker could not see, which is how such a field goes missing."""
+
+    net: str
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    layer: int
+    width: float
+    via: bool = False
+    jumper: bool = False
+    drill: float = 0.4
 
 
 class Block:
@@ -371,13 +386,6 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
-    def check_all(self, keys: list[str] | None = None) -> dict[str, object]:
-        """Merged DRC across profiles (fab + erc + flex); `keys` subsets.
-        Same {errors, warnings} shape as check()."""
-        out = self._run("drc", "all", keys=keys)
-        assert isinstance(out, dict)
-        return out
-
     def export(self, key: str | None = None, **k: object) -> list[str]:
         out = self._run("exporter", key, **k)
         assert isinstance(out, list)
@@ -561,8 +569,7 @@ class Board(Component):
         lib = dict(_sym.SYMBOLS)
         lib.update(self.custom_sym)
         s = _sym.resolve(p.fp, p.attrs.get("sym", ""), lib)
-        pins = {str(q) for n in self.nets.values() for r, q in n.pins if r == ref}
-        return _sym.sized(s, max(len(pins), 1))
+        return _sym.sized(s)
 
     def _pin_offset(self, fp: str, pin: PinLike) -> XY:
         try:

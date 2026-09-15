@@ -122,7 +122,7 @@ def pin_pos(sym: Symbol, num: str, n_extra: int = 0) -> tuple[float, float, str]
     return (x, y, side)
 
 
-def sized(sym: Symbol, n_pins: int) -> Symbol:
+def sized(sym: Symbol) -> Symbol:
     """Fill in default body size from pin count (copy, never mutate)."""
     from typing import cast
     w, h = float(cast(float, sym["w"])), float(cast(float, sym["h"]))
@@ -184,10 +184,6 @@ FP_SYMBOLS: list[tuple[str, str]] = [
 ]
 
 
-def _stdlib(name: str) -> Symbol | None:
-    return SYMBOLS.get(name)
-
-
 def resolve(fp: str, sym_attr: str = "",
             lib: dict[str, Symbol] | None = None) -> Symbol:
     """Symbol for a part: explicit `sym=` attr (custom or stdlib) wins,
@@ -212,5 +208,5 @@ if __name__ == "__main__":
     assert resolve("R0805").get("zigzag") is True
     assert _cast(dict[str, object], resolve("SOIC8")["pins"])["1"] == ("left", 0, "")
     assert _cast(dict[str, object], resolve("X7", sym_attr="OPAMP")["pins"])["4"] == ("top", 0, "V+")
-    assert sized(SYMBOLS["IC8"], 8)["h"] == 4.0
+    assert sized(SYMBOLS["IC8"])["h"] == 4.0
     print("SYM OK")

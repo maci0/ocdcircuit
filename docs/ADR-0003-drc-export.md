@@ -39,4 +39,4 @@ Demo must reach zero *errors*. Warnings are the visible router-debt meter.
 - DRC: segment-intersection catches X-crossing shorts (degenerate-safe);
   ERC shorts custom `power`-constraint rails; lint validates `nc` refs.
 - BOM groups by LCSC (no wrong-reel merges); CPL excludes DNP rows.
-- `Board.check_all` merges fab+erc+flex profiles for ocd/MCP/studio.
+- `Board.check("all")` merges fab+erc+flex profiles for ocd/MCP/studio.

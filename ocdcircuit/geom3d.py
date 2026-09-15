@@ -124,7 +124,7 @@ def build(board: Board, thick: float = 1.6, tagged: bool = False) -> list[Tri]:
                 _box(tris, dx - pw / 2, dy - ph / 2, thick - 0.01,
                      dx + pw / 2, dy + ph / 2, thick + 0.05, pm)
     for t in board.traces:
-        if getattr(t, "via", False):
+        if t.via:
             _cyl(tris, t.x1, t.y1, -0.03, 0.4, thick + 0.06,
                  "copper:vias" if tagged else COPPER)
             continue

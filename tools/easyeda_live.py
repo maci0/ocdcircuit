@@ -205,7 +205,7 @@ def pro_source(board: object, blank: str, ticket0: int = 200) -> str:
     recs.append(json.dumps({"type": "PRIMITIVE", "ticket": t, "id": '["PRIMITIVE","TRACK"]'}))
     t += 1
     for s in board.traces:
-        if getattr(s, "via", False):
+        if s.via:
             continue
         layer = s.layer + 1  # our 0-indexed → Pro 1=Top
         recs.append(json.dumps({"type": "LINE", "ticket": t, "id": _hex16()}))
