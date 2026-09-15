@@ -106,8 +106,10 @@ stated as a word in a pill.
 - **Board knowledgebase** (`kb/` beside the board): notes you drop in, plus
   datasheets — `ocd kb fetch` pulls them per part from a `datasheet=` URL or
   an `lcsc=` code, `ocd kb add` takes a path/url, `ocd kb search <term>`
-  greps notes *and* PDF text (`pdftotext`, cached). Agents traverse the same
-  thing over MCP, so "what does U3's datasheet say about VIN" is a lookup.
+  greps notes *and* PDF text (`pdftotext`, cached), and `ocd kb ask "<q>"`
+  recalls the passages that answer it (embeddings, falling back to terms; no
+  index to maintain). Agents traverse the same thing over MCP, and studio has
+  the same panel — so "what does U3's datasheet say about VIN" is a lookup.
 - **Foreign footprints**: `fp` loads KiCad `.kicad_mod`, Eagle `.lbr`,
   tscircuit/EasyEDA JSON, or native `.fp` — plus Eagle `.brd` and
   `.kicad_pcb` board import, and EasyEDA Std JSON export.

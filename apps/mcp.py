@@ -380,7 +380,12 @@ def t_kb(a: dict[str, object]) -> dict[str, object]:
         assert refs is None or isinstance(refs, list)
         rs = [str(r) for r in refs] if isinstance(refs, list) else None
         return k.fetch(_board(), refs=rs)
-    raise ValueError(f"unknown kb op {op!r} (list|search|read|add|fetch)")
+    if op == "index":
+        return k.index(force=bool(a.get("force")))
+    if op == "ask":  # question -> passages that answer it (embeddings, then lexical)
+        return k.ask(str(a["q"]), k=_ii(a.get("limit"), 6),
+                     answer=bool(a.get("answer")), rebuild=bool(a.get("rebuild")))
+    raise ValueError(f"unknown kb op {op!r} (list|search|read|add|fetch|index|ask)")
 
 
 def t_solve(a: dict[str, object]) -> dict[str, object]:
@@ -434,11 +439,13 @@ TOOLS: dict[str, object] = {
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
     "context": (t_ctx, {"op": "fibers|get|set|unset", "key?": "coeffect key"}),
-    "kb": (t_kb, {"op": "list|search|read|add|fetch",
+    "kb": (t_kb, {"op": "list|search|read|add|fetch|index|ask",
                   "q?": "search terms", "limit?": 20,
                   "doc?": "doc name from list", "start?": 1, "lines?": 200,
                   "path?": "file to add", "url?": "url to add", "text?": "text",
-                  "name?": "doc name for add", "refs?": "[part refs] for fetch"}),
+                  "name?": "doc name for add", "refs?": "[part refs] for fetch",
+                  "force?": "index: re-embed everything",
+                  "answer?": "ask: also write an answer with the local model"}),
     "solve": (t_solve, {"placer?": "key", "router?": "key", "fab?": "one-shot fab override"}),
 }
 

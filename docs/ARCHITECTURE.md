@@ -33,12 +33,13 @@ apps/mcp.py ───┘         │                        │                 
   `agent` (.ocd text ⇄ IR), `foreign` (kicad/eagle/easyeda/tscircuit import),
   `score/silk/sim/spice/calc/lint/doctor/diff` (analysis), `geom3d/raster/
   view3d` (3D), `parts/footprint/fab` (data), `kb` (the board's `kb/`:
-  notes + datasheets, text-extracted on demand — CLI, MCP, studio all read
-  the same directory, so there is no index to invalidate).
+  notes + datasheets, text-extracted on demand, embeddings for `ask` via
+  `llm.embed` with a term-match floor — CLI, MCP and studio read the same
+  directory, so there is no index to invalidate beyond `kb/.cache/`).
 - **Apps** (`apps/`): `ocd` (CLI), `studio` (webui, slot-composed page),
   `mcp` (28-tool agent server). `tools/` holds one-shot porters
   (tscircuit/atopile/mitox); `boards/` one dir per board; `benches/`
-  monster6502 stress; `tests/` suite + geometry goldens.
+  discrete6502 stress; `tests/` suite + geometry goldens.
 
 Invariants: no list mutation outside `Context.emit`; `dumps`/`loads`
 round-trip byte-identically (goldens enforce); DRC errors block fab,

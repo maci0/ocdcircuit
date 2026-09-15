@@ -29,6 +29,10 @@ def doctor(board: Board | None = None) -> dict[str, object]:
     kc = shutil.which("kicad-cli")
     add("kicad-cli", kc is not None,
         kc or "missing (sch ERC + pcb DRC validation skipped in tests)")
+    pt = shutil.which("pdftotext")
+    add("pdftotext", pt is not None,
+        pt or "missing (kb/ datasheet PDFs stay unsearchable; "
+              "install poppler-utils)")
     try:
         import rich  # noqa: F401
         add("rich", True, "pretty CLI on")

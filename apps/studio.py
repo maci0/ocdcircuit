@@ -161,6 +161,27 @@ SLOTS.register("view", "inspector",
                          '<div id=tidy></div></section>',
                order=3.0)
 
+SLOTS.register("view", "kb",
+               lambda s: '<section id=kbwrap>'
+                         '<header class=panel-head><span class=panel-title>knowledgebase</span>'
+                         '<span class=panel-note id=kbnote>kb/ beside the board</span>'
+                         '<span class=panel-note>notes + datasheets &middot; the agent reads the same files</span></header>'
+                         '<div id=kbbar>'
+                         '<input id=kbq type=search aria-label="ask the knowledgebase" '
+                         'placeholder="ask: what is the input voltage range?  (or a search term)">'
+                         '<button id=kbask class=primary type=button title="passages that answer the question (embeddings)">ask</button>'
+                         '<button id=kbgrep type=button title="exact term match, one line per hit">search</button>'
+                         '<button id=kbans type=button title="also write an answer with the local model">answer</button></div>'
+                         '<div id=kbadd>'
+                         '<input id=kburl type=search aria-label="datasheet url or file path" '
+                         'placeholder="https://…/datasheet.pdf  or  path/to/note.md">'
+                         '<button id=kbaddbtn type=button title="copy or download it into kb/">add</button>'
+                         '<button id=kbfetch type=button title="download the datasheet for every datasheet= / lcsc= part">fetch datasheets</button></div>'
+                         '<div id=kbstat role=status aria-live=polite>click a document to read it</div>'
+                         '<div id=kblist></div>'
+                         '<pre id=kbview></pre>'
+                         '</section>',
+               order=6.0)
 
 def _f(v: object) -> float:
     assert isinstance(v, (int, float, str))
@@ -277,6 +298,19 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 #wrap3d{grid-column:3;grid-row:2;overflow:auto}
 #galwrap{grid-column:1/4}
 #vcswrap{grid-column:1/4}
+#kbwrap{grid-column:1/4;min-height:16rem}
+#kbbar,#kbadd{display:flex;gap:8px;align-items:center;padding:10px 14px 0}
+#kbbar input,#kbadd input{flex:1;min-width:0}
+#kbstat{padding:8px 14px 0;font:.8rem var(--mono);color:var(--ink-2);min-height:1.3em}
+#kblist{flex:1;min-height:3rem;overflow:auto;padding:8px 14px}
+#kblist .kbrow{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-radius:4px}
+#kblist .kbrow:hover{background:var(--paper-2)}
+#kblist button.kbname{flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:var(--signal-ink);
+  cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#kblist .kbkind{color:var(--ink-3);font:.72rem var(--mono);font-variant-numeric:tabular-nums}
+#kblist .kbparts{margin-left:auto;color:var(--signal-ink);font:.72rem var(--mono)}
+#kbview{margin:0;border-top:1px solid var(--line);padding:10px 14px;overflow:auto;max-height:44%;
+  background:var(--card);font:.78rem/1.6 var(--mono);white-space:pre-wrap;word-break:break-word}
 /* job file column: editor, project files, then the agent chat */
 #edwrap{display:grid;grid-template-rows:auto minmax(12rem,min(52%,34rem)) minmax(0,1fr);overflow:hidden;min-height:0}
 #srcpanels{display:grid;grid-template-rows:minmax(6rem,11rem) minmax(0,1fr);gap:12px;padding:12px;border-top:1px solid var(--line);min-height:0;overflow:hidden}
@@ -1347,6 +1381,82 @@ async function watch(){try{
   b.onclick=async()=>{const r=await api('/reload',{});setEditor(r.text);applyState(r,false);b.remove();lastHash=null;};
   document.body.prepend(b);
 }catch(e){}}
+// --- knowledgebase panel: notes + datasheets, the agent's own files -----
+let KBDOCS=[];
+function kbRow(name,kind,tail){
+  const r=document.createElement('div');r.className='kbrow';
+  const b=document.createElement('button');b.className='kbname';b.textContent=name;
+  const k=document.createElement('span');k.className='kbkind';k.textContent=kind;
+  const t=document.createElement('span');t.className='kbparts';t.textContent=tail||'';
+  r.append(b,k,t);return {row:r,btn:b};
+}
+async function kbLoad(){
+  const r=await api('/kb/list',{});
+  if(r.error){$('kbnote').textContent=r.error;return;}
+  KBDOCS=r.docs||[];
+  const parts=KBDOCS.reduce((n,d)=>n+(d.parts||[]).length,0);
+  $('kbnote').textContent=`${KBDOCS.length} document${KBDOCS.length===1?'':'s'} · `
+    +`${parts} part link${parts===1?'':'s'} · `+(r.dir||'kb/');
+  const box=$('kblist');box.innerHTML='';
+  KBDOCS.forEach(d=>{
+    const {row,btn}=kbRow(d.name,d.kind+(d.source?' · from url':''),
+                          (d.parts||[]).join(' '));
+    btn.title=d.source?('source: '+d.source):d.name;
+    btn.onclick=()=>kbOpen(d.name,1);
+    box.appendChild(row);
+  });
+  if(!KBDOCS.length)box.textContent='nothing yet — add a url, or fetch datasheets';
+  if(r.busy)$('kbstat').textContent='fetching datasheets…';
+  else if((r.log||[]).length)$('kbstat').textContent=(r.log||[]).slice(-3).join(' · ');
+}
+async function kbOpen(doc,start){
+  const r=await api('/kb/read',{doc,start:start||1,lines:120});
+  if(r.error){$('kbstat').textContent=r.error;return;}
+  $('kbview').textContent=`${doc}  lines ${r.start}-${r.end} of ${r.total_lines}\n\n${r.text}`;
+}
+async function kbGo(semantic,answer){
+  const q=$('kbq').value.trim();if(!q){$('kbstat').textContent='type a question first';return;}
+  $('kbstat').textContent=answer?'asking the local model…':'searching kb/…';
+  const r=await api(semantic?'/kb/ask':'/kb/search',{q,limit:8,answer:!!answer});
+  if(r.error){$('kbstat').textContent=r.error;return;}
+  const hits=r.passages||r.hits||[];
+  $('kbstat').textContent=`${hits.length} hit${hits.length===1?'':'s'}`
+    +(r.method?' · '+r.method+(r.model?' · '+r.model:''):'')
+    +((r.note&&!r.answer)?' · '+r.note:'');
+  const box=$('kblist');box.innerHTML='';
+  hits.forEach(h=>{
+    const line=h.line!==undefined?h.line:h.start;
+    const {row,btn}=kbRow(h.doc||'(no doc)',line!==undefined?'line '+line:'passage',
+                          h.score!==undefined?String(h.score):'');
+    btn.onclick=()=>kbOpen(h.doc,Math.max(1,(line||1)-3));
+    row.title=String(h.text||'').slice(0,400);
+    box.appendChild(row);
+  });
+  if(r.answer)$('kbview').textContent='answer (from kb/ only)\n\n'+r.answer;
+  else if(r.answer_error)$('kbview').textContent='(no written answer: '+r.answer_error+')';
+}
+$('kbask').onclick=()=>kbGo(true,false);
+$('kbgrep').onclick=()=>kbGo(false,false);
+$('kbans').onclick=()=>kbGo(true,true);
+$('kbaddbtn').onclick=async()=>{
+  const src=$('kburl').value.trim();if(!src)return;
+  $('kbstat').textContent='adding '+src+'…';
+  const r=await api('/kb/add',{src});
+  if(r.error){$('kbstat').textContent=r.error;return;}
+  $('kbstat').textContent=`added ${r.added} (${r.bytes} bytes)`;
+  $('kburl').value='';kbLoad();
+};
+$('kbfetch').onclick=async()=>{
+  const r=await api('/kb/fetch',{});
+  $('kbstat').textContent=r.error||r.note||'fetch started';
+  kbLoad();
+};
+$('kbq').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();kbGo(true,false);}});
+$('kburl').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();$('kbaddbtn').click();}});
+kbLoad();
+setInterval(()=>{if($('kbstat').textContent.startsWith('fetching'))kbLoad();},3000);
 setInterval(watch,2000);
 </script></body></html>
 """
@@ -1619,13 +1729,13 @@ def _unified(a: str, b: str, name: str, limit: int = 160) -> str:
 
 # A board of a few thousand parts can report millions of DRC failures (every
 # unplaced pin is an ERC error). Serialising that list is what actually kills
-# the page: it reached 920 MB on monster6502. The UI shows a head; the count
+# the page: it reached 920 MB on discrete6502. The UI shows a head; the count
 # stays honest so nothing is hidden.
 MAX_ISSUES = 60
 # A dense board is a different product: routing alone is seconds, so the
 # studio loads it from the file's own positions and trims the rest.
 DENSE_PARTS = 1200
-MAX_SEGS = 60000  # traces shipped to the canvas (monster6502 routes ~26k)
+MAX_SEGS = 60000  # traces shipped to the canvas (discrete6502 routes ~26k)
 
 
 def _brief(issues: object) -> list[str]:
@@ -1655,6 +1765,78 @@ def _board_digest() -> str:
             f"parts: {parts}\nnets: {nets}")
 
 
+# --- knowledgebase: kb/ beside the board, shared with the agent over MCP ---
+_kb_board: tuple[int, Board | None] | None = None  # (rev, parsed board), cached
+_kb_log: list[str] = []      # last fetch results, shown in the panel
+_kb_busy = False             # a fetch thread is running
+
+
+def _kb() -> object:
+    """The open board's knowledgebase. KB is directory-bound; the board is what
+    maps a doc back to the parts it covers, and parsing it is cached per
+    revision (a 5k-part board must not be re-parsed per keystroke)."""
+    global _kb_board
+    from ocdcircuit import kb as _kbmod
+    if _kb_board is None or _kb_board[0] != H.rev:
+        try:
+            _kb_board = (H.rev, agent.loads(H.src_text, base=BASE))
+        except (ValueError, KeyError, AssertionError, OSError):
+            _kb_board = (H.rev, None)  # unparseable source: docs still list
+    return _kbmod.KB(BASE, board=_kb_board[1])
+
+
+def _kb_list() -> dict[str, object]:
+    k = _kb()
+    assert not isinstance(k, Board)
+    from ocdcircuit.kb import KB
+    assert isinstance(k, KB)
+    return {"dir": k.dir, "docs": k.docs(), "busy": _kb_busy,
+            "log": list(_kb_log)}
+
+
+def _kb_fetch_start() -> dict[str, object]:
+    """Fetch in a thread: this server is single-threaded, and datasheets are
+    minutes of network. The panel polls /kb/list while it runs."""
+    global _kb_busy, _kb_log
+    import threading
+    if _kb_busy:
+        return {"started": False, "note": "already fetching", "log": list(_kb_log)}
+    board = _kb_board[1] if _kb_board else None
+    if board is None:
+        return {"started": False, "error": "the open board does not parse — "
+                                           "nothing to fetch datasheets for"}
+    _kb_busy = True
+    _kb_log = ["fetching datasheets…"]
+
+    def work() -> None:
+        global _kb_busy, _kb_log
+        from ocdcircuit.kb import KB
+        k = _kb()
+        assert isinstance(k, KB)
+        try:
+            r = k.fetch(board)
+            for sv in _cast_list(r["saved"]):
+                _kb_log.append(f"saved {sv['name']} ({sv['bytes']}B)")
+            for sk in _cast_list(r["skipped"]):
+                _kb_log.append(f"skip {sk['part']}: {sk['why']}")
+            for fl in _cast_list(r["failed"]):
+                _kb_log.append(f"FAIL {fl['part']}: {fl['error']}")
+            _kb_log.append(f"done — {len(_cast_list(r['saved']))} saved, "
+                           f"{len(_cast_list(r['skipped']))} skipped")
+        except Exception as e:  # noqa: BLE001 — a worker thread must not die silent
+            _kb_log.append(f"error: {e}")
+        _kb_log[-1:] = _kb_log[-8:]
+        _kb_busy = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"started": True, "note": "fetching datasheets — the list fills in as they land"}
+
+
+def _cast_list(v: object) -> list[dict[str, object]]:
+    assert isinstance(v, list)
+    return [x for x in v if isinstance(x, dict)]
+
+
 class H(http.server.BaseHTTPRequestHandler):
     src_text: str = ""
     # git-style text history: every good build commits; undo/redo check out.
@@ -1666,7 +1848,7 @@ class H(http.server.BaseHTTPRequestHandler):
     saved_text: str = ""
     # The file H.src_text came from. A /build may carry text for a board other
     # than the open one; writing that text to SRC once destroyed a 298 KB
-    # board (monster6502.ocd became 1.6 KB of a different board). Save only
+    # board (discrete6502.ocd became 1.6 KB of a different board). Save only
     # when the text and the destination are the same board.
     save_target: str = ""
     # the open project root (moves when another board is opened) and the
@@ -1836,7 +2018,7 @@ class H(http.server.BaseHTTPRequestHandler):
 
     # A save must never destroy a board. The studio holds one text buffer but
     # serves any board, and a /build carrying board B once wrote B over board A
-    # (monster6502.ocd: 298 KB -> 1.6 KB). Two guards, both cheap.
+    # (discrete6502.ocd: 298 KB -> 1.6 KB). Two guards, both cheap.
     SHRINK = 0.5  # refuse a rewrite that drops more than half the file
 
     @staticmethod
@@ -2073,6 +2255,47 @@ class H(http.server.BaseHTTPRequestHandler):
                 from ocdcircuit.circuit import Board as _B
                 r = _B("doctor").doctor()
                 self._send({"ok": r["ok"], "checks": r["checks"]})
+            elif self.path == "/kb/list":
+                self._send(_kb_list())
+            elif self.path == "/kb/read":
+                from ocdcircuit.kb import KB
+                k = _kb()
+                assert isinstance(k, KB)
+                try:
+                    self._send(k.read(str(req.get("doc", "")),
+                                      start=_i(req.get("start"), 1),
+                                      lines=_i(req.get("lines"), 120)))
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
+            elif self.path == "/kb/search":
+                from ocdcircuit.kb import KB
+                k = _kb()
+                assert isinstance(k, KB)
+                try:
+                    self._send(k.search(str(req.get("q", "")),
+                                        limit=_i(req.get("limit"), 8)))
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
+            elif self.path == "/kb/ask":
+                from ocdcircuit.kb import KB
+                k = _kb()
+                assert isinstance(k, KB)
+                try:
+                    self._send(k.ask(str(req.get("q", "")),
+                                     k=_i(req.get("limit"), 6),
+                                     answer=bool(req.get("answer"))))
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
+            elif self.path == "/kb/add":
+                from ocdcircuit.kb import KB
+                k = _kb()
+                assert isinstance(k, KB)
+                try:
+                    self._send(k.add(str(req.get("src", ""))))
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
+            elif self.path == "/kb/fetch":
+                self._send(_kb_fetch_start())
             elif self.path == "/chat":
                 text = str(req.get("text", "")).strip()
                 if not text:
@@ -2152,7 +2375,7 @@ class H(http.server.BaseHTTPRequestHandler):
         _rr = b.proj.get("router")
         _dd = b.proj.get("drc")
         # Always name the engine. The engine's own "choose for me" path
-        # (key=None) is the wrong pick here: on monster6502 an unnamed router
+        # (key=None) is the wrong pick here: on discrete6502 an unnamed router
         # took 196s against 1.8s for the explicit `lroute` key. The UI shows
         # which engine ran, so the named default is also the honest one.
         _p, _r = req.get("placer"), req.get("router")
@@ -2220,13 +2443,13 @@ class H(http.server.BaseHTTPRequestHandler):
         from ocdcircuit import solver as _solver
         feas = {} if dense else _solver.feasible(b)
         # `net` is not in the payload: the canvas colours by layer, and a dense
-        # board has thousands of names to serialise (0.15MB on monster6502).
+        # board has thousands of names to serialise (0.15MB on discrete6502).
         traces: list[dict[str, object]] = [
             {"x1": t.x1, "y1": t.y1, "x2": t.x2,
              "y2": t.y2, "layer": t.layer, "w": t.width}
             for t in b.traces[:MAX_SEGS]]
         # Traces are the biggest part of a dense payload (0.76MB of 2.32MB on
-        # monster6502) and a text edit rarely changes them: the caller sends
+        # discrete6502) and a text edit rarely changes them: the caller sends
         # the hash it holds, and an unchanged list is not re-sent.
         import hashlib as _hashlib
         tkey = _hashlib.sha1(repr(traces).encode()).hexdigest()[:12]

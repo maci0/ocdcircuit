@@ -108,6 +108,41 @@ def chat(messages: list[dict[str, str]], *, temperature: float = 0.2,
         raise LLMError(f"unexpected reply from {c['base']}: {raw[:200]!r}") from e
 
 
+def embed_model() -> str:
+    """Embedding model id (same endpoint as chat; Ollama serves both)."""
+    return os.environ.get("OCD_LLM_EMBED", "nomic-embed-text")
+
+
+def embed(texts: list[str], *, model: str | None = None,
+          timeout: float = 120.0) -> list[list[float]]:
+    """Embeddings for a batch of strings. Raises LLMError with the endpoint's
+    own words — callers that can fall back (kb recall) catch it."""
+    c = cfg()
+    mid = model or embed_model()
+    body = json.dumps({"model": mid, "input": texts}).encode()
+    req = urllib.request.Request(
+        c["base"] + "/embeddings", data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 **({"Authorization": f"Bearer {c['key']}"} if c["key"] else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:400].decode("utf8", "replace")
+        raise LLMError(f"{c['base']} said {e.code} for embedding model "
+                       f"{mid!r}: {detail}. Set OCD_LLM_EMBED.") from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise LLMError(f"cannot reach {c['base']} for embeddings ({e}). "
+                       "Set OCD_LLM_BASE, OCD_LLM_EMBED.") from e
+    try:
+        doc = json.loads(raw)
+        rows = sorted(doc["data"], key=lambda d: d.get("index", 0))
+        return [[float(x) for x in d["embedding"]] for d in rows]
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise LLMError(f"unexpected embedding reply from {c['base']}: "
+                       f"{raw[:200]!r}") from e
+
+
 _BLOCK = re.compile(r"```[ \t]*([^\n`]*)\n(.*?)```", re.S)
 
 

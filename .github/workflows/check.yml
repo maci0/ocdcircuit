@@ -8,7 +8,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.14"}
       - run: pip install mypy
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser poppler-utils
         # studio gate skips its browser half when no chromium is found;
-        # the apt line keeps the full gate (screenshot + console-clean) live
+        # the apt line keeps the full gate (screenshot + console-clean) live.
+        # poppler-utils = pdftotext, so the kb/ datasheet-PDF path runs here
+        # instead of being skipped.
       - run: make check

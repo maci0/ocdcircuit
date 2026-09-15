@@ -29,9 +29,18 @@ Three ways in — drop files into `kb/` with the file manager, `ocd kb add
 datasheets for every `datasheet=<url>` / `lcsc=C1234` part attr.
 
 Read it back with `ocd kb list|search|read`, or let an agent traverse it over
-MCP (`kb` tool: list/search/read/add/fetch) — search returns `doc:line` hits
-and `list` maps each doc back to the refs it covers, so "what does U3's
-datasheet say about VIN" is a lookup, not a guess.
+MCP (`kb` tool: list/search/read/add/fetch/index/ask) — search returns
+`doc:line` hits and `list` maps each doc back to the refs it covers, so "what
+does U3's datasheet say about VIN" is a lookup, not a guess.
+
+For questions rather than terms, `ocd kb ask <board.ocd|dir> "<question>"`
+recalls the passages that answer it — embeddings (`ocd kb index`, cached in
+`kb/.cache/vec__*.json`, model from `OCD_LLM_EMBED`, default
+`nomic-embed-text` on the `OCD_LLM_BASE` endpoint) with automatic fallback to
+term matching when no model is reachable, so it answers on a bare machine too.
+Add `--answer` (CLI) or `answer: true` (MCP) to have the local model write the
+answer from those passages only. Studio has the same panel: ask/search,
+`add` a URL or path, `fetch datasheets`, click a doc to read it.
 
 One rule, no exceptions: `kb/` sits next to the `.ocd`. So `boards/mitox/`
 keeps its own `kb/`, while the loose demos (`boards/blinky_555.ocd`,

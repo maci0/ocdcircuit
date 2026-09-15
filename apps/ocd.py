@@ -6,7 +6,7 @@
     ocd diff <a.ocd> <b.ocd> what changed: parts, nets, size, constraints
     ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
     ocd lint <circuit.ocd>   static source lint, no place/route
-    ocd kb list|search|read|add|fetch  board knowledgebase (`kb/`: notes + datasheets)
+    ocd kb list|search|read|add|fetch|ask  board knowledgebase (`kb/`: notes + datasheets)
     ocd doctor               tooling self-check (no file needed)
 
 Global flags (run/score): --fab --placer --router --sim. `ocd <file>` = run.
@@ -26,7 +26,7 @@ USAGE = """usage:
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
-  ocd kb list|search|read|add|fetch  kb/: board notes + datasheets, agent-readable
+  ocd kb list|search|read|add|fetch|ask  kb/: notes + datasheets, agent-readable
   ocd doctor                     tooling self-check (no file needed)
   ocd plugins [kind]            list registry keys (placer/router/…)
   ocd <circuit.ocd>              shorthand for run"""
@@ -418,6 +418,10 @@ KB_USAGE = """usage:
   ocd kb read   <board.ocd|dir> <doc> [start] [lines]
   ocd kb add    <board.ocd|dir> <path|url> [name]
   ocd kb fetch  <board.ocd> [REF ...]      download datasheets (`datasheet=` or `lcsc=`)
+  ocd kb index  <board.ocd|dir> [--force]  embed kb/ passages (kb/.cache/vec__*)
+  ocd kb ask    <board.ocd|dir> "<question>" [k] [--answer]
+                                           passages that answer it (embeddings);
+                                           --answer also writes one with the local model
 kb/ sits beside the board: drop notes/datasheets in by hand, or add them here."""
 
 
@@ -483,6 +487,33 @@ def cmd_kb(agent: object, args: list[str]) -> int:
                 return 1
             out = k.add(rest[0], name=rest[1] if len(rest) > 1 else None)
             print(f"added kb/{out['added']} ({out['bytes']}B)")
+            return 0
+        if op == "index":
+            r = k.index(force=bool(rest and rest[0] == "--force"))
+            print(f"indexed {r['indexed']} docs ({r['reused']} fresh, "
+                  f"{r['passages']} passages, model {r['model']})")
+            for f in cast(list[str], r["failed"]):
+                print(f"  skipped {f}")
+            return 0
+        if op == "ask":
+            if not rest:
+                print(KB_USAGE)
+                return 1
+            want_answer = "--answer" in rest
+            args2 = [a for a in rest if a != "--answer"]
+            r = k.ask(args2[0], k=int(args2[1]) if len(args2) > 1 else 6,
+                      answer=want_answer)
+            print(f"# {r['method']}"
+                  f"{' · ' + str(r['model']) if r['model'] else ''} · {len(cast(list[object], r['passages']))} passages")
+            for p in cast(list[dict[str, object]], r["passages"]):
+                print(f"--- {p['doc']}:{p['start']}-{p['end']}  score={p['score']}")
+                print(str(p["text"])[:900])
+            if "answer" in r:
+                print(f"\n== answer ==\n{r['answer']}")
+            if "answer_error" in r:
+                print(f"(no written answer: {r['answer_error']})")
+            if r.get("note"):
+                print(f"# {r['note']}")
             return 0
         if op == "fetch":
             if board is None:

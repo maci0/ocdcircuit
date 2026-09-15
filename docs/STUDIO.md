@@ -50,7 +50,10 @@ with the state pills on the right.
 ## Panels
 
 Job file (left, the only dark surface) · PCB (centre, drag parts, DRC strip
-along the bottom) · schematic · 3D · tidy metrics. Each panel head carries its
+along the bottom) · schematic · 3D · tidy metrics · **knowledgebase**
+(`kb/` beside the board: ask/search its notes and datasheet text, `add` a URL
+or path, `fetch datasheets` for every `datasheet=`/`lcsc=` part, click a doc to
+read it page by page). Each panel head carries its
 title and a one-line note on what the panel does. Status is always a word in a
 pill or a line of the listing, never a bare colour. Canvases draw on the paper
 ground: parts read as ink boxes, pinned parts wear the signal wash, pours are a
@@ -67,7 +70,9 @@ parser accepts (`<-->`-joined, attrs preserved).
 ## Endpoints (same shapes as MCP tools)
 
 `/init /build /solve /candidates /pick /render /export /diff_prev`
-`/simulate /doctor /undo /redo` (POST JSON) · `/slots` (plugin inventory). Any failure
+`/simulate /doctor /undo /redo` (POST JSON) · `/kb/list /kb/read /kb/search
+/kb/ask /kb/add /kb/fetch` (the board's knowledgebase; `/kb/fetch` runs in a
+worker thread and reports through `/kb/list`) · `/slots` (plugin inventory). Any failure
 returns `{"error": "Type: msg"}` — the server never 500s the UI thread.
 
 ## Perf contract (enforced by `tests/test_studio.py`)

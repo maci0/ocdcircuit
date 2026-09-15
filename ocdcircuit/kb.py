@@ -20,13 +20,14 @@ through LCSC's public product endpoint. Anything else is left to the human.
 """
 from __future__ import annotations
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
 import time
 import urllib.request
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Callable, cast
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:  # engine import stays light (ARCHITECTURE: imports inside run)
@@ -39,6 +40,38 @@ TEXT_EXT = {".md", ".txt", ".rst", ".csv", ".tsv", ".json", ".log", ".toml",
             ".fp", ".ocd", ".srv", ".cfg", ".ini"}
 MAX_BYTES = 64 * 1024 * 1024
 LCSC_API = "https://wmsc.lcsc.com/ftps/wm/product/detail?productCode="
+CHUNK_CHARS = 1200   # passage size for embeddings: a datasheet table fits in
+                     # one, a whole datasheet never does
+EmbedFn = Callable[[list[str]], list[list[float]]]
+
+
+def chunks_of(body: str, size: int = CHUNK_CHARS) -> list[dict[str, object]]:
+    """Line-aligned passages of ~size chars carrying line numbers, so a
+    recalled passage can be read back with KB.read()."""
+    out: list[dict[str, object]] = []
+    buf: list[str] = []
+    start, n = 1, 0
+    for i, line in enumerate(body.splitlines(), 1):
+        if not buf:
+            start = i
+        buf.append(line)
+        n += len(line) + 1
+        if n >= size:
+            out.append({"start": start, "end": i, "text": "\n".join(buf)})
+            buf, n = [], 0
+    if buf:
+        out.append({"start": start, "end": start + len(buf) - 1,
+                    "text": "\n".join(buf)})
+    return out
+
+
+def _cos(a: list[float], b: list[float]) -> float:
+    """Cosine similarity; 0 for a zero vector (a blank passage scores nothing
+    instead of dividing by zero)."""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
 
 
 def _clean(name: str, fallback: str = "download") -> str:
@@ -86,12 +119,14 @@ class KB:
     """One board's knowledgebase. `base` = the board's project dir."""
 
     def __init__(self, base: str | os.PathLike[str],
-                 board: Board | None = None) -> None:
+                 board: Board | None = None,
+                 embed: EmbedFn | None = None) -> None:
         self.dir = os.path.join(os.path.abspath(base), "kb")
         self.ds = os.path.join(self.dir, "datasheets")
         self.cache = os.path.join(self.dir, ".cache")
         self.sources = os.path.join(self.dir, "sources.tsv")
         self.board = board
+        self.embed = embed  # injected in tests; llm.embed otherwise
 
     # ---------- traversal ----------
 
@@ -252,6 +287,162 @@ class KB:
         with open(cpath, "w", encoding="utf-8") as f:
             f.write(body)
         return body
+
+    # ---------- recall (embeddings, with a lexical floor) ----------
+
+    def _embed_fn(self) -> EmbedFn:
+        if self.embed is not None:
+            return self.embed
+        from . import llm
+        return llm.embed
+
+    def _embed_name(self) -> str:
+        if self.embed is not None:
+            return getattr(self.embed, "__name__", "injected")
+        from . import llm
+        return llm.embed_model()
+
+    def _vec_path(self, name: str) -> str:
+        return os.path.join(self.cache, "vec__" + name.replace(os.sep, "__") + ".json")
+
+    def _stamp(self, name: str) -> dict[str, object]:
+        p = self._path(name)
+        return {"mtime": os.path.getmtime(p), "size": os.path.getsize(p),
+                "model": self._embed_name()}
+
+    def _load_vectors(self, name: str) -> list[dict[str, object]]:
+        """Cached passages for one doc, or [] when stale/missing (mtime + size
+        + embedder must match: an edited note or a new model re-embeds)."""
+        p = self._vec_path(name)
+        if not os.path.isfile(p):
+            return []
+        try:
+            with open(p, encoding="utf-8") as f:
+                doc = json.load(f)
+            if doc.get("stamp") != self._stamp(name):
+                return []
+            rows = doc.get("chunks", [])
+            assert isinstance(rows, list)
+            return [cast(dict[str, object], r) for r in rows]
+        except (OSError, ValueError, AssertionError):
+            return []
+
+    def index(self, force: bool = False) -> dict[str, object]:
+        """Embed every readable doc's passages into kb/.cache/vec__*.json.
+        Incremental: only docs whose mtime/size/model changed are re-embedded."""
+        embed = self._embed_fn()
+        made, reused = 0, 0
+        failed: list[str] = []
+        for d in self.docs():
+            name = str(d["name"])
+            if d["kind"] == "other":
+                continue
+            if not force and self._load_vectors(name):
+                reused += 1
+                continue
+            try:
+                body = self.text(name)
+            except (ValueError, OSError, subprocess.SubprocessError) as e:
+                failed.append(f"{name}: {e}")
+                continue
+            ch = chunks_of(body)
+            try:
+                vecs = embed([str(c["text"]) for c in ch])
+            except Exception as e:  # noqa: BLE001 — transport/library, reported
+                failed.append(f"{name}: {e}")
+                continue
+            rows = [{**c, "vec": v} for c, v in zip(ch, vecs)]
+            os.makedirs(self.cache, exist_ok=True)
+            with open(self._vec_path(name), "w", encoding="utf-8") as f:
+                json.dump({"stamp": self._stamp(name), "chunks": rows}, f)
+            made += 1
+        return {"indexed": made, "reused": reused, "failed": failed,
+                "model": self._embed_name(), "passages": self.passage_count()}
+
+    def passage_count(self) -> int:
+        n = 0
+        for d in self.docs():
+            n += len(self._load_vectors(str(d["name"])))
+        return n
+
+    def _lexical_passages(self, q: str, k: int) -> list[dict[str, object]]:
+        """No embedder (or nothing indexed): rank with search() and expand each
+        hit into the passage around it — the same shape recall() returns."""
+        out: list[dict[str, object]] = []
+        for h in cast(list[dict[str, object]], self.search(q, limit=k)["hits"]):
+            name, line = str(h["doc"]), cast(int, h["line"])
+            start = max(1, line - 3)
+            r = self.read(name, start=start, lines=14)
+            out.append({"doc": name, "start": r["start"], "end": r["end"],
+                        "score": h["score"], "text": r["text"]})
+        return out
+
+    def recall(self, q: str, k: int = 6, rebuild: bool = False) -> dict[str, object]:
+        """Question → the passages most likely to answer it, from everywhere in
+        kb/ including 5k-line datasheet text. Embeddings when the endpoint
+        answers (index built/refreshed on demand); lexical hits otherwise, so a
+        machine with no local model still gets an answer, just a worse one."""
+        try:
+            if rebuild or self.passage_count() == 0:
+                self.index()
+            qv = self._embed_fn()([q])[0]
+        except Exception as e:  # noqa: BLE001 — any embedder failure degrades
+            return {"q": q, "method": "lexical", "model": None,
+                    "passages": self._lexical_passages(q, k),
+                    "note": f"embeddings unavailable ({e}); ranked by term match"}
+        scored: list[tuple[float, dict[str, object]]] = []
+        for d in self.docs():
+            name = str(d["name"])
+            for row in self._load_vectors(name):
+                vec = cast(list[float], row.get("vec", []))
+                scored.append((_cos(qv, vec), {"doc": name,
+                                               "start": row.get("start"),
+                                               "end": row.get("end"),
+                                               "text": row.get("text")}))
+        if not scored:
+            return {"q": q, "method": "lexical", "model": None,
+                    "passages": self._lexical_passages(q, k),
+                    "note": "nothing indexed; ranked by term match"}
+        scored.sort(key=lambda t: -t[0])
+        out = []
+        for score, row in scored[:k]:
+            out.append({**row, "score": round(score, 4)})
+        return {"q": q, "method": "embeddings", "model": self._embed_name(),
+                "passages": out,
+                "note": "passages only — cite doc:start-end and read them "
+                        "before answering"}
+
+    def ask(self, q: str, k: int = 6, answer: bool = False,
+            rebuild: bool = False) -> dict[str, object]:
+        """recall(), plus (optionally) a written answer from the local model —
+        grounded in the passages, told to say when they don't contain it."""
+        r = self.recall(q, k=k, rebuild=rebuild)
+        if not answer:
+            return r
+        ps = cast(list[dict[str, object]], r["passages"])
+        if not ps:
+            r["answer_error"] = "nothing in kb/ matched — nothing to answer from"
+            return r
+        ctx = "\n\n".join(f"[{p['doc']}:{p['start']}-{p['end']}]\n{p['text']}"
+                          for p in ps)
+        from . import llm
+        try:
+            ans = llm.chat([
+                {"role": "system", "content": (
+                    "Answer only from the passages. Cite each claim as "
+                    "doc:line. If the passages do not answer the question, say "
+                    "exactly that — do not use outside knowledge.")},
+                {"role": "user", "content": f"question: {q}\n\npassages:\n{ctx}"}])
+            # a thinking model can stream its reasoning elsewhere and return
+            # empty content — say that, don't print an empty answer section
+            if ans.strip():
+                r["answer"] = ans
+            else:
+                r["answer_error"] = ("the model returned an empty answer "
+                                     "(reasoning-only model? see OCD_LLM_MODEL)")
+        except llm.LLMError as e:
+            r["answer_error"] = str(e)
+        return r
 
     # ---------- ingest ----------
 

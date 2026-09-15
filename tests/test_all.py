@@ -1024,6 +1024,53 @@ with tempfile.TemporaryDirectory() as _kbt:
         assert cast(list[str], _docs[0]["parts"]) == ["C9"], _docs
         _kbsh.rmtree(_k2dir)
 
+# kb recall: embeddings index (injected fake — no endpoint needed), reuse,
+# staleness, and the lexical floor when no embedder answers at all
+with tempfile.TemporaryDirectory() as _kbt2:
+    import re as _rekb
+
+    def _fake_embed(texts: list[str]) -> list[list[float]]:
+        def vec(t: str) -> list[float]:
+            v = [0.0] * 32
+            for w in _rekb.findall(r"[a-z0-9]+", t.lower()):
+                v[hash(w) % 32] += 1.0
+            return v
+        return [vec(t) for t in texts]
+    _kbr = _kbmod.KB(_kbt2, embed=_fake_embed)
+    _kbr.add(text="# power\nVIN range is 2.7 to 5.5 V\n", name="power.md")
+    _kbr.add(text="# bus\nI2C pullups 4k7\n", name="bus.md")
+    _i1 = _kbr.index()
+    _i2 = _kbr.index()  # nothing changed: reused, not re-embedded
+    assert _i1["indexed"] == 2 and _i1["passages"] == 2, _i1
+    assert _i2["indexed"] == 0 and _i2["reused"] == 2, _i2
+    _rec = _kbr.recall("VIN range 5.5 V")
+    _kbpass = cast(list[dict[str, object]], _rec["passages"])
+    assert _rec["method"] == "embeddings" and _kbpass[0]["doc"] == "power.md", _rec
+    assert cast(float, _kbpass[0]["score"]) > 0.5, _rec
+    open(os.path.join(_kbt2, "kb", "power.md"), "w").write("# power\nVIN is 9 to 36 V\n")
+    _i3 = _kbr.index()
+    assert _i3["indexed"] == 1 and _i3["reused"] == 1, _i3  # only the edited one
+
+    def _boom(_t: list[str]) -> list[list[float]]:
+        raise RuntimeError("no embedding endpoint")
+    _lex = _kbmod.KB(_kbt2, embed=_boom).recall("pullups")
+    assert _lex["method"] == "lexical", _lex
+    assert cast(list[dict[str, object]], _lex["passages"])[0]["doc"] == "bus.md", _lex
+    # ask(answer=True) with no model reachable reports why instead of raising
+    _noans = _kbmod.KB(_kbt2, embed=_fake_embed).ask("pullups", answer=True)
+    assert "answer" in _noans or "answer_error" in _noans, _noans
+
+    # CLI: index + ask. With a local model this embeds; without one it still
+    # answers from term matches — same KB, one code path, so assert the shape.
+    _cli2 = subprocess.run([sys.executable, "-m", "apps.ocd", "kb", "index", _kbt2],
+                           capture_output=True, text=True, cwd=os.path.join(HERE, ".."))
+    assert _cli2.returncode == 0 and "indexed" in _cli2.stdout, _cli2.stderr[-300:]
+    _cli3 = subprocess.run([sys.executable, "-m", "apps.ocd", "kb", "ask", _kbt2,
+                            "pullups", "2"],
+                           capture_output=True, text=True, cwd=os.path.join(HERE, ".."))
+    assert _cli3.returncode == 0, _cli3.stderr[-300:]
+    assert "bus.md" in _cli3.stdout and "passages" in _cli3.stdout, _cli3.stdout[:300]
+
 # MCP stdio server: initialize → list → load → solve → patch → check
 import json as _json
 mcp = subprocess.Popen([sys.executable, "-m", "apps.mcp"],
@@ -1107,10 +1154,10 @@ assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["proj"] == {}
 assert _call("get_state", {})["proj"] == {}
 # large payloads survive stdio framing: 300KB monster board loads intact
-_mtext = open(os.path.join(EX, "..", "benches", "monster6502",
-                           "monster6502.ocd")).read()
+_mtext = open(os.path.join(EX, "..", "benches", "discrete6502",
+                           "discrete6502.ocd")).read()
 _mload = _call("load_board", {"text": _mtext, "base": os.path.join(
-    EX, "..", "benches", "monster6502")})
+    EX, "..", "benches", "discrete6502")})
 assert _mload["parts"] == 5420 and _mload["nets"] == 9493, _mload
 # kb over MCP: the agent's traversal surface (list → search → read → add)
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
@@ -1135,6 +1182,11 @@ with tempfile.TemporaryDirectory() as _kbm:
         raise AssertionError("bad op allowed")
     except AssertionError as _e:
         assert "unknown kb op" in str(_e), _e
+    _kbi = _call("kb", {"op": "index"})
+    assert "indexed" in _kbi and not _kbi["failed"], _kbi
+    _kba = _call("kb", {"op": "ask", "q": "keep R1 off the edge", "limit": 1})
+    assert _kba["method"] in ("embeddings", "lexical"), _kba
+    assert cast(list[dict[str, object]], _kba["passages"])[0]["doc"] == "N.md", _kba
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
 assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
@@ -1655,26 +1707,26 @@ with tempfile.NamedTemporaryFile("w", suffix=".kicad_pcb", delete=False) as _pf:
 assert (_pos, _pw, _ph, _pfps) == (
     {"R1": (10.0, 30.0), "C1": (30.0, 10.0)}, 40.0, 50.0,
     {"R1": "R_0805", "C1": "C_0805"})
-# monster bench helpers: fix-path golden on a toy board; layout.json path
+# discrete bench helpers: fix-path golden on a toy board; layout.json path
 # + overlap counter on the real 5420-part netlist (no solving — fast)
-from benches.monster6502.bench import golden as _mgolden
-from benches.monster6502.bench import apply_golden as _mapply
-from benches.monster6502.bench import overlaps as _mov
+from benches.discrete6502.bench import golden as _mgolden
+from benches.discrete6502.bench import apply_golden as _mapply
+from benches.discrete6502.bench import overlaps as _mov
 _tb2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                    "net N: R1.1 C1.2\nfix R1 at 3 5\nfix C1 at 8 5\n", base=EX)
 assert _mgolden(_tb2) == {"R1": (3.0, 5.0), "C1": (8.0, 5.0)}
-_mbiz = agent.loads(open(os.path.join(EX, "..", "benches", "monster6502",
-                                      "monster6502.ocd")).read(),
-                    base=os.path.join(EX, "..", "benches", "monster6502"))
+_mbiz = agent.loads(open(os.path.join(EX, "..", "benches", "discrete6502",
+                                      "discrete6502.ocd")).read(),
+                    base=os.path.join(EX, "..", "benches", "discrete6502"))
 assert len(_mbiz.parts) == 5420, len(_mbiz.parts)
 assert len(_mgolden(_mbiz)) == 8875, len(_mgolden(_mbiz))
 _mapply(_mbiz, {"R1": (1.0, 1.0)})  # unknown refs ignored
 _mapply(_mbiz, _mgolden(_mbiz))  # die-true positions: golden overlap floor
 assert _mov(_mbiz) == 957, _mov(_mbiz)
-# monster converter is deterministic: regenerate → byte-identical .ocd
+# discrete converter is deterministic: regenerate → byte-identical .ocd
 import hashlib as _hl
-from benches.monster6502 import convert as _mconv
-_mocd = os.path.join(EX, "..", "benches", "monster6502", "monster6502.ocd")
+from benches.discrete6502 import convert as _mconv
+_mocd = os.path.join(EX, "..", "benches", "discrete6502", "discrete6502.ocd")
 _before = _hl.sha256(open(_mocd, "rb").read()).hexdigest()
 import io as _io
 import contextlib as _cl
@@ -1821,12 +1873,12 @@ with _mock2.patch("subprocess.Popen") as _pop:
     import shutil as _sh4
     _sh4.rmtree(_home, ignore_errors=True)
     assert not os.path.exists(_home)
-# monster6502 converter pure fns: net sanitizer + block finder on the
+# discrete6502 converter pure fns: net sanitizer + block finder on the
 # real netlist (counts pinned — structural change should be deliberate)
-from benches.monster6502.convert import _safe_net, _find_blocks, _block_members
+from benches.discrete6502.convert import _safe_net, _find_blocks, _block_members
 assert (_safe_net("VDD!"), _safe_net(""), _safe_net("A0")) == ("VDD_", "N", "A0")
 import json as _js6
-_raw = _js6.load(open(os.path.join(EX, "..", "benches", "monster6502",
+_raw = _js6.load(open(os.path.join(EX, "..", "benches", "discrete6502",
                                    "netlist.json")))
 _inv, _psg = _find_blocks(_raw["components"])
 assert (len(_inv), len(_psg)) == (947, 778), (len(_inv), len(_psg))
@@ -1947,8 +1999,8 @@ except ValueError as e:
 import subprocess as _sp9
 for _mod, _usage in [
         ("tools.tscircuit", "tools.tscircuit"),
-        ("benches.monster6502.convert", "monster6502.convert"),
-        ("benches.monster6502.bench", "monster6502.bench"),
+        ("benches.discrete6502.convert", "discrete6502.convert"),
+        ("benches.discrete6502.bench", "discrete6502.bench"),
         ("ocdcircuit.raster", "preview.png"),
         ("ocdcircuit.view3d", "preview3d.html")]:
     _hr = _sp9.run([sys.executable, "-m", _mod, "--help"], capture_output=True,

@@ -345,6 +345,71 @@ def main() -> None:
         srv.terminate()
         with open(BOARD, "w") as f:
             f.write(board_orig)
+
+    # --- knowledgebase panel: its own throwaway project (kb/ lives beside the
+    # .ocd, and the repo's boards/ must not collect test documents) ----------
+    with tempfile.TemporaryDirectory() as kd:
+        kboard = os.path.join(kd, "kbpanel.ocd")
+        with open(kboard, "w") as f:
+            f.write("board kbpanel 20x10 2L\n"
+                    "part U1 SOIC8 NE555 lcsc=C1525 datasheet=https://example.invalid/ds.pdf\n"
+                    "part R1 R0805 10k\nnet N: U1.1 R1.1\n")
+        os.makedirs(os.path.join(kd, "kb", "datasheets"))
+        with open(os.path.join(kd, "kb", "NOTES.md"), "w") as f:
+            f.write("# notes\nInput supply must stay between 2.7 and 5.5 volts.\n"
+                    "Thermal pad soldered to the ground plane.\n")
+        kport = free_port()
+        kbase = f"http://localhost:{kport}"
+        ksrv = subprocess.Popen([sys.executable, "-m", "apps.studio", kboard],
+                                cwd=ROOT, env=dict(os.environ, OCD_PORT=str(kport)),
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(100):
+                try:
+                    urllib.request.urlopen(kbase + "/slots", timeout=1).read()
+                    break
+                except OSError:
+                    time.sleep(0.1)
+            else:
+                raise AssertionError("kb studio did not boot")
+            page = urllib.request.urlopen(kbase + "/").read().decode()
+            assert "id=kbwrap" in page, "kb panel missing from the page"
+            assert "id=kbfetch" in page and "id=kbask" in page, "kb controls missing"
+            slots = json.loads(urllib.request.urlopen(kbase + "/slots", timeout=5).read())
+            assert "kb" in slots["view"], slots
+            kl = post(kbase, "/kb/list", {})
+            assert not kl.get("error"), kl
+            assert str(kl["dir"]).endswith("kb"), kl["dir"]
+            assert [d["name"] for d in cast(list[dict[str, object]], kl["docs"])] == ["NOTES.md"], kl
+            kr = post(kbase, "/kb/read", {"doc": "NOTES.md", "start": 2, "lines": 1})
+            assert "2.7 and 5.5 volts" in str(kr["text"]), kr
+            kbad = post(kbase, "/kb/read", {"doc": "../../etc/passwd"})
+            assert "outside the knowledgebase" in str(kbad.get("error")), kbad
+            ks = post(kbase, "/kb/search", {"q": "thermal"})
+            assert [h["line"] for h in cast(list[dict[str, object]], ks["hits"])] == [3], ks
+            ka = post(kbase, "/kb/ask", {"q": "how much voltage can it take?", "limit": 2})
+            assert not ka.get("error"), ka
+            assert ka["method"] in ("embeddings", "lexical"), ka  # model optional
+            kps = cast(list[dict[str, object]], ka["passages"])
+            assert kps and kps[0]["doc"] == "NOTES.md", ka
+            kadd = post(kbase, "/kb/add", {"src": os.path.join(kd, "kb", "NOTES.md")})
+            assert "NOTES-2.md" in str(kadd.get("added")), kadd  # never clobbers
+            kbadadd = post(kbase, "/kb/add", {"src": "https://example.invalid/x.pdf"})
+            assert "error" in kbadadd, kbadadd
+            # fetch runs in a worker thread (this server is single-threaded) and
+            # still answers /kb/list while it works
+            kf = post(kbase, "/kb/fetch", {})
+            assert not kf.get("error"), kf
+            for _ in range(80):
+                time.sleep(0.25)
+                if not cast(bool, post(kbase, "/kb/list", {})["busy"]):
+                    break
+            klog = " · ".join(cast(list[str], post(kbase, "/kb/list", {})["log"]))
+            assert "skip R1" in klog, klog      # no datasheet=/lcsc= attr
+            assert "FAIL U1" in klog, klog      # the pinned url cannot resolve
+            print("kb panel ok (list/read/search/ask/add/fetch)")
+        finally:
+            ksrv.terminate()
     print("STUDIO OK")
 
 

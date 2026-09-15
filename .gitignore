@@ -2,15 +2,18 @@ __pycache__/
 *.pyc
 boards/out/
 boards/*/out/
-benches/monster6502/baseline_*.txt
-benches/monster6502/monster6502.ocd
+benches/discrete6502/baseline_*.txt
+benches/discrete6502/discrete6502.ocd
+benches/complex/*.kicad_pcb
+benches/complex/*.ocd
+benches/complex/fp/
 .mypy_cache/
 *-erc.rpt
 *-drc.rpt
 boards/*/STATUS.md
-# board knowledgebase: notes are source of truth (commit them), extracted PDF
-# text is derived, downloaded datasheets are vendor PDFs (1-10MB) — uncomment
-# the last line to keep the PDFs in the repo too.
+# board knowledgebase: notes AND datasheets are committed (they are the
+# project's documentation — 1-10MB each, so a repo with many boards gets
+# heavy; ignore boards/*/kb/datasheets/*.pdf if that ever bites). Only the
+# derived text/vector caches are ignored.
 boards/*/kb/.cache/
 boards/kb/.cache/
-# boards/*/kb/datasheets/*.pdf
