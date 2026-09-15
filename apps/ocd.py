@@ -6,6 +6,7 @@
     ocd diff <a.ocd> <b.ocd> what changed: parts, nets, size, constraints
     ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
     ocd lint <circuit.ocd>   static source lint, no place/route
+    ocd kb list|search|read|add|fetch  board knowledgebase (`kb/`: notes + datasheets)
     ocd doctor               tooling self-check (no file needed)
 
 Global flags (run/score): --fab --placer --router --sim. `ocd <file>` = run.
@@ -25,6 +26,7 @@ USAGE = """usage:
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
+  ocd kb list|search|read|add|fetch  kb/: board notes + datasheets, agent-readable
   ocd doctor                     tooling self-check (no file needed)
   ocd plugins [kind]            list registry keys (placer/router/…)
   ocd <circuit.ocd>              shorthand for run"""
@@ -129,7 +131,9 @@ def cmd_new(args: list[str]) -> int:
     if not os.path.exists(readme):
         with open(readme, "w") as f:
             f.write(f"# {name}\n\n`ocd run {name}.ocd` → `out/` fab package.\n"
-                    f"`ocd status {name}.ocd` refreshes STATUS.md.\n")
+                    f"`ocd status {name}.ocd` refreshes STATUS.md.\n"
+                    f"Notes + datasheets live in `kb/` (`ocd kb search {name}.ocd <term>`,\n"
+                    f"`ocd kb fetch {name}.ocd` pulls datasheets for `lcsc=` parts).\n")
     toml = os.path.join(d, "board.toml")
     if not os.path.exists(toml):
         with open(toml, "w") as f:
@@ -138,6 +142,14 @@ def cmd_new(args: list[str]) -> int:
                     '# `ocd plugins [kind]` lists legal placer/router/drc picks.\n'
                     'fab = "jlc"\nplacer = "diffusion"\nrouter = "maze"\n'
                     'drc = ["fab", "erc"]\nmask = "green"\n')
+    os.makedirs(os.path.join(d, "kb", "datasheets"), exist_ok=True)
+    notes = os.path.join(d, "kb", "NOTES.md")
+    if not os.path.exists(notes):
+        with open(notes, "w") as f:
+            f.write(f"# {name} — notes\n\n"
+                    f"Decisions, errata, pin notes. Datasheets go in `kb/datasheets/`\n"
+                    f"(`ocd kb fetch {name}.ocd`, or drop them in by hand).\n"
+                    f"Searchable with `ocd kb search {name}.ocd <term>`.\n")
     print(f"new: {board}")
     return 0
 
@@ -400,6 +412,97 @@ def cmd_doctor() -> int:
     return 0
 
 
+KB_USAGE = """usage:
+  ocd kb list   <board.ocd|dir>            docs in kb/ (+ which parts they cover)
+  ocd kb search <board.ocd|dir> <query>    hits as `doc:line: text`
+  ocd kb read   <board.ocd|dir> <doc> [start] [lines]
+  ocd kb add    <board.ocd|dir> <path|url> [name]
+  ocd kb fetch  <board.ocd> [REF ...]      download datasheets (`datasheet=` or `lcsc=`)
+kb/ sits beside the board: drop notes/datasheets in by hand, or add them here."""
+
+
+def _kb_base(target: str) -> str:
+    """The kb lives next to the board: accept the .ocd or the project dir."""
+    return target if os.path.isdir(target) else os.path.dirname(os.path.abspath(target))
+
+
+def cmd_kb(agent: object, args: list[str]) -> int:
+    from ocdcircuit import kb as _kb
+    if len(args) < 2 or args[0] in ("-h", "--help"):
+        print(KB_USAGE)
+        return 1
+    op, target, rest = args[0], args[1], args[2:]
+    board = None
+    try:
+        if target.endswith(".ocd") and os.path.isfile(target):
+            board = _load(agent, target)
+    except (OSError, ValueError, KeyError, AssertionError) as e:
+        print(f"ocd: {e}")
+        return 1
+    k = _kb.KB(_kb_base(target), board=board)
+    try:
+        if op == "list":
+            docs = k.docs()
+            if not docs:
+                print(f"kb empty: {k.dir}\n"
+                      f"  drop notes/datasheets in there, or `ocd kb add {target} <url>`")
+                return 0
+            rel = os.path.relpath(k.dir)
+            _table(f"kb {rel if not rel.startswith('..') else k.dir}", [
+                (str(d["name"]), " ".join(x for x in [
+                    str(d["kind"]), f"{d['bytes']}B",
+                    "parts=" + ",".join(cast(list[str], d["parts"])) if d["parts"] else "",
+                    str(d.get("title", "")), str(d.get("source", ""))] if x))
+                for d in docs])
+            return 0
+        if op == "search":
+            if not rest:
+                print(KB_USAGE)
+                return 1
+            r = k.search(rest[0], limit=int(rest[1]) if len(rest) > 1 else 20)
+            hits = cast(list[dict[str, object]], r["hits"])
+            for h in hits:
+                print(f"{h['doc']}:{h['line']}: {h['text']}")
+            if not hits:
+                print(f"no hits for {rest[0]!r} in {r['docs_searched']} docs")
+            for s in cast(list[str], r["skipped"]):
+                print(f"  (skipped {s})")
+            return 0
+        if op == "read":
+            if not rest:
+                print(KB_USAGE)
+                return 1
+            r = k.read(rest[0], start=int(rest[1]) if len(rest) > 1 else 1,
+                       lines=int(rest[2]) if len(rest) > 2 else 200)
+            print(f"{r['name']} lines {r['start']}-{r['end']}/{r['total_lines']}")
+            print(r["text"])
+            return 0
+        if op == "add":
+            if not rest:
+                print(KB_USAGE)
+                return 1
+            out = k.add(rest[0], name=rest[1] if len(rest) > 1 else None)
+            print(f"added kb/{out['added']} ({out['bytes']}B)")
+            return 0
+        if op == "fetch":
+            if board is None:
+                print("ocd: fetch reads part attrs — pass the board file, not a dir")
+                return 1
+            r = k.fetch(board, refs=rest or None)
+            for sv in cast(list[dict[str, object]], r["saved"]):
+                print(f"saved kb/{sv['name']} ({sv['bytes']}B) for {sv['part']}")
+            for sk in cast(list[dict[str, object]], r["skipped"]):
+                print(f"skip  {sk['part']}: {sk['why']}")
+            for fl in cast(list[dict[str, object]], r["failed"]):
+                print(f"FAIL  {fl['part']}: {fl['error']}")
+            return 1 if r["failed"] else 0
+    except (ValueError, OSError, KeyError) as e:
+        print(f"ocd: {e}")
+        return 1
+    print(KB_USAGE)
+    return 1
+
+
 def cmd_plugins(agent: object, args: list[str]) -> int:
     if args and args[0] in ("-h", "--help"):
         print("usage: ocd plugins [kind]")
@@ -463,6 +566,8 @@ def main(argv: list[str]) -> int:
         return cmd_doctor()
     if args[0] == "plugins":
         return cmd_plugins(agent, args[1:])
+    if args[0] == "kb":
+        return cmd_kb(agent, args[1:])
     if args[0].startswith("-"):
         print(USAGE)
         return 1

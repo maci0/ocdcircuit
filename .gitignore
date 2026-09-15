@@ -8,3 +8,9 @@ benches/monster6502/monster6502.ocd
 *-erc.rpt
 *-drc.rpt
 boards/*/STATUS.md
+# board knowledgebase: notes are source of truth (commit them), extracted PDF
+# text is derived, downloaded datasheets are vendor PDFs (1-10MB) — uncomment
+# the last line to keep the PDFs in the repo too.
+boards/*/kb/.cache/
+boards/kb/.cache/
+# boards/*/kb/datasheets/*.pdf

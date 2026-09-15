@@ -954,6 +954,76 @@ with tempfile.TemporaryDirectory() as d:
                  if f.endswith(".kicad_pcb")][0]).read()
     assert '(net_class "highvolt"' in _kk2 and '(add_net "HV")' in _kk2, _kk2[-500:]
 
+# knowledgebase: kb/ beside the board — notes in, datasheets in, text out
+import shutil as _kbsh
+from unittest import mock as _kbmock
+from ocdcircuit import kb as _kbmod
+with tempfile.TemporaryDirectory() as _kbt:
+    _kbocd = os.path.join(_kbt, "proj.ocd")
+    open(_kbocd, "w").write(
+        "board proj 20x10 2L\npart U1 SOIC8 NE555 lcsc=C1525 datasheet=https://x.test/ds.pdf\n"
+        "part R1 R0805 10k\nnet N: U1.1 R1.1\n")
+    _kbb = agent.loads(open(_kbocd).read(), base=_kbt)
+    _kbs = _kbmod.KB(_kbt, board=_kbb)
+    assert _kbs.docs() == []  # empty until someone puts something there
+    _kbs.add(text="# notes\nVIN range 2.7-5.5V, 10k gate pulldown\n", name="NOTES.md")
+    _err = os.path.join(_kbt, "errata.txt")
+    open(_err, "w").write("rev B: R7 -> 0R\n")
+    assert _kbs.add(_err)["added"] == "errata.txt"
+    assert _kbs.add(_err)["added"] == "errata-2.txt"  # a clash never clobbers
+    _hits = cast(list[dict[str, object]], _kbs.search("pulldown")["hits"])
+    assert len(_hits) == 1 and _hits[0]["doc"] == "NOTES.md" and _hits[0]["line"] == 2
+    assert _kbs.search("zzz-nothing")["hits"] == []
+    assert _kbs.read("NOTES.md", start=2, lines=1)["text"] == "VIN range 2.7-5.5V, 10k gate pulldown"
+    for _badpath in ("../escape.md", "/etc/passwd", "nope://x/y"):
+        try:
+            _kbs.read(_badpath)
+            raise AssertionError(f"path escape allowed: {_badpath}")
+        except ValueError:
+            pass
+    # a dropped PDF becomes searchable text (pdftotext), cached on second read
+    _mini = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+             b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+             b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]/Contents 4 0 R"
+             b"/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+             b"4 0 obj<</Length 52>>stream\nBT /F1 12 Tf 10 50 Td (VIN 2.7 to 5.5 V max) Tj ET\n"
+             b"endstream endobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+             b"trailer<</Root 1 0 R/Size 6>>\n%%EOF\n")
+    open(os.path.join(_kbt, "ds.pdf"), "wb").write(_mini)
+    assert _kbs.add(os.path.join(_kbt, "ds.pdf"))["added"] == "datasheets/ds.pdf"
+    if _kbsh.which("pdftotext"):
+        assert "VIN 2.7 to 5.5 V max" in _kbs.text("datasheets/ds.pdf")
+        assert os.path.exists(os.path.join(_kbs.cache, "datasheets__ds.pdf.txt"))
+        _pdfh = cast(list[dict[str, object]], _kbs.search("V max")["hits"])
+        assert _pdfh and str(_pdfh[0]["doc"]).endswith("ds.pdf"), _pdfh
+    # fetch: `datasheet=` wins over the lcsc lookup, present files are skipped
+    _urls: list[str] = []
+
+    def _fake_dl(url: str, dest: str, timeout: float = 60.0) -> int:
+        _urls.append(url)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        open(dest, "wb").write(b"%PDF-1.4\n")
+        return 8
+    with _kbmock.patch.object(_kbmod, "_download", _fake_dl), \
+            _kbmock.patch.object(_kbmod, "lcsc_pdf",
+                                 lambda c, timeout=30.0: f"https://lcsc.test/{c}.pdf"):
+        _f1 = _kbs.fetch(_kbb)
+        assert [s["part"] for s in cast(list[dict[str, object]], _f1["saved"])] == ["U1"], _f1
+        assert _urls == ["https://x.test/ds.pdf"], _urls
+        assert str(cast(list[dict[str, object]], _f1["skipped"])[0]["why"]).startswith("no datasheet")
+        _f2 = _kbs.fetch(_kbb)
+        assert _f2["saved"] == [] and len(cast(list[object], _f2["skipped"])) == 2, _f2
+        # a bare lcsc= part resolves through the lookup; it also maps back to C9
+        _k2dir = tempfile.mkdtemp()
+        _b2 = agent.loads("board q 10x10 2L\npart C9 C0805 1u lcsc=C19702\n"
+                          "net N: C9.1 C9.2\n", base=_k2dir)
+        _k2 = _kbmod.KB(_k2dir, board=_b2)
+        _f3 = cast(list[dict[str, object]], _k2.fetch(_b2)["saved"])
+        assert "C19702_" in str(_f3[0]["name"]) and _f3[0]["url"] == "https://lcsc.test/C19702.pdf"
+        _docs = _k2.docs()
+        assert cast(list[str], _docs[0]["parts"]) == ["C9"], _docs
+        _kbsh.rmtree(_k2dir)
+
 # MCP stdio server: initialize → list → load → solve → patch → check
 import json as _json
 mcp = subprocess.Popen([sys.executable, "-m", "apps.mcp"],
@@ -982,7 +1052,7 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 27
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 28
 assert len(cast(list[object], _call("footprints", {})["footprints"])) >= 100
 assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
            _call("footprints", {"q": "R0805"})["footprints"]))
@@ -1042,6 +1112,29 @@ _mtext = open(os.path.join(EX, "..", "benches", "monster6502",
 _mload = _call("load_board", {"text": _mtext, "base": os.path.join(
     EX, "..", "benches", "monster6502")})
 assert _mload["parts"] == 5420 and _mload["nets"] == 9493, _mload
+# kb over MCP: the agent's traversal surface (list → search → read → add)
+assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
+assert str(_call("kb", {"op": "list"})["dir"]).endswith(os.path.join("boards", "kb"))
+assert _call("kb", {"op": "list"})["docs"] == []  # nothing invented for the board
+with tempfile.TemporaryDirectory() as _kbm:
+    _kbmp = os.path.join(_kbm, "kbproj.ocd")
+    open(_kbmp, "w").write("board kbproj 10x10 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+    assert _call("load_board", {"path": _kbmp})["board"] == "kbproj"
+    assert _call("kb", {"op": "add", "text": "ESD: keep R1 off the edge\n",
+                        "name": "N.md"})["added"] == "N.md"
+    assert [d["name"] for d in cast(list[dict[str, object]], _call("kb", {"op": "list"})["docs"])] == ["N.md"]
+    assert cast(list[dict[str, object]], _call("kb", {"op": "search", "q": "keep R1"})["hits"])[0]["line"] == 1
+    assert _call("kb", {"op": "read", "doc": "N.md"})["text"] == "ESD: keep R1 off the edge"
+    try:  # traversal can't reach outside kb/
+        _call("kb", {"op": "read", "doc": "../proj.ocd"})
+        raise AssertionError("path escape allowed over MCP")
+    except AssertionError as _e:
+        assert "outside the knowledgebase" in str(_e), _e
+    try:
+        _call("kb", {"op": "nope"})
+        raise AssertionError("bad op allowed")
+    except AssertionError as _e:
+        assert "unknown kb op" in str(_e), _e
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
 assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
@@ -1988,6 +2081,35 @@ try:
     assert False, "truncated OLE must be rejected"
 except ValueError:
     pass
+# binary regions/texts: synthetic builders (no fixture needed)
+import struct as _st
+_rtext = b"LAYER=TOP|KIND=1\x00"
+_rrest = ((1).to_bytes(4, "little") + b"\x00" * 4
+          + _st.pack("<f", 10.0) + b"\x00" * 4
+          + _st.pack("<f", 20.0) + b"\x00" * 4)
+_rpay = (bytes([1, 0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255, 255])
+         + (0).to_bytes(4, "little") + b"\x00"
+         + len(_rtext).to_bytes(4, "little") + _rtext + _rrest)
+_br = foreign._bin_region(b"\x0b" + len(_rpay).to_bytes(4, "little") + _rpay)
+assert len(_br) == 1 and _br[0]["LAYER"] == "TOPLAYER" and _br[0]["NPT"] == "1"
+_tx, _ty = int(10 / 2.54e-6), int(20 / 2.54e-6)
+_tpay = (bytes([33]) + b"\x00" * 12 + _tx.to_bytes(4, "little")
+         + _ty.to_bytes(4, "little") + b"\x00" * 4)
+_bt = foreign._bin_texts(
+    b"\x05" + len(_tpay).to_bytes(4, "little") + _tpay
+    + (5).to_bytes(4, "little") + b"HIJKL")
+assert len(_bt) == 1 and _bt[0]["TEXT"] == "HIJKL"
+assert _bt[0]["LOCATION.X"].startswith("10.")
+# REGION cutout reaches the board through the ASCII path
+_alr = foreign.altium_ascii(
+    "|RECORD=Board|VX0=0mm|VY0=0mm|VX1=20mm|VY1=0mm|VX2=20mm|VY2=15mm|VX3=0mm|VY3=15mm|\n"
+    "|RECORD=Net|NAME=GND|\n"
+    "|RECORD=Region|KIND=1|LAYER=TOPLAYER|NPT=4"
+    "|X0=1mm|Y0=1mm|X1=3mm|Y1=1mm|X2=3mm|Y2=3mm|X3=1mm|Y3=3mm|\n")
+assert {"t": "cutout", "x": 2.0, "y": 2.0, "w": 2.0, "h": 2.0} in _alr["constraints"]
+_ali6 = Board("ali6", 40, 30)
+_ar6 = _ali6.import_fp("altium", path=_alf2)
+assert _ar6["pours"] == 1  # cutouts flow via constraints key too
 # altium pours round-trip (export Polygon + reimport pour constraint)
 _alp = agent.loads("board t 20x20 2L\npart R1 R0805 1k\npart R2 R0805 1k\n"
                    "net N: R1.2 R2.1\nGND pour=0 :: R1.1 R2.2\n")

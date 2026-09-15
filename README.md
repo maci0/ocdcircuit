@@ -103,6 +103,11 @@ stated as a word in a pill.
   `nc` marks intentional no-connects (USB-C demo has 14).
 - **One-zip fab bundle** (`export:bundle`), **snapshot golden tests**,
   **embedded calculators** (IPC-2221 trace width, via current, divider).
+- **Board knowledgebase** (`kb/` beside the board): notes you drop in, plus
+  datasheets — `ocd kb fetch` pulls them per part from a `datasheet=` URL or
+  an `lcsc=` code, `ocd kb add` takes a path/url, `ocd kb search <term>`
+  greps notes *and* PDF text (`pdftotext`, cached). Agents traverse the same
+  thing over MCP, so "what does U3's datasheet say about VIN" is a lookup.
 - **Foreign footprints**: `fp` loads KiCad `.kicad_mod`, Eagle `.lbr`,
   tscircuit/EasyEDA JSON, or native `.fp` — plus Eagle `.brd` and
   `.kicad_pcb` board import, and EasyEDA Std JSON export.
@@ -114,10 +119,11 @@ stated as a word in a pill.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (27 tools:
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (28 tools:
   load/solve/patch/set_state/undo/context/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render/footprints/fabs/…)
   — any MCP client can drive boards, gallery-pick layouts, probe routability,
-  browse footprints + fab profiles, and inspect live fiber/coeffect state.
+  browse footprints + fab profiles, search the board's kb/ notes + datasheets,
+  and inspect live fiber/coeffect state.
   `match`/`diff` constraints cover length + diff pairs.
 - **Context paradigm** ([the paper](https://arxiv.org/abs/2608.25512)):
   every edit carries its inverse (`Context.effect`, fires once), every module

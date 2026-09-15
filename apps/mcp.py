@@ -6,7 +6,8 @@ Methods: initialize, tools/list, tools/call, ping. Notifications ignored.
 Tools: load_board, get_state, apply_patch, set_state, undo,
 parse_constraint, place, candidates, apply_candidate, feasible, route,
 check, score, diff, lint, doctor, export, render, import_footprint,
-calc, simulate, use_plugin, list_plugins, solve.
+calc, simulate, use_plugin, list_plugins, solve, kb (board knowledgebase:
+list/search/read the kb/ notes + datasheets, add a path/url/text, fetch).
 State: one board in memory; load_board replaces it (old one undoable? no —
 load is a fresh Board; agents snapshot via get_state if needed).
 Every mutation flows through Context, so undo reverts the last effect.
@@ -24,6 +25,10 @@ from ocdcircuit.circuit import Board  # noqa: E402
 BASE = os.getcwd()
 BOARD: Board | None = None
 SRC = "<memory>"
+PROJ: str | None = None  # dir the loaded board came from = where kb/ lives
+# cordis-boundary: single-board process slots (load_board replaces, never
+# unloads). Outside any fiber by design — the MCP transport owns the process
+# lifetime; agents snapshot via get_state for their own undo.
 
 
 def _board() -> Board:
@@ -32,7 +37,7 @@ def _board() -> Board:
 
 
 def t_load(a: dict[str, object]) -> dict[str, object]:
-    global BOARD, SRC
+    global BOARD, SRC, PROJ
     if "text" in a:
         text = str(a["text"])
         base = str(a.get("base", BASE))
@@ -40,6 +45,7 @@ def t_load(a: dict[str, object]) -> dict[str, object]:
         SRC = str(a["path"])
         text = open(SRC).read()
         base = os.path.dirname(os.path.abspath(SRC))
+    PROJ = os.path.abspath(base)
     BOARD = agent.loads(text, base=base)
     BOARD.configure("toml", base=base)
     if isinstance(a.get("fab"), str):
@@ -344,6 +350,39 @@ def t_ctx(a: dict[str, object]) -> dict[str, object]:
     return {"fibers": fibs}
 
 
+def t_kb(a: dict[str, object]) -> dict[str, object]:
+    """Board knowledgebase (`kb/` beside the .ocd): notes, errata, datasheets.
+    ops: list (what's there + which parts), search (doc:line hits), read
+    (paged text of one doc), add (path/url/text), fetch (download datasheets)."""
+    from ocdcircuit import kb as _kb
+    if PROJ is None:
+        raise ValueError("no board loaded (load_board first: kb/ lives beside it)")
+    k = _kb.KB(PROJ, board=BOARD)
+    op = str(a.get("op", "list"))
+    if op == "list":
+        return {"dir": k.dir, "docs": k.docs()}
+    if op == "search":
+        return k.search(str(a["q"]), limit=_ii(a.get("limit"), 20))
+    if op == "read":
+        return k.read(str(a["doc"]), start=_ii(a.get("start"), 1),
+                      lines=_ii(a.get("lines"), 200))
+    if op == "add":
+        if "text" in a:
+            return k.add(name=str(a.get("name", "note.md")), text=str(a["text"]))
+        src = a.get("path") or a.get("url") or a.get("src")
+        if not isinstance(src, str):
+            raise ValueError("add needs path, url, or text")
+        nm = a.get("name")
+        assert nm is None or isinstance(nm, str)
+        return k.add(src, name=nm)
+    if op == "fetch":
+        refs = a.get("refs")
+        assert refs is None or isinstance(refs, list)
+        rs = [str(r) for r in refs] if isinstance(refs, list) else None
+        return k.fetch(_board(), refs=rs)
+    raise ValueError(f"unknown kb op {op!r} (list|search|read|add|fetch)")
+
+
 def t_solve(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     _fab_override(b, a)
@@ -395,6 +434,11 @@ TOOLS: dict[str, object] = {
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
     "list_plugins": (t_plugins, {}),
     "context": (t_ctx, {"op": "fibers|get|set|unset", "key?": "coeffect key"}),
+    "kb": (t_kb, {"op": "list|search|read|add|fetch",
+                  "q?": "search terms", "limit?": 20,
+                  "doc?": "doc name from list", "start?": 1, "lines?": 200,
+                  "path?": "file to add", "url?": "url to add", "text?": "text",
+                  "name?": "doc name for add", "refs?": "[part refs] for fetch"}),
     "solve": (t_solve, {"placer?": "key", "router?": "key", "fab?": "one-shot fab override"}),
 }
 

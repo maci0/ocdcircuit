@@ -54,6 +54,8 @@ values with spaces quote (`note="hello world"`, shlex rules) ·
 `x=` `y=` (≡ `fix REF at x y`, dumps the `fix` line) · `dnp=1` ·
 `sym=` (symbol override: R C L D Q3 OPAMP IC8 IC14 IC16) ·
 `pinN=` (schematic pin label) ·
+`datasheet=` (URL; `ocd kb fetch` downloads it into `kb/datasheets/` — no
+lookup needed) ·
 `alternates=` (comma MPN/LCSC list, parts-libraries brief).
 
 ## Nets (mermaid-style flow)

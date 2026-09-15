@@ -11,3 +11,28 @@ Real boards, not samples. Each subdir is one board: the `.ocd` source, its
 - `ne555/` — discrete 555 (atopile port)
 - `e2e_driver4/` — E2E sensor driver (atopile port)
 - `breath_ketone/` — dense breath sensor (farm-excepted: 81% fill, 12 overlaps)
+
+## kb/ — the board's own documents
+
+Documentation lives beside the board file, in `kb/`, because that is where a
+human drops a datasheet anyway:
+
+```
+boards/mitox/kb/NOTES.md          notes/errata/pinouts (.md/.txt/.csv/…)
+boards/mitox/kb/datasheets/       one datasheet per part
+boards/mitox/kb/sources.tsv       name<TAB>url — where a file came from
+boards/mitox/kb/.cache/           pdftotext output (derived, gitignored)
+```
+
+Three ways in — drop files into `kb/` with the file manager, `ocd kb add
+<board.ocd|dir> <path|url>`, or `ocd kb fetch <board.ocd>` which downloads
+datasheets for every `datasheet=<url>` / `lcsc=C1234` part attr.
+
+Read it back with `ocd kb list|search|read`, or let an agent traverse it over
+MCP (`kb` tool: list/search/read/add/fetch) — search returns `doc:line` hits
+and `list` maps each doc back to the refs it covers, so "what does U3's
+datasheet say about VIN" is a lookup, not a guess.
+
+One rule, no exceptions: `kb/` sits next to the `.ocd`. So `boards/mitox/`
+keeps its own `kb/`, while the loose demos (`boards/blinky_555.ocd`,
+`psu.ocd`, …) share `boards/kb/`.
