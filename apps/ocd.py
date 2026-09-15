@@ -437,13 +437,20 @@ def cmd_kb(agent: object, args: list[str]) -> int:
         return 1
     op, target, rest = args[0], args[1], args[2:]
     board = None
+    parts = None
     try:
         if target.endswith(".ocd") and os.path.isfile(target):
-            board = _load(agent, target)
+            # `fetch` needs real attrs (datasheet=/lcsc=/value) and runs once;
+            # everything else only maps a filename to refs, and building a
+            # Board for a 5420-part design costs ~1.5s.
+            if op == "fetch":
+                board = _load(agent, target)
+            else:
+                parts = _kb.parts_map(open(target).read())
     except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1
-    k = _kb.KB(_kb_base(target), board=board)
+    k = _kb.KB(_kb_base(target), board=board, parts=parts)
     try:
         if op == "list":
             docs = k.docs()

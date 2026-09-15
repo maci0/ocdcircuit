@@ -1406,6 +1406,9 @@ async function kbLoad(){
     box.appendChild(row);
   });
   if(!KBDOCS.length)box.textContent='nothing yet — add a url, or fetch datasheets';
+  else if(r.total&&r.total>KBDOCS.length)
+    box.appendChild(document.createTextNode('… showing '+KBDOCS.length+' of '+r.total
+      +' documents — ask or search to reach the rest'));
   if(r.busy)$('kbstat').textContent='fetching datasheets…';
   else if((r.log||[]).length)$('kbstat').textContent=(r.log||[]).slice(-3).join(' · ');
 }
@@ -1766,75 +1769,78 @@ def _board_digest() -> str:
 
 
 # --- knowledgebase: kb/ beside the board, shared with the agent over MCP ---
-_kb_board: tuple[int, Board | None] | None = None  # (rev, parsed board), cached
+_kb_board: tuple[int, dict[str, dict[str, str]]] | None = None  # (rev, parts), cached
 _kb_log: list[str] = []      # last fetch results, shown in the panel
+KB_LIST_LIMIT = 200          # rows the panel renders; search covers the rest
 _kb_busy = False             # a fetch thread is running
 
 
 def _kb() -> object:
-    """The open board's knowledgebase. KB is directory-bound; the board is what
-    maps a doc back to the parts it covers, and parsing it is cached per
-    revision (a 5k-part board must not be re-parsed per keystroke)."""
+    """The open board's knowledgebase. KB is directory-bound; the parts map is
+    what links a doc back to the refs it covers. Scanning the source for that
+    (ref/lcsc/mpn) is ~1.5s cheaper than building a Board on a 5k-part design —
+    Context journals every part and net — and the panel asks per interaction on
+    a single-threaded server. Cached per revision."""
     global _kb_board
     from ocdcircuit import kb as _kbmod
     if _kb_board is None or _kb_board[0] != H.rev:
-        try:
-            _kb_board = (H.rev, agent.loads(H.src_text, base=BASE))
-        except (ValueError, KeyError, AssertionError, OSError):
-            _kb_board = (H.rev, None)  # unparseable source: docs still list
-    return _kbmod.KB(BASE, board=_kb_board[1])
+        _kb_board = (H.rev, _kbmod.parts_map(H.src_text))
+    return _kbmod.KB(BASE, parts=_kb_board[1])
 
 
 def _kb_list() -> dict[str, object]:
+    """Panel listing, bounded: a kb with 1000+ documents would otherwise ship
+    every row (99kB of JSON and 1000 DOM nodes) on each poll."""
     k = _kb()
-    assert not isinstance(k, Board)
     from ocdcircuit.kb import KB
     assert isinstance(k, KB)
-    return {"dir": k.dir, "docs": k.docs(), "busy": _kb_busy,
-            "log": list(_kb_log)}
+    return {"dir": k.dir, "docs": k.docs(limit=KB_LIST_LIMIT), "total": k.count(),
+            "limit": KB_LIST_LIMIT, "busy": _kb_busy, "log": list(_kb_log)}
 
 
 def _kb_fetch_start() -> dict[str, object]:
-    """Fetch in a thread: this server is single-threaded, and datasheets are
-    minutes of network. The panel polls /kb/list while it runs."""
+    """Fetch out of process: `ocd kb fetch` already does exactly this job, and
+    the panel polls /kb/list while it runs.
+
+    Why a subprocess and not a thread: this server is single-threaded, the
+    Board it fetches from is ~2.8s of Context journaling on a 5420-part design,
+    and CPython's GIL hands that CPU-bound loop the interpreter in 5ms slices —
+    measured UI stalls of 0.45-0.64s per request while a worker thread parsed
+    it, versus 1.5ms flat with the work in another process."""
     global _kb_busy, _kb_log
+    import subprocess
     import threading
     if _kb_busy:
         return {"started": False, "note": "already fetching", "log": list(_kb_log)}
-    board = _kb_board[1] if _kb_board else None
-    if board is None:
-        return {"started": False, "error": "the open board does not parse — "
-                                           "nothing to fetch datasheets for"}
+    if not os.path.isfile(SRC):
+        return {"started": False, "error": f"no such board file: {SRC}"}
     _kb_busy = True
     _kb_log = ["fetching datasheets…"]
 
     def work() -> None:
         global _kb_busy, _kb_log
-        from ocdcircuit.kb import KB
-        k = _kb()
-        assert isinstance(k, KB)
         try:
-            r = k.fetch(board)
-            for sv in _cast_list(r["saved"]):
-                _kb_log.append(f"saved {sv['name']} ({sv['bytes']}B)")
-            for sk in _cast_list(r["skipped"]):
-                _kb_log.append(f"skip {sk['part']}: {sk['why']}")
-            for fl in _cast_list(r["failed"]):
-                _kb_log.append(f"FAIL {fl['part']}: {fl['error']}")
-            _kb_log.append(f"done — {len(_cast_list(r['saved']))} saved, "
-                           f"{len(_cast_list(r['skipped']))} skipped")
+            # cwd/PYTHONPATH point at the checkout, not the board: ROOT is the
+            # project the board lives in, which need not be this repo.
+            p = subprocess.Popen([sys.executable, "-m", "apps.ocd", "kb", "fetch", SRC],
+                                 cwd=HERE, env={**os.environ, "PYTHONPATH": HERE},
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+            assert p.stdout is not None
+            for line in p.stdout:  # the CLI's lines ARE the progress log
+                line = line.strip()
+                if line:
+                    _kb_log.append(line)
+                    _kb_log[:] = _kb_log[-12:]
+            code = p.wait()
+            _kb_log.append(f"done — exit {code}")
         except Exception as e:  # noqa: BLE001 — a worker thread must not die silent
             _kb_log.append(f"error: {e}")
-        _kb_log[-1:] = _kb_log[-8:]
         _kb_busy = False
 
     threading.Thread(target=work, daemon=True).start()
     return {"started": True, "note": "fetching datasheets — the list fills in as they land"}
 
-
-def _cast_list(v: object) -> list[dict[str, object]]:
-    assert isinstance(v, list)
-    return [x for x in v if isinstance(x, dict)]
 
 
 class H(http.server.BaseHTTPRequestHandler):

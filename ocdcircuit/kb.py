@@ -65,6 +65,32 @@ def chunks_of(body: str, size: int = CHUNK_CHARS) -> list[dict[str, object]]:
     return out
 
 
+def parts_map(text: str) -> dict[str, dict[str, str]]:
+    """`ref -> attrs` straight from .ocd source, without building a Board.
+
+    The kb only needs ref/lcsc/mpn to map a document back to a part, and
+    building a real Board for a 5420-part design costs ~1.5s (Context
+    journals every part and net — `core.emit` is 60% of it). A panel open or
+    `ocd kb list` must not pay that. Ceiling: `block` bodies contribute their
+    template refs, and quoted values containing spaces are not unquoted —
+    neither carries an lcsc/mpn the mapping needs."""
+    out: dict[str, dict[str, str]] = {}
+    for line in text.splitlines():
+        if not line.startswith("part "):
+            continue
+        toks = line.split(None, 3)
+        if len(toks) < 3:
+            continue
+        attrs: dict[str, str] = {}
+        if len(toks) > 3:
+            for t in toks[3].split():
+                k, eq, v = t.partition("=")
+                if eq and k not in ("x", "y"):
+                    attrs[k] = v
+        out[toks[1]] = attrs
+    return out
+
+
 def _cos(a: list[float], b: list[float]) -> float:
     """Cosine similarity; 0 for a zero vector (a blank passage scores nothing
     instead of dividing by zero)."""
@@ -120,13 +146,20 @@ class KB:
 
     def __init__(self, base: str | os.PathLike[str],
                  board: Board | None = None,
-                 embed: EmbedFn | None = None) -> None:
+                 embed: EmbedFn | None = None,
+                 parts: dict[str, dict[str, str]] | None = None) -> None:
         self.dir = os.path.join(os.path.abspath(base), "kb")
         self.ds = os.path.join(self.dir, "datasheets")
         self.cache = os.path.join(self.dir, ".cache")
         self.sources = os.path.join(self.dir, "sources.tsv")
         self.board = board
         self.embed = embed  # injected in tests; llm.embed otherwise
+        # two ways to know the board, same mapping: a Board the caller already
+        # has (CLI fetch, MCP), or a cheap parts map (panel, `kb list`).
+        self.parts: dict[str, dict[str, str]] | None = (
+            parts if parts is not None
+            else ({ref: dict(p.attrs) for ref, p in board.parts.items()}
+                  if board is not None else None))
 
     # ---------- traversal ----------
 
@@ -151,6 +184,11 @@ class KB:
                 out.append(os.path.relpath(os.path.join(root, n), self.dir))
         return out
 
+    def count(self) -> int:
+        """Documents in kb/ without stat-ing or titling any of them (a bounded
+        listing still reports the true total)."""
+        return len(self._files())
+
     def _origins(self) -> dict[str, str]:
         """name → url, from the append-only sources.tsv log."""
         out: dict[str, str] = {}
@@ -162,21 +200,43 @@ class KB:
                         out[bits[0]] = bits[1]
         return out
 
+    def _part_index(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        """(lcsc -> refs, token -> refs), built once per call. docs() asks per
+        document, so walking 5420 parts per doc cost 6ms per list; walking them
+        once costs 0.03ms and returns the identical mapping."""
+        by_lcsc: dict[str, list[str]] = {}
+        by_token: dict[str, list[str]] = {}
+        for ref, attrs in sorted((self.parts or {}).items()):
+            lcsc = str(attrs.get("lcsc", ""))
+            mpn = str(attrs.get("mpn", ""))
+            if lcsc:
+                by_lcsc.setdefault(lcsc, []).append(ref)
+            by_token.setdefault(ref, []).append(ref)
+            if mpn:
+                by_token.setdefault(mpn, []).append(ref)
+        return by_lcsc, by_token
+
+    def _parts_of(self, name: str,
+                  index: tuple[dict[str, list[str]], dict[str, list[str]]]
+                  ) -> list[str]:
+        by_lcsc, by_token = index
+        hits: list[str] = []
+        for lcsc, refs in by_lcsc.items():
+            if lcsc in name:
+                hits.extend(refs)
+        toks = set(re.split(r"[^A-Za-z0-9]+", os.path.basename(name)))
+        for tok in toks:
+            for ref in by_token.get(tok, ()):
+                if ref not in hits:
+                    hits.append(ref)
+        return sorted(hits)  # the single-pass version listed refs in ref order
+
     def parts_for(self, name: str) -> list[str]:
         """Board refs this doc belongs to: lcsc code or ref/MPN as a filename
         token (`C1525_100n.pdf`, `U3_sensor.md`) — the part→datasheet join."""
-        if self.board is None:
+        if not self.parts:
             return []
-        toks = set(re.split(r"[^A-Za-z0-9]+", os.path.basename(name)))
-        hits = []
-        for ref, p in sorted(self.board.parts.items()):
-            lcsc = str(p.attrs.get("lcsc", ""))
-            mpn = str(p.attrs.get("mpn", ""))
-            if lcsc and lcsc in name:
-                hits.append(ref)
-            elif ref in toks or (mpn and mpn in toks):
-                hits.append(ref)
-        return hits
+        return self._parts_of(name, self._part_index())
 
     def _title(self, name: str) -> str:
         try:
@@ -192,17 +252,22 @@ class KB:
             pass
         return name
 
-    def docs(self) -> list[dict[str, object]]:
-        """Every file in kb/, cheapest useful metadata, nothing precomputed."""
+    def docs(self, limit: int | None = None) -> list[dict[str, object]]:
+        """Every file in kb/, cheapest useful metadata, nothing precomputed.
+        `limit` bounds a UI listing (the panel renders every row); search and
+        recall always walk the whole thing."""
         org = self._origins()
+        index = self._part_index()
         out: list[dict[str, object]] = []
         for name in self._files():
+            if limit is not None and len(out) >= limit:
+                break
             ext = os.path.splitext(name)[1].lower()
             kind = "pdf" if ext == ".pdf" else ("doc" if ext in TEXT_EXT else "other")
             d: dict[str, object] = {
                 "name": name, "kind": kind,
                 "bytes": os.path.getsize(os.path.join(self.dir, name)),
-                "parts": self.parts_for(name)}
+                "parts": self._parts_of(name, index)}
             if kind == "doc":
                 d["title"] = self._title(name)
             if name in org:
@@ -359,11 +424,18 @@ class KB:
         return {"indexed": made, "reused": reused, "failed": failed,
                 "model": self._embed_name(), "passages": self.passage_count()}
 
-    def passage_count(self) -> int:
-        n = 0
+    def _all_vectors(self) -> list[dict[str, object]]:
+        """Every cached passage, each document's JSON read once (recall and
+        passage_count both need the whole set — two passes parsed it twice)."""
+        rows: list[dict[str, object]] = []
         for d in self.docs():
-            n += len(self._load_vectors(str(d["name"])))
-        return n
+            name = str(d["name"])
+            for row in self._load_vectors(name):
+                rows.append({**row, "doc": name})
+        return rows
+
+    def passage_count(self) -> int:
+        return len(self._all_vectors())
 
     def _lexical_passages(self, q: str, k: int) -> list[dict[str, object]]:
         """No embedder (or nothing indexed): rank with search() and expand each
@@ -383,22 +455,22 @@ class KB:
         answers (index built/refreshed on demand); lexical hits otherwise, so a
         machine with no local model still gets an answer, just a worse one."""
         try:
-            if rebuild or self.passage_count() == 0:
+            rows = self._all_vectors()
+            if rebuild or not rows:
                 self.index()
+                rows = self._all_vectors()
             qv = self._embed_fn()([q])[0]
         except Exception as e:  # noqa: BLE001 — any embedder failure degrades
             return {"q": q, "method": "lexical", "model": None,
                     "passages": self._lexical_passages(q, k),
                     "note": f"embeddings unavailable ({e}); ranked by term match"}
         scored: list[tuple[float, dict[str, object]]] = []
-        for d in self.docs():
-            name = str(d["name"])
-            for row in self._load_vectors(name):
-                vec = cast(list[float], row.get("vec", []))
-                scored.append((_cos(qv, vec), {"doc": name,
-                                               "start": row.get("start"),
-                                               "end": row.get("end"),
-                                               "text": row.get("text")}))
+        for row in rows:
+            vec = cast(list[float], row.get("vec", []))
+            scored.append((_cos(qv, vec), {"doc": row.get("doc"),
+                                           "start": row.get("start"),
+                                           "end": row.get("end"),
+                                           "text": row.get("text")}))
         if not scored:
             return {"q": q, "method": "lexical", "model": None,
                     "passages": self._lexical_passages(q, k),
@@ -491,7 +563,12 @@ class KB:
     def fetch(self, board: Board, refs: list[str] | None = None,
               timeout: float = 60.0) -> dict[str, object]:
         """Download datasheets for the board's parts: `datasheet=` attr first,
-        else the `lcsc=` code. Already-present files are skipped, not refetched."""
+        else the `lcsc=` code. Already-present files are skipped, not refetched.
+
+        A real Board, not the cheap parts map: `block`/`instance` members are
+        separate refs with their own attrs, and only the parser expands them
+        (1974 of this repo's 5420-part test board are instanced). Callers that
+        already have a Board pass it; the panel builds one in its worker."""
         saved: list[dict[str, object]] = []
         skipped: list[dict[str, object]] = []
         failed: list[dict[str, object]] = []

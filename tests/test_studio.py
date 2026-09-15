@@ -404,9 +404,10 @@ def main() -> None:
                 time.sleep(0.25)
                 if not cast(bool, post(kbase, "/kb/list", {})["busy"]):
                     break
-            klog = " · ".join(cast(list[str], post(kbase, "/kb/list", {})["log"]))
-            assert "skip R1" in klog, klog      # no datasheet=/lcsc= attr
-            assert "FAIL U1" in klog, klog      # the pinned url cannot resolve
+            klog = " ".join(" · ".join(
+                cast(list[str], post(kbase, "/kb/list", {})["log"])).split())
+            assert "skip R1:" in klog, klog     # no datasheet=/lcsc= attr
+            assert "FAIL U1:" in klog, klog     # the pinned url cannot resolve
             print("kb panel ok (list/read/search/ask/add/fetch)")
         finally:
             ksrv.terminate()
