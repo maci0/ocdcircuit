@@ -400,8 +400,7 @@ def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
                 for rr, pn in net.pins:
                     if rr in board.parts:
                         q = board.parts[rr]
-                        dx, dy = pads.get((rr, str(pn)), (0.0, 0.0))
-                        rx, ry = q.rot_xy(dx, dy)
+                        rx, ry = pads.get((rr, str(pn)), (0.0, 0.0))
                         pts.append((q.x + rx, q.y + ry))
                 if len(pts) > 1:
                     cx = sum(q[0] for q in pts) / len(pts)
@@ -890,9 +889,12 @@ def _coarsen(board: Board, groups: dict[str, list[str]],
 
 
 def _pad_cache(board: Board) -> dict[tuple[str, str], XY]:
-    """(ref, pin) → footprint-frame offset. pad_pos() re-resolves the plugin
-    + merges the lib dict per call (~13µs); the rigid loop calls it millions
-    of times. Offsets are static (rot applied by caller via rot_xy)."""
+    """(ref, pin) → board-frame offset, rotation already applied.
+
+    pad_pos() re-resolves the plugin and merges the lib dict per call (~13µs),
+    and the diffusion loops read an offset per pin per net per iteration —
+    millions of `rot_xy` calls as well. Both are static for a placement run,
+    so resolve and rotate once here; callers add the part position."""
     from .parts import pads_of, pin_offset
     lib = board._lib()
     out: dict[tuple[str, str], XY] = {}
@@ -903,9 +905,10 @@ def _pad_cache(board: Board) -> dict[tuple[str, str], XY]:
             continue
         for pin in pads:
             try:
-                out[(ref, str(pin))] = pin_offset(p.fp, pin, lib)
+                dx, dy = pin_offset(p.fp, pin, lib)
             except KeyError:
                 continue
+            out[(ref, str(pin))] = p.rot_xy(dx, dy)
     return out
 
 
@@ -936,8 +939,7 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
 
     def wpos(ref: str, pin: str) -> XY:
         p = board.parts[ref]
-        dx, dy = pads.get((ref, str(pin)), (0.0, 0.0))
-        rx, ry = p.rot_xy(dx, dy)
+        rx, ry = pads.get((ref, str(pin)), (0.0, 0.0))
         return (p.x + rx, p.y + ry)
 
     for t in range(iters):
