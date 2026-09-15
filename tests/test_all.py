@@ -2444,6 +2444,27 @@ if os.path.exists(_fixt2):
     _sb = Board("schlib", 40, 30)
     _names = _sb.import_sym("schlib", path=_fixt2)["names"]
     assert isinstance(_names, list) and len(_names) >= 100
+# altium multi-sheet merge: shared netlabels join, N-autos stay sheet-local
+_m1 = Board("m1", 400, 200)
+for _f in ("04_LMS7002M_Misc", "09_Misc"):
+    _p = f"/tmp/altium_real/hardware/1v3/Schematics/{_f}.SchDoc"
+    if os.path.exists(_p):
+        _m1.import_fp("altium-sch", path=_p)
+if "GND" in _m1.nets:
+    assert len(_m1.nets["GND"].pins) >= 50  # joined across sheets
+    assert not [n for n in _m1.nets if len(n) > 1 and n[0] == "N" and n[1:].isdigit()]
+    assert any(n.startswith("04_") or n.startswith("09_") for n in _m1.nets)
+# altium Dimensions6: witness line + measurement comment (synthetic)
+import struct as _st4
+_dtxt = b"|LAYER=MECHANICAL1|LX=1000mil|LY=1000mil|HX=2000mil|HY=1000mil|"
+_dpay = (b"\x01\x00" + len(_dtxt).to_bytes(4, "little") + _dtxt)
+_dims = foreign._bin_dimensions(_dpay)
+assert len(_dims) == 1 and _dims[0]["LX"] == "1000mil"
+_fixt3 = "/tmp/altium_real/hardware/1v3/PCB/LimeSDR_Mini_1v3_Rounded.PcbDoc"
+if os.path.exists(_fixt3):
+    _bir = foreign._bin_pcbdoc(open(_fixt3, "rb").read())
+    assert len([t for t in _bir.get("_imported_texts", [])
+                if t["text"].startswith("dim ")]) == 4
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
                   base=os.path.join(EX, "mitox"))

@@ -11,10 +11,15 @@ Also: Board.import_foreign(path) for whole-board netlist import (.kicad_pcb).
 
 Altium notes: binary decode covers param streams (Board/Nets/Components/
 Rules) + Tracks/Arcs/Vias/Pads/Fills primitives + Polygons6 pours +
-SchDoc wires/netlabels/powerports/components. Regions6/SplitPlane layers
-arrive as pour constraints (geometry refills at export); binary layouts
-are reconstructed (cf. KiCad altium_parser_pcb.h), so implausible
-geometry aborts pointing at the ASCII export — never silently placed.
+Regions6/ShapeBasedRegions6 cutouts + Texts6 silk + Dimensions6 +
+Classes6/DifferentialPairs6 + SchDoc wires/netlabels/powerports/components
++ .PcbLib footprints + .SchLib symbols. SmartUnions (parametric meander
+sources) intentionally skipped — verified their copper is committed as
+ordinary tracks (446 traces within 3mm of a union arc on LimeSDR-Mini).
+Regions6/SplitPlane layers arrive as pour constraints (geometry refills
+at export); binary layouts are reconstructed (cf. KiCad
+altium_parser_pcb.h), so implausible geometry aborts pointing at the
+ASCII export — never silently placed.
 P-CAD import covers patterns + netlist nodes + netNameRef copper +
 copperPour95/pcbPoly pours + arcs/text; plane fills arrive as pours.
 P-CAD Y comes in unflipped (same convention as kicad_pcb_netlist).
@@ -1294,7 +1299,7 @@ def _bin_pads(buf: bytes) -> list[dict[str, str]]:
     return out
 
 
-def _bin_schdoc(data: bytes) -> dict[str, object]:
+def _bin_schdoc(data: bytes, sheet: str = "") -> dict[str, object]:
     """Native binary .SchDoc → IR (parts + nets). Records: [u16 len][00][type]
     + |K=V| text; units 10mil. Components (1) + Designator (34) → refs,
     Pins (2) + netlabels (25)/powerports (17) at wire (27) endpoints → nets.
@@ -1444,7 +1449,11 @@ def _bin_schdoc(data: bytes) -> dict[str, object]:
             all(pin[0] in have for pin in _cast3(list[list[str]], v["pins"]))}
     xs = [x for x, _y in pts]
     wdt = max(10.0, (max(xs) - min(xs) + 5.0)) if xs else 40.0
-    return {"board": {"name": "imported", "w": wdt, "h": 30.0, "layers": 2},
+    bd: dict[str, object] = {"name": "imported", "w": wdt, "h": 30.0,
+                               "layers": 2}
+    if sheet:
+        bd["sheet"] = sheet
+    return {"board": bd,
             "parts": parts, "nets": nets, "constraints": [],
             "_imported_fp": fps}
 
@@ -1541,6 +1550,27 @@ def _bin_texts(buf: bytes) -> list[dict[str, str]]:
     return out
 
 
+def _bin_dimensions(buf: bytes) -> list[dict[str, str]]:
+    """Dimensions6: [u8 1][u8 0][u32 len][|K=V| text]. Linear (kind 1:
+    LX/LY–HX/HY witness line) + radial (kind 3) land as hairline tracks
+    on MECHANICAL1 plus a measurement comment. No board-model dimension
+    primitive exists — outline copper + text preserves the data."""
+    import struct
+    out: list[dict[str, str]] = []
+    i = 0
+    while i + 6 <= len(buf):
+        if buf[i] not in (1, 3):
+            break  # 1 = linear, 3 = radial/diameter
+        ln = struct.unpack("<I", buf[i + 2:i + 6])[0]
+        if ln > len(buf) - i - 6 or ln == 0:
+            break
+        d = _arec(buf[i + 6:i + 6 + ln].decode("latin-1", "replace"))
+        i += 6 + ln
+        d["RECORD"] = "DIMENSION"
+        out.append(d)
+    return out
+
+
 def _bin_pcbdoc(data: bytes) -> dict[str, object]:
     """Native binary .PcbDoc → IR via the ASCII-shape path (same builder as
     the text export): param streams + decoded primitives + Polygons6 pours."""
@@ -1615,6 +1645,11 @@ def _bin_pcbdoc(data: bytes) -> dict[str, object]:
         buf = _ole_stream(paths, pre + "Texts6/Data")
         if buf is not None:
             btexts = _bin_texts(buf)
+            break
+    for pre in ("", "Root Entry/"):
+        buf = _ole_stream(paths, pre + "Dimensions6/Data")
+        if buf is not None:
+            prims += [{"RECORD": "DIMENSION", **d} for d in _bin_dimensions(buf)]
             break
     text = "\n".join("|" + "|".join(f"{k}={v}" for k, v in r.items()
                                      if k != "RECORD") + f"|RECORD={r['RECORD']}|"
@@ -1839,7 +1874,8 @@ def altium_ascii(text: str) -> dict[str, object]:
             arc_lay = r.get("LAYER", "").upper()
             if _alyr_idx(arc_lay) is not None and arc_rad > 0:
                 arc_net = _net(r)
-                # ponytail: chord-approximated (1 chord per 5°); exact arcs
+                # chord-approximated (1 chord per 5°, sagitta <2µm at r=2mm;
+                # every consumer — Gerber, KiCad, maze — consumes segments)
                 # return if a consumer needs them
                 import math as _m
                 arc_sweep = (arc_ea - arc_sa) % 360.0 or 360.0
@@ -1854,6 +1890,17 @@ def altium_ascii(text: str) -> dict[str, object]:
                                    "x2": arc_xy[k + 1][0], "y2": arc_xy[k + 1][1],
                                    "layer": _lyr(r), "width": arc_wdt,
                                    **({} if arc_net else {"_skip": True})})
+        elif r["RECORD"] == "DIMENSION":
+            try:
+                x1, y1 = _alen(r.get("LX", "0")), _alen(r.get("LY", "0"))
+                x2 = _alen(r["HX"]) if "HX" in r else x1
+                y2 = _alen(r["HY"]) if "HY" in r else y1
+            except (ValueError, TypeError):
+                continue
+            traces.append({"net": "", "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                           "layer": 0, "width": 0.05, "_skip": True})
+            texts.append({"x": (x1 + x2) / 2, "y": (y1 + y2) / 2,
+                          "text": f"dim {abs(x2 - x1):.2f}x{abs(y2 - y1):.2f}"})
         elif r["RECORD"] == "TEXT":
             tx = _alen(r.get("LOCATION.X", r.get("X", "0")))
             ty = _alen(r.get("LOCATION.Y", r.get("Y", "0")))
@@ -2169,7 +2216,7 @@ def pcad_ascii(text: str) -> dict[str, object]:
                            "layer": lay, "width": max(0.01, wdt),
                            **({} if net else {"_skip": True})})
         for a in _kids(lc, "arc") + _kids(lc, "triplePointArc"):
-            # ponytail: chord-approximated; exact arcs return if needed
+            # chord-approximated like above (same <2µm bound)
             import math as _m2
             wnode = next((c for c in a[1:] if isinstance(c, list) and c and c[0] == "width"), None)
             wdt = _num(wnode[1]) * mul if wnode is not None and len(wnode) > 1 else 0.3
