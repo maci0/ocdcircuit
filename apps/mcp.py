@@ -385,7 +385,7 @@ TOOLS: dict[str, object] = {
     "doctor": (t_doctor, {}),
     "export": (t_export, {"key": "exporter?", "outdir": "out", "fab?": "one-shot fab override"}),
     "render": (t_render, {"key": "renderer?"}),
-    "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda", "path": "file"}),
+    "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda|altium|altium-sch", "path": "file"}),
     "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
     "fabs": (t_fabs, {}),
     "calc": (t_calc, {"what": "trace|amps|via|divider|pick", "amps": 1.0}),

@@ -1960,9 +1960,8 @@ assert sorted(_alrt.parts) == ["R1", "R2"] and sorted(_alrt.nets) == ["GND", "N"
 assert {(p.ref, round(p.x, 3), round(p.y, 3)) for p in _alrt.parts.values()} == \
     {(p.ref, round(p.x, 3), round(p.y, 3)) for p in _ebb.parts.values()}
 assert all(len(_alrt.parts[r].pins_of(_alrt._lib())) == 2 for r in ("R1", "R2"))
-assert len(cast(list[dict[str, object]], _alrt_ir_traces := cast(
-    dict[str, object], foreign.altium_ascii(open(_alf).read())).get(
-    "_imported_traces", []))) == len(_ebb.traces)
+assert len(cast(list[object], foreign.altium_ascii(
+    open(_alf).read()).get("_imported_traces", []))) == len(_ebb.traces)
 # importer:altium sniffs both ASCII export and P-CAD .pcb; binary rejected
 _ali = Board("ali", 40, 30)
 _ar = _ali.import_fp("altium", path=_alf)
@@ -1981,14 +1980,55 @@ with tempfile.NamedTemporaryFile("w", suffix=".pcb", delete=False) as _pf3:
                " (width 0.5) (netNameRef \"GND\")))))\n")
 _ar3 = _ali2.import_fp("altium", path=_pf3.name)
 assert _ar3["parts"] == 1 and _ar3["nets"] == 1 and _ar3["traces"] == 1
-assert _ar3["skipped"] == ["arcs", "text", "pours", "planes"]
+assert "skipped" not in _ar3  # pours/arcs/text/planes all import now
 with tempfile.NamedTemporaryFile("wb", suffix=".PcbDoc", delete=False) as _bf3:
     _bf3.write(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" + b"\x00" * 64)
 try:
     Board("ali3", 40, 30).import_fp("altium", path=_bf3.name)
-    assert False, "binary .PcbDoc must be rejected"
+    assert False, "truncated OLE must be rejected"
 except ValueError:
     pass
+# altium pours round-trip (export Polygon + reimport pour constraint)
+_alp = agent.loads("board t 20x20 2L\npart R1 R0805 1k\npart R2 R0805 1k\n"
+                   "net N: R1.2 R2.1\nGND pour=0 :: R1.1 R2.2\n")
+_alp.place()
+_alp.route_board()
+_alf2 = _alp.export("altium", outdir=tempfile.mkdtemp())[0]
+assert "|RECORD=Polygon|" in open(_alf2).read()
+_ali4 = Board("ali4", 40, 30)
+_ar4 = _ali4.import_fp("altium", path=_alf2)
+assert _ar4["pours"] == 1
+assert [(c["net"], c["layer"]) for c in _ali4.constraints
+        if c.get("t") == "pour"] == [("GND", 0)]
+# altium ASCII arcs/text/polygons import (chords + pour + comment)
+_alx = foreign.altium_ascii(
+    "|RECORD=Board|VX0=0mm|VY0=0mm|VX1=20mm|VY1=0mm|VX2=20mm|VY2=15mm|VX3=0mm|VY3=15mm|\n"
+    "|RECORD=Net|NAME=GND|\n"
+    "|RECORD=Polygon|NET=0|LAYER=TOPLAYER|HATCHSTYLE=Solid"
+    "|VX0=0mm|VY0=0mm|VX1=10mm|VY1=0mm|VX2=10mm|VY2=10mm|VX3=0mm|VY3=10mm|\n"
+    "|RECORD=Arc|LAYER=TOPLAYER|NET=0|LOCATION.X=5mm|LOCATION.Y=5mm"
+    "|RADIUS=2mm|STARTANGLE=0|ENDANGLE=90|WIDTH=0.2mm|\n"
+    "|RECORD=Text|LOCATION.X=5mm|LOCATION.Y=5mm|TEXT=HELLO|\n")
+assert _alx["constraints"] == [{"t": "pour", "net": "GND", "layer": 0}]
+assert len(cast(list[object], _alx["_imported_traces"])) == 4 + 19  # outline + arc chords
+assert _alx["_imported_texts"] == [{"x": 5.0, "y": 5.0, "text": "HELLO"}]
+# P-CAD copperPour95 → pour constraint + outline copper
+_pir = foreign.pcad_ascii(
+    "(ACCEL_ASCII \"t\"\n(asciiHeader (fileUnits mm))\n"
+    "(library (padStyleDef \"s\" (holeDiam 0.8)\n"
+    " (padShape (layerNumRef 1) (padShapeType Rect)"
+    " (shapeWidth 1.0) (shapeHeight 1.5))))\n"
+    "(netlist \"n\" (net \"GND\" (node \"J1 1\")))\n"
+    "(pcbDesign \"p\" (layerDef \"Top\" (layerNum 1) (layerType Signal))\n"
+    " (multiLayer (pad (padNum 1) (padStyleRef \"s\")"
+    " (pt 10 10) (netNameRef \"GND\")))\n"
+    " (layerContents (layerNumRef 1)\n"
+    " (line (pt 10 10) (pt 20 10) (width 0.5) (netNameRef \"GND\"))\n"
+    " (copperPour95 (pourType SolidPour) (netNameRef \"GND\")\n"
+    " (pcbPoly (pt 0 0) (pt 10 0) (pt 10 10) (pt 0 10)"
+    " (netNameRef \"GND\"))))))\n")
+assert _pir["constraints"] == [{"t": "pour", "net": "GND", "layer": 0}]
+assert len(cast(list[object], _pir["_imported_traces"])) == 1 + 4
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
                   base=os.path.join(EX, "mitox"))

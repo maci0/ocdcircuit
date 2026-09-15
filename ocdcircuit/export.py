@@ -718,6 +718,66 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def export_altium(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.PcbDocAscii (|RECORD= lines — Altium ASCII + P-CAD
+    interchange): Board verts/thickness, Nets, Components (ROTATION), Pads
+    (absolute, bottom-mirrored back by the importer), Tracks (TOP/MID/
+    BOTTOMLAYER), Vias (drill kept: our kicad importer drops it, this one
+    doesn't). Mirrors what foreign.altium_ascii parses, so export→import
+    round-trips."""
+    from .parts import hole_drill, pad_size, pads_of
+    os.makedirs(outdir, exist_ok=True)
+    lib = board._lib()
+    L: list[str] = []
+    A = L.append
+    W, H = board.width, board.height
+    A(f"|RECORD=Board|FILENAME={board.name}.PcbDoc|BOARDTHICKNESS=1.6mm"
+      f"|VX0=0mm|VY0=0mm|VX1={W}mm|VY1=0mm|VX2={W}mm|VY2={H}mm|VX3=0mm|VY3={H}mm|")
+    names = sorted(board.nets)
+    for n in names:
+        A(f"|RECORD=Net|NAME={n}|")
+    nets = {n: i for i, n in enumerate(names)}
+    layers = ["TOPLAYER", "BOTTOMLAYER"] + [f"MIDLAYER{i}" for i in range(1, 31)]
+    comps = sorted(board.parts.values(), key=lambda q: q.ref)
+    for i, p in enumerate(comps):
+        rot = p.attrs.get("rot", "0")
+        A(f"|RECORD=Component|SOURCEDESIGNATOR={p.ref}|PATTERN={p.fp}"
+          f"|COMMENT={p.value or p.fp}|LAYER=TOPLAYER|X={p.x}mm|Y={p.y}mm|ROTATION={rot}|")
+        for pin in sorted(pads_of(p.fp, lib)):
+            dx, dy = board.pad_pos(p.ref, pin)
+            dr = hole_drill(p.fp, pin, lib)
+            pw, ph = pad_size(p.fp, pin, lib)
+            net = next((n for n, net in board.nets.items()
+                        if (p.ref, str(pin)) in net.pins), "")
+            ni = nets.get(net, -1)
+            shape = "ROUND" if dr > 0 else "RECTANGLE"
+            lay = "MULTILAYER" if dr > 0 else "TOPLAYER"
+            A(f"|RECORD=Pad|NAME={pin}|COMPONENT={i}|LAYER={lay}|NET={ni}"
+              f"|X={dx}mm|Y={dy}mm|XSIZE={max(pw, dr)}mm|YSIZE={max(ph, dr)}mm"
+              f"|SHAPE={shape}|HOLESIZE={dr}mm|ROTATION={rot}|")
+    for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
+        ni = nets.get(t.net, -1)
+        lay = layers[t.layer] if 0 <= t.layer < len(layers) else "TOPLAYER"
+        if getattr(t, "via", False):
+            dr = getattr(t, "drill", 0.4)
+            A(f"|RECORD=Via|X={t.x1}mm|Y={t.y1}mm|DIAMETER={dr + 0.4}mm"
+              f"|HOLESIZE={dr}mm|STARTLAYER=TOPLAYER|ENDLAYER=BOTTOMLAYER|NET={ni}|")
+        else:
+            A(f"|RECORD=Track|LAYER={lay}|NET={ni}|X1={t.x1}mm|Y1={t.y1}mm"
+              f"|X2={t.x2}mm|Y2={t.y2}mm|WIDTH={t.width}mm|")
+    from .drc import pour_layers as _pours
+    for pname, lls in sorted(_pours(board).items()):
+        ni = nets.get(pname, -1)
+        for ll in lls:
+            lay = layers[ll] if 0 <= ll < len(layers) else "TOPLAYER"
+            A(f"|RECORD=Polygon|NET={ni}|LAYER={lay}|HATCHSTYLE=Solid"
+              f"|VX0=0mm|VY0=0mm|VX1={W}mm|VY1=0mm"
+              f"|VX2={W}mm|VY2={H}mm|VX3=0mm|VY3={H}mm|")
+    fn = os.path.join(outdir, f"{board.name}.PcbDocAscii")
+    open(fn, "w").write("\n".join(L) + "\n")
+    return [fn]
+
+
 def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.brd (Eagle XML): libraries/packages from footprints,
     elements, signals with contactrefs, Dimension wires. Mirrors what

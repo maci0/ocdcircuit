@@ -1,13 +1,26 @@
 """Import foreign footprints + boards: KiCad .pretty/.kicad_mod + .kicad_pcb,
 Eagle .lbr (packages) + .brd (full board: elements/signals/plain),
 EasyEDA Std JSON (footprint + PCB docs: PAD/TRACK/VIA/LIB shapes),
-tscircuit Circuit-JSON. Rect/circle/oval SMD pads, PTH holes,
-courtyard → w/h, 3D model refs kept as texture hints.
+tscircuit Circuit-JSON, Altium (ASCII `|RECORD=` export, native binary
+.PcbDoc/.SchDoc OLE, P-CAD ASCII `ACCEL_ASCII` .pcb).
+Rect/circle/oval SMD pads, PTH holes, courtyard → w/h, 3D model refs
+kept as texture hints.
 
 Usage: `fp path/to/part.kicad_mod` in .ocd — same as .fp files.
 Also: Board.import_foreign(path) for whole-board netlist import (.kicad_pcb).
+
+Altium notes: binary decode covers param streams (Board/Nets/Components/
+Rules) + Tracks/Arcs/Vias/Pads/Fills primitives + Polygons6 pours +
+SchDoc wires/netlabels/powerports/components. Regions6/SplitPlane layers
+arrive as pour constraints (geometry refills at export); binary layouts
+are reconstructed (cf. KiCad altium_parser_pcb.h), so implausible
+geometry aborts pointing at the ASCII export — never silently placed.
+P-CAD import covers patterns + netlist nodes + netNameRef copper +
+copperPour95/pcbPoly pours + arcs/text; plane fills arrive as pours.
+P-CAD Y comes in unflipped (same convention as kicad_pcb_netlist).
 """
 from __future__ import annotations
+import math
 import os
 from .types import Footprint
 
@@ -634,3 +647,1197 @@ def kicad_pcb_netlist(text: str) -> dict[str, object]:
     return {"board": {"name": "imported", "w": wdt, "h": hgt, "layers": 2},
             "parts": parts, "nets": nets, "constraints": [],
             "_imported_fp": fps}
+
+
+# -- Altium ASCII (.PcbDoc text export) + P-CAD ASCII (.pcb) --
+
+def _alen(v: str) -> float:
+    """Altium length field → mm (10mm / 250mil / 10000nm / 2.54cm / 25.4in)."""
+    v = v.strip().lower()
+    for suf, mul in (("mm", 1.0), ("mil", 0.0254), ("nm", 1e-6),
+                     ("cm", 10.0), ("in", 25.4)):
+        if v.endswith(suf):
+            try:
+                return float(v[:-len(suf)]) * mul
+            except ValueError:
+                return 0.0
+    try:
+        return float(v)  # bare number: mm (matches the ASCII writer)
+    except ValueError:
+        return 0.0
+
+
+def _arec(line: str) -> dict[str, str]:
+    """One `|RECORD=X|K=V|…` line → {KEY: value} (keys uppercased)."""
+    out: dict[str, str] = {}
+    for part in line.split("|"):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        k = k.strip().upper()
+        if k:
+            out[k] = v.strip()
+    return out
+
+
+def _alayers() -> list[str]:
+    """ASCII copper layer table: TOP/BOTTOM + MIDn + INTERNALPLANEn.
+    One table for import (_lyr), export, and pour mapping — a layer that
+    misses it lands on TOP (0) instead of vanishing."""
+    return (["TOPLAYER", "BOTTOMLAYER"] + [f"MIDLAYER{i}" for i in range(1, 31)]
+            + [f"INTERNALPLANE{i}" for i in range(1, 17)])
+
+
+def _askip() -> dict[str, object]:
+    return {"_skipped": []}  # pours/planes/arcs/text now import; nothing skipped
+
+
+def _alyr_idx(lay: str) -> int | None:
+    try:
+        return _alayers().index(lay.upper())
+    except ValueError:
+        short = {"TOP": 0, "BOTTOM": 1}.get(lay.upper())
+        return short
+
+
+_OLE_END, _OLE_FREE, _OLE_SAT = 0xFFFFFFFE, 0xFFFFFFFF, 0xFFFFFFFD
+_OLE_MAGIC = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
+
+
+def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int], int, int, int]:
+    """OLE compound file → ({path: (start, size)}, ministream, minifat,
+    minisec, cutoff). Stdlib only (struct). Raises ValueError, never garbage."""
+    import struct
+    if len(data) < 512:
+        raise ValueError("not an OLE compound file (truncated)")
+    if data[:8] != _OLE_MAGIC:
+        raise ValueError("not an OLE compound file")
+    ssz = 1 << struct.unpack("<H", data[30:32])[0]
+    msz = 1 << struct.unpack("<H", data[32:34])[0]
+    nfat = struct.unpack("<I", data[44:48])[0]
+    seen = list(struct.unpack("<109I", data[76:76 + 436]))
+    ds, dn = struct.unpack("<II", data[68:76])
+    s = ds
+    while s not in (_OLE_END, _OLE_FREE) and dn > 0:
+        base = 512 + s * ssz
+        arr = struct.unpack("<%dI" % (ssz // 4), data[base:base + ssz])
+        seen += list(arr[:dn * (ssz // 4 - 1)])
+        s = arr[-1]
+        dn -= ssz // 4 - 1
+    fat: list[int] = []
+    for sec in seen[:nfat]:
+        base = 512 + sec * ssz
+        fat += list(struct.unpack("<%dI" % (ssz // 4), data[base:base + ssz]))
+
+    def _chain(st: int, tab: list[int]) -> list[int]:
+        out: list[int] = []
+        while st not in (_OLE_END, _OLE_FREE, _OLE_SAT) and len(out) < 1000000:
+            out.append(st)
+            st = tab[st]
+        return out
+
+    def _read(st: int) -> bytes:
+        return b"".join(data[512 + x * ssz:512 + (x + 1) * ssz]
+                         for x in _chain(st, fat))
+    mfs, mfn = struct.unpack("<II", data[60:68])
+    mf: list[int] = []
+    sc = mfs
+    while sc not in (_OLE_END, _OLE_FREE) and len(mf) < mfn + 1:
+        mf.append(sc)
+        sc = fat[sc]
+    minifat: list[int] = []
+    for sec in mf:
+        base = 512 + sec * ssz
+        minifat += list(struct.unpack("<%dI" % (ssz // 4), data[base:base + ssz]))
+    cutoff = struct.unpack("<I", data[56:60])[0]
+    raw = _read(struct.unpack("<I", data[48:52])[0])
+    n = len(raw) // 128
+    nodes: list[tuple[str, int, int, int, int, int, int]] = []
+    for i in range(n):
+        e = raw[i * 128:(i + 1) * 128]
+        nlen = struct.unpack("<H", e[64:66])[0]
+        nm = e[:nlen - 2].decode("utf-16-le", "replace") if 2 <= nlen <= 128 else ""
+        typ = e[66]
+        left, right, child = struct.unpack("<iii", e[68:80])
+        st, sz = struct.unpack("<II", e[116:124])
+        nodes.append((nm, typ, left, right, child, st, sz))
+    import sys
+    sys.setrecursionlimit(100000)
+    paths: dict[str, tuple[int, int]] = {}
+
+    def _walk(idx: int, path: str, depth: int = 0) -> None:
+        if idx < 0 or idx >= n or depth > 80:
+            return
+        nm, typ, left, right, child, st, sz = nodes[idx]
+        if left >= 0:
+            _walk(left, path, depth + 1)
+        full = (path + "/" + nm) if path else nm
+        if typ == 2:
+            paths[full] = (st, sz)
+        if typ in (1, 5) and child >= 0:
+            _walk(child, full if typ == 1 else path, depth + 1)
+        if right >= 0:
+            _walk(right, path, depth + 1)
+    _walk(0, "")
+    ms = _read(nodes[0][5])
+
+    def _mchain(st: int) -> list[int]:
+        out: list[int] = []
+        while st not in (_OLE_END, _OLE_FREE, _OLE_SAT) and len(out) < 1000000:
+            out.append(st)
+            st = minifat[st]
+        return out
+    mini = ms  # closure capture for _stream
+    _ = mini, _mchain  # (kept local; _stream rebuilt per call below)
+    # stash tables on the dict for _ole_stream
+    paths["_fat_"] = (0, 0)  # marker, never read as a stream
+    _ole_dir._fat = fat  # type: ignore[attr-defined]
+    _ole_dir._minifat = minifat  # type: ignore[attr-defined]
+    _ole_dir._ms = ms  # type: ignore[attr-defined]
+    _ole_dir._msz = msz  # type: ignore[attr-defined]
+    _ole_dir._ssz = ssz  # type: ignore[attr-defined]
+    _ole_dir._data = data  # type: ignore[attr-defined]
+    _ole_dir._cutoff = cutoff  # type: ignore[attr-defined]
+    return paths, ms, minifat, msz, cutoff, ssz
+
+
+def _ole_stream(paths: dict[str, tuple[int, int]], path: str) -> bytes | None:
+    """Read one OLE stream by path (ministream-aware). None = absent."""
+    import struct
+    if path not in paths:
+        return None
+    st, sz = paths[path]
+    fat = _ole_dir._fat  # type: ignore[attr-defined]
+    minifat = _ole_dir._minifat  # type: ignore[attr-defined]
+    ms = _ole_dir._ms  # type: ignore[attr-defined]
+    msz = _ole_dir._msz  # type: ignore[attr-defined]
+    ssz = _ole_dir._ssz  # type: ignore[attr-defined]
+    data = _ole_dir._data  # type: ignore[attr-defined]
+    cutoff = _ole_dir._cutoff  # type: ignore[attr-defined]
+    if sz < cutoff:
+        out = bytearray()
+        s = st
+        guard = 0
+        while s not in (_OLE_END, _OLE_FREE, _OLE_SAT) and guard < 1000000:
+            out += ms[s * msz:(s + 1) * msz]
+            s = minifat[s]
+            guard += 1
+        return bytes(out[:sz])
+    out2 = bytearray()
+    s = st
+    guard = 0
+    while s not in (_OLE_END, _OLE_FREE, _OLE_SAT) and guard < 1000000:
+        out2 += data[512 + s * ssz:512 + (s + 1) * ssz]
+        s = fat[s]
+        guard += 1
+    _ = struct  # (struct used by _ole_dir; keeps imports local)
+    return bytes(out2[:sz])
+
+
+_IU = 2.54e-6  # Altium internal unit (1/10000 mil) → mm
+
+
+def _bin_param(buf: bytes, kind: str) -> list[dict[str, str]]:
+    """Binary param stream: [u32 len][ASCII] blocks → |RECORD=| dicts.
+    Records carry no RECORD= key (the stream implies it); Board6 lead-in
+    (outline verts) + |RECORD=Board| sub-record both parse."""
+    import struct
+    out: list[dict[str, str]] = []
+    i = 0
+    while i + 4 <= len(buf):
+        ln = struct.unpack("<I", buf[i:i + 4])[0]
+        if ln == 0 or ln > len(buf) - i - 4:
+            break
+        text = buf[i + 4:i + 4 + ln].decode("latin-1").rstrip("\x00")
+        i += 4 + ln
+        j = text.find("|RECORD=")
+        lead, rest = (text[:j], text[j:]) if j >= 0 else (text, "")
+        if "=" in lead:
+            r = _arec(lead)
+            r.setdefault("RECORD", kind.upper())
+            out.append(r)
+        for line in rest.splitlines():
+            if "RECORD" in line.upper():
+                r = _arec(line)
+                if r.get("RECORD"):
+                    r["RECORD"] = r["RECORD"].upper()
+                    out.append(r)
+    return out
+
+
+def _bin_split(buf: bytes) -> list[tuple[int, bytes]]:
+    """Primitive framing: [u8 type][u32 len][payload]. Short tail → error."""
+    import struct
+    out: list[tuple[int, bytes]] = []
+    i = 0
+    while i + 5 <= len(buf):
+        ty = buf[i]
+        ln = struct.unpack("<I", buf[i + 1:i + 5])[0]
+        if ln > len(buf) - i - 5:
+            raise ValueError("altium binary: record length past end of stream "
+                             "(re-export via File > Save As > PCB ASCII)")
+        out.append((ty, buf[i + 5:i + 5 + ln]))
+        i += 5 + ln
+    return out
+
+
+def _bin_head(p: bytes) -> tuple[int, int, int] | None:
+    """13-byte primitive header → (altium layer id, net, component); -1 = none."""
+    import struct
+    if len(p) < 13:
+        return None
+    layer = p[0]
+    net = struct.unpack("<H", p[3:5])[0]
+    comp = struct.unpack("<H", p[7:9])[0]
+    return (layer, -1 if net == 0xFFFF else net, -1 if comp == 0xFFFF else comp)
+
+
+def _bin_pt(p: bytes, o: int) -> tuple[float, float] | None:
+    import struct
+    if len(p) < o + 8:
+        return None
+    x, y = struct.unpack("<2i", p[o:o + 8])
+    return (x * _IU, y * _IU)
+
+
+def _lid(lid: int) -> str:
+    """Binary layer id → ASCII layer name (1=Top … 32=Bottom, 39-54 planes)."""
+    if lid == 1:
+        return "TOPLAYER"
+    if lid == 32:
+        return "BOTTOMLAYER"
+    if 2 <= lid <= 31:
+        return f"MIDLAYER{lid - 1}"
+    if 39 <= lid <= 54:
+        return f"INTERNALPLANE{lid - 38}"
+    if lid == 74:
+        return "MULTILAYER"
+    if lid == 56:
+        return "KEEPOUTLAYER"
+    if 57 <= lid <= 72:
+        return f"MECHANICAL{lid - 56}"
+    return "UNKNOWN"
+
+
+def _bin_prims(buf: bytes, want: int) -> list[dict[str, str]]:
+    """Decode one primitive stream → ASCII-shape dicts (skips other types).
+    Implausible geometry raises (fail closed, cf. module docstring)."""
+    import struct
+    out: list[dict[str, str]] = []
+    for ty, p in _bin_split(buf):
+        if ty != want:
+            continue
+        h = _bin_head(p)
+        if h is None:
+            raise ValueError("altium binary: short primitive header")
+        lid, net, comp = h
+        if want == 4:  # TRACK
+            a, b = _bin_pt(p, 13), _bin_pt(p, 21)
+            w = struct.unpack("<i", p[29:33])[0] * _IU if len(p) >= 33 else 0.0
+            if a is None or b is None or not (-2540 <= a[0] <= 2540 and -2540 <= a[1] <= 2540
+                                              and -2540 <= b[0] <= 2540 and -2540 <= b[1] <= 2540):
+                raise ValueError("altium binary: implausible track coords")
+            if not 0.005 <= w <= 50:
+                raise ValueError("altium binary: implausible track width")
+            out.append({"RECORD": "TRACK", "LAYER": _lid(lid), "NET": str(net),
+                        "COMPONENT": str(comp), "X1": f"{a[0]}mm", "Y1": f"{a[1]}mm",
+                        "X2": f"{b[0]}mm", "Y2": f"{b[1]}mm", "WIDTH": f"{w}mm"})
+        elif want == 1:  # ARC
+            c = _bin_pt(p, 13)
+            r = struct.unpack("<i", p[21:25])[0] * _IU if len(p) >= 25 else 0.0
+            sa = struct.unpack("<d", p[25:33])[0] if len(p) >= 33 else 0.0
+            ea = struct.unpack("<d", p[33:41])[0] if len(p) >= 41 else 360.0
+            w = struct.unpack("<i", p[41:45])[0] * _IU if len(p) >= 45 else 0.0
+            if c is None or not (-2540 <= c[0] <= 2540 and -2540 <= c[1] <= 2540):
+                raise ValueError("altium binary: implausible arc center")
+            if not 0 < r <= 2540 or not 0.005 <= w <= 50:
+                raise ValueError("altium binary: implausible arc radius/width")
+            out.append({"RECORD": "ARC", "LAYER": _lid(lid), "NET": str(net),
+                        "COMPONENT": str(comp), "LOCATION.X": f"{c[0]}mm",
+                        "LOCATION.Y": f"{c[1]}mm", "RADIUS": f"{r}mm",
+                        "STARTANGLE": str(sa), "ENDANGLE": str(ea),
+                        "WIDTH": f"{w}mm"})
+        elif want == 3:  # VIA
+            a = _bin_pt(p, 13)
+            dia = struct.unpack("<i", p[21:25])[0] * _IU if len(p) >= 25 else 0.0
+            hole = struct.unpack("<i", p[25:29])[0] * _IU if len(p) >= 29 else 0.0
+            sl = _lid(p[29]) if len(p) >= 30 else "TOPLAYER"
+            el = _lid(p[30]) if len(p) >= 31 else "BOTTOMLAYER"
+            if a is None or not (-2540 <= a[0] <= 2540 and -2540 <= a[1] <= 2540):
+                raise ValueError("altium binary: implausible via coords")
+            if not 0.02 <= hole <= 20 or hole > dia * 4.0:
+                raise ValueError("altium binary: implausible via drill")
+            out.append({"RECORD": "VIA", "NET": str(net), "X": f"{a[0]}mm",
+                        "Y": f"{a[1]}mm", "DIAMETER": f"{dia}mm",
+                        "HOLESIZE": f"{hole}mm", "STARTLAYER": sl,
+                        "ENDLAYER": el})
+        elif want == 6:  # FILL → boundary tracks (no board-level fill prim)
+            a, b = _bin_pt(p, 13), _bin_pt(p, 21)
+            if a is None or b is None:
+                raise ValueError("altium binary: short fill record")
+            for x1, y1, x2, y2 in ((a[0], a[1], b[0], a[1]), (b[0], a[1], b[0], b[1]),
+                                   (b[0], b[1], a[0], b[1]), (a[0], b[1], a[0], a[1])):
+                out.append({"RECORD": "TRACK", "LAYER": _lid(lid), "NET": str(net),
+                            "COMPONENT": str(comp), "X1": f"{x1}mm", "Y1": f"{y1}mm",
+                            "X2": f"{x2}mm", "Y2": f"{y2}mm", "WIDTH": "0.05mm"})
+    return out
+
+
+def _bin_pads(buf: bytes) -> list[dict[str, str]]:
+    """Pads6: 0x02 + six [u32 len][block] (name in block 0, geometry in
+    block 4: header + pos + top/mid/bot sizes + hole + shapes + rot + plate).
+    Layout cf. KiCad altium_parser_pcb.h APAD6."""
+    import struct
+    out: list[dict[str, str]] = []
+    i = 0
+    while i + 5 <= len(buf):
+        if buf[i] != 2:
+            raise ValueError("altium binary: pad record without 0x02 type byte")
+        i += 1
+        blocks = []
+        for _ in range(6):
+            if i + 4 > len(buf):
+                raise ValueError("altium binary: truncated pad sub-block")
+            ln = struct.unpack("<I", buf[i:i + 4])[0]
+            if ln > len(buf) - i - 4:
+                raise ValueError("altium binary: pad block past end of stream")
+            blocks.append(buf[i + 4:i + 4 + ln])
+            i += 4 + ln
+        b0, g = blocks[0], blocks[4]
+        n = b0[0] if b0 else 0
+        name = b0[1:1 + n].decode("latin-1", "replace").rstrip("\x00")
+        h = _bin_head(g)
+        pos = _bin_pt(g, 13)
+        w = struct.unpack("<i", g[21:25])[0] * _IU if len(g) >= 25 else 0.0
+        hgt = struct.unpack("<i", g[25:29])[0] * _IU if len(g) >= 29 else 0.0
+        hole = struct.unpack("<i", g[45:49])[0] * _IU if len(g) >= 49 else 0.0
+        shape = {2: "RECTANGLE", 3: "OCTAGONAL", 9: "ROUNDEDRECTANGLE"}.get(
+            g[49] if len(g) >= 50 else 0, "ROUND")
+        rot = struct.unpack("<d", g[52:60])[0] if len(g) >= 60 else 0.0
+        plated = (g[60] if len(g) >= 61 else 1) != 0
+        if h is None or pos is None or not (-2540 <= pos[0] <= 2540
+                                            and -2540 <= pos[1] <= 2540):
+            raise ValueError("altium binary: implausible pad coords")
+        if not 0 < w <= 100 or not 0 < hgt <= 100:
+            raise ValueError("altium binary: implausible pad size")
+        lid, net, comp = h
+        out.append({"RECORD": "PAD", "NAME": name, "LAYER": _lid(lid),
+                    "NET": str(net), "COMPONENT": str(comp),
+                    "X": f"{pos[0]}mm", "Y": f"{pos[1]}mm",
+                    "XSIZE": f"{w}mm", "YSIZE": f"{hgt}mm", "SHAPE": shape,
+                    "HOLESIZE": f"{hole}mm", "ROTATION": str(rot),
+                    "PLATED": "TRUE" if plated else "FALSE"})
+    return out
+
+
+def _bin_schdoc(data: bytes) -> dict[str, object]:
+    """Native binary .SchDoc → IR (parts + nets). Records: [u16 len][00][type]
+    + |K=V| text; units 10mil. Components (1) + Designator (34) → refs,
+    Pins (2) + netlabels (25)/powerports (17) at wire (27) endpoints → nets.
+    Junctions/dots implicit (shared endpoints join)."""
+    import struct
+    paths, _, _, _, _, _ = _ole_dir(data)
+    fh = _ole_stream(paths, "FileHeader") or _ole_stream(paths, "Root Entry/FileHeader")
+    if fh is None:
+        raise ValueError("altium binary: .SchDoc has no FileHeader stream")
+    recs: list[dict[str, str]] = []
+    i = 0
+    while i + 4 <= len(fh):
+        ln = struct.unpack("<H", fh[i:i + 2])[0]
+        if ln > len(fh) - i - 4:
+            break
+        t = fh[i + 4:i + 4 + ln].decode("latin-1", "replace")
+        r = _arec(t)
+        if r.get("RECORD"):
+            recs.append(r)
+        i += 4 + ln
+    if not recs:
+        raise ValueError("altium binary: no records in .SchDoc FileHeader")
+
+    def _sp(v: str) -> float:
+        try:
+            return float(v) * 0.254  # 10mil units → mm
+        except ValueError:
+            return 0.0
+    comps: dict[int, dict[str, str]] = {}
+    for idx, r in enumerate(recs):
+        if r.get("RECORD") == "1":
+            comps[idx] = r
+    owners: dict[int, int] = {}  # OwnerIndex → comp record idx
+    for idx in comps:
+        owners[idx] = idx  # children follow their component in file order
+    refs: dict[int, str] = {}
+    for idx, r in comps.items():
+        des = next((q.get("TEXT", f"U{idx}") for q in recs
+                    if q.get("RECORD") == "34" and q.get("OWNERINDEX") == str(idx)), f"U{idx}")
+        refs[idx] = des
+    pins: list[tuple[float, float, str, str]] = []  # x, y, ref, num
+    for r in recs:
+        if r.get("RECORD") != "2" or "DESIGNATOR" not in r:
+            continue
+        try:
+            ci = owners.get(int(float(r.get("OWNERINDEX", "-1"))), -1)
+        except ValueError:
+            continue
+        if ci not in refs:
+            continue
+        pins.append((_sp(r.get("LOCATION.X", "0")), _sp(r.get("LOCATION.Y", "0")),
+                     refs[ci], r["DESIGNATOR"].rstrip("\x00").strip() or "?"))
+    wires: list[tuple[float, float, float, float]] = []
+    for r in recs:
+        if r.get("RECORD") != "27" or r.get("LOCATIONCOUNT") != "2":
+            continue
+        try:
+            wires.append((_sp(r["X1"]), _sp(r["Y1"]), _sp(r["X2"]), _sp(r["Y2"])))
+        except KeyError:
+            continue
+    labels: list[tuple[float, float, str]] = []
+    for r in recs:
+        if r.get("RECORD") in ("25", "17") and r.get("TEXT"):
+            labels.append((_sp(r.get("LOCATION.X", "0")),
+                           _sp(r.get("LOCATION.Y", "0")),
+                           r["TEXT"].rstrip("\x00").strip()))
+    # union-find over touched points (pin ends + wire ends + labels)
+    parent: dict[int, int] = {}
+
+    def _find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def _union(a: int, b: int) -> None:
+        parent[_find(a)] = _find(b)
+    pts: list[tuple[float, float]] = []
+    pin_at: list[int] = []
+    for x, y, _rf, _pn in pins:
+        parent[len(pts)] = len(pts)
+        pts.append((x, y))
+        pin_at.append(len(pins) and len(pts) - 1)
+    for x1, y1, x2, y2 in wires:
+        for x, y in ((x1, y1), (x2, y2)):
+            parent[len(pts)] = len(pts)
+            pts.append((x, y))
+
+    def _near(p: tuple[float, float], tol: float = 0.3) -> list[int]:
+        return [j for j, q in enumerate(pts)
+                if abs(q[0] - p[0]) < tol and abs(q[1] - p[1]) < tol]
+    for x1, y1, x2, y2 in wires:
+        for a in _near((x1, y1)):
+            for b in _near((x1, y1)):
+                _union(a, b)
+        for a in _near((x2, y2)):
+            for b in _near((x2, y2)):
+                _union(a, b)
+    # every pin joins every wire-end/pin within tolerance (shared dots)
+    for j, p in enumerate(pts):
+        for k in _near(p):
+            _union(j, k)
+    groups: dict[int, list[int]] = {}
+    for j in range(len(pts)):
+        groups.setdefault(_find(j), []).append(j)
+    npin = len(pins)
+    nets: dict[str, dict[str, object]] = {}
+    auto = 0
+
+    def _pin(net: str, ref: str, num: str) -> None:
+        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
+        pins_l = entry["pins"]
+        assert isinstance(pins_l, list)
+        pins_l.append([ref, num])
+    for g in groups.values():
+        members = [pins[j] for j in g if j < npin]
+        if not members:
+            continue
+        name = next((t for x, y, t in labels
+                     if any(abs(pts[j][0] - x) < 5.0 and abs(pts[j][1] - y) < 5.0 for j in g)),
+                    None)
+        if name is None:
+            auto += 1
+            name = f"N{auto}"
+        for _x, _y, ref, num in members:
+            _pin(name, ref, num)
+    parts: list[dict[str, object]] = []
+    fps: dict[str, Footprint] = {}
+    for idx, r in comps.items():
+        ref = refs[idx]
+        lib = r.get("LIBREFERENCE", "unknown")
+        mypins = [(num) for _x, _y, rf, num in pins if rf == ref]
+        wdt = max(2.0, len(mypins) * 1.27 + 2.0)
+        fp = fps.setdefault(lib, {"w": wdt, "h": 5.0,
+                                  "pads": {str(n): (0.0, 0.0, 1.0, 1.0)
+                                           for n in mypins},
+                                  "holes": {}, "bodies": []})
+        assert isinstance(fp, dict)
+        cmt = next((q.get("TEXT", lib) for q in recs
+                    if q.get("RECORD") == "41" and q.get("OWNERINDEX") == str(idx)
+                    and q.get("NAME") == "Comment"), lib)
+        parts.append({"ref": ref, "fp": lib, "value": cmt, "x": 0.0, "y": 0.0})
+    from typing import cast as _cast3
+    have = {str(p["ref"]) for p in parts}
+    nets = {n: v for n, v in nets.items()
+            if _cast3(list[list[str]], v["pins"]) and
+            all(pin[0] in have for pin in _cast3(list[list[str]], v["pins"]))}
+    xs = [x for x, _y in pts]
+    wdt = max(10.0, (max(xs) - min(xs) + 5.0)) if xs else 40.0
+    return {"board": {"name": "imported", "w": wdt, "h": 30.0, "layers": 2},
+            "parts": parts, "nets": nets, "constraints": [],
+            "_imported_fp": fps}
+
+
+def _bin_pcbdoc(data: bytes) -> dict[str, object]:
+    """Native binary .PcbDoc → IR via the ASCII-shape path (same builder as
+    the text export): param streams + decoded primitives + Polygons6 pours."""
+    paths, _, _, _, _, _ = _ole_dir(data)
+    if _ole_stream(paths, "Root Entry/FileHeaderSix") is None and \
+            _ole_stream(paths, "FileHeaderSix") is None:
+        raise ValueError("not an Altium PCB compound file (no FileHeaderSix); "
+                         "a .SchDoc goes to importer:altium-sch")
+    param: list[dict[str, str]] = []
+    for stor, kind in (("Board6", "Board"), ("Nets6", "Net"),
+                       ("Components6", "Component"), ("Rules6", "Rule")):
+        for pre in ("", "Root Entry/"):
+            buf = _ole_stream(paths, pre + stor + "/Data")
+            if buf is not None:
+                param += _bin_param(buf, kind)
+                break
+    if not [r for r in param if r.get("RECORD") == "NET"]:
+        raise ValueError("altium binary: no Nets6 stream (not a .PcbDoc?)")
+
+    def _prim(stor: str, want: int) -> list[dict[str, str]]:
+        for pre in ("", "Root Entry/"):
+            buf = _ole_stream(paths, pre + stor + "/Data")
+            if buf is not None:
+                return _bin_prims(buf, want) if want != 2 else [
+                    {**r, "RECORD": "PAD"} for r in _bin_pads(buf)]
+        return []
+    prims: list[dict[str, str]] = []
+    for stor, want in (("Tracks6", 4), ("Arcs6", 1), ("Vias6", 3),
+                       ("Pads6", 2), ("Fills6", 6)):
+        prims += _prim(stor, want)
+    # Polygons6 pours → pour constraints (+ keep the outline verts as tracks)
+    pours: list[tuple[str, str]] = []  # (net-index-or-name, layer)
+    for pre in ("", "Root Entry/"):
+        buf = _ole_stream(paths, pre + "Polygons6/Data")
+        if buf is None:
+            continue
+        for r in _bin_param(buf, "Polygon"):
+            num = sum(1 for k in r if k.startswith("VX"))
+            verts = [(r.get(f"VX{i}", ""), r.get(f"VY{i}", "")) for i in range(num)]
+            if len(verts) >= 3:
+                for i in range(len(verts)):
+                    x1, y1 = verts[i]
+                    x2, y2 = verts[(i + 1) % len(verts)]
+                    try:
+                        prims.append({"RECORD": "TRACK", "LAYER": r.get("LAYER", "TOPLAYER"),
+                                      "NET": r.get("NET", "-1"), "COMPONENT": "-1",
+                                      "X1": x1, "Y1": y1, "X2": x2, "Y2": y2,
+                                      "WIDTH": "0.05mm"})
+                    except (ValueError, TypeError):
+                        continue
+            pours.append((r.get("NET", "-1"), r.get("LAYER", "TOPLAYER")))
+        break
+    text = "\n".join("|" + "|".join(f"{k}={v}" for k, v in r.items()
+                                     if k != "RECORD") + f"|RECORD={r['RECORD']}|"
+                     for r in param + prims)
+    ir = altium_ascii(text + "\n|RECORD=Net|NAME=__end__|\n")
+    ir.pop("_outline", None)  # binary Board6 has no VX verts; bbox rules
+    names = [r.get("NAME", "") for r in param if r.get("RECORD") == "NET"]
+
+    def _li(net: str, lay: str) -> tuple[str | None, int | None]:
+        nn = names[int(net)] if net.lstrip("-").isdigit() and 0 <= int(net) < len(names) else None
+        return nn, _alyr_idx(lay)
+    from typing import cast as _cast5
+    cons = [c for c in _cast5(list[object], ir.get("constraints", []))
+            if isinstance(c, dict)]
+    for net, lay in pours:
+        nn, ll = _li(net, lay)
+        if nn is not None and ll is not None and ll < 10:
+            cons.append({"t": "pour", "net": nn, "layer": ll})
+    ir["constraints"] = cons
+    from typing import cast as _cast4
+    skip = [s for s in _cast4(list[str], ir.get("_skipped", [])) if s != "pours"]
+    ir["_skipped"] = skip
+    return ir
+
+
+def altium_ascii(text: str) -> dict[str, object]:
+    """Altium File > Save As > PCB ASCII (`|RECORD=` lines) → IR dict.
+    Nets by index (out-of-range → unnetted copper); components in file
+    order (pads reference them by index); pads absolute→footprint frame
+    (mirrored on the bottom side, like kicad_pcb_netlist's relative pads);
+    tracks on TOPLAYER/BOTTOMLAYER/MIDLAYERn, vias, board-outline verts or
+    MECHANICAL1 chaining or the copper bbox. Binary .PcbDoc (OLE magic)
+    raises pointing at the ASCII export."""
+    if text[:8] == "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1":
+        raise ValueError("binary .PcbDoc (OLE): re-export from Altium via "
+                         "File > Save As > PCB ASCII, then import the text")
+    recs = [_arec(l) for l in text.splitlines() if "RECORD" in l.upper()]
+    recs = [r for r in recs if r.get("RECORD")]
+    for r in recs:
+        r["RECORD"] = r["RECORD"].upper()
+    if not recs:
+        raise ValueError("no |RECORD=| lines (not an Altium ASCII export)")
+    names = [r.get("NAME", "") for r in recs if r["RECORD"] == "NET"]
+
+    def _lyr(r: dict[str, str]) -> int:
+        return _alyr_idx(r.get("LAYER", "TOPLAYER")) or 0
+
+    def _net(r: dict[str, str]) -> str | None:
+        raw = r.get("NET", "").strip()
+        if not raw:
+            return None
+        if raw.lstrip("-").isdigit():
+            i = int(raw)
+            return names[i] if 0 <= i < len(names) else None
+        return raw if raw in names else None  # third-party exporters name nets
+    comps = [r for r in recs if r["RECORD"] == "COMPONENT"]
+    fps: dict[str, Footprint] = {}
+    parts: list[dict[str, object]] = []
+    nets: dict[str, dict[str, object]] = {}
+    refs: list[str] = []
+
+    def _pin(net: str | None, ref: str, num: str) -> None:
+        if not net:
+            return
+        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
+        pins = entry["pins"]
+        assert isinstance(pins, list)
+        pins.append([ref, num])
+
+    for i, c in enumerate(comps):
+        ref = (c.get("SOURCEDESIGNATOR") or c.get("DESIGNATOR")
+               or c.get("NAME") or f"U{i + 1}")
+        refs.append(ref)
+        fpname = c.get("PATTERN") or "unknown"
+        if c.get("SOURCEFOOTPRINTLIBRARY"):
+            fpname = f"{c['SOURCEFOOTPRINTLIBRARY']}:{fpname}"
+        rot = round(float(c.get("ROTATION", "0") or "0")) % 360
+        x, y = _alen(c.get("X", "0")), _alen(c.get("Y", "0"))
+        fps.setdefault(fpname, {"w": 2.0, "h": 2.0, "pads": {},
+                                "holes": {}, "bodies": []})
+        attrs = {"rot": str(rot)} if rot not in (0,) else None
+        parts.append({"ref": ref, "fp": fpname,
+                      "value": c.get("COMMENT") or c.get("SOURCEVALUE") or fpname,
+                      "x": x, "y": y, **({"attrs": attrs} if attrs else {})})
+    loose: list[tuple[float, float, float, float, float, str | None, str]] = []
+    for r in recs:
+        if r["RECORD"] != "PAD":
+            continue
+        try:
+            ci = int(float(r.get("COMPONENT", "-1")))
+        except ValueError:
+            continue
+        if not (0 <= ci < len(comps)):
+            continue  # free pads handled below (IR has no loose pads)
+        c, ref = comps[ci], refs[ci]
+        fx, fy = _alen(c.get("X", "0")), _alen(c.get("Y", "0"))
+        fro = round(float(c.get("ROTATION", "0") or "0")) % 360
+        mir = c.get("LAYER", "TOPLAYER").upper() == "BOTTOMLAYER"
+        hole = _alen(r.get("HOLESIZE", "0"))
+        w = _alen(r.get("XSIZE", r.get("TOPXSIZE", "0")))
+        h = _alen(r.get("YSIZE", r.get("TOPYSIZE", "0")))
+        if w <= 0 or h <= 0:
+            continue
+        dx, dy = _alen(r.get("X", "0")) - fx, _alen(r.get("Y", "0")) - fy
+        if mir:
+            dx = -dx
+        a = -math.radians(fro)
+        ca, sa = math.cos(a), math.sin(a)
+        dx, dy = dx * ca - dy * sa, dx * sa + dy * ca
+        num = r.get("NAME", str(len(loose) + 1))
+        fp = fps[str(parts[ci]["fp"])]
+        assert isinstance(fp, dict)
+        if hole > 0 or r.get("LAYER", "").upper() == "MULTILAYER":
+            fp_h = fp.setdefault("holes", {})
+            assert isinstance(fp_h, dict)
+            fp_h[num] = (dx, dy, hole)
+        else:
+            fp_p = fp.setdefault("pads", {})
+            assert isinstance(fp_p, dict)
+            fp_p[num] = (dx, dy, w, h)
+        _pin(_net(r), ref, num)
+    for r in recs:  # free pads: no owning component → one single-pad fp each
+        if r["RECORD"] != "PAD":
+            continue
+        try:
+            ci = int(float(r.get("COMPONENT", "-1")))
+        except ValueError:
+            continue
+        if 0 <= ci < len(comps):
+            continue
+        hole = _alen(r.get("HOLESIZE", "0"))
+        w = _alen(r.get("XSIZE", r.get("TOPXSIZE", "0")))
+        h = _alen(r.get("YSIZE", r.get("TOPYSIZE", "0")))
+        if w <= 0 or h <= 0:
+            continue
+        loose.append((_alen(r.get("X", "0")), _alen(r.get("Y", "0")),
+                      w, h, hole, _net(r), r.get("NAME", "")))
+    for i, (x, y, w, h, hole, net, num) in enumerate(loose):
+        ref, fpname = f"FREEPAD{i + 1}", "altium:free_pad"
+        num = num or "1"
+        fp = fps.setdefault(fpname, {"w": 2.0, "h": 2.0, "pads": {},
+                                     "holes": {}, "bodies": []})
+        assert isinstance(fp, dict)
+        if hole > 0:
+            fh = fp.setdefault("holes", {})
+            assert isinstance(fh, dict)
+            fh[num] = (0.0, 0.0, hole)
+        else:
+            fpp = fp.setdefault("pads", {})
+            assert isinstance(fpp, dict)
+            fpp[num] = (0.0, 0.0, w, h)
+        parts.append({"ref": ref, "fp": fpname, "value": fpname, "x": x, "y": y})
+        _pin(net, ref, num)
+    # footprint bodies: pad bbox (empty customs place at 2x2 but DRC walls
+    # their pads — same rule as kicad_pcb_netlist's rebuilt footprints)
+    for fp in fps.values():
+        assert isinstance(fp, dict)
+        pads = fp.get("pads", {})
+        holes = fp.get("holes", {})
+        assert isinstance(pads, dict) and isinstance(holes, dict)
+        xs = [v[0] for v in list(pads.values()) + list(holes.values())]
+        ys = [v[1] for v in list(pads.values()) + list(holes.values())]
+        if xs:
+            fp["w"] = max(1.0, max(xs) - min(xs) + 2.0)
+            fp["h"] = max(1.0, max(ys) - min(ys) + 2.0)
+    traces: list[dict[str, object]] = []
+    segs: list[tuple[float, float, float, float]] = []
+    texts: list[dict[str, object]] = []
+    pours: list[tuple[str, int]] = []
+    boards = [r for r in recs if r["RECORD"] == "BOARD"]
+    verts: list[tuple[float, float]] = []
+    for b in boards:
+        v = [(_alen(b.get(f"VX{i}", "")), _alen(b.get(f"VY{i}", "")))
+             for i in range(8) if b.get(f"VX{i}") and b.get(f"VY{i}")]
+        if len(v) >= 3:
+            verts = v
+            break
+    for r in recs:
+        if r["RECORD"] == "TRACK":
+            p = (_alen(r.get("X1", "0")), _alen(r.get("Y1", "0")),
+                 _alen(r.get("X2", "0")), _alen(r.get("Y2", "0")))
+            wdt = max(0.01, _alen(r.get("WIDTH", "0.15")))
+            lay = r.get("LAYER", "").upper()
+            if _alyr_idx(lay) is not None:
+                net = _net(r)
+                traces.append({"net": net or "", "x1": p[0], "y1": p[1],
+                               "x2": p[2], "y2": p[3], "layer": _lyr(r),
+                               "width": wdt, **({} if net else {"_skip": True})})
+            elif lay in ("MECHANICAL1", "KEEPOUTLAYER", "KEEPOUT"):
+                segs.append(p)  # outline candidates (chained below)
+        elif r["RECORD"] == "VIA":
+            net = _net(r)
+            traces.append({"net": net or "", "x": _alen(r.get("X", "0")),
+                           "y": _alen(r.get("Y", "0")),
+                           "drill": max(0.05, _alen(r.get("HOLESIZE", "0.3"))),
+                           "via": True, **({} if net else {"_skip": True})})
+        elif r["RECORD"] == "ARC":
+            arc_c = (_alen(r.get("LOCATION.X", r.get("X", "0"))),
+                     _alen(r.get("LOCATION.Y", r.get("Y", "0"))))
+            arc_rad = _alen(r.get("RADIUS", "0"))
+            try:
+                arc_sa = float(r.get("STARTANGLE", "0") or "0")
+                arc_ea = float(r.get("ENDANGLE", "360") or "360")
+            except ValueError:
+                arc_sa, arc_ea = 0.0, 360.0
+            arc_wdt = max(0.01, _alen(r.get("WIDTH", "0.15")))
+            arc_lay = r.get("LAYER", "").upper()
+            if _alyr_idx(arc_lay) is not None and arc_rad > 0:
+                arc_net = _net(r)
+                # ponytail: chord-approximated (1 chord per 5°); exact arcs
+                # return if a consumer needs them
+                import math as _m
+                arc_sweep = (arc_ea - arc_sa) % 360.0 or 360.0
+                arc_nseg = max(1, int(arc_sweep / 5) + 1)
+                arc_angs = [_m.radians(arc_sa + arc_sweep * k / arc_nseg)
+                            for k in range(arc_nseg + 1)]
+                arc_xy = [(arc_c[0] + arc_rad * _m.cos(a),
+                           arc_c[1] + arc_rad * _m.sin(a)) for a in arc_angs]
+                for k in range(arc_nseg):
+                    traces.append({"net": arc_net or "",
+                                   "x1": arc_xy[k][0], "y1": arc_xy[k][1],
+                                   "x2": arc_xy[k + 1][0], "y2": arc_xy[k + 1][1],
+                                   "layer": _lyr(r), "width": arc_wdt,
+                                   **({} if arc_net else {"_skip": True})})
+        elif r["RECORD"] == "TEXT":
+            tx = _alen(r.get("LOCATION.X", r.get("X", "0")))
+            ty = _alen(r.get("LOCATION.Y", r.get("Y", "0")))
+            tstr = r.get("TEXT", r.get("STRING", "")).strip()
+            if tstr:
+                texts.append({"x": tx, "y": ty, "text": tstr})
+        elif r["RECORD"] in ("POLYGON", "POLYGONPOUR", "SPLITPLANE"):
+            pnet = _net(r)
+            play = _alyr_idx(r.get("LAYER", ""))
+            if pnet is not None and play is not None and play < 10:
+                pours.append((pnet, play))
+            pnum = sum(1 for k in r if k.startswith("VX"))
+            ppts = [(_alen(r.get(f"VX{i}", "")), _alen(r.get(f"VY{i}", "")))
+                    for i in range(pnum)]
+            if len(ppts) >= 3 and pnet:
+                for k in range(len(ppts)):
+                    qx1, qy1 = ppts[k]
+                    qx2, qy2 = ppts[(k + 1) % len(ppts)]
+                    traces.append({"net": pnet, "x1": qx1, "y1": qy1,
+                                   "x2": qx2, "y2": qy2,
+                                   "layer": play if play is not None else 0,
+                                   "width": 0.05})
+    if len(verts) < 3 and segs:  # chain outline segments end-to-end
+        pts = [(x1, y1, x2, y2) for x1, y1, x2, y2 in segs]
+        chain = [(pts[0][0], pts[0][1]), (pts[0][2], pts[0][3])]
+        rest = pts[1:]
+        while rest:
+            ex, ey = chain[-1]
+            j = min(range(len(rest)),
+                    key=lambda k: min((rest[k][0] - ex) ** 2 + (rest[k][1] - ey) ** 2,
+                                      (rest[k][2] - ex) ** 2 + (rest[k][3] - ey) ** 2))
+            x1, y1, x2, y2 = rest.pop(j)
+            chain.append((x2, y2) if (x1 - ex) ** 2 + (y1 - ey) ** 2
+                         < (x2 - ex) ** 2 + (y2 - ey) ** 2 else (x1, y1))
+        verts = chain
+    from typing import cast as _cast
+    bxs: list[float] = ([v[0] for v in verts]
+                       + [float(_cast(float, p["x1"])) for p in traces if "x1" in p]
+                       + [float(_cast(float, p["x"])) for p in traces if "x" in p]
+                       + [float(_cast(float, p["x"])) for p in parts])
+    bys: list[float] = ([v[1] for v in verts]
+                        + [float(_cast(float, p["y1"])) for p in traces if "y1" in p]
+                        + [float(_cast(float, p["y"])) for p in traces if "y" in p]
+                        + [float(_cast(float, p["y"])) for p in parts])
+    wdt = max(10.0, (max(bxs) - min(bxs) + 5.0)) if bxs else 40.0
+    hgt = max(10.0, (max(bys) - min(bys) + 5.0)) if bys else 30.0
+    ncu = 2
+    for t in traces:
+        if "layer" in t and isinstance(t["layer"], int):
+            ncu = max(ncu, int(t["layer"]) + 1)
+    ncu = min(ncu, 10)
+    have = {str(p["ref"]) for p in parts}
+    nets = {n: {"pins": [pin for pin in _cast(list[list[str]], v["pins"])
+                         if pin[0] in have],
+                "layer": v["layer"], "width": v["width"]}
+            for n, v in nets.items()}
+    nets = {n: v for n, v in nets.items() if v["pins"]}
+    cons: list[dict[str, object]] = [{"t": "pour", "net": n, "layer": ll}
+                                          for n, ll in dict(pours).items()]
+    ir: dict[str, object] = {"board": {"name": "imported", "w": wdt, "h": hgt,
+                                       "layers": ncu},
+                             "parts": parts, "nets": nets, "constraints": cons,
+                             "_imported_fp": fps,
+                             "_imported_traces": [t for t in traces if not t.pop("_skip", False)],
+                             **_askip()}
+    if texts:
+        ir["_imported_texts"] = texts
+    if len(verts) >= 3:
+        ir["_outline"] = verts
+    return ir
+
+
+def pcad_ascii(text: str) -> dict[str, object]:
+    """P-CAD ASCII (`ACCEL_ASCII`, Altium's own interchange) → IR dict.
+    Patterns → footprints (padStyle sizes, `Rect`=rect / else circle-ish),
+    netlist nodes (`compRef pinRef`) + `netNameRef` copper → nets,
+    patterns + free pads → parts, outline or copper bbox → size.
+    Real files are often flattened (pads/lines, no patterns): those pads
+    become one single-pad part each, like Altium free pads."""
+    head = text.lstrip()
+    if not head.startswith("(ACCEL_ASCII") and not head.startswith("ACCEL_ASCII"):
+        raise ValueError("not a P-CAD ASCII file (want ACCEL_ASCII …)")
+    toks = sexpr("(" + head[head.find("("):] if head.startswith("ACCEL_ASCII")
+                 else head)
+    kids = toks[1:]
+    # synthetic root: the first section lands in toks[0], not kids
+    top = ([toks[0]] if toks and isinstance(toks[0], list) else []) + kids
+    lib = next((c for c in top if isinstance(c, list) and c and c[0] == "library"), [])
+    netsec = next((c for c in top if isinstance(c, list) and c and c[0] == "netlist"), [])
+    pcb = next((c for c in top if isinstance(c, list) and c and c[0] == "pcbDesign"), [])
+    units = "mil"
+    for c in top:
+        if isinstance(c, list) and c and c[0] == "asciiHeader":
+            for f in c[1:]:
+                if isinstance(f, list) and f and f[0] == "fileUnits" and len(f) > 1:
+                    units = _unq(f[1]).lower()
+    mul = {"mm": 1.0, "mil": 0.0254, "inch": 25.4, "in": 25.4,
+           "um": 0.001, "cm": 10.0}.get(units, 0.0254)
+
+    def _xy(node: list[object]) -> tuple[float, float]:
+        pt = next((c for c in node[1:] if isinstance(c, list) and c and c[0] == "pt"), None)
+        if pt is None or len(pt) < 3 or not _isnum(pt[1]) or not _isnum(pt[2]):
+            return (0.0, 0.0)
+        return (_num(pt[1]) * mul, _num(pt[2]) * mul)
+
+    def _ref(node: list[object], tag: str) -> str:
+        n = next((c for c in node[1:] if isinstance(c, list) and c and c[0] == tag), None)
+        return _unq(n[1]) if n is not None and len(n) > 1 else ""
+
+    styles: dict[str, tuple[float, float, float, str]] = {}  # w,h,hole,shape
+    for s in _kids(lib, "padStyleDef"):
+        nm = _unq(s[1]) if len(s) > 1 else ""
+        hole = 0.0
+        hd = next((c for c in s[1:] if isinstance(c, list) and c and c[0] == "holeDiam"), None)
+        if hd is not None and len(hd) > 1 and _isnum(hd[1]):
+            hole = _num(hd[1]) * mul
+        w = h = 0.0
+        shape = "Ellipse"
+        for p in _kids(s, "padShape"):
+            ln = next((c for c in p[1:] if isinstance(c, list) and c and c[0] == "layerNumRef"), None)
+            if ln is None or len(ln) < 2 or str(ln[1]) != "1":
+                continue  # top-layer shape sizes the pad (as KiCad's importer)
+            for c in p[1:]:
+                if not isinstance(c, list) or not c:
+                    continue
+                if c[0] == "padShapeType" and len(c) > 1:
+                    shape = _unq(c[1])
+                elif c[0] == "shapeWidth" and len(c) > 1 and _isnum(c[1]):
+                    w = _num(c[1]) * mul
+                elif c[0] == "shapeHeight" and len(c) > 1 and _isnum(c[1]):
+                    h = _num(c[1]) * mul
+        styles[nm] = (w or 1.0, h or 1.0, hole, shape)
+    # patterns (old `patternDef`, new `patternDefExtended` via graphics defs)
+    pats: dict[str, list[tuple[str, float, float, float, float, float]]] = {}
+    for tag in ("patternDef", "patternDefExtended"):
+        for p in _kids(lib, tag):
+            nm = _unq(p[1]) if len(p) > 1 else ""
+            mls = [p] if tag == "patternDef" else _kids(p, "patternGraphicsDef")
+            pads: list[tuple[str, float, float, float, float, float]] = []
+            scopes: list[list[object]] = []
+            if tag == "patternDef":
+                scopes = [m for m in p[1:] if isinstance(m, list) and m and m[0] == "multiLayer"]
+            else:
+                for g in _kids(p, "patternGraphicsDef"):
+                    scopes += [m for m in g[1:] if isinstance(m, list) and m and m[0] == "multiLayer"]
+            for m in scopes:
+                for pad in _kids(m, "pad"):
+                    num = _ref(pad, "padNum") or str(len(pads) + 1)
+                    st = styles.get(_ref(pad, "padStyleRef"), (1.0, 1.0, 0.0, "Ellipse"))
+                    x, y = _xy(pad)
+                    pads.append((num, x, y, st[0], st[1], st[2]))
+            pats[nm] = pads
+    comp_pat: dict[str, str] = {}  # compDef name → pattern
+    for c in _kids(lib, "compDef"):
+        nm = _unq(c[1]) if len(c) > 1 else ""
+        for f in c[1:]:
+            if isinstance(f, list) and f and f[0] in ("attachedPattern", "patternName") and len(f) > 1:
+                comp_pat[nm] = _unq(f[1])
+            elif isinstance(f, list) and f and f[0] == "pattern" and len(f) > 1:
+                comp_pat[nm] = _unq(f[1])
+    nets: dict[str, dict[str, object]] = {}
+    inst: dict[str, tuple[str, str]] = {}  # ref → (comp, value)
+
+    def _pin(net: str, ref: str, num: str) -> None:
+        if not net:
+            return
+        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
+        pins = entry["pins"]
+        assert isinstance(pins, list)
+        pins.append([ref, num])
+
+    for n in _kids(netsec, "net"):
+        nn = _unq(n[1]) if len(n) > 1 else ""
+        for node in _kids(n, "node"):
+            raw = _unq(node[1]) if len(node) > 1 else ""
+            rs = raw.split()
+            if len(rs) >= 2:
+                _pin(nn, rs[0], rs[1])
+    for c in _kids(netsec, "compInst"):
+        ref = _unq(c[1]) if len(c) > 1 else ""
+        comp = val = ""
+        for f in c[1:]:
+            if not isinstance(f, list) or not f:
+                continue
+            if f[0] in ("compRef", "compValue", "refDesRef") and len(f) > 1:
+                if f[0] == "compValue":
+                    val = _unq(f[1])
+                else:
+                    comp = _unq(f[1])
+        inst[ref] = (comp, val or comp)
+    fps: dict[str, Footprint] = {}
+    parts: list[dict[str, object]] = []
+    multi = next((c for c in pcb[1:] if isinstance(c, list) and c and c[0] == "multiLayer"), [])
+    # layer numbers: Top=1 Bottom=2 (defaults), refined by layerDef names
+    lmap = {1: 0, 2: 1}
+
+    def _stack() -> int:
+        sig = 0
+        for ld in _kids(pcb, "layerDef"):
+            lt = next((c for c in ld[1:] if isinstance(c, list) and c and c[0] == "layerType"), None)
+            if lt is not None and len(lt) > 1 and _unq(lt[1]).lower() == "signal":
+                sig += 1
+        return min(10, max(2 if sig != 1 else 1, sig))
+
+    for ld in _kids(pcb, "layerDef"):
+        nm = (_unq(ld[1]) if len(ld) > 1 else "").upper()
+        lnode = next((c for c in ld[1:] if isinstance(c, list) and c and c[0] == "layerNum"), None)
+        if lnode is None or len(lnode) < 2 or not _isnum(lnode[1]):
+            continue
+        lnum = int(float(_unq(lnode[1])))
+        if nm in ("TOP",):
+            lmap[lnum] = 0
+        elif nm in ("BOTTOM",):
+            lmap[lnum] = 1
+    seen_pat = [c for c in multi[1:] if isinstance(c, list) and c and c[0] == "pattern"] \
+        if multi else []
+    for i, c in enumerate(seen_pat):
+        ref = _ref(c, "refDesRef") or f"U{i + 1}"
+        pat = _ref(c, "patternRef")
+        comp, val = inst.get(ref, ("", ""))
+        fpname = comp_pat.get(comp, pat) or pat or "unknown"
+        pads = pats.get(fpname, pats.get(pat, []))
+        x, y = _xy(c)
+        fpd: Footprint = {"w": 2.0, "h": 2.0, "pads": {}, "holes": {},
+                          "bodies": []}
+        xs, ys = [0.0], [0.0]
+        for num, px, py, w, h, hole in pads:
+            xs += [px, -px]
+            ys += [py, -py]
+            if hole > 0:
+                fh = fpd.setdefault("holes", {})
+                assert isinstance(fh, dict)
+                fh[num] = (px, py, hole)
+            else:
+                fp_ = fpd.setdefault("pads", {})
+                assert isinstance(fp_, dict)
+                fp_[num] = (px, py, w, h)
+        fpd["w"], fpd["h"] = max(1.0, max(xs) - min(xs) + 1.0), max(1.0, max(ys) - min(ys) + 1.0)
+        fps.setdefault(fpname or f"pcad{i}", fpd)
+        parts.append({"ref": ref, "fp": fpname or f"pcad{i}",
+                      "value": val or comp or fpname, "x": x, "y": y})
+    # free pads (flattened files): one single-pad part each
+    freep = [c for c in multi[1:] if isinstance(c, list) and c and c[0] == "pad"] \
+        if multi else []
+    for i, pad in enumerate(freep):
+        st = styles.get(_ref(pad, "padStyleRef"), (1.0, 1.0, 0.0, "Ellipse"))
+        x, y = _xy(pad)
+        ref = f"FREEPAD{i + 1}"
+        fpname = "pcad:free_pad"
+        fp = fps.setdefault(fpname, {"w": 2.0, "h": 2.0, "pads": {},
+                                     "holes": {}, "bodies": []})
+        assert isinstance(fp, dict)
+        if st[2] > 0:
+            fh = fp.setdefault("holes", {})
+            assert isinstance(fh, dict)
+            fh[str(i + 1)] = (0.0, 0.0, st[2])
+        else:
+            fp_ = fp.setdefault("pads", {})
+            assert isinstance(fp_, dict)
+            fp_[str(i + 1)] = (0.0, 0.0, st[0], st[1])
+        parts.append({"ref": ref, "fp": fpname, "value": fpname, "x": x, "y": y})
+        _pin(_ref(pad, "netNameRef"), ref, str(i + 1))
+    traces: list[dict[str, object]] = []
+    texts: list[dict[str, object]] = []
+    pours: list[tuple[str, int]] = []
+    for lc in _kids(pcb, "layerContents"):
+        ln = next((c for c in lc[1:] if isinstance(c, list) and c and c[0] == "layerNumRef"), None)
+        lay = lmap.get(int(float(_unq(ln[1]))), 0) if ln is not None and len(ln) > 1 else 0
+        for ln2 in _kids(lc, "line"):
+            pts = [c for c in ln2[1:] if isinstance(c, list) and c and c[0] == "pt"]
+            if len(pts) < 2:
+                continue
+            x1, y1 = _num(pts[0][1]) * mul, _num(pts[0][2]) * mul
+            x2, y2 = _num(pts[1][1]) * mul, _num(pts[1][2]) * mul
+            wnode = next((c for c in ln2[1:] if isinstance(c, list) and c and c[0] == "width"), None)
+            wdt = _num(wnode[1]) * mul if wnode is not None and len(wnode) > 1 else 0.3
+            net = _ref(ln2, "netNameRef")
+            traces.append({"net": net, "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                           "layer": lay, "width": max(0.01, wdt),
+                           **({} if net else {"_skip": True})})
+        for a in _kids(lc, "arc") + _kids(lc, "triplePointArc"):
+            # ponytail: chord-approximated; exact arcs return if needed
+            import math as _m2
+            wnode = next((c for c in a[1:] if isinstance(c, list) and c and c[0] == "width"), None)
+            wdt = _num(wnode[1]) * mul if wnode is not None and len(wnode) > 1 else 0.3
+            net = _ref(a, "netNameRef")
+            pts = [c for c in a[1:] if isinstance(c, list) and c and c[0] == "pt"]
+            rnode = next((c for c in a[1:] if isinstance(c, list) and c and c[0] == "radius"), None)
+            if a[0] == "arc" and rnode is not None and len(rnode) > 1 and pts:
+                try:
+                    cx, cy = _num(pts[0][1]) * mul, _num(pts[0][2]) * mul
+                    rad = _num(rnode[1]) * mul
+                    sa = float(_unq(next((c for c in a[1:] if isinstance(c, list) and c
+                                          and c[0] == "startAngle"), ["", "0"])[1] or "0"))
+                    ea = float(_unq(next((c for c in a[1:] if isinstance(c, list) and c
+                                          and c[0] == "sweepAngle"), ["", "360"])[1] or "360"))
+                except (ValueError, TypeError):
+                    continue
+                if rad <= 0:
+                    continue
+                sweep = ea % 360.0 or 360.0
+                nseg = max(1, int(sweep / 5) + 1)
+                xy = [(cx + rad * _m2.cos(_m2.radians(sa + sweep * k / nseg)),
+                       cy + rad * _m2.sin(_m2.radians(sa + sweep * k / nseg)))
+                      for k in range(nseg + 1)]
+                for k in range(nseg):
+                    traces.append({"net": net, "x1": xy[k][0], "y1": xy[k][1],
+                                   "x2": xy[k + 1][0], "y2": xy[k + 1][1],
+                                   "layer": lay, "width": max(0.01, wdt),
+                                   **({} if net else {"_skip": True})})
+            elif len(pts) >= 3:  # triplePointArc: center/start/end
+                (cx, cy), (sx, sy), (ex, ey) = ((pts[0][1], pts[0][2]), (pts[1][1], pts[1][2]),
+                                                (pts[2][1], pts[2][2]))
+                try:
+                    cx, cy, sx, sy, ex, ey = (float(cx) * mul, float(cy) * mul,
+                                              float(sx) * mul, float(sy) * mul,
+                                              float(ex) * mul, float(ey) * mul)
+                except (ValueError, TypeError):
+                    continue
+                import math as _m3
+                rad = _m3.hypot(sx - cx, sy - cy)
+                if rad <= 0:
+                    continue
+                sa = _m3.degrees(_m3.atan2(sy - cy, sx - cx))
+                sweep = (_m3.degrees(_m3.atan2(ey - cy, ex - cx)) - sa) % 360.0 or 360.0
+                nseg = max(1, int(sweep / 5) + 1)
+                txy = [(cx + rad * _m3.cos(_m3.radians(sa + sweep * k / nseg)),
+                       cy + rad * _m3.sin(_m3.radians(sa + sweep * k / nseg)))
+                      for k in range(nseg + 1)]
+                tnet, tlay = net, lay
+                for k in range(nseg):
+                    traces.append({"net": tnet, "x1": txy[k][0], "y1": txy[k][1],
+                                   "x2": txy[k + 1][0], "y2": txy[k + 1][1],
+                                   "layer": tlay, "width": max(0.01, wdt),
+                                   **({} if tnet else {"_skip": True})})
+        for tx in _kids(lc, "text"):
+            tstr = _unq(tx[1]) if len(tx) > 1 else ""
+            txp, typ = _xy(tx)
+            if tstr:
+                texts.append({"x": txp, "y": typ, "text": tstr})
+        for pp in _kids(lc, "pcbPoly") + _kids(lc, "copperPour95"):
+            poly = next((c for c in pp[1:] if isinstance(c, list) and c and c[0] == "pcbPoly"),
+                        pp if pp[0] == "pcbPoly" else None)
+            if poly is None:
+                continue
+            net = _ref(poly, "netNameRef") or _ref(pp, "netNameRef")
+            if net and lay < 10:
+                pours.append((net, lay))
+            pts = [c for c in poly[1:] if isinstance(c, list) and c and c[0] == "pt"]
+            if len(pts) >= 3 and net:
+                xy = [(_num(p[1]) * mul, _num(p[2]) * mul) for p in pts]
+                for k in range(len(xy)):
+                    traces.append({"net": net, "x1": xy[k][0], "y1": xy[k][1],
+                                   "x2": xy[(k + 1) % len(xy)][0],
+                                   "y2": xy[(k + 1) % len(xy)][1],
+                                   "layer": lay, "width": 0.05})
+    from typing import cast as _cast2
+    xs2: list[float] = ([float(_cast2(float, p["x"])) for p in parts]
+                        + [float(_cast2(float, t["x1"])) for t in traces if "x1" in t])
+    ys2: list[float] = ([float(_cast2(float, p["y"])) for p in parts]
+                        + [float(_cast2(float, t["y1"])) for t in traces if "y1" in t])
+    wdt = max(10.0, (max(xs2) - min(xs2) + 5.0)) if xs2 else 40.0
+    hgt = max(10.0, (max(ys2) - min(ys2) + 5.0)) if ys2 else 30.0
+    have = {str(p["ref"]) for p in parts}
+    nets = {n: {"pins": [pin for pin in _cast2(list[list[str]], v["pins"])
+                         if pin[0] in have],
+                "layer": v["layer"], "width": v["width"]}
+            for n, v in nets.items()}
+    nets = {n: v for n, v in nets.items() if v["pins"]}
+    cons: list[dict[str, object]] = [{"t": "pour", "net": n, "layer": ll}
+                                     for n, ll in dict(pours).items()]
+    ir: dict[str, object] = {"board": {"name": "imported", "w": wdt, "h": hgt,
+                                       "layers": _stack()},
+                             "parts": parts, "nets": nets, "constraints": cons,
+                             "_imported_fp": fps,
+                             "_imported_traces": [t for t in traces if not t.pop("_skip", False)],
+                             **_askip()}
+    if texts:
+        ir["_imported_texts"] = texts
+    return ir

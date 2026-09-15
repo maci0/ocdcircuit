@@ -21,8 +21,11 @@ python -m apps.studio boards/blinky_555.ocd    # see it, drag it, keep it
 
 Coming from KiCad? `Board('m').import_fp('pcb', path='mine.kicad_pcb')`
 loads parts+nets; `b.export('kicad')` writes it back. Footprints
-(`.kicad_mod`), Eagle (`.lbr`/`.brd`), tscircuit/EasyEDA JSON all import
-the same way (`docs/PORTS.md`).
+(`.kicad_mod`), Eagle (`.lbr`/`.brd`), tscircuit/EasyEDA JSON, Altium
+(`import_fp('altium')` reads native .PcbDoc + ASCII export + P-CAD .pcb;
+`import_fp('altium-sch')` reads native .SchDoc schematics;
+`export('altium')` writes .PcbDocAscii with pours) all import the same way
+(`docs/PORTS.md`).
 
 Declarative rule: facts describe the board (`part … x=3`,
 `GND pour=0 :: …`); legacy command spellings (`fix`, `route`, `pour`)

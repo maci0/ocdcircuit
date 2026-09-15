@@ -364,6 +364,18 @@ class KicadSchExporter(Plugin[list[str]]):
         return export.export_kicad_sch(board, outdir)
 
 
+class AltiumExporter(Plugin[list[str]]):
+    """Altium ASCII (.PcbDocAscii |RECORD= lines — opens via Altium's
+    P-CAD import path). Round-trips through importer:altium."""
+    kind, key = "exporter", "altium"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_altium(board, outdir)
+
+
 class BundleExporter(Plugin[list[str]]):
     """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready."""
     kind, key = "exporter", "bundle"
@@ -1249,18 +1261,65 @@ class TscircuitImporter(Plugin[dict[str, object]]):
 
 
 class PcbImporter(Plugin[dict[str, object]]):
-    """Board importer: .kicad_pcb (sniffed) or Eagle .brd → parts/nets."""
+    """Board importer: .kicad_pcb (sniffed), Eagle .brd, P-CAD .pcb,
+    or Altium ASCII → parts/nets."""
     kind, key = "importer", "pcb"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
-        from .foreign import eagle_brd, kicad_pcb_netlist
+        from .foreign import altium_ascii, eagle_brd, kicad_pcb_netlist, pcad_ascii
         path = k.get("path", "")
         assert isinstance(path, str) and path
-        with open(path) as f:
+        with open(path, encoding="latin-1") as f:
             text = f.read()
         s = text.lstrip()
-        ir = eagle_brd(text) if s.startswith("<eagle") else kicad_pcb_netlist(text)
+        if s.startswith("<eagle"):
+            ir = eagle_brd(text)
+        elif s.startswith("(ACCEL_ASCII") or s.startswith("ACCEL_ASCII"):
+            ir = pcad_ascii(text)
+        elif "|RECORD=" in s.upper():
+            ir = altium_ascii(text)
+        else:
+            ir = kicad_pcb_netlist(text)
         return _board_ir_into(board, ir)
+
+
+class AltiumImporter(Plugin[dict[str, object]]):
+    """Board importer: native binary .PcbDoc (OLE: param streams +
+    Tracks/Arcs/Vias/Pads/Fills + Polygons6 pours), Altium ASCII export
+    (|RECORD= lines), or P-CAD .pcb — sniffed, onto THIS board."""
+    kind, key = "importer", "altium"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import _bin_pcbdoc, _OLE_MAGIC, altium_ascii, pcad_ascii
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        with open(path, "rb") as f:
+            raw = f.read()
+        if raw[:8] == _OLE_MAGIC:
+            return _board_ir_into(board, _bin_pcbdoc(raw))
+        text = raw.decode("latin-1")
+        s = text.lstrip()
+        ir = (pcad_ascii(text) if s.startswith("(ACCEL_ASCII")
+              or s.startswith("ACCEL_ASCII") else altium_ascii(text))
+        return _board_ir_into(board, ir)
+
+
+class AltiumSchImporter(Plugin[dict[str, object]]):
+    """Schematic importer: native binary .SchDoc (components + wires +
+    netlabels/powerports → parts/nets) onto THIS board. Placement is
+    schematic, not physical — run a placer after import."""
+    kind, key = "importer", "altium-sch"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import _bin_schdoc, _OLE_MAGIC
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        with open(path, "rb") as f:
+            raw = f.read()
+        if raw[:8] != _OLE_MAGIC:
+            raise ValueError("not a binary .SchDoc (OLE); "
+                             "native schematic import needs the .SchDoc file")
+        return _board_ir_into(board, _bin_schdoc(raw))
 
 
 class EagleBoardImporter(Plugin[dict[str, object]]):
@@ -1296,17 +1355,73 @@ class EasyedaImporter(Plugin[dict[str, object]]):
 
 
 def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
-    """IR (from_ir already loaded _imported_fp) → footprints + parts + nets."""
+    """IR (from_ir already loaded _imported_fp) → footprints + parts + nets.
+    Imported copper (`_imported_traces`: tracks as Seg, vias as (x, y,
+    drill) net markers) lands as fixed traces — re-route overwrites them."""
+    from .circuit import Seg
     nb = from_ir(ir)
     for fn, meta in nb.custom_fp.items():
         if fn not in board._lib():
             board.add_footprint(fn, meta)
     for ref, p in nb.parts.items():
-        board.add_part(ref, p.fp, p.value, p.x, p.y)
+        board.add_part(ref, p.fp, p.value, p.x, p.y,
+                       attrs=dict(p.attrs) or None)
     for n, net in nb.nets.items():
         for ref, pin in net.pins:
             board.connect(n, ref, pin)
-    return {"parts": len(nb.parts), "nets": len(nb.nets)}
+    ncu = cast(dict[str, object], ir.get("board", {})).get("layers", 2)
+    assert isinstance(ncu, int)
+    if ncu > board.layers:
+        board.layers = ncu
+    segs: list[Seg] = []
+    for t in cast(list[dict[str, object]], ir.get("_imported_traces", [])):
+        if t.get("via"):
+            x, y = float(cast(float, t["x"])), float(cast(float, t["y"]))
+            seg = Seg(str(t.get("net", "")), x, y, x, y, 0, 0.8)
+            seg.via = True  # type: ignore[attr-defined]
+            seg.drill = float(cast(float, t.get("drill", 0.4)))  # type: ignore[attr-defined]
+            segs.append(seg)
+        else:
+            lay = t.get("layer", 0)
+            assert isinstance(lay, int)
+            segs.append(Seg(str(t.get("net", "")),
+                            float(cast(float, t["x1"])), float(cast(float, t["y1"])),
+                            float(cast(float, t["x2"])), float(cast(float, t["y2"])),
+                            min(lay, board.layers - 1),
+                            float(cast(float, t.get("width", 0.3)))))
+    ntr = len(segs)
+    if segs:
+        old = list(board.traces)
+        board.emit(lambda: board.traces.extend(segs),
+                   lambda: board.traces.__setitem__(slice(None), old))
+    npour = 0
+    for c in cast(list[dict[str, object]], ir.get("constraints", [])):
+        if c.get("t") == "pour" and all(q.get("net") != c.get("net") or
+                                         q.get("layer") != c.get("layer")
+                                         for q in board.constraints):
+            board.constrain({"t": "pour", "net": str(c["net"]),
+                             "layer": int(cast(int, c["layer"]))})
+            npour += 1
+    ntx = 0
+    new_comments = [f"{t.get('text', '')} @ {t.get('x', 0)}, {t.get('y', 0)}"
+                    for t in cast(list[dict[str, object]], ir.get("_imported_texts", []))]
+    if new_comments:
+        old_comments = list(board.comments)
+        board.emit(lambda: board.comments.extend(new_comments),
+                   lambda: board.comments.__setitem__(slice(None), old_comments))
+        ntx = len(new_comments)
+    out: dict[str, object] = {"parts": len(nb.parts), "nets": len(nb.nets)}
+    if ntr:
+        out["traces"] = ntr
+    if npour:
+        out["pours"] = npour
+    if ntx:
+        out["texts"] = ntx
+    skip = ir.get("_skipped", [])
+    assert isinstance(skip, list)
+    if skip:
+        out["skipped"] = list(skip)
+    return out
 
 
 class EasyedaExporter(Plugin[list[str]]):
@@ -1497,11 +1612,13 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
              FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
-             EagleExporter, EasyedaExporter,
+             EagleExporter, EasyedaExporter, AltiumExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
-             TscircuitImporter, PcbImporter, EasyedaImporter, SymImporter,
+             TscircuitImporter, PcbImporter, EasyedaImporter, AltiumImporter,
+             AltiumSchImporter,
+             SymImporter,
              TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin,
