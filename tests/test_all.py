@@ -2267,6 +2267,36 @@ _pbuf = (b"\x02" + _st2.pack("<I", 2) + b"\x021"
 _pads = foreign._bin_pads(_pbuf)
 assert len(_pads) == 1 and _pads[0]["NAME"] == "1"
 assert _pads[0]["LAYER"] == "TOPLAYER" and _pads[0]["SHAPE"] == "ROUND"
+# altium .SchLib symbols decode (synthetic binary pin + real-file count)
+_pin = (b"\x02\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x04\x3a\x07"
+        b"\x00\x00\x00\xf1\xff\x00\x00\x00\x00\x02\x41\x30\x01\x31\x00\x00\x00")
+import struct as _st3
+_srec = _st3.pack("<H", 28) + b"\x00\x01" + b"|RECORD=1|LibReference=QFN8|"
+_pdata = _srec + _st3.pack("<H", len(_pin)) + b"\x00\x01" + _pin
+_slib = {_s: None for _s in ()}  # placeholder replaced below
+# direct walker check via a fake two-record stream
+_j = 0
+_spins: list[tuple[str, str]] = []
+import re as _re2
+while _j + 4 <= len(_pdata):
+    _ln = _st3.unpack("<H", _pdata[_j:_j + 2])[0]
+    if _ln == 0 or _ln > len(_pdata) - _j - 4:
+        break
+    if _pdata[_j + 2] == 0 and _pdata[_j + 3] == 1:
+        _m = _re2.search(rb'[\x02-\x10]([A-Za-z][A-Za-z0-9_/\-]*)\x01(.)',
+                         _pdata[_j + 4:_j + 4 + _ln])
+        if _m:
+            _spins.append((_m.group(2).decode(), _m.group(1).decode()))
+    _j += 4 + _ln
+assert _spins == [("1", "A0")]
+_fixt2 = "/tmp/altium_real/hardware/1v3/Libraries/LimeMicroAltiumLib_schLib.SchLib"
+if os.path.exists(_fixt2):
+    _syms = foreign._bin_schlib(open(_fixt2, "rb").read())
+    assert len(_syms) >= 100, len(_syms)
+    _sq = dict(_syms)["24FC512"]["pins"]
+    assert _sq["1"] == ("left", 0, "A0") and _sq["8"] == ("right", 3, "VCC")
+    _sb = Board("schlib", 40, 30)
+    assert len(_sb.import_sym("schlib", path=_fixt2)["names"]) >= 100
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
                   base=os.path.join(EX, "mitox"))

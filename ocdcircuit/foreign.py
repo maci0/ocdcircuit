@@ -578,6 +578,88 @@ def easyeda_doc(doc: dict[str, object]) -> object:
             "_imported_fp": fps}
 
 
+def _sch_pin(p: bytes) -> tuple[str | None, str | None]:
+    """Binary SchLib pin payload → (designator, name). Tail holds
+    [nlen][name][01][desig]; scan for the 01 marker near the end
+    (names are leading-alpha alnum). (None, None) when absent —
+    caller skips, never invents pins."""
+    for i in range(len(p) - 3, max(0, len(p) - 40), -1):
+        if p[i] == 0x01 and 32 < p[i + 1] < 127:
+            des = chr(p[i + 1])
+            for k in range(max(0, i - 34), i):
+                n = p[k]
+                if (1 <= n <= 16 and k + 1 + n == i and chr(p[k + 1]).isalpha()
+                        and all(chr(c).isalnum() or chr(c) in "_/-"
+                                for c in p[k + 1:k + 1 + n])):
+                    return des, p[k + 1:k + 1 + n].decode("latin-1")
+    return None, None
+
+
+def _bin_schlib(data: bytes) -> list[tuple[str, dict[str, object]]]:
+    """Native binary .SchLib → [(name, symbol)]. Each top-level storage is
+    one symbol: text records (component/params/rect) + binary pin records
+    (type byte 1: trailing [len][chars] pairs give name, designator).
+    Pin side = designator-half split (first half left) — exact orientation
+    bits are undocumented; boxes still read correctly.
+    ponytail: full orientation decode if a symbol ever looks wrong."""
+    import struct
+    paths, _, _, _, _, _ = _ole_dir(data)
+    libs: dict[str, list[str]] = {}
+    for p in paths:
+        if "/" in p:
+            libs.setdefault(p.split("/")[0], []).append(p)
+    out: list[tuple[str, dict[str, object]]] = []
+    for lib, members in libs.items():
+        dpath = lib + "/Data"
+        if dpath not in paths:
+            continue
+        buf = _ole_stream(paths, dpath)
+        if not buf:
+            continue
+        pins: list[tuple[str, str]] = []  # (designator, name)
+        name = lib
+        j = 0
+        while j + 4 <= len(buf):
+            ln = struct.unpack("<H", buf[j:j + 2])[0]
+            if ln == 0 or ln > len(buf) - j - 4:
+                break
+            if buf[j + 2] == 0 and buf[j + 3] == 0:
+                t = buf[j + 4:j + 4 + ln].decode("latin-1", "replace")
+                r = _arec(t)
+                if r.get("RECORD") == "1" and r.get("LIBREFERENCE"):
+                    name = r["LIBREFERENCE"]
+            elif buf[j + 2] == 0 and buf[j + 3] == 1:
+                des, nm = _sch_pin(buf[j + 4:j + 4 + ln])
+                if nm is not None and des is not None:
+                    pins.append((des, nm))
+            j += 4 + ln
+        if not pins:
+            continue
+        def _key(d: str) -> tuple[int, str]:
+            try:
+                return (0, f"{int(d):06d}")
+            except ValueError:
+                return (1, d)
+        ordered = sorted(pins, key=lambda pn: _key(pn[0]))
+        half = (len(ordered) + 1) // 2
+        left = {d for d, _ in ordered[:half]}
+        sympins: dict[str, tuple[str, int, str]] = {}
+        counts = {"left": 0, "right": 0}
+        for des, nm in pins:
+            side = "left" if des in left else "right"
+            sympins[des] = (side, counts[side], nm)
+            counts[side] += 1
+        n = max(len(pins), 1)
+        rows = max(1, (n + 1) // 2)
+        sym: dict[str, object] = {"w": 12.0, "h": max(4.0, rows * 2.0 + 2.0),
+                                  "pins": sympins, "notch": False,
+                                  "zigzag": False, "label": "{ref} {value}"}
+        out.append((name, sym))
+    if not out:
+        raise ValueError("altium binary: no symbols with pins found")
+    return out
+
+
 def _bin_pcblib(data: bytes) -> list[tuple[str, Footprint]]:
     """Native binary .PcbLib → [(name, footprint)]. Each top-level storage
     is one footprint: its Data stream opens with [u8 namelen][name], then

@@ -448,7 +448,7 @@ class Board(Component):
         return out
 
     def import_sym(self, key: str | None = None, **k: object) -> dict[str, object]:
-        """Import: sym (native .sym)."""
+        """Import: sym (native .sym) / schlib (Altium .SchLib)."""
         out = self._run("importer", key or "sym", **k)
         assert isinstance(out, dict)
         return out

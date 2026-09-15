@@ -1189,6 +1189,25 @@ class SymImporter(Plugin[dict[str, object]]):
         return {"name": name}
 
 
+class SchLibImporter(Plugin[dict[str, object]]):
+    """Symbol importer: native binary .SchLib (all symbols, pin names +
+    designators; sides by designator-half split)."""
+    kind, key = "importer", "schlib"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from .foreign import _bin_schlib
+        path = k.get("path", "")
+        assert isinstance(path, str) and path
+        with open(path, "rb") as f:
+            pairs = _bin_schlib(f.read())
+        names = []
+        for name, meta in pairs:
+            if name not in board.custom_sym:
+                board.add_symbol(name, meta, path)
+            names.append(name)
+        return {"names": names}
+
+
 class FpImporter(Plugin[dict[str, object]]):
     """Footprint importer: native .fp (re-exported for plugin listing)."""
     kind, key = "importer", "fp"
@@ -1652,7 +1671,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
              TscircuitImporter, PcbImporter, EasyedaImporter, AltiumImporter,
              AltiumSchImporter,
-             SymImporter,
+             SymImporter, SchLibImporter,
              TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin,
