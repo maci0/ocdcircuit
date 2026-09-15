@@ -28,6 +28,7 @@ HERE = ROOT
 from ocdcircuit import agent  # noqa: E402
 from ocdcircuit import fab as _fab  # noqa: E402
 from ocdcircuit.circuit import Board  # noqa: E402
+from ocdcircuit.recommend import recommend  # noqa: E402
 from ocdcircuit.core import UiSlots  # noqa: E402
 
 SLOTS = UiSlots()
@@ -2257,7 +2258,9 @@ class H(http.server.BaseHTTPRequestHandler):
         st["silk"] = silksel
         st["score"] = score if score is not None else b.score()
         st["lint"] = lint if lint is not None else b.lint()
-        st["recommend"] = b.recommend()
+        # recommend() is a module function over parts/nets (report-only);
+        # it was being called as a Board method, which does not exist.
+        st["recommend"] = recommend(b)
 
     def log_message(self, *a: object) -> None:
         pass
