@@ -23,7 +23,7 @@ board.use("router", "mine")               # hot-swap, undoable
 
 Kinds (see `plugins.py` for keys): `placer placer→float` · `router→int` ·
 `layers` · `drc/erc→dict` · `exporter→[files]` · `renderer→str|bytes` ·
-`silk/importer/calc/simulate/lint/score/doctor→dict` · `diff→str` · `parts` · `xray→dict` · `quote→dict` · `price→dict`.
+`silk/importer/calc/simulate/lint/score/doctor→dict` · `diff→str` · `parts` · `xray→dict` · `quote→dict` · `price→dict` · `scan→dict`.
 
 Current keys (from a live registry — count, don't hand-edit):
 `placer` compact/diffusion/hierarchical/multilevel/thermal/tidy ·
@@ -35,6 +35,9 @@ all/assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg/xray ·
 `layers` greedy · `config` toml · `calc`/`diff`/`doctor`/`lint`/`parts`/`score` std ·
 `xray` std (fab PNG vs design: score + divergences) ·
 `quote` std (fab price comparison: bare per fab + JLC assembly) ·
+`scan` photo (photos of a physical board -> stitch + enhancement stack +
+parallax height + gaussian splat -> vision analysis -> draft .ocd; takes
+note=/docs= context and returns questions= for the user) ·
 `price` std/knoll/jlc-api (unit-price provider: manual attr → offline JLC DB → knoll live → official JLC API).
 
 Rules: engine imports inside `run()` (keeps `import ocdcircuit` light);

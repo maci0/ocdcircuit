@@ -139,6 +139,11 @@ stated as a word in a pill.
   residual parallax, and bakes a 3D gaussian splat (`.ply`). A vision model
   then reads the stack and drafts a new `.ocd`
   (`ocd scan --mm 100 photos/*.jpg`, `--no-llm` for artifacts only).
+  Tell it what you know and it uses it: `--note "scope PSU"`, `--doc
+  manual.pdf` (PDFs via pdftotext). It asks back what the photos cannot
+  settle — answer with `--answer "question=reply"` and re-run for a
+  better-informed pass. Context is evidence, not authority: where a manual
+  and the board disagree, the model is told to believe the board.
   Measured on a real board with a published schematic
   (`python -m tools.scanbench`): 83% of handheld frames lock to 0.04°/0.03%,
   the gated stitch lands 2.1x closer to the true board than the sharpest
