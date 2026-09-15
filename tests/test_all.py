@@ -2104,6 +2104,16 @@ _simg = agent.loads("board t 40x30\npart U1 SOIC14 NAND logic=NAND\n"
                     "net A: U1.1\nnet B: U1.2\nnet Y: U1.3\n"
                     "sim vcc A 1\nsim vcc B 0\n")
 assert cast(dict[str, int], _simg.simulate("gates")["nets"])["Y"] == 1
+# delay=N schedules the output N ticks out (default 0 = instant)
+_simgd = agent.loads("board t 40x30\npart U1 SOIC14 NAND logic=NAND delay=2\n"
+                     "net A: U1.1\nnet B: U1.2\nnet Y: U1.3\n"
+                     "sim vcc A 0\nsim vcc B 0\nsim tran 0.01 8\n")
+_gd = cast(dict[str, list[int]], _simgd.simulate("gates", ticks=8)["waves"])
+assert _gd["Y"] == [0, 0, 1, 1, 1, 1, 1, 1], _gd["Y"]
+_simg0 = agent.loads("board t 40x30\npart U1 SOIC14 NAND logic=NAND\n"
+                     "net A: U1.1\nnet B: U1.2\nnet Y: U1.3\n"
+                     "sim vcc A 0\nsim vcc B 0\nsim tran 0.01 8\n")
+assert cast(dict[str, list[int]], _simg0.simulate("gates", ticks=8)["waves"])["Y"] == [1] * 8
 _simg2 = agent.loads("board t 40x30\npart U1 SOIC14 DFF logic=DFF\n"
                      "net D: U1.1\nnet CLK: U1.2\nnet Q: U1.3\nnet QN: U1.4\n"
                      "sim vcc D 1\nsim clk CLK 4\nsim tran 0.01 100\n")

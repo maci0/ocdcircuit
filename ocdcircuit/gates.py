@@ -13,7 +13,8 @@ per-step levels when `sim tran` present (steps = ticks).
 
 Oscillation guard: combinational loops settle by fixpoint cap (100 iters);
 ring oscillators report X (None) on the loop nets.
-# ponytail: unit-delay only — timing-annotated delays when a board needs them.
+# ponytail: tick delays via `delay=N` part attrs (0 = instant fixpoint,
+# the old behavior); sub-tick/float annotated delays when a board needs them.
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING
@@ -53,6 +54,15 @@ def _gate_fn(kind: str, ins: list[int]) -> int:
     if kind == "INV":
         return int(not ins[0])
     return int(bool(ins[0]))  # BUF
+
+
+def _delay(p_attrs: dict[str, str]) -> int:
+    """Timing annotation: `delay=N` part attr (ticks). Default 0 = today's
+    instant combinational fixpoint; N>0 schedules the output N ticks out."""
+    try:
+        return max(0, int(p_attrs.get("delay", "0")))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _logic_parts(board: Board) -> list[tuple[str, str, list[str], str]]:
@@ -119,10 +129,16 @@ def run(board: Board, ticks: int | None = None, **k: object) -> dict[str, object
     prev_clk: dict[str, int] = {}
     n_ticks = ticks if ticks is not None else 20
     assert isinstance(n_ticks, int)
+    delays = {ref: _delay(board.parts[ref].attrs) for ref, kd, _i, _o in parts}
+    pending: list[tuple[int, str, int]] = []  # (fire_tick, net, value)
     for t in range(n_ticks):
         for cn, (per, duty) in clocks.items():
             phase = (t % max(1, int(round(per)))) / max(1, int(round(per)))
             state[cn] = 1 if phase < duty else 0
+        # due events first: outputs scheduled by delay=N fire now
+        for fire_t, onet, v in [e for e in pending if e[0] == t]:
+            state[onet] = v
+        pending = [e for e in pending if e[0] != t]
         # combinational fixpoint (cap 100: oscillation → None)
         for _ in range(100):
             changed = False
@@ -134,6 +150,10 @@ def run(board: Board, ticks: int | None = None, **k: object) -> dict[str, object
                     continue
                 v = _gate_fn(kd, [int(x) for x in vals if x is not None])
                 if state.get(onet) != v:
+                    delay = delays.get(_r, 0)
+                    if delay and t + delay < n_ticks:
+                        pending.append((t + delay, onet, v))
+                        continue  # output lands later; not settled now
                     state[onet] = v
                     changed = True
             if not changed:

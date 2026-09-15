@@ -132,6 +132,8 @@ sim clk CLK 4                # square-wave stimulus, period [duty] (gates)
 Digital: `part U1 SOIC14 NAND logic=NAND` (NAND/NOR/AND/OR/XOR/INV/BUF,
 DFF/JK; inputs in pin order, output = highest pin), then
 `b.simulate("gates")`. GND/VSS/0 = 0, VCC = 1 unless driven.
+`delay=N` part attr schedules that gate's output N ticks out (default 0
+= instant combinational fixpoint).
 
 ## Reuse: files (`use`) and in-file units (`block`)
 
