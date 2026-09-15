@@ -8,7 +8,7 @@ import shlex
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from .types import Constraint
+from .types import Constraint, Undo
 
 
 def _q(v: object) -> str:
@@ -657,12 +657,38 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 b._constrain_raw(c)
     if b is None:
         raise ValueError("empty circuit")
-    b.comments = comments
+    b.comments[:] = comments
+    # load-path writes land as one journal entry on the board fiber: a
+    # parsed board unloads like any other domain state (paper Alg 4 —
+    # unload reverts all of it, not just the emitted parts).
+    b._load_journal(log_load(b))
     if pending:  # fp/sym lines but never a board header to import them into
         raise ValueError(f"line 1: board header first: {pending[0][1]!r}")
     if top:
         _validate(b)
     return b
+
+
+def log_load(b: Board) -> Undo:
+    """Inverse for the load-path writes a fresh parse performed outside
+    emit (comments/meta/blocks/includes/owner tags — all the merges _loads,
+    _include and _instance do directly). A fresh board starts empty, so the
+    inverse clears that state; the per-edit undos (parts/nets/constraints)
+    already on the journal remove the rest. Returns it so the board fiber
+    can journal it; loading then unloads like any edit."""
+
+    def _undo() -> None:
+        b.comments[:] = []
+        b.meta.clear()
+        b.blocks.clear()
+        b.block_src.clear()
+        b.includes[:] = []
+        b.instances[:] = []
+        for p in b.parts.values():
+            p.owner = None
+
+    return _undo
+
 
 
 def _validate(b: Board) -> None:

@@ -190,6 +190,21 @@ def lint(board: Board) -> dict[str, object]:
             # pinN= labels a footprint pin — a typo'd N labels nothing
             if k.startswith("pin") and k[3:] and k[3:] not in pins:
                 warn(f"unknown pin label {k}={p.attrs[k]!r} on {ref}")
+    for ins in board.instances:
+        blk = board.blocks.get(str(ins["block"]))
+        if blk is None or not blk.ports:
+            continue  # unknown/loose blocks stamp verbatim — nothing to check
+        join = ins.get("join")
+        joins = {str(j) for j in join} if isinstance(join, list) else set()
+        pre = str(ins["prefix"]) + "_"
+        for port in blk.ports:
+            # a port's job is inward-to-outward: stamped net with pins only
+            # inside this instance is an island (three private GNDs, ...).
+            stamped = port if port in joins else pre + port
+            pnet = board.nets.get(stamped, board.nets.get(port))
+            ppins = pnet.pins if pnet is not None else []
+            if ppins and all(r.startswith(pre) for r, _ in ppins):
+                warn(f"instance {ins['prefix']} leaves port {port} unjoined")
     if not board.parts:
         warn("no parts")
     return {"errors": errors, "warnings": warnings}

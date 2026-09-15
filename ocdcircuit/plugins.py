@@ -184,13 +184,16 @@ class CoarseRouter(Plugin[int]):
         from typing import cast
         from . import maze as _maze
         coarse = float(cast(float, k.get("grid", 2.0)))
-        board.constrain({"t": "route-grid", "grid": coarse})
+        # tracked temp constraint (undoable, idempotent inverse): a crash
+        # or a pre-existing user grid can't leave a phantom or eat theirs.
+        # unconstrain() removes one appended instance (identity match), so
+        # only what this run added is withdrawn.
+        c: dict[str, object] = {"t": "route-grid", "grid": coarse}
+        board.constrain(c)
         try:
             return _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
         finally:
-            board.constraints = [c for c in board.constraints
-                                 if not (c.get("t") == "route-grid"
-                                         and c.get("grid") == coarse)]
+            board.unconstrain(c)
 
 
 class WireMaskRouter(Plugin[int]):
@@ -377,7 +380,9 @@ class AltiumExporter(Plugin[list[str]]):
 
 
 class BundleExporter(Plugin[list[str]]):
-    """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready."""
+    """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready.
+    cordis-boundary: file emission (outside-context by §6.1); withheld
+    until export() is called, no inverse claimed."""
     kind, key = "exporter", "bundle"
 
     def run(self, board: Board, *a: object, **k: object) -> list[str]:
@@ -849,7 +854,9 @@ class PngRenderer(Plugin[bytes]):
 class BlenderRenderer(Plugin[bytes]):
     """Studio product shot via Blender headless (needs flatpak
     org.blender.Blender; missing → RuntimeError). Imports our glTF,
-    3/4 product angle, key+fill suns, EEVEE. ~30-60s per board."""
+    3/4 product angle, key+fill suns, EEVEE. ~30-60s per board.
+    cordis-boundary: child-process emission (outside-context by §6.1);
+    withheld until run() is called, no inverse claimed."""
     kind, key = "renderer", "blender"
     ext = ".studio.png"
 
@@ -939,7 +946,9 @@ bpy.ops.render.render(write_still=True)
 
 class KicadRenderer(Plugin[bytes]):
     """Photorealistic PNG via kicad-cli's 3D raytracer (needs KiCad 9+;
-    missing binary → RuntimeError naming the apt package). Exports the
+    missing binary → RuntimeError naming the apt package).
+    cordis-boundary: child-process + tempdir emission (outside-context
+    by §6.1); withheld until run() is called, no inverse claimed. Exports the
     board to .kicad_pcb, renders, returns PNG bytes. Mask color follows
     `meta mask <color>` (green/red/blue/black/white/purple/yellow)."""
     kind, key = "renderer", "kicad"
@@ -1008,7 +1017,10 @@ class KicadRenderer(Plugin[bytes]):
 
 class PcbdrawRenderer(Plugin[str]):
     """Stylized fabrication drawing via pcbdraw (needs `pip install pcbdraw`;
-    missing → RuntimeError). Exports .kicad_pcb, plots styled SVG.
+    missing → RuntimeError).
+    cordis-boundary: child-process + tempdir emission (outside-context
+    by §6.1); withheld until run() is called, no inverse claimed.
+    Exports .kicad_pcb, plots styled SVG.
     Style follows `meta style <name>` (default jlcpcb-green-enig)."""
     kind, key = "renderer", "pcbdraw"
     ext = ".fab.svg"
@@ -1369,10 +1381,25 @@ def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
     for n, net in nb.nets.items():
         for ref, pin in net.pins:
             board.connect(n, ref, pin)
-    ncu = cast(dict[str, object], ir.get("board", {})).get("layers", 2)
+    binfo = cast(dict[str, object], ir.get("board", {}))
+    ncu = binfo.get("layers", 2)
     assert isinstance(ncu, int)
+    iw, ih = binfo.get("w", board.width), binfo.get("h", board.height)
+    assert isinstance(iw, (int, float)) and isinstance(ih, (int, float))
+    if abs(iw - board.width) > 1e-9 or abs(ih - board.height) > 1e-9:
+        board.set_board(float(iw), float(ih))
     if ncu > board.layers:
-        board.layers = ncu
+        # layers is a validating property, not an effect: route through
+        # Board.layers only via a recorded undo (loaders own no fiber).
+        old_layers = board.layers
+
+        def _do_layers() -> None:
+            board.layers = ncu
+
+        def _undo_layers() -> None:
+            board.layers = old_layers
+
+        board.emit(_do_layers, _undo_layers)
     segs: list[Seg] = []
     for t in cast(list[dict[str, object]], ir.get("_imported_traces", [])):
         if t.get("via"):
@@ -1402,6 +1429,19 @@ def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
             board.constrain({"t": "pour", "net": str(c["net"]),
                              "layer": int(cast(int, c["layer"]))})
             npour += 1
+    nother = 0
+    for c in cast(list[dict[str, object]], ir.get("constraints", [])):
+        if c.get("t") in ("cutout", "keepout", "class", "diff", "match"):
+            cc: Constraint = {"t": str(c["t"])}
+            for k in ("net", "name", "p", "n", "x", "y", "w", "h", "d",
+                      "layer", "gap", "nets", "layers"):
+                if k in c:
+                    v = c[k]
+                    cc[k] = (list(cast(list[object], v)) if isinstance(v, list)
+                             else float(cast(float, v)) if isinstance(v, (int, float))
+                             else str(v) if isinstance(v, str) else v)
+            board.constrain(cc)
+            nother += 1
     ntx = 0
     new_comments = [f"{t.get('text', '')} @ {t.get('x', 0)}, {t.get('y', 0)}"
                     for t in cast(list[dict[str, object]], ir.get("_imported_texts", []))]
@@ -1415,6 +1455,8 @@ def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
         out["traces"] = ntr
     if npour:
         out["pours"] = npour
+    if nother:
+        out["constraints"] = nother
     if ntx:
         out["texts"] = ntx
     skip = ir.get("_skipped", [])
@@ -1585,7 +1627,9 @@ class SimPlugin(Plugin[dict[str, object]]):
 
 class NgspicePlugin(Plugin[dict[str, object]]):
     """Circuit simulator: ngspice backend (dc|tran|ac, diodes/BJTs/opamps).
-    Same return shape as mna. Missing binary → RuntimeError (use mna)."""
+    Same return shape as mna. Missing binary → RuntimeError (use mna).
+    cordis-boundary: child-process + cir-file emission (outside-context
+    by §6.1); withheld until run() is called, no inverse claimed."""
     kind, key = "simulate", "ngspice"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:

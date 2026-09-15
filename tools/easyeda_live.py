@@ -34,7 +34,10 @@ MIL = 39.3700787  # mm → mil (Pro source units)
 
 
 class CDP:
-    """Minimal CDP client, stdlib only (hand-rolled WS framing)."""
+    """Minimal CDP client, stdlib only (hand-rolled WS framing).
+    cordis-boundary: socket + reader thread are process resources, not
+    context effects — owned explicitly via close() (render_board's
+    finally), never by a fiber."""
 
     def __init__(self, ws_url: str, timeout: float = 90.0) -> None:
         u = urlparse(ws_url)
@@ -51,7 +54,21 @@ class CDP:
         self.oid = 0
         self.events: list[dict[str, object]] = []
         self.lock = threading.Lock()
+        self._closed = False
         threading.Thread(target=self._loop, daemon=True).start()
+
+    def close(self) -> None:
+        """Stop the reader thread and the socket (idempotent, safe on a
+        half-constructed client)."""
+        self._closed = True
+        s = getattr(self, "s", None)
+        if s is None:
+            return
+        try:
+            s.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        s.close()
 
     def _recvn(self, n: int) -> bytes:
         d = b""
@@ -64,7 +81,7 @@ class CDP:
 
     def _loop(self) -> None:
         try:
-            while True:
+            while not self._closed:
                 hdr = self._recvn(2)
                 ln = hdr[1] & 0x7F
                 if ln == 126:
@@ -148,7 +165,9 @@ def page_ws(port: int = 9223) -> str:
 def launch_client(port: int = 9223) -> tuple[subprocess.Popen[bytes], str]:
     """Fresh client under xvfb with CDP. Returns (proc, profile dir):
     caller must proc.terminate() + shutil.rmtree(home) — the profile
-    dir is ~100MB, don't leak it per render."""
+    dir is ~100MB, don't leak it per render.
+    cordis-boundary: child process + temp dir are outside-context
+    emissions; render_board compensates in finally (terminate + rmtree)."""
     home = tempfile.mkdtemp(prefix="ezlive")
     proc = subprocess.Popen(
         ["xvfb-run", "-a", "/opt/easyeda-pro/easyeda-pro",
@@ -226,6 +245,7 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
         raise RuntimeError("pro_source push untested (client kept crashing); "
                            "see module docstring for the proven chain")
     finally:
+        cdp.close()
         proc.terminate()
         shutil.rmtree(home, ignore_errors=True)
     return out_png

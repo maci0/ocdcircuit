@@ -64,11 +64,15 @@ class _AttrDict(dict[str, str]):
         self._drop()
         return out
 
-    def update(self, *maps: object, **kw: str) -> None:  # type: ignore[override]
+    def update(self, *maps: object, **kw: str) -> None:
         for m in maps:
-            pairs = m.items() if isinstance(m, dict) else m
-            for k, v in pairs:
-                self[str(k)] = str(v)
+            if isinstance(m, dict):
+                for k, v in m.items():
+                    self[str(k)] = str(v)
+            else:
+                assert isinstance(m, list)
+                for k, v in m:
+                    self[str(k)] = str(v)
         for k, v in kw.items():
             self[k] = v
 

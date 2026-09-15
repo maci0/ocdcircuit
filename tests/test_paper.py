@@ -195,6 +195,30 @@ assert len(_bb.parts) == 2
 _bb._fiber.retire()
 _bb._fiber._insert()
 assert len(_bb.parts) == 0, "board unload must revert domain state"
+# load-path state unloads too (comments/meta/blocks/includes/owners are
+# written outside emit — the load journal covers them, paper Alg 4)
+_lb2 = _agent.loads("# hi\nboard t 20x10\nmeta rev A\npart R1 R0805 1k\n"
+                    "net N :: R1.1 <--> R1.2\n", base="boards")
+_lb2._fiber.retire()
+_lb2._fiber._insert()
+assert (len(_lb2.parts), len(_lb2.nets), _lb2.comments, _lb2.meta,
+        _lb2.constraints) == (0, 0, [], {}, []), "load state survives unload"
+# include merge unloads: owned parts, joined nets, use provenance all revert
+_ib2 = _agent.loads("board t 40x30 2L\nuse psu.ocd as P\npart R1 R0805 1k\n"
+                    "net N :: R1.1 <--> R1.2\n", base="boards")
+assert "P_J1" in _ib2.parts and _ib2.includes
+_ib2._fiber.retire()
+_ib2._fiber._insert()
+assert (len(_ib2.parts), len(_ib2.nets), _ib2.includes,
+        _ib2.constraints) == (0, 0, [], []), "include survives unload"
+# coarse temp constraint is a tracked effect: removal is undoable, a second
+# undo still clears traces (no out-of-band state surgery, paper Alg 1)
+_cb2 = _agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart C1 C0805 100n\n"
+                    "net N :: R1.1 <--> C1.1\n", base="boards")
+_cb2.route_board("coarse")
+assert not [c for c in _cb2.constraints if c.get("t") == "route-grid"]
+_cb2.ctx.undo(2)
+assert len(_cb2.traces) == 0, "coarse undo must clear traces"
 
 # loader entries run through ctx.use: drop removes uid, re-add reissues
 ldt = Context()

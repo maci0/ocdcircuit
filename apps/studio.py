@@ -34,7 +34,10 @@ from ocdcircuit.core import UiSlots  # noqa: E402
 SLOTS = UiSlots()
 # Built-in views (harness-slot shape: shell declares, entries contribute).
 # A UI plugin = SLOTS.register(slot, id, fn) + optional /api route.
-# Every control carries a visible word: a glyph alone is not a label.
+# cordis-boundary: process-lifetime shell singleton, not a fiber contribution —
+# register() returns a disposer, but the shell never unloads, so nothing leaks
+# past an owner that outlives the process. Every control carries a visible
+# word: a glyph alone is not a label.
 TOOLBAR = (
     '<div class="tbar">'
     '<div class="grp"><span class=lbl>engines</span>'

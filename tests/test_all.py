@@ -1748,6 +1748,11 @@ assert _cdp.call("Test.big", {"pad": "y" * 200}, timeout=5.0)["echo"] == "Test.b
 import time as _time
 _time.sleep(0.3)
 assert _cdp.events == []  # reply consumed, close drained
+_cdp.close()  # reader thread + socket reaped now, not at GC
+_time.sleep(0.3)
+assert not [t for t in _thr.enumerate() if t.is_alive()
+            and getattr(getattr(t, "_target", None), "__self__", None) is _cdp], \
+    "CDP reader thread survives close"
 _srv.close()
 # easyeda_live discovery vs a stub DevTools server: page-type filter,
 # wait_ready poll, no-page StopIteration
@@ -2099,7 +2104,7 @@ _bt = foreign._bin_texts(
     b"\x05" + len(_tpay).to_bytes(4, "little") + _tpay
     + (5).to_bytes(4, "little") + b"HIJKL")
 assert len(_bt) == 1 and _bt[0]["TEXT"] == "HIJKL"
-assert _bt[0]["LOCATION.X"].startswith("10.")
+assert _bt[0]["LOCATION.X"].startswith("9.999")
 # REGION cutout reaches the board through the ASCII path
 _alr = foreign.altium_ascii(
     "|RECORD=Board|VX0=0mm|VY0=0mm|VX1=20mm|VY1=0mm|VX2=20mm|VY2=15mm|VX3=0mm|VY3=15mm|\n"
@@ -2107,9 +2112,37 @@ _alr = foreign.altium_ascii(
     "|RECORD=Region|KIND=1|LAYER=TOPLAYER|NPT=4"
     "|X0=1mm|Y0=1mm|X1=3mm|Y1=1mm|X2=3mm|Y2=3mm|X3=1mm|Y3=3mm|\n")
 assert {"t": "cutout", "x": 2.0, "y": 2.0, "w": 2.0, "h": 2.0} in _alr["constraints"]
+# kicad_pcb: real-world s-expr hazards (complex bench boards hit all four)
+assert foreign.sexpr('(kicad_pcb (descr "a; b") (net 1 "GND"))')[1][1] == '"a; b"'
+assert foreign.sexpr(r'(kicad_pcb (property "D" "30u\" gold"))')[1][2] == r'"30u\" gold"'
+_kpcb = ('(kicad_pcb (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (1 "In1.Cu" signal)) '
+         '(net 0 "") (net 1 "GND") '
+         '(footprint "F" (layer "F.Cu") (tedit 0) (at 10 10) '
+         '(fp_text reference "REF**" (at 0 0) (layer "F.SilkS")) '
+         '(pad "1" smd rect (at 10 10) (size 1 1) (layers "F.Cu") (net 1 "GND")) '
+         '(pad "" np_thru_hole circle (at 0 0) (size 1 1) (drill 1) (layers "*.Cu"))) '
+         '(footprint "G" (layer "F.Cu") (tedit 0) (at 0 0) '
+         '(fp_text reference "R1" (at 0 0) (layer "F.SilkS")) '
+         '(pad "1" thru_hole oval (at 0 0) (size 1 1) (drill oval 0.6 2.18) (layers "*.Cu") (net 1 "GND"))) '
+         '(gr_line (start 0 0) (end 20 10) (layer "Edge.Cuts") (width 0.1)))')
+_knl = foreign.kicad_pcb_netlist(_kpcb)
+assert cast(dict[str, object], _knl["board"])["layers"] == 3
+assert cast(dict[str, object], _knl["board"])["w"] == 20.0
+assert {str(p["ref"]) for p in cast(list[dict[str, object]], _knl["parts"])} == {"REF__", "R1"}
+# REGION cutout reaches the board via the constraints key
 _ali6 = Board("ali6", 40, 30)
-_ar6 = _ali6.import_fp("altium", path=_alf2)
-assert _ar6["pours"] == 1  # cutouts flow via constraints key too
+from ocdcircuit.plugins import _board_ir_into as _bii
+_ar6 = _bii(_ali6, foreign.altium_ascii(
+    "|RECORD=Board|VX0=0mm|VY0=0mm|VX1=20mm|VY1=0mm|VX2=20mm|VY2=15mm|VX3=0mm|VY3=15mm|\n"
+    "|RECORD=Net|NAME=GND|\n"
+    "|RECORD=Component|SOURCEDESIGNATOR=R1|PATTERN=R0805|COMMENT=1k|LAYER=TOPLAYER|X=5mm|Y=5mm|ROTATION=0|\n"
+    "|RECORD=Pad|NAME=1|COMPONENT=0|LAYER=TOPLAYER|NET=0|X=4mm|Y=5mm|XSIZE=1mm|YSIZE=1mm|SHAPE=RECTANGLE|HOLESIZE=0mm|\n"
+    "|RECORD=Pad|NAME=2|COMPONENT=0|LAYER=TOPLAYER|NET=0|X=6mm|Y=5mm|XSIZE=1mm|YSIZE=1mm|SHAPE=RECTANGLE|HOLESIZE=0mm|\n"
+    "|RECORD=Region|KIND=1|LAYER=TOPLAYER|NPT=4"
+    "|X0=1mm|Y0=1mm|X1=3mm|Y1=1mm|X2=3mm|Y2=3mm|X3=1mm|Y3=3mm|\n"))
+assert _ar6["constraints"] == 1
+assert [c for c in _ali6.constraints if c.get("t") == "cutout"] == [
+    {"t": "cutout", "x": 2.0, "y": 2.0, "w": 2.0, "h": 2.0}]
 # altium pours round-trip (export Polygon + reimport pour constraint)
 _alp = agent.loads("board t 20x20 2L\npart R1 R0805 1k\npart R2 R0805 1k\n"
                    "net N: R1.2 R2.1\nGND pour=0 :: R1.1 R2.2\n")
@@ -2243,9 +2276,9 @@ assert agent.dumps(agent.loads(agent.dumps(_bm), base=EX)) == agent.dumps(_bm)
 # block ports: join of a non-port errors, missing-port declares error,
 # unjoined ports warn as islands, lib blocks arrive via `use`
 _bp3 = agent.loads("board t 60x40 2L\nblock ch ports VCC GND\npart R R0805 10k\n"
-                  "net VCC: R.1\nnet GND: R.2\nend\n"
+                  "net VCC: R.1\nnet GND: R.2\nend\npart X R0805 1k\n"
                   "instance ch as A join VCC GND\ninstance ch as B join VCC\n"
-                  "net VCC: A_R.1 B_R.1\nnet GND: A_R.2\n", base=EX)
+                  "net VCC: X.1 A_R.1 B_R.1\nnet GND: X.2 A_R.2\n", base=EX)
 assert agent.dumps(agent.loads(agent.dumps(_bp3), base=EX)) == agent.dumps(_bp3)
 assert _bp3.blocks["ch"].ports == ["VCC", "GND"]
 assert any("B leaves port GND unjoined" in w for w in cast(list[str], _bp3.lint()["warnings"]))

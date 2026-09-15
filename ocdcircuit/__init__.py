@@ -6,8 +6,9 @@ is a hot-swappable Plugin resolved through the board's Registry.
 """
 from .core import Context, Component, Loader, Plugin, Registry
 from .circuit import Board, Module, Part, Net
-from . import solver, drc, export, agent, plugins, tidy_ga
+from . import solver, drc, export, agent, plugins, tidy_ga, recommend
 
 __all__ = ["Context", "Component", "Loader", "Plugin", "Registry",
            "Board", "Module", "Part", "Net",
-           "solver", "drc", "export", "agent", "plugins", "tidy_ga"]
+           "solver", "drc", "export", "agent", "plugins", "tidy_ga",
+           "recommend"]

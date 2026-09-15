@@ -11,6 +11,9 @@ support required, works with OpenAI, DeepSeek, Ollama, LM Studio):
 
 Nothing is written before it is validated: the studio applies a proposal
 through /build (parse + place + route + DRC) and only then commits it.
+
+cordis-boundary: HTTP calls are outside-context emissions (§6.1) —
+withheld until chat()/models() is called, no inverse claimed.
 """
 from __future__ import annotations
 import json
