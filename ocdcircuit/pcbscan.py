@@ -769,7 +769,87 @@ Then write a complete .ocd source for the reconstructed board:
 Put it in one fenced ```ocd block, with `#` comments marking every part of
 the reconstruction you are unsure about. Only include nets you actually
 traced.
+
+Finally, if answers from the person who took the photos would change your
+conclusions, ask for them: put the questions in one fenced ```questions
+block, one per line, most valuable first, at most five. Ask only what the
+images cannot settle - what equipment the board came out of, what a
+connector mates with, a part number you can see is printed but cannot
+resolve, a voltage or a measurement. Never ask what the images already
+answer, and leave the block out entirely if nothing is worth asking.
 """
+
+
+def read_doc(path: str, limit: int = 20000) -> str:
+    """Text of a user-supplied manual, datasheet or note.
+
+    PDFs go through `pdftotext -layout` (poppler); everything else is read as
+    text. Truncated to `limit` chars: a 200-page datasheet would swamp the
+    images, and the opening pages carry the part number, block diagram and
+    pin table that actually help.
+    """
+    import shutil
+    import subprocess
+    if not os.path.isfile(path):
+        raise ValueError(f"no such document: {path}")
+    if path.lower().endswith(".pdf"):
+        exe = shutil.which("pdftotext")
+        if exe is None:
+            raise ValueError(
+                f"{os.path.basename(path)} is a PDF and pdftotext is not on "
+                "PATH (install poppler-utils, or pass the text instead)")
+        r = subprocess.run([exe, "-layout", path, "-"],
+                           capture_output=True, timeout=180)
+        if r.returncode != 0:
+            raise ValueError(f"pdftotext failed on {os.path.basename(path)}: "
+                             f"{r.stderr.decode(errors='replace')[:200]}")
+        body = r.stdout.decode("utf-8", errors="replace")
+    else:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            body = f.read()
+    body = body.strip()
+    if len(body) > limit:
+        body = body[:limit] + f"\n[... truncated at {limit} chars]"
+    return body
+
+
+def context_block(note: str = "", docs: list[str] | None = None,
+                  answers: dict[str, str] | None = None) -> str:
+    """Everything the user told us, as one prompt section.
+
+    Kept separate from PROMPT because it is evidence, not instruction, and
+    the model is told exactly that: a manual narrows what a marking can mean,
+    but it must never overrule what the photographs actually show.
+    """
+    out: list[str] = []
+    if note:
+        out.append(f"What the owner says this board is:\n{note}")
+    for d in docs or []:
+        out.append(f"--- supplied document: {os.path.basename(d)} ---\n"
+                   f"{read_doc(d)}")
+    for q, a in (answers or {}).items():
+        out.append(f"Q: {q}\nA: {a}")
+    if not out:
+        return ""
+    return ("\n\nSupplied context. Use it to resolve ambiguity - a datasheet "
+            "pin table or a manual block diagram can settle what a marking "
+            "means. It does not overrule the photographs: where the context "
+            "and the board disagree, believe the board and say so.\n\n"
+            + "\n\n".join(out))
+
+
+def extract_questions(reply: str) -> list[str]:
+    """The ```questions block, if the model asked anything back."""
+    import re
+    m = re.search(r"```questions\n(.*?)(?:```|\Z)", reply, re.S)
+    if not m:
+        return []
+    out: list[str] = []
+    for line in m.group(1).splitlines():
+        q = re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", line).strip()
+        if q:
+            out.append(q)
+    return out[:5]
 
 
 def _b64_png(path: str, maxdim: int = 1024) -> str:
@@ -788,10 +868,16 @@ VIEWS = ("stitch", "contrast", "edges", "silk", "copper", "height")
 
 
 def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
-            note: str = "", timeout: float = 600.0) -> str:
+            note: str = "", docs: list[str] | None = None,
+            answers: dict[str, str] | None = None,
+            timeout: float = 600.0) -> str:
     """Hand the scan to a vision model and get the reverse-engineering
     report plus a reconstructed .ocd back. Needs a vision-capable model at
-    OCD_LLM_BASE/OCD_LLM_MODEL."""
+    OCD_LLM_BASE/OCD_LLM_MODEL.
+
+    `note` is what the owner says the board is, `docs` are manuals or
+    datasheets (PDF or text) to read alongside the images, and `answers`
+    carries replies to questions a previous pass asked."""
     from . import llm
     images: list[str] = []
     lines: list[str] = []
@@ -812,9 +898,8 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
                 lines.append(f"  image {len(images)}: {side} {v}")
     if not images:
         raise ValueError("nothing to analyse — run scan() first")
-    text = PROMPT + "\n\nScan report:\n" + "\n".join(lines)
-    if note:
-        text += f"\n\nOperator note: {note}"
+    text = (PROMPT + "\n\nScan report:\n" + "\n".join(lines)
+            + context_block(note, docs, answers))
     return llm.vision(text, images, timeout=timeout)
 
 
@@ -861,20 +946,31 @@ def _dedupe(body: str, run: int = 8) -> str:
 
 def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
             *, board_mm: float | None = None, note: str = "",
+            docs: list[str] | None = None,
+            answers: dict[str, str] | None = None,
             llm_analysis: bool = True) -> dict[str, object]:
     """Photos in, scan artifacts + analysis + a draft .ocd out.
 
+    `note`/`docs` are what the owner knows (a description, a manual, a
+    datasheet); `answers` feeds back replies to questions an earlier pass
+    asked, so a second call is strictly better informed than the first.
+
     The .ocd is written only if it parses — a draft that cannot be loaded is
-    a worse deliverable than the report that explains why.
+    a worse deliverable than the report that explains why. Questions the
+    model asked come back under `questions` either way: they are the most
+    useful output when the reconstruction is thin.
     """
     man = scan(photos, outdir, board_mm)
     if not llm_analysis:
         return man
-    report = analyse(man, note=note)
+    report = analyse(man, note=note, docs=docs, answers=answers)
     rp = os.path.join(outdir, "analysis.md")
     with open(rp, "w") as f:
         f.write(report)
     man["analysis"] = rp
+    asked = extract_questions(report)
+    if asked:
+        man["questions"] = asked
     try:
         src = extract_ocd(report)
     except ValueError as e:
@@ -1022,6 +1118,39 @@ def demo() -> None:
               + "".join(f"part U{i} SOIC8 c{i}\nnet N{i} :: U{i}.1 <--> U{i}.2\n"
                         for i in range(1, 30)) + "```")
     assert extract_ocd(varied).count("part U") == 29, "dedupe ate distinct parts"
+
+    # questions back to the user: numbered, bulleted or bare, capped at five
+    assert extract_questions("no block") == []
+    qs = extract_questions(
+        "text\n```questions\n1. What equipment is this from?\n"
+        "- What mates with CN2?\n\n* Voltage on the barrel jack?\n```\n")
+    assert qs == ["What equipment is this from?", "What mates with CN2?",
+                  "Voltage on the barrel jack?"], qs
+    assert len(extract_questions("```questions\n"
+                                 + "".join(f"q{i}?\n" for i in range(9))
+                                 + "```")) == 5, "question cap not applied"
+    # unterminated questions block (token cap) still yields what was asked
+    assert extract_questions("```questions\nOnly one?") == ["Only one?"]
+
+    # supplied context: note, document text, and answers to earlier questions
+    assert context_block() == ""
+    import tempfile as _tf
+    with _tf.NamedTemporaryFile("w", suffix=".txt", delete=False) as _fh:
+        _fh.write("MAX1234 regulator, pin 1 is VIN")
+        _docp = _fh.name
+    ctx = context_block("scope PSU board", [_docp], {"Voltage?": "12V"})
+    assert "scope PSU board" in ctx and "MAX1234" in ctx, ctx
+    assert "Q: Voltage?\nA: 12V" in ctx
+    assert "believe the board" in ctx, "context must not outrank the photos"
+    assert read_doc(_docp).startswith("MAX1234")
+    assert read_doc(_docp, limit=10).endswith("truncated at 10 chars]")
+    os.unlink(_docp)
+    try:
+        read_doc("/nonexistent/manual.pdf")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("read_doc accepted a missing file")
     print("pcbscan demo ok")
 
 
