@@ -23,6 +23,56 @@ CONSTRAINT_TYPES = frozenset({
 })
 
 
+class _AttrDict(dict[str, str]):
+    """Part.attrs with geometry-cache invalidation. attrs is written
+    directly everywhere (tests, agents, undo closures via clear/update) —
+    invalidating only in set_attr goes stale, and stale rotation feeds
+    wrong geometry to DRC. Every mutating method drops the owner's cache."""
+
+    def __init__(self, owner: Part, src: dict[str, str] | None = None) -> None:
+        super().__init__(src or {})
+        self._owner = owner
+
+    def _drop(self) -> None:
+        self._owner._rot = None
+        self._owner._wh = None
+
+    def __setitem__(self, key: str, value: str) -> None:
+        super().__setitem__(key, value)
+        self._drop()
+
+    def __delitem__(self, key: str) -> None:
+        super().__delitem__(key)
+        self._drop()
+
+    def clear(self) -> None:
+        super().clear()
+        self._drop()
+
+    def pop(self, key: str) -> str:  # type: ignore[override]
+        out = super().pop(key)
+        self._drop()
+        return out
+
+    def popitem(self) -> tuple[str, str]:
+        out = super().popitem()
+        self._drop()
+        return out
+
+    def setdefault(self, key: str, value: str) -> str:
+        out = super().setdefault(key, value)
+        self._drop()
+        return out
+
+    def update(self, *maps: object, **kw: str) -> None:  # type: ignore[override]
+        for m in maps:
+            pairs = m.items() if isinstance(m, dict) else m
+            for k, v in pairs:
+                self[str(k)] = str(v)
+        for k, v in kw.items():
+            self[k] = v
+
+
 class Part:
     def __init__(self, ref: str, fp: str, value: str = "", x: float = 0.0,
                  y: float = 0.0, w: float | None = None, h: float | None = None,
@@ -30,7 +80,9 @@ class Part:
         self.ref, self.fp, self.value = ref, fp, value
         self.x, self.y = x, y
         self.owner = owner  # include prefix that owns it (None = local)
-        self.attrs: dict[str, str] = dict(attrs or {})  # lcsc, rot, mpn...
+        self._rot: int | None = None
+        self._wh: tuple[float, float] | None = None
+        self.attrs: dict[str, str] = _AttrDict(self, attrs)  # lcsc, rot, mpn...
         if w is None or h is None:
             meta = FOOTPRINTS[fp]
             assert isinstance(meta["w"], float) and isinstance(meta["h"], float)
@@ -38,10 +90,9 @@ class Part:
         self.w, self.h = w, h
         # Cached rotation geometry. The placer/router inner loops ask for these
         # tens of millions of times per dense board (34M `rot` + 32M `wh` calls
-        # was ~11s of a 41s monster6502 placement); the inputs are set once at
-        # parse time, and set_attr drops the cache.
-        self._rot: int | None = None
-        self._wh: tuple[float, float] | None = None
+        # was ~11s of a 41s monster6502 placement); _AttrDict drops the cache
+        # on EVERY attrs mutation, not just set_attr (direct writes are the
+        # norm: tests, agents, undo closures).
 
     @property
     def rot(self) -> int:
@@ -180,6 +231,12 @@ class Board(Component):
         already ran them; the fiber chain must not replay."""
         while self._chain and self._chain[-1][0] > depth:
             self._chain.pop()
+
+    def _load_journal(self, undo: Undo) -> None:
+        """Journal a load-path inverse (agent.log_load): the parse wrote
+        outside emit, so record it here at the current stack depth —
+        rollback trims it, unload replays it."""
+        self._chain.append((len(self.ctx._undos), undo))
 
     @property
     def fab(self) -> str:
@@ -374,6 +431,12 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
+    def recommend(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Add/cut recommendations. Report-only; ops are apply_patch-ready."""
+        out = self._run("recommend", key, **k)
+        assert isinstance(out, dict)
+        return out
+
     def score(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Neatness scorecard. Prefer tidy components over the scalar."""
         out = self._run("score", key, **k)
@@ -524,7 +587,10 @@ class Board(Component):
         w = meta["w"]
         h = meta["h"]
         assert isinstance(w, float) and isinstance(h, float)
-        p = Part(ref, fp, value, px, py, w, h, attrs=attrs)
+        # 9-slot signature: (ref, fp, value, x, y, w, h, owner, attrs).
+        # Calling with 7 positionals put attrs into owner and then collided
+        # with attrs=, so every part with a custom footprint raised TypeError.
+        p = Part(ref, fp, value, px, py, w, h, None, attrs)
         old = self.parts.get(ref)
 
         def _add() -> None:
