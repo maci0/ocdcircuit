@@ -289,7 +289,10 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
             frames.append(_snap(board))
 
 
-CHUNK_PAIRS = 4_000_000  # pair budget per chunk (tunable)
+# Pair budget per repulsion chunk. Small chunks are much faster than
+# large ones (5,400 parts, 1 iteration: 50k -> 1.29s, 4M -> 1.99s): the
+# chunk has to fit in cache, and the loop overhead is negligible next to it.
+CHUNK_PAIRS = 50_000
 
 
 def _repel_block(np: Any, F: Any, pos: Any, wh: Any, opos: Any, owh: Any,
