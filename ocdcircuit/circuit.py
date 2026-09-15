@@ -94,7 +94,7 @@ class Part:
         self.w, self.h = w, h
         # Cached rotation geometry. The placer/router inner loops ask for these
         # tens of millions of times per dense board (34M `rot` + 32M `wh` calls
-        # was ~11s of a 41s monster6502 placement); _AttrDict drops the cache
+        # was ~11s of a 41s discrete6502 placement); _AttrDict drops the cache
         # on EVERY attrs mutation, not just set_attr (direct writes are the
         # norm: tests, agents, undo closures).
 
@@ -180,7 +180,8 @@ class Block:
 
 class Board(Component):
     def __init__(self, name: str = "board", width: float = 40.0,
-                 height: float = 30.0, layers: int = 2) -> None:
+                 height: float = 30.0, layers: int = 2, *,
+                 dispatch: bool = True) -> None:
         super().__init__(name)  # name setter validates (no path separators)
         self.ctx = Context()
         # property setters validate (positive + finite size, ≥1 layer)
@@ -227,8 +228,9 @@ class Board(Component):
             base_dispose()
 
         self._fiber.dispose = _drain
-        from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
-        mount_defaults(self)
+        if dispatch:
+            from .plugins import mount_defaults  # deferred: plugins -> solver -> circuit
+            mount_defaults(self)
 
     def _trim_chain(self, depth: int) -> None:
         """Drop journal entries popped off the flat stack — rollback/undo
@@ -348,7 +350,7 @@ class Board(Component):
 
     def place(self, key: str | None = None, **k: object) -> float:
         if key is None and len(self.parts) >= 1000:
-            # ponytail: 10.6s vs 320s + fewer overlaps on monster6502;
+            # ponytail: 10.6s vs 320s + fewer overlaps on discrete6502;
             # multilevel wins past ~1000 parts, diffusion below.
             key = "multilevel"
         out = self._run("placer", key, **k)

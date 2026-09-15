@@ -1,5 +1,6 @@
 """Agent-first API: structured patches (undoable) + NL constraint fallback."""
 from __future__ import annotations
+import gc
 import json
 import math
 import os
@@ -488,6 +489,32 @@ def _dump_sim(c: Constraint) -> str:
     return f"sim {k} {c.get('ref', '')} {c.get('value', '')}"
 
 
+class _quiet_gc:
+    """Pause cyclic GC for an allocation-heavy parse, restore it after.
+
+    A 5420-part board allocates ~680k GC-tracked objects — 28k undo entries,
+    each a dict plus three closures, all kept alive by the undo stack — and the
+    default gen0 threshold (every 2000 allocations) fired 469 collections
+    inside one load. Measured: 1256ms with the default thresholds, 284ms with
+    GC off, 331ms with the thresholds raised. Nothing here creates garbage that
+    refcounting cannot free, cycles included: they wait for the next natural
+    collection. Semantics are untouched — same objects, same undo stack, same
+    lazy mount decisions. A caller that had GC off keeps it off."""
+
+    def __enter__(self) -> None:
+        self.armed = gc.isenabled()
+        if self.armed:
+            gc.disable()
+
+    def __exit__(self, *exc: object) -> None:
+        if self.armed:
+            # No collect here: the board just built is *all* gen0, so an
+            # explicit collect(0) walks every one of those ~680k objects and
+            # cost 400ms — more than it saved. Cycles the parse left behind are
+            # freed by the next natural collection, exactly as before.
+            gc.enable()
+
+
 def loads(text: str, base: str | os.PathLike[str] | None = None) -> Board:
     """Parse .ocd text (dumps output, comments with #). Constraints reuse
     parse_constraint — one grammar, no separate parser. Errors name the line.
@@ -500,7 +527,8 @@ def loads(text: str, base: str | os.PathLike[str] | None = None) -> Board:
     layers and `fix` lines are ignored — the parent places everything.
     Cycles are an error."""
     basedir = os.path.abspath(base) if base is not None else os.getcwd()
-    return _loads(text, basedir, stack=(), top=True)
+    with _quiet_gc():
+        return _loads(text, basedir, stack=(), top=True)
 
 
 def _import_ref(b: Board, kw: str, line: str, base: str,
@@ -896,8 +924,11 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
         if bad:
             raise err(f"instance {block} joins non-port {bad} (ports: {' '.join(blk.ports)})")
     pre = prefix + "_"
-    # parse block lines into a throwaway board, then merge like _include
-    child = _Board("__block__")
+    # parse block lines into a throwaway board, then merge like _include.
+    # dispatch=False: this board never runs a plugin, and mounting the ~59
+    # defaults for it was 1.5s of a 2.8s load on a 1726-instance board
+    # (101k plugin mounts, each notifying the whole fiber tree).
+    child = _Board("__block__", dispatch=False)
     child.custom_fp.update(parent.custom_fp)  # blocks may use parent's `fp` files
     for raw in parent.blocks[block].lines:
         line = raw.split("#", 1)[0].strip()

@@ -3,6 +3,7 @@ parsed board (parts/nets/constraints as loaded) — style, hygiene, and
 likely-silly before the solvers ever run. DRC/ERC own geometry/electrics.
 """
 from __future__ import annotations
+from bisect import bisect_left
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -21,6 +22,17 @@ _RANGES = {"width": ("width", 0.05, 3.0), "bend": ("r", 0.5, 50.0),
 
 def _strs(v: object) -> list[str]:
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
+
+
+def _has_prefix(refs: list[str], pre: str) -> bool:
+    """Does any ref start with `pre`? Sorted refs make this a bisect instead of
+    a scan: a block/instance board carries one `near-group` per instance, and
+    scanning every part for each was 6.37M startswith calls — 0.6s of a 0.6s
+    lint on the 5420-part test board."""
+    if not pre:
+        return True
+    i = bisect_left(refs, pre)
+    return i < len(refs) and refs[i].startswith(pre)
 
 
 def lint(board: Board) -> dict[str, object]:
@@ -47,6 +59,11 @@ def lint(board: Board) -> dict[str, object]:
         return {"errors": [f"unreadable parts library: {e}"], "warnings": []}
 
     connected: set[tuple[str, str]] = set()
+
+    # pin names per footprint: pins_of() rebuilds the pad dict and a big
+    # board validates 33.5k pins (~40ms of lint). `lib` is fixed for this
+    # call, so one lookup per footprint is the same answer.
+    pins_cache: dict[str, set[str]] = {}
     for net in board.nets.values():
         for r, q in net.pins:
             connected.add((r, str(q)))
@@ -87,20 +104,25 @@ def lint(board: Board) -> dict[str, object]:
             if ref not in board.parts:
                 err(f"unknown part {ref} on net {name}")
                 continue
-            try:
-                pins = set(board.parts[ref].pins_of(lib))
-            except (KeyError, ValueError):
-                continue
-            if str(pin) not in pins:
+            p = board.parts[ref]
+            cached = pins_cache.get(p.fp)
+            if cached is None:
+                try:
+                    cached = set(p.pins_of(lib))
+                except (KeyError, ValueError):
+                    continue  # not cached: a failing lib stays failing
+                pins_cache[p.fp] = cached
+            if str(pin) not in cached:
                 err(f"unknown pin {ref}.{pin} on net {name}")
 
+    sorted_refs = sorted(board.parts)  # once, for the prefix probes below
     for c in board.constraints:
         if not isinstance(c, dict):
             continue
         t = str(c.get("t", ""))
         if t == "near-group":
             pre = str(c.get("prefix", ""))
-            if pre and not any(r.startswith(pre) for r in board.parts):
+            if pre and not _has_prefix(sorted_refs, pre):
                 warn(f"near-group matches no parts with prefix {pre}")
         for k in _PARTKEYS:
             if k not in c:

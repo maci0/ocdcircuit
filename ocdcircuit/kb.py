@@ -19,15 +19,19 @@ attr wins (a URL you pinned in the `.ocd`), else `lcsc=C1234` is resolved
 through LCSC's public product endpoint. Anything else is left to the human.
 """
 from __future__ import annotations
+import base64
 import json
 import math
+from array import array
 import os
 import re
 import shutil
 import subprocess
 import time
 import urllib.request
-from typing import TYPE_CHECKING, Callable, cast
+from itertools import islice
+from operator import mul
+from typing import TYPE_CHECKING, Any, Callable, cast
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:  # engine import stays light (ARCHITECTURE: imports inside run)
@@ -91,13 +95,49 @@ def parts_map(text: str) -> dict[str, dict[str, str]]:
     return out
 
 
-def _cos(a: list[float], b: list[float]) -> float:
-    """Cosine similarity; 0 for a zero vector (a blank passage scores nothing
-    instead of dividing by zero)."""
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(x * x for x in b))
-    return dot / (na * nb) if na and nb else 0.0
+_np = None  # lazy: imported on the first vectorized ranking, not at load
+
+
+def _numpy() -> Any:
+    """numpy handle, imported once on first use (~70ms — not at package load).
+    Same optional-fast-path contract as solver.py: without it, ranking still
+    works, ~60x slower (measured 43.8ms vs 0.71ms for a 2610-passage kb)."""
+    global _np
+    if _np is None:
+        try:
+            import numpy as _m
+            _np = _m
+        except ImportError:
+            return None
+    return _np
+
+
+def _unit(vec: array[float], dim: int) -> array[float]:
+    """Scale each `dim`-long chunk to unit length (store once, rank with a dot
+    product: cosine without recomputing either norm per query)."""
+    np = _numpy()
+    if np is not None:
+        m = np.frombuffer(memoryview(vec), dtype=np.float32)
+        m = m.reshape(len(vec) // dim, dim)
+        norms = np.linalg.norm(m, axis=1, keepdims=True)
+        np.divide(m, norms, out=m, where=norms > 0)
+        return vec
+    out: array[float] = array("f")
+    for i in range(0, len(vec), dim):
+        chunk = vec[i:i + dim]
+        n = math.sqrt(sum(x * x for x in chunk))
+        out.extend([x / n for x in chunk] if n else chunk)
+    return out
+
+
+def _dot_scores(q: list[float], vec: array[float], count: int, dim: int) -> list[float]:
+    """Dot of the unit query with every stored unit vector."""
+    np = _numpy()
+    if np is not None and count:
+        m = np.frombuffer(memoryview(vec), dtype=np.float32).reshape(count, dim)
+        return [float(x) for x in (m @ np.asarray(q, dtype=np.float32))]
+    it = iter(vec)
+    return [sum(map(mul, q, islice(it, dim))) for _ in range(count)]
 
 
 def _clean(name: str, fallback: str = "download") -> str:
@@ -375,22 +415,58 @@ class KB:
         return {"mtime": os.path.getmtime(p), "size": os.path.getsize(p),
                 "model": self._embed_name()}
 
-    def _load_vectors(self, name: str) -> list[dict[str, object]]:
-        """Cached passages for one doc, or [] when stale/missing (mtime + size
-        + embedder must match: an edited note or a new model re-embeds)."""
+    def _load_vectors(self, name: str) -> tuple[array[float], list[tuple[int, int]], int]:
+        """(flat float32 vectors, [(start, end)] line ranges, dim) for one doc,
+        or empty when stale/missing (mtime + size + embedder must match: an
+        edited note or a new model re-embeds).
+
+        Packed, not JSON float lists: a 30-datasheet kb is 2610 passages ≈ 2M
+        floats, and parsing those as JSON cost 273ms on every load (that WAS
+        recall's latency). Same numbers — float32 is what the models emit and
+        what cosine ranking needs. Passage text is not stored either: it is the
+        document's own lines, so recall re-reads the top k by line range.
+        A v1 (JSON list) cache is migrated on read rather than re-embedded."""
         p = self._vec_path(name)
         if not os.path.isfile(p):
-            return []
+            return array("f"), [], 0
         try:
             with open(p, encoding="utf-8") as f:
                 doc = json.load(f)
             if doc.get("stamp") != self._stamp(name):
-                return []
-            rows = doc.get("chunks", [])
+                return array("f"), [], 0
+            chunks = doc.get("chunks", [])
+            assert isinstance(chunks, list)
+            ranges = [(int(a), int(b)) for a, b in cast(list[list[int]], chunks)]
+            dim = int(doc.get("dim", 0))
+            vec: array[float] = array("f")
+            blob = doc.get("vec32")
+            if isinstance(blob, str) and dim:
+                vec.frombytes(base64.b64decode(blob))
+                if doc.get("unit") is not True:  # written before unit storage
+                    vec = _unit(vec, dim)
+                    self._write_vectors(name, vec, ranges, dim)
+                return vec, ranges, dim
+            rows = doc.get("rows", [])  # v1: [{start, end, text, vec: [floats]}]
             assert isinstance(rows, list)
-            return [cast(dict[str, object], r) for r in rows]
-        except (OSError, ValueError, AssertionError):
-            return []
+            for r in rows:
+                vec.extend(cast(list[float], cast(dict[str, object], r)["vec"]))
+            if not vec:
+                return array("f"), [], 0
+            dim = len(cast(list[float], cast(dict[str, object], rows[0])["vec"]))
+            vec = _unit(vec, dim)
+            self._write_vectors(name, vec, ranges, dim)  # upgrade, once
+            return vec, ranges, dim
+        except (OSError, ValueError, AssertionError, TypeError):
+            return array("f"), [], 0
+
+    def _write_vectors(self, name: str, vec: array[float], ranges: list[tuple[int, int]],
+                       dim: int) -> None:
+        assert dim > 0
+        os.makedirs(self.cache, exist_ok=True)
+        with open(self._vec_path(name), "w", encoding="utf-8") as f:
+            json.dump({"stamp": self._stamp(name), "dim": dim, "chunks": ranges,
+                       "unit": True,
+                       "vec32": base64.b64encode(vec.tobytes()).decode("ascii")}, f)
 
     def index(self, force: bool = False) -> dict[str, object]:
         """Embed every readable doc's passages into kb/.cache/vec__*.json.
@@ -402,7 +478,7 @@ class KB:
             name = str(d["name"])
             if d["kind"] == "other":
                 continue
-            if not force and self._load_vectors(name):
+            if not force and self._load_vectors(name)[1]:
                 reused += 1
                 continue
             try:
@@ -411,31 +487,35 @@ class KB:
                 failed.append(f"{name}: {e}")
                 continue
             ch = chunks_of(body)
+            if not ch:
+                continue
             try:
                 vecs = embed([str(c["text"]) for c in ch])
             except Exception as e:  # noqa: BLE001 — transport/library, reported
                 failed.append(f"{name}: {e}")
                 continue
-            rows = [{**c, "vec": v} for c, v in zip(ch, vecs)]
-            os.makedirs(self.cache, exist_ok=True)
-            with open(self._vec_path(name), "w", encoding="utf-8") as f:
-                json.dump({"stamp": self._stamp(name), "chunks": rows}, f)
+            flat: array[float] = array("f")
+            for v in vecs:
+                flat.extend(v)
+            ranges = [(cast(int, c["start"]), cast(int, c["end"])) for c in ch]
+            self._write_vectors(name, _unit(flat, len(vecs[0])), ranges, len(vecs[0]))
             made += 1
         return {"indexed": made, "reused": reused, "failed": failed,
                 "model": self._embed_name(), "passages": self.passage_count()}
 
-    def _all_vectors(self) -> list[dict[str, object]]:
-        """Every cached passage, each document's JSON read once (recall and
+    def _all_vectors(self) -> list[tuple[str, array[float], list[tuple[int, int]], int]]:
+        """Every doc's cached vectors, each file read exactly once (recall and
         passage_count both need the whole set — two passes parsed it twice)."""
-        rows: list[dict[str, object]] = []
+        out: list[tuple[str, array[float], list[tuple[int, int]], int]] = []
         for d in self.docs():
             name = str(d["name"])
-            for row in self._load_vectors(name):
-                rows.append({**row, "doc": name})
-        return rows
+            vec, ranges, dim = self._load_vectors(name)
+            if ranges:
+                out.append((name, vec, ranges, dim))
+        return out
 
     def passage_count(self) -> int:
-        return len(self._all_vectors())
+        return sum(len(r) for _n, _v, r, _d in self._all_vectors())
 
     def _lexical_passages(self, q: str, k: int) -> list[dict[str, object]]:
         """No embedder (or nothing indexed): rank with search() and expand each
@@ -455,30 +535,38 @@ class KB:
         answers (index built/refreshed on demand); lexical hits otherwise, so a
         machine with no local model still gets an answer, just a worse one."""
         try:
+            # probe the embedder with the question itself before indexing
+            # anything: a 30-datasheet cold index is ~26s of model compute, and
+            # it used to be attempted even when the endpoint was unreachable
+            # (per document, so a hanging endpoint meant minutes).
+            qv = self._embed_fn()([q])[0]
+            qn = math.sqrt(sum(x * x for x in qv))
+            if not qn:
+                raise ValueError("the embedder returned a zero vector")
+            qu = [x / qn for x in qv]
             rows = self._all_vectors()
             if rebuild or not rows:
                 self.index()
                 rows = self._all_vectors()
-            qv = self._embed_fn()([q])[0]
         except Exception as e:  # noqa: BLE001 — any embedder failure degrades
             return {"q": q, "method": "lexical", "model": None,
                     "passages": self._lexical_passages(q, k),
                     "note": f"embeddings unavailable ({e}); ranked by term match"}
-        scored: list[tuple[float, dict[str, object]]] = []
-        for row in rows:
-            vec = cast(list[float], row.get("vec", []))
-            scored.append((_cos(qv, vec), {"doc": row.get("doc"),
-                                           "start": row.get("start"),
-                                           "end": row.get("end"),
-                                           "text": row.get("text")}))
-        if not scored:
+        if not rows:
             return {"q": q, "method": "lexical", "model": None,
                     "passages": self._lexical_passages(q, k),
                     "note": "nothing indexed; ranked by term match"}
+        scored: list[tuple[float, str, int, int]] = []
+        for name, vec, ranges, dim in rows:
+            sims = _dot_scores(qu, vec, len(ranges), dim)
+            for (start, end), sim in zip(ranges, sims):
+                scored.append((sim, name, start, end))
         scored.sort(key=lambda t: -t[0])
-        out = []
-        for score, row in scored[:k]:
-            out.append({**row, "score": round(score, 4)})
+        out: list[dict[str, object]] = []
+        for score, name, start, end in scored[:k]:
+            r = self.read(name, start=start, lines=max(1, end - start + 1))
+            out.append({"doc": name, "start": start, "end": end,
+                        "score": round(score, 4), "text": r["text"]})
         return {"q": q, "method": "embeddings", "model": self._embed_name(),
                 "passages": out,
                 "note": "passages only — cite doc:start-end and read them "
