@@ -461,11 +461,31 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   const cols=TRACECOLS;
   const names=layerNames(st);
   const n=Math.min(Math.ceil(st.traces.length*t),MAX_SEGS);
+  // Label every part on a normal board; on a dense one the refs overlap into
+  // noise, so draw a readable sample (every 6th) and always the selected ones.
+  const labelEvery=st.compact?6:1;
+  let labelSeq=0;
+  // Batch traces: one path per (layer, width) instead of a stroke() per
+  // segment. On a dense board this is the whole frame — 9.6k strokes -> a
+  // handful — and it is the same pixels (same colour, same line width, each
+  // segment still an independent pair of points).
+  const buckets=new Map();
   for(let i=0;i<n;i++){const g=st.traces[i];
     const nm=names[g.layer];
-    if(nm&&!visLayer(nm,st))continue; // layer hidden: its copper is not drawn
-    ctx.strokeStyle=cols[g.layer%4];ctx.lineWidth=Math.max(1,g.w*s);
-    ctx.beginPath();ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));ctx.stroke();}
+    if(nm&&!visLayer(nm,st))continue; // layer hidden: not drawn, not batched
+    const lw=Math.max(1,g.w*s);
+    const key=g.layer+'|'+lw;
+    let b=buckets.get(key);
+    if(!b){b={color:cols[g.layer%4],lw,segs:[]};buckets.set(key,b);}
+    b.segs.push(g);}
+  for(const b of buckets.values()){
+    ctx.strokeStyle=b.color;ctx.lineWidth=b.lw;ctx.beginPath();
+    for(const g of b.segs){
+      // a fresh moveTo per segment: segments stay separate (no spurious joins)
+      ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));
+      ctx.moveTo(X(g.x2),Y(g.y2));
+    }
+    ctx.stroke();}
   for(const r in st.parts){
     if(!partShown(r,st))continue;
     const p=st.parts[r];
@@ -481,17 +501,23 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
       ctx.fillRect(cx-pw/2,cy-ph/2,pw,ph);ctx.strokeRect(cx-pw/2,cy-ph/2,pw,ph);
       if(pd.d>0){ctx.fillStyle=bgCol;ctx.beginPath();ctx.arc(cx,cy,Math.max(0.8,pd.d*s/2),0,7);ctx.fill();}
       if(pd.p1){ctx.fillStyle=C.ink3;ctx.beginPath();ctx.arc(cx,cy,Math.max(0.8,0.22*s),0,7);ctx.fill();}}
+    // On a dense board every label overlaps its neighbours anyway (5,420 refs
+    // in one canvas): draw a readable sample instead of 5,420 glyph runs.
+    const drawRef=labelEvery===1||(labelSeq%labelEvery===0)||edHl.has(r);
+    labelSeq++;
     const fs=Math.min(12,Math.max(7,p.h*s*0.32)); // never wider than the box
-    ctx.font=`${fs}px ui-monospace,Menlo,monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
-    if(visMark('ref',st)&&visLayer('silk',st)){
-      ctx.fillStyle=st.fixed&&st.fixed[r]?C.signal:'#f7f5f0';
-      const label=r.length*fs*0.62>p.w*s?r.slice(0,Math.max(1,Math.floor(p.w*s/(fs*0.62))))+'…':r;
-      ctx.fillText(label,X(p.x),Y(p.y));
+    if(drawRef){
+      ctx.font=`${fs}px ui-monospace,Menlo,monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
+      if(visMark('ref',st)&&visLayer('silk',st)){
+        ctx.fillStyle=st.fixed&&st.fixed[r]?C.signal:'#f7f5f0';
+        const name=r.length*fs*0.62>p.w*s?r.slice(0,Math.max(1,Math.floor(p.w*s/(fs*0.62))))+'…':r;
+        ctx.fillText(name,X(p.x),Y(p.y));
+      }
+      ctx.textBaseline='alphabetic';
+      if(visMark('value',st)&&visLayer('silk',st)&&st.silk!=='ref'&&p.value&&p.h*s>18){
+        ctx.fillStyle=C.ink3;ctx.font=`${Math.min(9,fs*0.8)}px ui-monospace,Menlo,monospace`;
+        ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}
     }
-    ctx.textBaseline='alphabetic';
-    if(visMark('value',st)&&visLayer('silk',st)&&st.silk!=='ref'&&p.value&&p.h*s>18){
-      ctx.fillStyle=C.ink3;ctx.font=`${Math.min(9,fs*0.8)}px ui-monospace,Menlo,monospace`;
-      ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}
     if(edHl.has(r)){ctx.strokeStyle=C.signal;ctx.lineWidth=3; // editor text selection → ring
       ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);ctx.lineWidth=1;}}
   // instance groups (block stamping): shared dashed outline + tag, one hue per owner
@@ -1272,6 +1298,21 @@ $('chatbtn').onclick=()=>{
   if(on)$('ask').focus();
 };
 (async()=>{await boot();})();
+if(location.search.includes('perf')){
+setTimeout(()=>{
+  const st=S&&S.cur||{};
+  const P=CanvasRenderingContext2D.prototype;
+  const cnt={stroke:0,fill:0,fillRect:0,beginPath:0,fillText:0};
+  const orig={};
+  Object.keys(cnt).forEach(k=>{orig[k]=P[k];
+    P[k]=function(){cnt[k]++;return orig[k].apply(this,arguments);};});
+  drawPCB(st,1);
+  Object.keys(cnt).forEach(k=>{P[k]=orig[k];});
+  const parts=Object.keys(st.parts||{}).length;
+  document.title='DRAW parts='+parts+' traces='+(st.traces||[]).length
+    +' strokes='+cnt.stroke+' begins='+cnt.beginPath+' fills='+cnt.fill+' texts='+cnt.fillText;
+},2500);}
+
 
 // file-watch: poll SRC hash; an external edit banners with one-click
 // reload (never auto: a keystroke debounce may be in flight, and
@@ -1329,8 +1370,9 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
             pw, ph = p.wh()
             parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
                           "value": p.value, "fp": p.fp, "h3d": h3d,
-                          "owner": p.owner or "", "mat": "chip",
-                          "bodies": [], "pads": []}
+                          "owner": p.owner or "", "mat": "chip"}
+            # `pads`/`bodies` are omitted: empty arrays cost bytes per part
+            # and the canvas/3D default them. 5,420 × '[]' was ~100KB.
             continue
         for body in bodies_of(p.fp, lib):
             mat = body_material(p.fp, body)
@@ -1920,7 +1962,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 b.route_board(router)
                 drc = b.check()
                 st = board_state(b, agent.dumps(b), [], [
-                    {"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
+                    {"x1": t.x1, "y1": t.y1, "x2": t.x2,
                      "y2": t.y2, "layer": t.layer, "w": t.width}
                     for t in b.traces], cast(float, cands[idx]["cost"]), drc)
                 H._decorate(st, b, b.score(tidy=True), _solver.feasible(b),
@@ -2146,9 +2188,12 @@ class H(http.server.BaseHTTPRequestHandler):
         st_lint = b.lint()
         from ocdcircuit import solver as _solver
         feas = {} if dense else _solver.feasible(b)
-        traces = [{"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
-                   "y2": t.y2, "layer": t.layer, "w": t.width}
-                  for t in b.traces[:MAX_SEGS]]
+        # `net` is not in the payload: the canvas colours by layer, and a dense
+        # board has thousands of names to serialise (0.15MB on monster6502).
+        traces: list[dict[str, object]] = [
+            {"x1": t.x1, "y1": t.y1, "x2": t.x2,
+             "y2": t.y2, "layer": t.layer, "w": t.width}
+            for t in b.traces[:MAX_SEGS]]
         st = board_state(b, agent.dumps(b), frames, traces, cost, drc)
         st["dense"] = dense
         st["compact"] = bool(st.get("compact"))

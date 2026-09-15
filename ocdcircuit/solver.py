@@ -718,6 +718,16 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
     for t in range(iters):
         T = 1 - t / iters
         step = (0.25 + 0.65 * T) * (0.3 + 0.7 * T)
+        # packing geometry for this iteration (mirrors _rigid_diffuse:
+        # boxes are fixed within an iteration, read each part's once).
+        # ponytail: rotation is static here, so this could hoist out of
+        # the loop — kept per-iteration to match _rigid_diffuse exactly.
+        hw: dict[str, float] = {}
+        hh: dict[str, float] = {}
+        for _r, _q in board.parts.items():
+            _w, _h = _q.wh()
+            hw[_r] = _w
+            hh[_r] = _h
         # move whole owners by centroid force
         for owner, refs in groups.items():
             if any(r in fx for r in refs):
@@ -775,6 +785,9 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
             # rigid translate with INSTANCE-level clamp (per-part clamp would
             # deform the block when one part touches the edge first)
             dx0, dy0 = step * Fx, step * Fy
+            # Per-part clamp, deliberately not hoisted to a group max: the
+            # clamp is what keeps a rigid body inside the board and hoisting
+            # it moved every placement (the snapshot gate caught it).
             lo_x = max(-(board.parts[r].x - board.parts[r].wh()[0] / 2 - m) for r in refs)
             hi_x = min((board.width - board.parts[r].wh()[0] / 2 - m) - board.parts[r].x for r in refs)
             lo_y = max(-(board.parts[r].y - board.parts[r].wh()[1] / 2 - m) for r in refs)
@@ -922,6 +935,18 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
             gox = sum(board.parts[r].x for r in gorefs) / len(gorefs)
             goy = sum(board.parts[r].y for r in gorefs) / len(gorefs)
             cgrid.setdefault((int(gox / CELL), int(goy / CELL)), []).append(go)
+        # Packing geometry for this iteration. `wh()` is a call per part-pair
+        # (32M of them on monster6502): the box is fixed within an iteration
+        # and the boundary clamp re-reads it, so read each part's once here.
+        # Kept as (w, h) and summed exactly as before — folding it into one
+        # "radius" is cheaper but not algebraically identical, which moves
+        # every placement (the snapshot gate caught the drift).
+        hw: dict[str, float] = {}
+        hh: dict[str, float] = {}
+        for _r, _q in board.parts.items():
+            _w, _h = _q.wh()
+            hw[_r] = _w
+            hh[_r] = _h
         for owner, refs in groups.items():
             if any(r in fx for r in refs):
                 continue
@@ -948,9 +973,8 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
                                 continue
                             dx, dy = p.x - o.x, p.y - o.y
                             d = (dx * dx + dy * dy) ** 0.5
-                            pw, ph = p.wh()
-                            qw, qh = o.wh()
-                            need = ((pw + qw) / 2 + 0.6 + (ph + qh) / 2 + 0.6) / 2
+                            need = ((hw[ref] + hw[oref]) / 2 + 0.6
+                                    + (hh[ref] + hh[oref]) / 2 + 0.6) / 2
                             if d < 1e-6:
                                 dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
                             if d < need * 2.2:

@@ -36,20 +36,43 @@ class Part:
             assert isinstance(meta["w"], float) and isinstance(meta["h"], float)
             w, h = meta["w"], meta["h"]
         self.w, self.h = w, h
+        # Cached rotation geometry. The placer/router inner loops ask for these
+        # tens of millions of times per dense board (34M `rot` + 32M `wh` calls
+        # was ~11s of a 41s monster6502 placement); the inputs are set once at
+        # parse time, and set_attr drops the cache.
+        self._rot: int | None = None
+        self._wh: tuple[float, float] | None = None
 
     @property
     def rot(self) -> int:
         """Rotation degrees (0/90/180/270). 90/270 swap the bbox axes."""
-        try:
-            return int(self.attrs.get("rot", "0")) % 360
-        except ValueError:
-            return 0
+        r = self._rot
+        if r is None:
+            try:
+                r = int(self.attrs.get("rot", "0")) % 360
+            except ValueError:
+                r = 0
+            self._rot = r
+        return r
+
+    def set_attr(self, key: str, value: str) -> None:
+        """Set an attribute and drop the geometry cached from it."""
+        self.attrs[key] = value
+        self._rot = None
+        self._wh = None
+
+    @property
+    def size(self) -> tuple[float, float]:
+        """(w, h) after rotation, cached. Read-only: for hot loops."""
+        wh = self._wh
+        if wh is None:
+            wh = (self.h, self.w) if self.rot in (90, 270) else (self.w, self.h)
+            self._wh = wh
+        return wh
 
     def wh(self) -> tuple[float, float]:
-        """Effective (w, h) after rotation."""
-        if self.rot in (90, 270):
-            return (self.h, self.w)
-        return (self.w, self.h)
+        """Effective (w, h) after rotation (cached, see `size`)."""
+        return self.size
 
     def rot_xy(self, dx: float, dy: float) -> tuple[float, float]:
         """Rotate a footprint-frame offset into board frame."""
