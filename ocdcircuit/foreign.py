@@ -578,9 +578,84 @@ def easyeda_doc(doc: dict[str, object]) -> object:
             "_imported_fp": fps}
 
 
+def _bin_pcblib(data: bytes) -> list[tuple[str, Footprint]]:
+    """Native binary .PcbLib → [(name, footprint)]. Each top-level storage
+    is one footprint: its Data stream opens with [u8 namelen][name], then
+    PcbDoc-framed primitives (tracks/arcs/texts + six-block pads, located
+    by scanning for 0x02 starts that decode to sane geometry — the lib
+    pad framing differs from PcbDoc's, but the geometry block is shared).
+    Pads arrive footprint-relative already (no component transform)."""
+    import struct
+    paths, _, _, _, _, _ = _ole_dir(data)
+    libs: dict[str, list[str]] = {}
+    for p in paths:
+        if "/" in p:
+            libs.setdefault(p.split("/")[0], []).append(p)
+    out: list[tuple[str, Footprint]] = []
+    for lib, members in libs.items():
+        dpath = lib + "/Data"
+        if dpath not in paths:
+            continue
+        buf = _ole_stream(paths, dpath)
+        if not buf or len(buf) < 6:
+            continue
+        nl = buf[4]
+        if 5 + nl > len(buf):
+            continue
+        name = buf[5:5 + nl].decode("latin-1", "replace").strip() or lib
+        pads: dict[str, tuple[float, float, float, float]] = {}
+        holes: dict[str, tuple[float, float, float]] = {}
+        for j in [i for i in range(len(buf)) if buf[i] == 2]:
+            try:
+                k = j + 1
+                blocks = []
+                for _ in range(6):
+                    ln = struct.unpack("<I", buf[k:k + 4])[0]
+                    if ln > 2000 or k + 4 + ln > len(buf):
+                        raise ValueError
+                    blocks.append(buf[k + 4:k + 4 + ln])
+                    k += 4 + ln
+                g = blocks[4]
+                h = _bin_head(g)
+                pos = _bin_pt(g, 13)
+                w = struct.unpack("<i", g[21:25])[0] * _IU
+                hgt = struct.unpack("<i", g[25:29])[0] * _IU
+                hole = struct.unpack("<i", g[45:49])[0] * _IU if len(g) >= 49 else 0.0
+                if (h is None or pos is None or not 0 < w <= 100
+                        or not 0 < hgt <= 100
+                        or not all(-500 <= v <= 500 for v in pos)):
+                    continue
+                n = blocks[0][0] if blocks[0] else 0
+                num = blocks[0][1:1 + n].decode("latin-1", "replace").rstrip("\x00") \
+                    or str(len(pads) + len(holes) + 1)
+                if hole > 0:
+                    holes[num] = (pos[0], pos[1], hole)
+                else:
+                    pads[num] = (pos[0], pos[1], w, hgt)
+            except (ValueError, struct.error, IndexError):
+                continue
+        if not pads and not holes:
+            continue
+        xs = [v[0] for v in list(pads.values()) + list(holes.values())]
+        ys = [v[1] for v in list(pads.values()) + list(holes.values())]
+        fp: Footprint = {"w": max(1.0, max(xs) - min(xs) + 2.0),
+                         "h": max(1.0, max(ys) - min(ys) + 2.0),
+                         "pads": pads, "holes": holes, "bodies": []}
+        from .parts import FOOTPRINTS as _STD
+        if name in _STD:
+            name = "altium:" + name  # std lib wins; lib version kept reachable
+        out.append((name, fp))
+    if not out:
+        raise ValueError("altium binary: no footprint patterns with pads found")
+    return out
+
+
 def load_foreign(path: str) -> list[tuple[str, Footprint]]:
-    """Dispatch by extension: .kicad_mod/.pretty, .lbr, .json."""
+    """Dispatch by extension: .kicad_mod/.pretty, .lbr, .json, .PcbLib."""
     ext = os.path.splitext(path)[1].lower()
+    if ext == ".pcblib":
+        with open(path, "rb") as f:
+            return _bin_pcblib(f.read())
     with open(path) as f:
         text = f.read()
     if ext in (".kicad_mod", ".pretty"):
@@ -821,9 +896,12 @@ def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int],
     while s not in (_OLE_END, _OLE_FREE) and dn > 0:
         base = 512 + s * ssz
         arr = struct.unpack("<%dI" % (ssz // 4), data[base:base + ssz])
-        seen += list(arr[:dn * (ssz // 4 - 1)])
+        # ponytail: one DIFAT sector per lap (last slot is the next pointer,
+        # not a FAT entry — slicing dn*127 at once eats it and derails big
+        # files like the 22MB LimeSDR PcbLib)
+        seen += list(arr[:ssz // 4 - 1])
         s = arr[-1]
-        dn -= ssz // 4 - 1
+        dn -= 1
     fat: list[int] = []
     for sec in seen[:nfat]:
         base = 512 + sec * ssz

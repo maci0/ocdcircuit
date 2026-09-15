@@ -2252,6 +2252,21 @@ _pir = foreign.pcad_ascii(
     " (netNameRef \"GND\"))))))\n")
 assert _pir["constraints"] == [{"t": "pour", "net": "GND", "layer": 0}]
 assert len(cast(list[object], _pir["_imported_traces"])) == 1 + 4
+# altium PcbLib pads decode (synthetic six-block pad, no fixture needed)
+import struct as _st2
+_pgeo = (bytes([1, 0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255, 255])
+         + _st2.pack("<i", int(1.0 / 2.54e-6)) + _st2.pack("<i", int(0.5 / 2.54e-6))
+         + _st2.pack("<i", int(1.0 / 2.54e-6)) + _st2.pack("<i", int(0.5 / 2.54e-6))
+         + _st2.pack("<i", int(1.0 / 2.54e-6)) + _st2.pack("<i", int(0.5 / 2.54e-6))
+         + _st2.pack("<i", 0) + bytes([2]) + b"\x00\x00"
+         + _st2.pack("<d", 0.0) + bytes([1]))
+_pbuf = (b"\x02" + _st2.pack("<I", 2) + b"\x021"
+         + _st2.pack("<I", 0) + b"" + _st2.pack("<I", 0) + b""
+         + _st2.pack("<I", 0) + b"" + _st2.pack("<I", len(_pgeo)) + _pgeo
+         + _st2.pack("<I", 0) + b"")
+_pads = foreign._bin_pads(_pbuf)
+assert len(_pads) == 1 and _pads[0]["NAME"] == "1"
+assert _pads[0]["LAYER"] == "TOPLAYER" and _pads[0]["SHAPE"] == "ROUND"
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
                   base=os.path.join(EX, "mitox"))
