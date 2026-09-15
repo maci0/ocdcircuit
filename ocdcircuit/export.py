@@ -852,6 +852,53 @@ def export_pcad(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def export_schlib(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.SchLib (native binary OLE: one storage per symbol).
+    Each symbol packs its pins as binary type-1 records (y = i16 @20 in
+    10mil units, orientation in payload byte 15, [nlen][name][01][desig]
+    tail) plus a RECORD=1 text record — the exact shape _bin_schlib
+    parses, so export→import round-trips."""
+    import struct
+    from .foreign import _ole_write
+    os.makedirs(outdir, exist_ok=True)
+    lib = dict(board.custom_sym)
+    if not lib:
+        raise ValueError("export_schlib: board has no symbols")
+    from typing import cast
+    streams: dict[str, bytes] = {}
+    for name, sym in sorted(lib.items()):
+        pins = cast(dict[str, tuple[str, int, str]], sym.get("pins", {}))
+        recs = bytearray()
+        head = f"|RECORD=1|LibReference={name}|PartCount=2|".encode("latin-1")
+        recs += struct.pack("<H", len(head)) + b"\x00\x00" + head
+        by_side: dict[str, list[str]] = {}
+        for num, (side, order, _label) in pins.items():
+            by_side.setdefault(side, []).append(num)
+        order_of: dict[str, int] = {}
+        for side, lst in by_side.items():
+            for i, num in enumerate(sorted(lst, key=lambda q: pins[q][1])):
+                order_of[num] = i
+        nside = max((len(v) for v in by_side.values()), default=1)
+        for num in sorted(pins, key=lambda q: (pins[q][0], pins[q][1])):
+            side, _o, label = pins[num]
+            slot = order_of[num]
+            y = (nside - 1 - slot * 2) * 5 if side in ("left", "right") else 0
+            ori = {"right": 0, "top": 1, "left": 2, "bottom": 3,
+                     "up": 1, "down": 3}.get(side, 0)
+            nm = (label or num).encode("latin-1", "replace")[:16]
+            des = num.encode("latin-1", "replace")[:8]
+            tail = bytes([len(nm)]) + nm + b"\x01" + des
+            pay = bytearray(30)
+            pay[15] = (pay[15] & ~3) | ori
+            struct.pack_into("<h", pay, 20, max(-30000, min(30000, y)))
+            pay += tail
+            recs += struct.pack("<H", len(pay)) + b"\x00\x01" + bytes(pay)
+        streams[f"{name}/Data"] = bytes(recs)
+    fn = os.path.join(outdir, f"{board.name}.SchLib")
+    open(fn, "wb").write(_ole_write(streams))
+    return [fn]
+
+
 def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.brd (Eagle XML): libraries/packages from footprints,
     elements, signals with contactrefs, Dimension wires. Mirrors what

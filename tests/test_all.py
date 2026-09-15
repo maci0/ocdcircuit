@@ -2452,6 +2452,16 @@ if os.path.exists(_fixt2):
     _sb = Board("schlib", 40, 30)
     _names = _sb.import_sym("schlib", path=_fixt2)["names"]
     assert isinstance(_names, list) and len(_names) >= 100
+    # altium .SchLib export round-trips (pins + sides + order, exact)
+    import itertools as _it
+    _ex = Board("ex", 40, 30)
+    for _n, _s in _it.islice(dict(_syms).items(), 4):
+        _ex.add_symbol(_n, _s)
+    _sf = _ex.export("schlib", outdir=tempfile.mkdtemp())[0]
+    _rt = dict(foreign._bin_schlib(open(_sf, "rb").read()))
+    assert sorted(_rt) == sorted(n for n, _s in _it.islice(dict(_syms).items(), 4))
+    for _n in _rt:
+        assert _rt[_n]["pins"] == dict(_syms)[_n]["pins"], _n
 # altium multi-sheet merge: shared netlabels join, N-autos stay sheet-local
 _m1 = Board("m1", 400, 200)
 for _f in ("04_LMS7002M_Misc", "09_Misc"):

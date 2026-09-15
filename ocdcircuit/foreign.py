@@ -588,7 +588,7 @@ def _sch_pin(p: bytes) -> tuple[str | None, str | None]:
     [nlen][name][01][desig]; scan for the 01 marker near the end
     (names are leading-alpha alnum). (None, None) when absent —
     caller skips, never invents pins."""
-    for i in range(len(p) - 3, max(0, len(p) - 40), -1):
+    for i in range(len(p) - 2, max(0, len(p) - 40), -1):
         if p[i] == 0x01 and 32 < p[i + 1] < 127:
             des = chr(p[i + 1])
             for k in range(max(0, i - 34), i):
@@ -649,6 +649,9 @@ def _bin_schlib(data: bytes) -> list[tuple[str, dict[str, object]]]:
         sympins: dict[str, tuple[str, int, str]] = {}
         counts = {"left": 0, "right": 0, "top": 0, "bottom": 0}
         for des, nm, side in pins:
+            if des in sympins:
+                continue  # multi-part dup (same desig, e.g. repeated GND):
+                # first instance wins, order stays dense for round-trip
             sympins[des] = (side, counts[side], nm)
             counts[side] += 1
         lr = max(counts["left"], counts["right"], 1)
@@ -1027,10 +1030,15 @@ def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int],
     import sys
     sys.setrecursionlimit(100000)
     paths: dict[str, tuple[int, int]] = {}
+    _seen: set[int] = set()
 
     def _walk(idx: int, path: str, depth: int = 0) -> None:
-        if idx < 0 or idx >= n or depth > 80:
+        # siblings share a level (a 119-symbol lib chains 119 wide):
+        # only child descent consumes depth; corruption still terminates
+        # via visited set below.
+        if idx < 0 or idx >= n or depth > 80 or idx in _seen:
             return
+        _seen.add(idx)
         nm, typ, left, right, child, st, sz = nodes[idx]
         if left >= 0:
             _walk(left, path, depth + 1)
@@ -1040,7 +1048,7 @@ def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int],
         if typ in (1, 5) and child >= 0:
             _walk(child, full if typ == 1 else path, depth + 1)
         if right >= 0:
-            _walk(right, path, depth + 1)
+            _walk(right, path, depth)
     _walk(0, "")
     ms = _read(nodes[0][5])
 
@@ -1065,111 +1073,145 @@ def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int],
 
 
 def _ole_write(streams: dict[str, bytes]) -> bytes:
-    """Minimal OLE writer (stdlib struct): header + FAT + directory + data.
-    One 512B sector per stream (streams must each fit — SchLib symbols do);
-    flat directory (no storages), no ministream. Just enough for Altium to
-    open the file; our reader parses it back exactly."""
+    """Minimal OLE writer (stdlib struct): header + FAT + minifat + directory
+    + ministream + data. Streams <4096B pack into the root-hosted ministream
+    (64B mini-sectors); larger ones chain regular sectors — the same split
+    our reader (and Altium) expects. Directory: root → storages
+    (right-chain) → streams. Round-trips through _ole_dir exactly."""
     import struct
+    import math as _m
     names = sorted(streams)
-    nsec = 1 + 1 + len(names)  # fat + dir + data sectors
-    fat = [0xFFFFFFFE] * 128
-    fat[0] = 0xFFFFFFFD  # FAT sector itself
-    fat[1] = 0xFFFFFFFE  # directory chain end
-    for i in range(len(names)):
-        fat[2 + i] = 0xFFFFFFFE
-    head = bytearray(512)
-    head[0:8] = _OLE_MAGIC
-    head[24:26] = struct.pack("<H", 0x003E)  # version
-    head[26:28] = struct.pack("<H", 3)  # byte order mark
-    head[28:30] = struct.pack("<H", 9)  # sector shift (512B)
-    head[30:32] = struct.pack("<H", 6)  # mini sector shift (64B)
-    head[40:44] = struct.pack("<I", 0)  # free sectors
-    head[44:48] = struct.pack("<I", 1)  # FAT count
-    head[48:52] = struct.pack("<I", 1)  # directory start
-    head[56:60] = struct.pack("<I", 4096)  # mini cutoff
-    head[60:64] = struct.pack("<I", 0xFFFFFFFE)  # miniFAT start (none)
-    head[64:68] = struct.pack("<I", 0)
-    head[68:72] = struct.pack("<I", 0xFFFFFFFE)  # DIFAT start (none)
-    head[72:76] = struct.pack("<I", 0)
-    for i in range(109):
-        head[76 + 4 * i:80 + 4 * i] = struct.pack("<I", 0 if i else 0)
-    # directory: root + one storage per parent + one stream each.
-    # Sibling tree: root.child → first storage; each storage.child →
-    # its stream; storages chain via right. Streams must each fit one
-    # sector (SchLib symbols do — largest LimeSDR symbol is ~40KB?
-    # no: multi-sector streams unsupported, raise instead of corrupting).
     parents: dict[str, list[str]] = {}
     for nm in names:
         parents.setdefault(nm.split("/")[0], []).append(nm)
-    for nm in names:
-        if len(streams[nm]) > 512:
-            raise ValueError(f"ole write: stream {nm} exceeds one sector")
+    snames = sorted(parents)
+    ns = len(snames)
+    order: list[str] = []
+    for st in snames:
+        order += sorted(parents[st])
+    mini = [nm for nm in order if len(streams[nm]) < 4096]
+    reg = [nm for nm in order if len(streams[nm]) >= 4096]
+    mpos: dict[str, tuple[int, int]] = {}
+    msectors = 0
+    for nm in mini:
+        nmini = max(1, _m.ceil(len(streams[nm]) / 64))
+        mpos[nm] = (msectors, len(streams[nm]))
+        msectors += nmini
+    ndir = max(1, _m.ceil((1 + ns + len(order)) * 128 / 512))
+    nminifat_sec = max(1, _m.ceil(max(1, msectors) * 4 / 512))
+    # sector layout: FAT sectors, dir, minifat, ministream, data
+    dirsec = nfat = 0  # placeholder, recomputed below
+    fatsec = [0]
+    dirsec = 1
+    # iterate: nfat depends on total sectors, total depends on nfat
+    nfat = 1
+    while True:
+        dirsec = nfat
+        secno = nfat + ndir
+        minifat_sec = secno
+        secno += nminifat_sec
+        ms_sec = secno
+        ms_nsec = max(1, _m.ceil(msectors * 64 / 512))
+        secno += ms_nsec
+        start = {}
+        for nm in reg:
+            nsec = max(1, _m.ceil(len(streams[nm]) / 512))
+            start[nm] = secno
+            secno += nsec
+        need = max(1, _m.ceil(secno / 128))
+        if need <= nfat or nfat >= 2:
+            nfat = min(need, 2)
+            break
+        nfat = need
+    if nfat > 2:
+        raise ValueError("ole write: file exceeds two-FAT capacity")
+    fat = [0xFFFFFFFE] * 128 * nfat
+    for f in range(nfat):
+        fat[f] = 0xFFFFFFFD
+    for i in range(ndir):
+        fat[dirsec + i] = dirsec + i + 1 if i + 1 < ndir else 0xFFFFFFFE
+    for i in range(nminifat_sec):
+        fat[minifat_sec + i] = (minifat_sec + i + 1
+                                if i + 1 < nminifat_sec else 0xFFFFFFFE)
+    minifat = [0xFFFFFFFF] * (nminifat_sec * 128)
+    for nm in mini:
+        mst, _sz = mpos[nm]
+        nmini = max(1, _m.ceil(len(streams[nm]) / 64))
+        for k in range(nmini):
+            minifat[mst + k] = mst + k + 1 if k + 1 < nmini else 0xFFFFFFFE
+    for k in range(ms_nsec):
+        fat[ms_sec + k] = ms_sec + k + 1 if k + 1 < ms_nsec else 0xFFFFFFFE
+    for nm in reg:
+        nsec = max(1, _m.ceil(len(streams[nm]) / 512))
+        for k in range(nsec):
+            fat[start[nm] + k] = (start[nm] + k + 1
+                                  if k + 1 < nsec else 0xFFFFFFFE)
     entries: list[bytearray] = []
     root = bytearray(128)
     _ole_name(root, "Root Entry")
     root[66] = 5
     root[68:72] = struct.pack("<i", -1)
     root[72:76] = struct.pack("<i", -1)
-    root[76:80] = struct.pack("<i", 1 if parents else -1)
+    root[76:80] = struct.pack("<i", 1 if ns else -1)
+    root[116:120] = struct.pack("<I", ms_sec)
+    root[120:124] = struct.pack("<I", ms_nsec * 512)
     entries.append(root)
-    stor_idx: dict[str, int] = {}
-    for si, st in enumerate(sorted(parents)):
+    for si, st in enumerate(snames):
         e = bytearray(128)
         _ole_name(e, st)
         e[66] = 1
         e[68:72] = struct.pack("<i", -1)
-        e[72:76] = struct.pack("<i", 1 + len(parents) + si + 1
-                               if si + 1 < len(parents) else -1)
-        e[76:80] = struct.pack("<i", 1 + si)
-        stor_idx[st] = len(entries)
+        e[72:76] = struct.pack("<i", 1 + si + 1 if si + 1 < ns else -1)
+        first = 1 + ns + sum(len(parents[s]) for s in snames[:si])
+        e[76:80] = struct.pack("<i", first)
         entries.append(e)
-    secno = 2
-    stream_sec: dict[str, int] = {}
-    for st in sorted(parents):
-        for nm in sorted(parents[st]):
-            e = bytearray(128)
-            _ole_name(e, nm.split("/")[-1])
-            e[66] = 2
-            e[68:72] = struct.pack("<i", -1)
-            e[72:76] = struct.pack("<i", -1)
-            e[76:80] = struct.pack("<i", -1)
-            e[116:120] = struct.pack("<I", secno)
+    for nm in order:
+        e = bytearray(128)
+        _ole_name(e, nm.split("/")[-1])
+        e[66] = 2
+        e[68:72] = struct.pack("<i", -1)
+        e[72:76] = struct.pack("<i", -1)
+        e[76:80] = struct.pack("<i", -1)
+        if nm in mpos:
+            e[116:120] = struct.pack("<I", mpos[nm][0])
+            e[120:124] = struct.pack("<I", mpos[nm][1])
+        else:
+            e[116:120] = struct.pack("<I", start[nm])
             e[120:124] = struct.pack("<I", len(streams[nm]))
-            stream_sec[nm] = secno
-            secno += 1
-            entries.append(e)
-    # FAT: sector 0 = FAT, 1 = directory (may span several sectors)
-    import math as _m
-    ndir = max(1, -(-len(entries) * 128 // 512))
-    nfat = 1
-    total = 1 + nfat + ndir + len(names)
-    fat = [0xFFFFFFFE] * 128
-    fat[0] = 0xFFFFFFFD
-    for i in range(1, 1 + ndir):
-        fat[i] = i + 1 if i < ndir else 0xFFFFFFFE
-    for i in range(len(names)):
-        fat[1 + ndir + i] = 0xFFFFFFFE
-    # fix stream sector numbers: data starts after header+fat+dir
-    base = 1 + nfat + ndir
-    out = bytearray(bytes(head))
-    out += struct.pack("<128I", *fat)
-    while len(entries) * 128 > ndir * 512:
-        ndir += 1  # (recompute rarely triggers; streams are small)
+        entries.append(e)
     while len(entries) < ndir * 4:
         entries.append(bytearray(128))
-    # rewrite sector numbers with correct base
-    si = 0
-    for st in sorted(parents):
-        for nm in sorted(parents[st]):
-            idx = 1 + len(parents) + si
-            entries[idx][116:120] = struct.pack("<I", base + si)
-            si += 1
+    head = bytearray(512)
+    head[0:8] = _OLE_MAGIC
+    head[24:26] = struct.pack("<H", 0x003E)
+    head[26:28] = struct.pack("<H", 3)
+    head[30:32] = struct.pack("<H", 9)
+    head[32:34] = struct.pack("<H", 6)
+    head[40:44] = struct.pack("<I", 0)
+    head[44:48] = struct.pack("<I", nfat)
+    head[48:52] = struct.pack("<I", dirsec)
+    head[56:60] = struct.pack("<I", 4096)
+    head[60:64] = struct.pack("<I", minifat_sec)
+    head[64:68] = struct.pack("<I", nminifat_sec)
+    head[68:72] = struct.pack("<I", 0xFFFFFFFE)
+    head[72:76] = struct.pack("<I", 0)
+    for _fi in range(min(nfat, 109)):
+        head[76 + 4 * _fi:80 + 4 * _fi] = struct.pack("<I", _fi)
+    out = bytearray(bytes(head))
+    out += struct.pack(f"<{nfat * 128}I", *fat)
     out += b"".join(bytes(e) for e in entries)
-    for nm in names:
-        sec = bytearray(512)
+    out += struct.pack(f"<{nminifat_sec * 128}I", *minifat)
+    ms = bytearray(ms_nsec * 512)
+    for nm in mini:
+        mst, _sz = mpos[nm]
+        off = mst * 64
+        ms[off:off + len(streams[nm])] = streams[nm]
+    out += bytes(ms)
+    for nm in reg:
+        nsec = max(1, _m.ceil(len(streams[nm]) / 512))
+        sec = bytearray(nsec * 512)
         sec[:len(streams[nm])] = streams[nm]
         out += bytes(sec)
-    # patch header: directory start stays 1; FAT count 1 ✓ (set above)
     return bytes(out)
 
 
@@ -1177,8 +1219,9 @@ def _ole_name(e: bytearray, nm: str) -> None:
     """UTF-16LE name + length prefix into a 128B directory entry."""
     import struct
     raw = nm.encode("utf-16-le")[:62] + b"\x00\x00"
+    raw = raw[:64]
     e[:len(raw)] = raw
-    e[64:66] = struct.pack("<H", len(raw) + 2)
+    e[64:66] = struct.pack("<H", len(raw))
 
 
 def _ole_stream(paths: dict[str, tuple[int, int]], path: str) -> bytes | None:
