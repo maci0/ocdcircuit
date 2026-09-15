@@ -289,6 +289,52 @@ def _diffuse_once(board: Board, iters: int = 400, seed: int = 0,
             frames.append(_snap(board))
 
 
+CHUNK_PAIRS = 4_000_000  # pair budget per chunk (tunable)
+
+
+def _repel_block(np: Any, F: Any, pos: Any, wh: Any, opos: Any, owh: Any,
+                  spread: float, self_pairs: bool) -> None:
+    """Repulsion of `pos` (n,2) against `opos` (m,2), accumulated into F.
+
+    Chunked over rows: the full broadcast would materialise ~13 float64 n×n
+    arrays per iteration (2.6GB at n=5,400, measured). Each chunk is a
+    contiguous slab, so it stays in cache; the j-sum is unchanged per row.
+    `self_pairs` masks the diagonal (a part does not repel itself).
+    """
+    n = pos.shape[0]
+    m = opos.shape[0]
+    if not m:
+        return
+    step = max(64, CHUNK_PAIRS // max(1, m))
+    for i0 in range(0, n, step):
+        i1 = min(n, i0 + step)
+        px = pos[i0:i1]
+        pw = wh[i0:i1]
+        dxy = px[:, None, :] - opos[None, :, :]
+        d = np.sqrt((dxy ** 2).sum(-1))
+        if self_pairs:
+            idx = np.arange(i0, i1)
+            d[idx - i0, idx] = 1e9  # self-distance, same as fill_diagonal
+        tiny = d < 1e-6
+        d = np.where(tiny, 1.0, d)
+        need = ((pw[:, None, 0] + owh[None, :, 0]) / 2 + 0.6
+                + (pw[:, None, 1] + owh[None, :, 1]) / 2 + 0.6) / 2
+        close = d < need * 2.2
+        fmag = np.where(close, spread * (3.2 * (1 - d / (need * 2.2))
+                                        + np.where(d < need, 1.6, 0.0)), 0.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            F[i0:i1] += ((fmag / d)[:, :, None]
+                         * np.where(tiny[:, :, None], 0.0, dxy)).sum(1)
+        pen = (pw[:, None, :] + owh[None, :, :]) / 2 + 0.4 - np.abs(dxy)
+        both = (pen[:, :, 0] > 0) & (pen[:, :, 1] > 0)
+        ax, ay = pen[:, :, 0], pen[:, :, 1]
+        push = np.where(both, spread * (4.0 + 8.0 * np.minimum(ax, ay)), 0.0)
+        xmask = both & (ax < ay)
+        F[i0:i1, 0] += (np.where(xmask, np.sign(dxy[:, :, 0]), 0.0) * push).sum(1)
+        F[i0:i1, 1] += (np.where(~xmask & both, np.sign(dxy[:, :, 1]), 0.0)
+                        * push).sum(1)
+
+
 def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
                  frames: list[Frame] | None, every: int,
                  pull: float, spread: float, edge: float | None,
@@ -362,46 +408,11 @@ def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
         for a, b, w in near_idx:
             F[a] += 0.05 * w * (pos[b] - pos[a])
             F[b] += 0.05 * w * (pos[a] - pos[b])
-        # pairwise repulsion, one broadcast: d (n,n), no self-term
-        dxy = pos[:, None, :] - pos[None, :, :]
-        d = np.sqrt((dxy ** 2).sum(-1))
-        np.fill_diagonal(d, 1e9)
-        tiny = d < 1e-6
-        d = np.where(tiny, 1.0, d)
-        need = ((wh[:, None, 0] + wh[None, :, 0]) / 2 + 0.6
-                + (wh[:, None, 1] + wh[None, :, 1]) / 2 + 0.6) / 2
-        close = d < need * 2.2
-        fmag = np.where(close, spread * (3.2 * (1 - d / (need * 2.2))
-                                        + np.where(d < need, 1.6, 0.0)), 0.0)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            F += ((fmag / d)[:, :, None] * np.where(tiny[:, :, None], 0.0, dxy)).sum(1)
-        pen = (wh[:, None, :] + wh[None, :, :]) / 2 + 0.4 - np.abs(dxy)
-        both = (pen[:, :, 0] > 0) & (pen[:, :, 1] > 0)
-        px, py = pen[:, :, 0], pen[:, :, 1]
-        push = np.where(both, spread * (4.0 + 8.0 * np.minimum(px, py)), 0.0)
-        xmask = both & (px < py)
-        F[:, 0] += (np.where(xmask, np.sign(dxy[:, :, 0]), 0.0) * push).sum(1)
-        F[:, 1] += (np.where(~xmask & both, np.sign(dxy[:, :, 1]), 0.0) * push).sum(1)
+        # pairwise repulsion, chunked (was one n*n broadcast)
+        _repel_block(np, F, pos, wh, pos, wh, spread, True)
         if len(spos):
             # fixed parts repel movers (positions static, no back-reaction)
-            sxy = pos[:, None, :] - spos[None, :, :]
-            sd = np.sqrt((sxy ** 2).sum(-1))
-            stiny = sd < 1e-6
-            sd = np.where(stiny, 1.0, sd)
-            sneed = ((wh[:, None, 0] + swh[None, :, 0]) / 2 + 0.6
-                     + (wh[:, None, 1] + swh[None, :, 1]) / 2 + 0.6) / 2
-            sclose = sd < sneed * 2.2
-            sf = np.where(sclose, spread * (3.2 * (1 - sd / (sneed * 2.2))
-                                           + np.where(sd < sneed, 1.6, 0.0)), 0.0)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                F += ((sf / sd)[:, :, None] * np.where(stiny[:, :, None], 0.0, sxy)).sum(1)
-            spen = (wh[:, None, :] + swh[None, :, :]) / 2 + 0.4 - np.abs(sxy)
-            sboth = (spen[:, :, 0] > 0) & (spen[:, :, 1] > 0)
-            spx, spy = spen[:, :, 0], spen[:, :, 1]
-            spush = np.where(sboth, spread * (4.0 + 8.0 * np.minimum(spx, spy)), 0.0)
-            sxmask = sboth & (spx < spy)
-            F[:, 0] += (np.where(sxmask, np.sign(sxy[:, :, 0]), 0.0) * spush).sum(1)
-            F[:, 1] += (np.where(~sxmask & sboth, np.sign(sxy[:, :, 1]), 0.0) * spush).sum(1)
+            _repel_block(np, F, pos, wh, spos, swh, spread, False)
         # edge push
         lox = m + wh[:, 0] / 2 + 1 - pos[:, 0]
         hix = pos[:, 0] - (board.width - m - wh[:, 0] / 2 - 1)
