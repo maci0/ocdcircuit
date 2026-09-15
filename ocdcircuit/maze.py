@@ -7,16 +7,13 @@ pin-to-pin (chain), reusing own-net copper as free terrain. One undoable
 effect; streams frames like the L-router.
 """
 from __future__ import annotations
+from .util import as_float as _f
 import heapq
 from typing import TYPE_CHECKING, cast
 
 from .circuit import Net, Seg
 from .types import Frame, XY
 
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 if TYPE_CHECKING:
     from .circuit import Board

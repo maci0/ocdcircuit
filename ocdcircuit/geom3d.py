@@ -5,6 +5,7 @@ tantalum yellow, electrolytic silver-blue, LED red-tinted, USB steel.
 Bodies carry optional "mat" (else inferred from footprint prefix).
 """
 from __future__ import annotations
+from .util import as_float as _f
 import base64
 import io
 import json
@@ -81,11 +82,6 @@ def _cyl(tris: list[Tri], cx: float, cy: float, z0: float,
         tris.append(((cc[0], cc[1], z0 + h), (p1[0], p1[1], z0 + h), (p0[0], p0[1], z0 + h), mat))
         tris.append(((p0[0], p0[1], z0), (p0[0], p0[1], z0 + h), (p1[0], p1[1], z0 + h), mat))
         tris.append(((p0[0], p0[1], z0 + h), (p1[0], p1[1], z0), (p1[0], p1[1], z0 + h), mat))
-
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 
 def _plane(layers: int, thick: float, layer: int) -> float:

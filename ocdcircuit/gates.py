@@ -17,6 +17,7 @@ ring oscillators report X (None) on the loop nets.
 # the old behavior); sub-tick/float annotated delays when a board needs them.
 """
 from __future__ import annotations
+from .util import as_float as _f
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,13 +29,6 @@ GNDS = ("GND", "VSS", "0")
 GATES = {"NAND": (2, False), "NOR": (2, False), "AND": (2, False),
          "OR": (2, False), "XOR": (2, False), "INV": (1, False),
          "BUF": (1, False), "DFF": (2, True), "JK": (3, True)}
-
-
-def _f(v: object, default: float = 0.0) -> float:
-    if v is None:
-        return default
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 
 def _gate_fn(kind: str, ins: list[int]) -> int:

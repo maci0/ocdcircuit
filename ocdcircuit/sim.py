@@ -18,6 +18,7 @@ Front door is constraints, not parts:
 Value parser: 10k, 4k7, 100n, 10u, 1m, 1M, 0.11 etc.
 """
 from __future__ import annotations
+from .util import as_float as _f, as_int as _i, as_str as _s
 from typing import TYPE_CHECKING
 import math
 
@@ -25,27 +26,6 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 GNDS = ("GND", "VSS", "0")
-
-
-def _f(v: object, default: float = 0.0) -> float:
-    if v is None:
-        return default
-    assert isinstance(v, (int, float, str))
-    return float(v)
-
-
-def _i(v: object, default: int) -> int:
-    if v is None:
-        return default
-    assert isinstance(v, (int, str))
-    return int(v)
-
-
-def _s(v: object, default: str = "") -> str:
-    if v is None:
-        return default
-    assert isinstance(v, str)
-    return v
 
 
 def parse_value(s: str) -> float:

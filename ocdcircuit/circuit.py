@@ -333,6 +333,11 @@ class Board(Component):
         return d
 
     # -- plugin dispatch: Board never calls solver/drc/export directly --
+    def proj_str(self, key: str) -> str | None:
+        """A board.toml value as a string, None when unset or not a string."""
+        v = self.proj.get(key)
+        return v if isinstance(v, str) else None
+
     def plugins(self) -> Registry:
         if self._reg is None:
             reg = self.ctx.require("plugins")

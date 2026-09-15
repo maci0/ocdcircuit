@@ -45,11 +45,6 @@ def _load(agent: object, src: str) -> Board:
     return b
 
 
-def _proj_str(b: Board, key: str) -> str | None:
-    v = b.proj.get(key)
-    return v if isinstance(v, str) else None
-
-
 def _proj_list(b: Board, key: str) -> list[str] | None:
     v = b.proj.get(key)
     return list(v) if isinstance(v, list) else None
@@ -60,8 +55,8 @@ def _solve(b: Board, placer: str | None, router: str | None
     """Place+route honoring CLI flags, else board.toml picks, else defaults.
     Returns (cost, segs, placer_used, router_used) — the registry default
     is untouched by one-shot runs, so callers display these, not active."""
-    placer = placer or _proj_str(b, "placer")
-    router = router or _proj_str(b, "router")
+    placer = placer or b.proj_str("placer")
+    router = router or b.proj_str("router")
     c = b.place(placer) if placer else b.place()
     n = b.route_board(router) if router else b.route_board()
     return (c, n, placer or str(b.plugins().active.get("placer")),

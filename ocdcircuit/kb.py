@@ -19,6 +19,7 @@ attr wins (a URL you pinned in the `.ocd`), else `lcsc=C1234` is resolved
 through LCSC's public product endpoint. Anything else is left to the human.
 """
 from __future__ import annotations
+from .util import numpy as _numpy
 import base64
 import json
 import math
@@ -96,20 +97,6 @@ def parts_map(text: str) -> dict[str, dict[str, str]]:
 
 
 _np = None  # lazy: imported on the first vectorized ranking, not at load
-
-
-def _numpy() -> Any:
-    """numpy handle, imported once on first use (~70ms — not at package load).
-    Same optional-fast-path contract as solver.py: without it, ranking still
-    works, ~60x slower (measured 43.8ms vs 0.71ms for a 2610-passage kb)."""
-    global _np
-    if _np is None:
-        try:
-            import numpy as _m
-            _np = _m
-        except ImportError:
-            return None
-    return _np
 
 
 def _unit(vec: array[float], dim: int) -> array[float]:

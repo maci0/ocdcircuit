@@ -1,13 +1,9 @@
 """DRC against a fab profile (see fab.py). Errors block fab; clearance-only
 hits are warnings (naive L-router, see ADR-0002)."""
 from __future__ import annotations
+from .util import as_float as _f
 from typing import TYPE_CHECKING, cast
 from .fab import DEFAULT, get
-
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 
 if TYPE_CHECKING:

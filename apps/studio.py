@@ -17,6 +17,7 @@ Interactions:
 Run: python studio.py [file.ocd]  → http://localhost:8077
 """
 from __future__ import annotations
+from ocdcircuit.util import as_float as _f, as_int as _i
 import http.server
 import json
 import os
@@ -182,17 +183,6 @@ SLOTS.register("view", "kb",
                          '<pre id=kbview></pre>'
                          '</section>',
                order=6.0)
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
-
-
-def _i(v: object, default: int) -> int:
-    if v is None:
-        return default
-    assert isinstance(v, (int, str))
-    return int(v)
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "boards", "blinky_555.ocd")
 SRC = os.path.abspath(SRC)

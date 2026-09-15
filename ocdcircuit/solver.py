@@ -14,24 +14,11 @@ glide, traces grow. Headless callers pay nothing (default off).
 # above covers n≥16 when numpy exists; push-and-shove when warnings annoy.
 """
 from __future__ import annotations
+from .util import numpy as _numpy
 import random
 from typing import TYPE_CHECKING, Any, cast
 from .circuit import Part, Seg
 from .types import BBox, Frame, XY
-
-_np = None  # lazy: imported on first vectorized run, not at package load
-
-
-def _numpy() -> Any:
-    """numpy handle, imported once on first use (~70ms — not at startup)."""
-    global _np
-    if _np is None:
-        try:
-            import numpy as _m
-            _np = _m
-        except ImportError:
-            return None
-    return _np
 
 if TYPE_CHECKING:
     from .circuit import Board

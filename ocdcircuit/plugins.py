@@ -1,21 +1,11 @@
 """Everything is a plugin: placers, routers, layers, drc, exporters,
 parts libraries, renderers (svg + 3D stl). Stdlib only, one file."""
 from __future__ import annotations
+from .util import as_float as _f, as_int as _i
 import re
 import sys
 from typing import TYPE_CHECKING, cast
 
-
-def _i(v: object, default: int) -> int:
-    if v is None:
-        return default
-    assert isinstance(v, (int, str))
-    return int(v)
-
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 from .core import Plugin, Registry
 from .types import Constraint, Footprint, Frame, PinLike, XY

@@ -10,6 +10,7 @@ Analyses: dc (op), tran, ac. ngspice batch mode (-b), wrdata ASCII parse.
 Missing binary → RuntimeError naming the apt package (hot-swap back to mna).
 """
 from __future__ import annotations
+from .util import as_float as _num, as_int as _int
 from typing import TYPE_CHECKING
 import math
 import os
@@ -24,16 +25,6 @@ if TYPE_CHECKING:
 NGSPICE = shutil.which("ngspice")
 
 GNDS = ("GND", "VSS", "0")
-
-
-def _num(v: object, default: float = 0.0) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
-
-
-def _int(v: object, default: int = 0) -> int:
-    assert isinstance(v, (int, str))
-    return int(v)
 
 
 def _norm(net: str) -> str:

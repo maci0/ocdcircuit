@@ -11,19 +11,13 @@ pours, pre-route <trace> (→ keep constraints), LCSC attrs, rotations.
 Usage: python -m tools.mitox <mitox-projdir> <outdir>
 """
 from __future__ import annotations
+from ocdcircuit.util import as_float as _f
 import json
 import os
 import re
 import sys
 from typing import cast
 
-
-
-def _f(v: object, default: float = 0.0) -> float:
-    if v is None:
-        return default
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 
 def tsx_elements(src: str) -> dict[str, dict[str, str]]:

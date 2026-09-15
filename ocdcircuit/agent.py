@@ -1,5 +1,6 @@
 """Agent-first API: structured patches (undoable) + NL constraint fallback."""
 from __future__ import annotations
+from .util import as_float as _f, as_int as _i, as_str as _s
 import gc
 import json
 import math
@@ -115,23 +116,6 @@ def _apply_patch_inner(board: Board, ops: list[dict[str, object]]) -> int:
             raise ValueError(f"unknown op {k}")
         n += 1
     return n
-
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
-
-
-def _i(v: object, default: int = 0) -> int:
-    if v is None:
-        return default
-    assert isinstance(v, (int, str))
-    return int(v)
-
-
-def _s(v: object) -> str:
-    assert isinstance(v, str)
-    return v
 
 
 def _opt_float(v: object) -> float | None:

@@ -5,15 +5,12 @@ footprints with SMD pads + PTH holes, segments, vias at segment joints.
 Not bit-identical to KiCad's own output, but parses and round-trips.
 """
 from __future__ import annotations
+from .util import as_float as _f
 import csv
 import os
 import re
 from typing import TYPE_CHECKING, cast
 
-
-def _f(v: object) -> float:
-    assert isinstance(v, (int, float, str))
-    return float(v)
 
 if TYPE_CHECKING:
     from .circuit import Board
