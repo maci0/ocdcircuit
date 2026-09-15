@@ -598,10 +598,10 @@ def _sch_pin(p: bytes) -> tuple[str | None, str | None]:
 def _bin_schlib(data: bytes) -> list[tuple[str, dict[str, object]]]:
     """Native binary .SchLib → [(name, symbol)]. Each top-level storage is
     one symbol: text records (component/params/rect) + binary pin records
-    (type byte 1: trailing [len][chars] pairs give name, designator).
-    Pin side = designator-half split (first half left) — exact orientation
-    bits are undocumented; boxes still read correctly.
-    ponytail: full orientation decode if a symbol ever looks wrong."""
+    (type byte 1: payload byte 15 low 2 bits = TRotateBy90 orientation —
+    0 right, 1 up, 2 left, 3 down; tail [len][chars] pairs give name,
+    designator). Vertical pins land top/bottom by y-sign; horizontal by
+    orientation. Verified on TSOP-8 (4L/4R) + Cyclone-V (225L/671R)."""
     import struct
     paths, _, _, _, _, _ = _ole_dir(data)
     libs: dict[str, list[str]] = {}
@@ -613,10 +613,11 @@ def _bin_schlib(data: bytes) -> list[tuple[str, dict[str, object]]]:
         dpath = lib + "/Data"
         if dpath not in paths:
             continue
-        buf = _ole_stream(paths, dpath)
-        if not buf:
+        raw = _ole_stream(paths, dpath)
+        if not raw:
             continue
-        pins: list[tuple[str, str]] = []  # (designator, name)
+        buf = bytes(raw)
+        pins: list[tuple[str, str, str]] = []  # (designator, name, side)
         name = lib
         j = 0
         while j + 4 <= len(buf):
@@ -629,29 +630,26 @@ def _bin_schlib(data: bytes) -> list[tuple[str, dict[str, object]]]:
                 if r.get("RECORD") == "1" and r.get("LIBREFERENCE"):
                     name = r["LIBREFERENCE"]
             elif buf[j + 2] == 0 and buf[j + 3] == 1:
-                des, nm = _sch_pin(buf[j + 4:j + 4 + ln])
+                prec = bytes(buf[j + 4:j + 4 + ln])
+                des, nm = _sch_pin(prec)
                 if nm is not None and des is not None:
-                    pins.append((des, nm))
+                    ori = prec[15] & 3 if len(prec) > 15 else 0
+                    y = struct.unpack("<h", prec[20:22])[0] if len(prec) > 22 else 0
+                    side = ("left" if ori == 2 else "right" if ori == 0
+                            else "top" if (ori == 1) == (y >= 0) else "bottom")
+                    pins.append((des, nm, side))
             j += 4 + ln
         if not pins:
             continue
-        def _key(d: str) -> tuple[int, str]:
-            try:
-                return (0, f"{int(d):06d}")
-            except ValueError:
-                return (1, d)
-        ordered = sorted(pins, key=lambda pn: _key(pn[0]))
-        half = (len(ordered) + 1) // 2
-        left = {d for d, _ in ordered[:half]}
         sympins: dict[str, tuple[str, int, str]] = {}
-        counts = {"left": 0, "right": 0}
-        for des, nm in pins:
-            side = "left" if des in left else "right"
+        counts = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+        for des, nm, side in pins:
             sympins[des] = (side, counts[side], nm)
             counts[side] += 1
-        n = max(len(pins), 1)
-        rows = max(1, (n + 1) // 2)
-        sym: dict[str, object] = {"w": 12.0, "h": max(4.0, rows * 2.0 + 2.0),
+        lr = max(counts["left"], counts["right"], 1)
+        tb = max(counts["top"], counts["bottom"], 0)
+        sym: dict[str, object] = {"w": max(12.0, tb * 2.0 + 4.0),
+                                  "h": max(4.0, lr * 2.0 + 2.0),
                                   "pins": sympins, "notch": False,
                                   "zigzag": False, "label": "{ref} {value}"}
         out.append((name, sym))
