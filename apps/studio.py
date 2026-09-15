@@ -723,13 +723,19 @@ function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
 $('ed').addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(push,400);});
 async function push(){
   const text=$('ed').innerText, seq=++pulseq;
-  const r=await api('/build',{text,src:SRCREL,placer:$('placer').value,
+  const r=await api('/build',{text,src:SRCREL,thash:heldThash,placer:$('placer').value,
     router:$('router').value,fab:$('fab').value,silk:$('silk').value});
   if(seq!==pulseq)return;   // the editor moved on (or another board opened)
   if(r.error){statMsg(r.error);S=null;return;}
   statMsg('');applyState(r,false);
 }
+let heldThash='', heldTraces=[];
 function applyState(r,live){
+  if(r.thash){ // server skipped the trace list: keep the one we already have
+    if(r.thash!==heldThash){heldTraces=r.traces||[];}
+    r.traces=(r.traces&&r.traces.length)?r.traces:heldTraces;
+    heldThash=r.thash;
+  }
   S=r;S.cur=r;markDirty();spinBriefly(); // render live on the state itself (bw/bh/pours/fixed ride along)
   notePlacement(r);
   if(live&&r.frames&&r.frames.length)animate(r.frames,r.traces,()=>{drawDRC(r);});
@@ -1124,6 +1130,7 @@ async function openFile(path){
   const r=await api('/fs/open',{path});
   if(r.error){statMsg(r.error);return;}
   statMsg('');$('msgs').innerHTML='';
+  heldThash='';heldTraces=[];  // a different board: its traces are not ours
   setQueue([]);  // the server dropped the old board's proposals with it
   applyState(r,false);
   toast('opened '+path);
@@ -2214,11 +2221,19 @@ class H(http.server.BaseHTTPRequestHandler):
             {"x1": t.x1, "y1": t.y1, "x2": t.x2,
              "y2": t.y2, "layer": t.layer, "w": t.width}
             for t in b.traces[:MAX_SEGS]]
+        # Traces are the biggest part of a dense payload (0.76MB of 2.32MB on
+        # monster6502) and a text edit rarely changes them: the caller sends
+        # the hash it holds, and an unchanged list is not re-sent.
+        import hashlib as _hashlib
+        tkey = _hashlib.sha1(repr(traces).encode()).hexdigest()[:12]
+        if req.get("thash") == tkey:
+            traces = []
         st = board_state(b, agent.dumps(b), frames, traces, cost, drc)
         st["dense"] = dense
         st["compact"] = bool(st.get("compact"))
         st["placed"] = place_it
         st["segcount"] = n
+        st["thash"] = tkey
         if dense and not place_it:
             dense_skip.insert(0, "placement")
         st["skipped"] = dense_skip

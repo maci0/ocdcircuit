@@ -291,6 +291,17 @@ def main() -> None:
         assert cast(int, ex["bytes"]) > 1000, ex
         assert str(ex["name"]).endswith("-fab.zip"), ex
         print(f"export ok ({ex['bytes']} byte bundle)")
+        # trace delta: a rebuild that carries the caller's trace hash must not
+        # re-send the trace list, and the hash must match the list it stands in
+        tb = post(base, "/build", {"text": text, "placer": "diffusion",
+                                   "router": "maze"})
+        th = str(tb.get("thash") or "")
+        assert th and cast(list[object], tb["traces"]), (th, len(cast(list[object], tb["traces"])))
+        tb2 = post(base, "/build", {"text": text, "thash": th,
+                                    "placer": "diffusion", "router": "maze"})
+        assert tb2.get("thash") == th, (tb2.get("thash"), th)
+        assert tb2["traces"] == [], "traces re-sent despite an unchanged hash"
+        print(f"trace delta ok (hash {th}, {len(cast(list[object], tb['traces']))} segments elided)")
         # rebuild blinky: /build saves to disk, screenshot must see blinky
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
