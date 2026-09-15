@@ -21,7 +21,7 @@ import os
 import re
 import urllib.error
 import urllib.request
-from typing import Callable, cast
+from typing import Any, Callable, cast
 
 MAX_STEPS = 6  # tool rounds before we stop and hand back what we have
 TOOL_NAMES = ("fs.list", "fs.read", "write", "replace")
@@ -77,9 +77,12 @@ def models(timeout: float = 10.0) -> list[str]:
         return []
 
 
-def chat(messages: list[dict[str, str]], *, temperature: float = 0.2,
+def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
          timeout: float = 180.0) -> str:
-    """One completion. Raises LLMError with the endpoint's own words."""
+    """One completion. Raises LLMError with the endpoint's own words.
+
+    `content` is a string for text, or the OpenAI content-part list when a
+    message carries images (see vision())."""
     c = cfg()
     body = json.dumps({"model": c["model"], "messages": messages,
                        "temperature": temperature}).encode()
@@ -106,6 +109,20 @@ def chat(messages: list[dict[str, str]], *, temperature: float = 0.2,
         return str(doc["choices"][0]["message"]["content"])
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise LLMError(f"unexpected reply from {c['base']}: {raw[:200]!r}") from e
+
+
+def vision(text: str, images: list[str], *, temperature: float = 0.2,
+           timeout: float = 600.0) -> str:
+    """One completion over text + images (data: URIs or http URLs), in the
+    OpenAI content-part shape every vision endpoint speaks. A model without
+    vision answers with a complaint rather than a crash — the wording comes
+    back verbatim so the operator knows to set OCD_LLM_MODEL."""
+    if not images:
+        raise LLMError("vision() needs at least one image")
+    parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    parts += [{"type": "image_url", "image_url": {"url": u}} for u in images]
+    return chat([{"role": "user", "content": parts}],
+                temperature=temperature, timeout=timeout)
 
 
 def embed_model() -> str:

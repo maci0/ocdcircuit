@@ -2463,7 +2463,8 @@ assert len(_dims) == 1 and _dims[0]["LX"] == "1000mil"
 _fixt3 = "/tmp/altium_real/hardware/1v3/PCB/LimeSDR_Mini_1v3_Rounded.PcbDoc"
 if os.path.exists(_fixt3):
     _bir = foreign._bin_pcbdoc(open(_fixt3, "rb").read())
-    assert len([t for t in _bir.get("_imported_texts", [])
+    assert len([t for t in cast(list[dict[str, str]],
+                                _bir.get("_imported_texts", []))
                 if t["text"].startswith("dim ")]) == 4
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
@@ -3013,4 +3014,24 @@ assert any(str(c.get("name")) == "plugin:diff"
            and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
 assert any(str(c.get("name")) == "kicad-cli"
            and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
+
+# pcb photo scan: the plugin is mounted and dispatches, and the imaging
+# pipeline self-check passes (registration/stitch/enhance/splat on a
+# synthetic shoot — see pcbscan.demo). Skipped without numpy, which is the
+# one hard dependency of that module.
+assert "scan:photo" in Board("scanreg").plugins().list()
+try:
+    import numpy as _np_probe  # noqa: F401
+except ImportError:
+    print("SCAN SKIPPED (no numpy)")
+else:
+    from ocdcircuit import pcbscan as _pcbscan
+    _pcbscan.demo()
+    try:
+        Board("scanreg").scan(photos="nope")
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("scan accepted a non-list photos=")
+
 print("ALL OK")
