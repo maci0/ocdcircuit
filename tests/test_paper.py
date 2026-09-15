@@ -213,12 +213,12 @@ assert (len(_ib2.parts), len(_ib2.nets), _ib2.includes,
         _ib2.constraints) == (0, 0, [], []), "include survives unload"
 # coarse temp constraint is a tracked effect: removal is undoable, a second
 # undo still clears traces (no out-of-band state surgery, paper Alg 1)
-_cb2 = _agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart C1 C0805 100n\n"
+_rb2 = _agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart C1 C0805 100n\n"
                     "net N :: R1.1 <--> C1.1\n", base="boards")
-_cb2.route_board("coarse")
-assert not [c for c in _cb2.constraints if c.get("t") == "route-grid"]
-_cb2.ctx.undo(2)
-assert len(_cb2.traces) == 0, "coarse undo must clear traces"
+_rb2.route_board("coarse")
+assert not [c for c in _rb2.constraints if c.get("t") == "route-grid"]
+_rb2.ctx.undo(2)
+assert len(_rb2.traces) == 0, "coarse undo must clear traces"
 
 # loader entries run through ctx.use: drop removes uid, re-add reissues
 ldt = Context()

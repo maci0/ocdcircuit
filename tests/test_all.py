@@ -2139,19 +2139,19 @@ try:
 except ValueError:
     pass
 # binary regions/texts: synthetic builders (no fixture needed)
-import struct as _st
+import struct as _struct
 _rtext = b"LAYER=TOP|KIND=1\x00"
 _rrest = ((1).to_bytes(4, "little") + b"\x00" * 4
-          + _st.pack("<f", 10.0) + b"\x00" * 4
-          + _st.pack("<f", 20.0) + b"\x00" * 4)
+          + _struct.pack("<f", 10.0) + b"\x00" * 4
+          + _struct.pack("<f", 20.0) + b"\x00" * 4)
 _rpay = (bytes([1, 0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255, 255])
          + (0).to_bytes(4, "little") + b"\x00"
          + len(_rtext).to_bytes(4, "little") + _rtext + _rrest)
 _br = foreign._bin_region(b"\x0b" + len(_rpay).to_bytes(4, "little") + _rpay)
 assert len(_br) == 1 and _br[0]["LAYER"] == "TOPLAYER" and _br[0]["NPT"] == "1"
-_tx, _ty = int(10 / 2.54e-6), int(20 / 2.54e-6)
-_tpay = (bytes([33]) + b"\x00" * 12 + _tx.to_bytes(4, "little")
-         + _ty.to_bytes(4, "little") + b"\x00" * 4)
+_ax, _ay = int(10 / 2.54e-6), int(20 / 2.54e-6)
+_tpay = (bytes([33]) + b"\x00" * 12 + _ax.to_bytes(4, "little")
+         + _ay.to_bytes(4, "little") + b"\x00" * 4)
 _bt = foreign._bin_texts(
     b"\x05" + len(_tpay).to_bytes(4, "little") + _tpay
     + (5).to_bytes(4, "little") + b"HIJKL")
@@ -2163,10 +2163,11 @@ _alr = foreign.altium_ascii(
     "|RECORD=Net|NAME=GND|\n"
     "|RECORD=Region|KIND=1|LAYER=TOPLAYER|NPT=4"
     "|X0=1mm|Y0=1mm|X1=3mm|Y1=1mm|X2=3mm|Y2=3mm|X3=1mm|Y3=3mm|\n")
-assert {"t": "cutout", "x": 2.0, "y": 2.0, "w": 2.0, "h": 2.0} in _alr["constraints"]
+assert ({"t": "cutout", "x": 2.0, "y": 2.0, "w": 2.0, "h": 2.0}
+        in cast(list[object], _alr["constraints"]))
 # kicad_pcb: real-world s-expr hazards (complex bench boards hit all four)
-assert foreign.sexpr('(kicad_pcb (descr "a; b") (net 1 "GND"))')[1][1] == '"a; b"'
-assert foreign.sexpr(r'(kicad_pcb (property "D" "30u\" gold"))')[1][2] == r'"30u\" gold"'
+assert cast(list[object], foreign.sexpr('(kicad_pcb (descr "a; b") (net 1 "GND"))')[1])[1] == '"a; b"'
+assert cast(list[object], foreign.sexpr(r'(kicad_pcb (property "D" "30u\" gold"))')[1])[2] == r'"30u\" gold"'
 _kpcb = ('(kicad_pcb (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (1 "In1.Cu" signal)) '
          '(net 0 "") (net 1 "GND") '
          '(footprint "F" (layer "F.Cu") (tedit 0) (at 10 10) '
