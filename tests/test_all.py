@@ -888,6 +888,14 @@ with tempfile.TemporaryDirectory() as d:
     _lbom = open([f for f in _lc.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     assert ",C1" in _lbom and ",C2" in _lbom and _lbom.count("10k") == 2, _lbom
+    # alternates ride a 5th BOM column (unioned per row; JLC ignores extras)
+    _la = agent.loads("board t 40x30 2L\npart U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN,TLC555CP\n"
+                      "part U2 SOIC8 NE555 mpn=NE555P alternates=TLC555CP,ICM7555\n"
+                      "net N: U1.1 U2.1\nnet GND: U1.2 U2.2\n", base=EX)
+    _labom = open([f for f in _la.export("jlc", outdir=tempfile.mkdtemp())
+                   if f.endswith(".BOM.csv")][0]).read()
+    assert "Alternates" in _labom.splitlines()[0], _labom
+    assert _labom.splitlines()[1].endswith(",ICM7555;LM555CN;TLC555CP"), _labom
     from ocdcircuit.circuit import Seg as _Seg
     _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
     assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5

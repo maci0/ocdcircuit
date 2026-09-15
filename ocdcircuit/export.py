@@ -300,10 +300,18 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     for p in board.parts.values():
         groups.setdefault((p.value, p.fp, str(p.attrs.get("lcsc", "")),
                            "DNP" if p.attrs.get("dnp") else ""), []).append(p.ref)
-    lines = ["Comment,Designator,Footprint,LCSC"]
+    lines = ["Comment,Designator,Footprint,LCSC,Alternates"]
+    byref = {p.ref: p for p in board.parts.values()}
     for (value, fp, lcsc, dnp), refs in sorted(groups.items()):
         comment = f"{value} (DNP)" if dnp else value
-        lines.append(f"{comment},\"{','.join(sorted(refs))}\",{fp},{lcsc}")
+        # alternates: curated per-part substitute lists (stock-outs);
+        # unioned across the row, empties dropped. JLC ignores the extra
+        # column; pinout compatibility stays a human attestation.
+        alts = sorted({a.strip() for r in refs
+                       for a in str(byref[r].attrs.get("alternates", "")).split(",")
+                       if a.strip()})
+        lines.append(f"{comment},\"{','.join(sorted(refs))}\",{fp},{lcsc}"
+                     f"{',' + ';'.join(alts) if alts else ''}")
     open(fn, "w").write("\n".join(lines) + "\n")
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
