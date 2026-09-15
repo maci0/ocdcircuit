@@ -492,8 +492,13 @@ def easyeda_doc(doc: dict[str, object]) -> object:
             ref = meta.get("name", f"U{len(parts) + 1}")
             pkg = meta.get("package", ref)
             cur = (ref, pkg, lx, ly, {}, {})
+            # DNP: EasyEDA Std has no native field; the community
+            # convention is a Fitted=Y/N parameter (forum). Honor it.
+            pattrs: dict[str, str] = {}
+            if str(meta.get("Fitted", "Y")).upper() == "N":
+                pattrs["dnp"] = "1"
             parts.append({"ref": ref, "fp": pkg, "value": meta.get("name", pkg),
-                          "x": lx * mm, "y": ly * mm})
+                          "x": lx * mm, "y": ly * mm, "attrs": pattrs})
             minx, miny = min(minx, lx * mm), min(miny, ly * mm)
             maxx, maxy = max(maxx, lx * mm), max(maxy, ly * mm)
             continue

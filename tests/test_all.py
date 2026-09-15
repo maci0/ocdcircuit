@@ -1457,6 +1457,26 @@ _ezfp: dict[str, object] = {"head": "4~1.7.5", "title": "EZ1",
                             "shape": ["PAD~RECT~0~0~9~5~1~~1~~0~g1",
                                       "PAD~RECT~20~0~9~5~1~~2~~0~g2"]}
 assert cast(list[tuple[str, object]], foreign.easyeda_doc(_ezfp))[0][0] == "EZ1"
+# easyeda DNP: Fitted=N parameter (the community convention — Std has no
+# native field) round-trips through our own export into dnp=1
+_ezdnp: dict[str, object] = {"head": "3~1.7.5", "title": "dnptest",
+    "shape": ["LIB~10~10~package`R0805`name`R9`Fitted`N`~~gR9~1#@$"
+              "PAD~RECT~0~0~9~5~1~~1~~0~gR91",
+              "LIB~20~20~package`R0805`name`R8`~~gR8~1#@$"
+              "PAD~RECT~0~0~9~5~1~~1~~0~gR81"]}
+_ezirt = cast(dict[str, object], foreign.easyeda_doc(_ezdnp))
+_ezparts = {p["ref"]: p for p in cast(list[dict[str, object]], _ezirt["parts"])}
+assert _ezparts["R9"].get("attrs") == {"dnp": "1"}, _ezparts["R9"]
+assert _ezparts["R8"].get("attrs") == {}
+_ebd = agent.loads("board t 20x20\npart R1 R0805 1k dnp=1\npart R2 R0805 1k\n"
+                   "net N: R1.2 R2.1\nnet GND: R1.1 R2.2\n", base=EX)
+_ebd.place()
+_ebd.route_board()
+_ezfn = _ebd.export("easyeda", outdir=tempfile.mkdtemp())[0]
+_ezrt2 = cast(dict[str, object], foreign.easyeda_doc(_json.loads(open(_ezfn).read())))
+_ezparts2 = {p["ref"]: p for p in cast(list[dict[str, object]], _ezrt2["parts"])}
+assert _ezparts2["R1"].get("attrs") == {"dnp": "1"}, _ezparts2["R1"]
+assert _ezparts2["R2"].get("attrs") == {}
 # tsx porter pure fns (no upstream project needed): fp map + tsx parts
 from tools import tscircuit as _tsc
 assert _tsc.map_fp("0805", "resistor") == "R0805"

@@ -338,7 +338,12 @@ def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
                 pw, ph = pad_size(p.fp, pin, lib)
                 kids.append(f"PAD~RECT~{rx:.1f}~{ry:.1f}~{pw / 0.254:.1f}~{ph / 0.254:.1f}~1~"
                             f"{_enet(board, p.ref, pin)}~{pin}~~0~g{p.ref}{pin}")
-        shape.append(f"LIB~{p.x * mm:.1f}~{p.y * mm:.1f}~package`{p.fp}`name`{p.ref}`~~g{p.ref}~1"
+        # DNP has no native Std field: emit the community Fitted=N
+        # parameter (importer honors it back — round-trips losslessly).
+        # Format continues the key`value`key`value` chain (trailing `).
+        fitted = "Fitted`N`" if p.attrs.get("dnp") else ""
+        shape.append(f"LIB~{p.x * mm:.1f}~{p.y * mm:.1f}~package`{p.fp}`name`{p.ref}`"
+                     f"{fitted}~~g{p.ref}~1"
                      + "".join("#@$" + k for k in kids))
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         pts = f"{t.x1 * mm:.1f} {t.y1 * mm:.1f} {t.x2 * mm:.1f} {t.y2 * mm:.1f}"
