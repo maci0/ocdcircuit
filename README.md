@@ -131,6 +131,18 @@ stated as a word in a pill.
 - **X-ray check** (`renderer:xray` + `xray:std`): stacked-copper reference
   view of the board; upload the fab's x-ray PNG and get a score plus boxed
   divergences (`ocd xray board.ocd fab.png`, studio x-ray panel, MCP `xray`).
+- **PCB photo scan** (`scan:photo`): reverse-engineer a physical board from
+  a pile of phone photos. Registers every shot against the sharpest one
+  (pyramid search on illumination-invariant structure, so glare and exposure
+  cannot win), median-stitches per side, writes a contrast/sharpen/edge/silk/
+  copper stack for reading markings, recovers component standoff from
+  residual parallax, and bakes a 3D gaussian splat (`.ply`). A vision model
+  then reads the stack and drafts a new `.ocd`
+  (`ocd scan --mm 100 photos/*.jpg`, `--no-llm` for artifacts only).
+  Measured on a real board with a published schematic
+  (`python -m tools.scanbench`): 83% of handheld frames lock to 0.04°/0.03%,
+  the gated stitch lands 2.1x closer to the true board than the sharpest
+  single photo, and enhancement lifts local contrast up to 2.7x.
 - **Fab price comparison** (`quote:std`): bare PCB per fab + JLC assembly
   with parts (`ocd quote board.ocd 5`, studio quote dropdown, MCP `quote`).
   Estimates from published pricing — parts via knoll's live JLC lookup or
