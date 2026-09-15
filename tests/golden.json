@@ -30,14 +30,14 @@
   "segs": 86
  },
  "breath_ketone.ocd/diffusion/maze/2L": {
-  "hash": "bab5809cb8aac463",
+  "hash": "a7f238e6063f92ff",
   "parts": 31,
-  "segs": 552
+  "segs": 589
  },
  "e2e_driver4.ocd/diffusion/maze/2L": {
-  "hash": "ea8e50809bf362b6",
+  "hash": "23e8f016a7fb115d",
   "parts": 18,
-  "segs": 72
+  "segs": 70
  },
  "mitox.ocd/compact/maze/2L": {
   "hash": "900bf62e9ae88b0a",

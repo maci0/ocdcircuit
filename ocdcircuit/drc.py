@@ -188,13 +188,16 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
         if not (pw / 2 + edge <= p.x <= board.width - pw / 2 - edge and
                 ph / 2 + edge <= p.y <= board.height - ph / 2 - edge):
             errors.append(f"edge {p.ref}")
-    from .parts import hole_drill
+    from .parts import hole_drill, slot_of
     lib = board._lib()
     for p in parts:
         for pin in p.pins_of(lib):
             dr = hole_drill(p.fp, pin, lib)
             if dr and dr < min_drill:
                 errors.append(f"drill {p.ref}.{pin}={dr} < {min_drill}")
+            so = slot_of(p.fp, pin, lib)
+            if so is not None and min(so[2], so[3]) < min_drill:
+                errors.append(f"slot {p.ref}.{pin}={min(so[2], so[3]):g} < {min_drill}")
     classes: dict[str, float] = {}
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "class":

@@ -9,7 +9,7 @@ PTH: pin-1 at (0,0), rest step +2.54mm x; drill + annular ring.
 """
 from __future__ import annotations
 from typing import cast
-from .types import Footprint, HoleSpec, PadSpec, PinLike, XY
+from .types import Footprint, HoleSpec, PadSpec, PinLike, SlotSpec, XY
 
 
 def chip(w: float, h: float, pw: float = 0.9, h3d: float = 0.55) -> Footprint:
@@ -389,7 +389,7 @@ def resolve_fp(name: str) -> str:
 
 def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
     """{pin: (dx, dy)} pad centers — what solver/DRC/export need.
-    Merges SMD pads AND PTH holes (mixed footprints like USB-C exist)."""
+    Merges SMD pads AND PTH holes AND slots (mixed footprints like USB-C exist)."""
     meta = (lib or FOOTPRINTS)[fp]
     out: dict[str, XY] = {}
     if "pads" in meta:
@@ -398,6 +398,9 @@ def pads_of(fp: str, lib: dict[str, Footprint] | None = None) -> dict[str, XY]:
     if "holes" in meta:
         holes = cast(dict[str, HoleSpec], meta["holes"])
         out.update({k: (v[0], v[1]) for k, v in holes.items()})
+    if "slots" in meta:
+        slots = cast(dict[str, SlotSpec], meta["slots"])
+        out.update({k: (v[0], v[1]) for k, v in slots.items()})
     return out
 
 
@@ -415,6 +418,14 @@ def hole_drill(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -
     if str(pin) in holes:
         return holes[str(pin)][2]
     return 0.0
+
+
+def slot_of(fp: str, pin: PinLike,
+            lib: dict[str, Footprint] | None = None) -> tuple[float, float, float, float] | None:
+    """Milled slot (dx, dy, w, h) for a pin, else None."""
+    meta = (lib or FOOTPRINTS)[fp]
+    slots = cast(dict[str, SlotSpec], meta.get("slots", {}))
+    return slots.get(str(pin))
 
 
 def pin_offset(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> XY:

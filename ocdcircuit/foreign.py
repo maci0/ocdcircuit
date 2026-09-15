@@ -107,6 +107,7 @@ def kicad_mod(text: str) -> tuple[str, Footprint]:
     name = name.split(":")[-1]
     pads: dict[str, tuple[float, float, float, float]] = {}
     holes: dict[str, tuple[float, float, float]] = {}
+    slots: dict[str, tuple[float, float, float, float]] = {}
     models: list[str] = []
     minx = miny = float("inf")
     maxx = maxy = float("-inf")
@@ -131,11 +132,15 @@ def kicad_mod(text: str) -> tuple[str, Footprint]:
         # NOTE: pad rotation ignored (needs footprint-level rot support)
         if typ in ("thru_hole",) or dr is not None:
             ds = [a for a in (dr[1:] if dr else []) if _isnum(a)]
-            d = max([float(a) for a in ds] or [0.8])
-            # ponytail: slot drills → bounding circle (conservative annular
-            # ring; true slot milling when export learns slots)
-            holes[num] = (x, y, d)
-            box(x, y, d + 0.7, d + 0.7)
+            if dr and len(dr) > 1 and str(dr[1]).lower() == "oval" and len(ds) >= 2:
+                # true slot: (drill oval w h [offset ...]) — milled, not drilled
+                sw, sh = float(ds[0]), float(ds[1])
+                slots[num] = (x, y, sw, sh)
+                box(x, y, sw + 0.7, sh + 0.7)
+            else:
+                d = max([float(a) for a in ds] or [0.8])
+                holes[num] = (x, y, d)
+                box(x, y, d + 0.7, d + 0.7)
         else:
             w = _num(sz[1]) if sz and len(sz) > 1 else 1.0
             h = _num(sz[2]) if sz and len(sz) > 2 else 1.0
@@ -202,6 +207,7 @@ def kicad_mod(text: str) -> tuple[str, Footprint]:
     cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
     pads = {k: (v[0] - cx, v[1] - cy, v[2], v[3]) for k, v in pads.items()}
     holes = {k: (v[0] - cx, v[1] - cy, v[2]) for k, v in holes.items()}
+    slots = {k: (v[0] - cx, v[1] - cy, v[2], v[3]) for k, v in slots.items()}
     from typing import cast
     zones = [{"dx": cast(float, z["dx"]) - cx, "dy": cast(float, z["dy"]) - cy,
                 "w": cast(float, z.get("w", 0.0)), "h": cast(float, z.get("h", 0.0)),
@@ -209,6 +215,8 @@ def kicad_mod(text: str) -> tuple[str, Footprint]:
              for z in zones]
     fp: Footprint = {"w": wdt, "h": hgt, "pads": pads, "holes": holes,
                      "bodies": [{"box": (wdt - 1.0, hgt - 1.0, 1.0)}]}
+    if slots:
+        fp["slots"] = slots
     if models:
         fp["models"] = models  # STEP/WRL refs → texture/model hints
     if zones:

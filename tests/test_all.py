@@ -556,6 +556,25 @@ assert _kfp["w"] == 4.54 and _kfp["h"] == 19.8  # courtyard, not pad bbox
 _mn, _mfp = _frn.kicad_mod(
     open(os.path.join(EX, "breath_ketone", "fp", "Raytac_MDBT50Q.kicad_mod")).read())
 assert len(cast(list[object], _mfp["keepouts"])) == 2  # antenna zones
+# slots: kicad (drill oval) imports true milled geometry (not bounding
+# circles), .fp round-trips, Excellon emits G85, DRC checks min dimension
+_sn, _sfp = _frn.kicad_mod(
+    open(os.path.join(EX, "breath_ketone", "fp",
+                      "USB-C_SMD-TYPE-C-31-M-12_1.kicad_mod")).read())
+_sslots = cast(dict[str, tuple[float, float, float, float]], _sfp.get("slots", {}))
+assert _sslots and all(v[2] < v[3] for v in _sslots.values()), _sslots  # true ovals, not circles
+assert all(k not in cast(dict[str, object], _sfp.get("holes", {})) for k in _sslots)
+_sn2, _sfp2 = _fp0.loads(_fp0.dumps(_sn, _sfp))
+assert sorted(cast(dict[str, object], _sfp2.get("slots", {}))) == sorted(_sslots)
+_sb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1\nnet GND: R1.2\n", base=EX)
+_sb.add_footprint("SL1", {"w": 4.0, "h": 4.0,
+                          "slots": {"1": (0.0, 0.0, 0.8, 1.6)}})
+_sb.add_part("J2", "SL1", "", 10, 10)
+_sb.connect("N", "J2", "1")
+_sdr = open([f for f in _sb.export("jlc", outdir=tempfile.mkdtemp())
+             if f.endswith(".TXT")][0]).read()
+assert any(ln.startswith("G85") for ln in _sdr.splitlines()), _sdr
+assert _sb.check("erc")["errors"] == []
 _kb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\n"
                   "fix R1 at 5 5\nnet GND: R1.1\n", base=EX)
 _kb.add_footprint("K1X", {"w": 4.0, "h": 4.0,

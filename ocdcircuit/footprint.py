@@ -25,6 +25,7 @@ def loads(text: str) -> tuple[str, Footprint]:
     edge = False
     pads: dict[str, tuple[float, float, float, float]] = {}
     holes: dict[str, tuple[float, float, float]] = {}
+    slots: dict[str, tuple[float, float, float, float]] = {}
     bodies: list[Footprint] = []
     keepouts: list[dict[str, object]] = []
     for ln, raw in enumerate(text.splitlines(), 1):
@@ -54,6 +55,12 @@ def loads(text: str) -> tuple[str, Footprint]:
                 raise err("want: hole PIN dx dy drill")
             _, pin, dx, dy, dr = toks
             holes[pin] = (float(dx), float(dy), float(dr))
+        elif kw == "slot":
+            toks = line.split()
+            if len(toks) != 6:
+                raise err("want: slot PIN dx dy w h")
+            _, pin, dx, dy, sw, sh = toks
+            slots[pin] = (float(dx), float(dy), float(sw), float(sh))
         elif kw == "body":
             toks = line.split()
             if len(toks) >= 5 and toks[1].lower() == "box":
@@ -88,6 +95,8 @@ def loads(text: str) -> tuple[str, Footprint]:
         raise ValueError("missing/invalid footprint header")
     fp: Footprint = {"w": w, "h": h, "pads": pads, "holes": holes,
                      "bodies": bodies}
+    if slots:
+        fp["slots"] = slots
     if edge:
         fp["edge"] = True
     if keepouts:
@@ -110,6 +119,8 @@ def dumps(name: str, fp: Footprint) -> str:
         L.append(f"pad {pin} {_n(dx):g} {_n(dy):g} {_n(pw):g} {_n(ph):g}")
     for pin, (x, y, dr) in sorted(cast(dict[str, tuple[float, float, float]], fp.get("holes", {})).items()):
         L.append(f"hole {pin} {_n(x):g} {_n(y):g} {_n(dr):g}")
+    for pin, (x, y, sw, sh) in sorted(cast(dict[str, tuple[float, float, float, float]], fp.get("slots", {})).items()):
+        L.append(f"slot {pin} {_n(x):g} {_n(y):g} {_n(sw):g} {_n(sh):g}")
     for b in cast(list[dict[str, object]], fp.get("bodies", [])):
         if "box" in b:
             bw, bh, z = cast(tuple[float, float, float], b["box"])

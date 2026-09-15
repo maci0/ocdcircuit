@@ -261,10 +261,22 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     files.append(fn)
     # drill: PTH holes (soldering) + vias (layer changes).
     # 1-layer boards have no vias — but PTH drills still go here.
-    from .parts import hole_drill as _hd
+    # Milled slots ride G85 route blocks (one tool per width).
+    from .parts import hole_drill as _hd, slot_of as _so
     drills: dict[float, set[tuple[float, float]]] = {}
+    slots: dict[float, list[tuple[float, float, float, float]]] = {}
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
+            so = _so(p.fp, pin, lib)
+            if so is not None:
+                x, y = board.pad_pos(p.ref, pin)
+                sw, sh = so[2], so[3]
+                w = min(sw, sh)  # tool = slot width; length along long axis
+                x1, y1, x2, y2 = (x - (max(sw, sh) - w) / 2, y, x + (max(sw, sh) - w) / 2, y) \
+                    if sw >= sh else (x, y - (max(sw, sh) - w) / 2, x, y + (max(sw, sh) - w) / 2)
+                slots.setdefault(round(w, 3), []).append((round(x1, 3), round(y1, 3),
+                                                          round(x2, 3), round(y2, 3)))
+                continue
             dr = _hd(p.fp, pin, lib)
             if dr > 0:
                 x, y = board.pad_pos(p.ref, pin)
@@ -280,13 +292,15 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
                 (round(_f(z["x"]), 3), round(_f(z.get("y", 0.0)), 3)))
     fn = os.path.join(outdir, f"{board.name}.TXT")
     d = ["M48", "METRIC,TZ"]
-    tools = sorted(drills)
+    tools = sorted(set(drills) | set(slots))
     for i, dr in enumerate(tools, 1):
         d.append(f"T{i}C{dr:.3f}")
     d.append("%")
     for i, dr in enumerate(tools, 1):
         d.append(f"G90\nG05\nT{i}")
-        d += [f"X{x:.3f}Y{y:.3f}" for x, y in sorted(drills[dr])]
+        d += [f"X{x:.3f}Y{y:.3f}" for x, y in sorted(drills.get(dr, ()))]
+        d += [f"G85X{x1:.3f}Y{y1:.3f}X{x2:.3f}Y{y2:.3f}"
+              for x1, y1, x2, y2 in sorted(slots.get(dr, ()))]
     d += ["T0", "M30"]
     open(fn, "w").write("\n".join(d))
     files.append(fn)

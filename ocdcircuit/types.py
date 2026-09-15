@@ -17,6 +17,7 @@ Frame = dict[str, object]
 Footprint = dict[str, object]
 PadSpec = tuple[float, float, float, float]  # dx, dy, w, h
 HoleSpec = tuple[float, float, float]  # dx, dy, drill
+SlotSpec = tuple[float, float, float, float]  # dx, dy, w, h (milled slot)
 PinName = str
 NetName = str
 RefName = str
