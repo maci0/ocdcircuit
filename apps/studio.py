@@ -33,55 +33,81 @@ from ocdcircuit.core import UiSlots  # noqa: E402
 SLOTS = UiSlots()
 # Built-in views (harness-slot shape: shell declares, entries contribute).
 # A UI plugin = SLOTS.register(slot, id, fn) + optional /api route.
+# Every control carries a visible word: a glyph alone is not a label.
+TOOLBAR = (
+    '<div class="tbar">'
+    '<div class="grp"><span class=lbl>engines</span>'
+    '<select id=placer title="placement engine"></select>'
+    '<select id=router title="routing engine"></select>'
+    '<select id=fab title="fab rules (edge, clearance, min trace)"></select>'
+    '<select id=silk title="silkscreen density"></select></div>'
+    '<div class="grp"><span class=lbl>build</span>'
+    '<button id=solve class=primary title="full solve, 5 seeds x 500 iters (Ctrl+Enter)">solve</button>'
+    '<button id=dice title="generate N candidate layouts side by side">candidates</button>'
+    '<input id=ncand value=4 size=1 aria-label="candidate count" title="candidate count">'
+    '<button id=simbtn title="simulate the current board (shift-click: tran)">sim dc</button>'
+    '<button id=stamp title="stamp another copy of the hovered instance">stamp</button></div>'
+    '<div class="grp"><span class=lbl>history</span>'
+    '<button id=undo title="undo (Ctrl+Z)">undo</button>'
+    '<button id=redo title="redo (Ctrl+Y)">redo</button>'
+    '<button id=diffprev title="what changed since the previous revision">diff</button></div>'
+    '<div class="grp"><span class=lbl>output</span>'
+    '<button id=fab_dl title="download the fab bundle as one zip">fab zip</button>'
+    '<button id=dl title="download a render (cycles svg, sch, png; shift-click backwards)">svg</button>'
+    '<details id=calc title="trace width and divider calculators"><summary>calc</summary>'
+    '<label>A <input id=ca size=4 value=1 aria-label="trace current A"></label>'
+    '<label>dT <input id=cdt size=3 value=10 aria-label="temperature rise C"></label>'
+    '<div id=cout></div>'
+    '<label>V <input id=dv size=4 value=5 aria-label="divider input V"></label>'
+    '<label>Rt <input id=drt size=5 value=10k aria-label="divider top R"></label>'
+    '<label>Rb <input id=drb size=5 value=10k aria-label="divider bottom R"></label>'
+    '<div id=dout></div></details>'
+    '<details id=doc title="tooling health: python, ngspice, plugins"><summary>health</summary>'
+    '<div id=docout>click to check</div></details></div>'
+    '<div class="grp status"><span id=cost class=pill title="total wirelength">cost</span>'
+    '<span id=ocdscore class=pill title="OCD neatness, 0-100"></span>'
+    '<span id=feas class=pill title="routing feasibility per layer count"></span>'
+    '<span id=stat role=status aria-live=polite></span></div>'
+    '</div>')
 SLOTS.register("toolbar", "solver-selects",
-               lambda s: ("<select id=placer title=placer></select>"
-                          "<select id=router title=router></select>"
-                          "<select id=fab title=fab></select>"
-                          "<select id=silk title=silk></select>"),
+               lambda s: TOOLBAR,
                order=1.0)
-SLOTS.register("toolbar", "actions",
-               lambda s: ('<button id=theme>light</button><button id=solve title="full solve (Ctrl+Enter)">solve ▶</button>'
-                          '<button id=fab_dl title="download fab bundle zip">⬇ fab</button>'
-                          '<button id=dice title="generate N candidate layouts">🎲</button>'
-                          '<input id=ncand value=4 size=1 title="candidate count">'
-                          '<button id=undo title="undo (Ctrl+Z)">↩</button>'
-                          '<button id=redo title="redo (Ctrl+Y)">↪</button>'
-                          '<button id=diffprev title="what changed since last edit">Δ</button>'
-                          '<button id=dl title="download render (svg/sch/png)">⤓ svg</button>'
-                          '<button id=simbtn title="simulate (shift-click: tran)">⚡ dc</button>'
-                          '<button id=stamp title="stamp another copy of the hovered instance">⧉ stamp</button>'
-                          '<details id=calc title="trace/via/divider calculators"><summary>Ω</summary>'
-                          '<label>A <input id=ca size=4 value=1></label>'
-                          '<label>ΔT <input id=cdt size=3 value=10></label>'
-                          '<div id=cout></div>'
-                          '<label>V <input id=dv size=4 value=5></label>'
-                          '<label>Rt <input id=drt size=5 value=10k></label>'
-                          '<label>Rb <input id=drb size=5 value=10k></label>'
-                          '<div id=dout></div></details>'
-                          '<details id=doc title="tooling health"><summary>🩺</summary>'
-                          '<div id=docout>click to check</div></details>'
-                          '<span id=feas title="routability per layer count"></span><span id=stat></span>'),
-               order=0.0)
 SLOTS.register("view", "gallery",
-               lambda s: '<section id=galwrap style="display:none"><h3>CANDIDATES — CLICK TO PICK · DRAG ON PCB TO NUDGE+FIX · RE-RUN ANY ENGINE</h3>'
-                         '<div id=gal style="display:flex;gap:8px;overflow-x:auto;padding:8px"></div></section>',
+               lambda s: '<section id=galwrap style="display:none">'
+                         '<header class=panel-head><span class=panel-title>candidates</span>'
+                         '<span class=panel-note>click one to adopt it, then drag it on the PCB to nudge and pin</span>'
+                         '<span class=panel-note>job file 1F-04 &middot; placer diffusion &middot; 1 seed &times; 400 iters</span></header>'
+                         '<div id=gal></div></section>',
                order=4.0)
 SLOTS.register("view", "editor",
-               lambda s: '<section id=edwrap><h3>.OCD — EDIT ME, BOARD FOLLOWS</h3>'
-                         '<div id=ed contenteditable spellcheck=false></div></section>',
+               lambda s: '<section id=edwrap>'
+                         '<header class=panel-head><span class=panel-title>job file</span>'
+                         '<span class=panel-note>board.ocd &middot; saved on every good build</span>'
+                         '<span class=panel-note>edit here or drag on the PCB &middot; rebuilds in 0.4s</span></header>'
+                         '<div id=ed contenteditable spellcheck=false role=textbox aria-multiline=true '
+                         'aria-label=".ocd source, edits rebuild the board"></div></section>',
                order=0.0)
 SLOTS.register("view", "pcb",
-               lambda s: '<section id=pcbwrap><h3>PCB — DRAG PARTS, THEY STAY WHERE DROPPED</h3>'
-                         '<canvas id=pcb></canvas><div id=drc></div></section>',
+               lambda s: '<section id=pcbwrap>'
+                         '<header class=panel-head><span class=panel-title>PCB</span>'
+                         '<span class=panel-note>drag a part to pin it &middot; double-click to unpin</span></header>'
+                         '<div class=platewrap><canvas id=pcb role=img aria-label="PCB layout"></canvas>'
+                         '<div id=drc role=status aria-live=polite></div></div></section>',
                order=1.0)
 SLOTS.register("view", "sch",
-               lambda s: '<section id=schwrap><h3>SCHEMATIC — CLICK PIN, CLICK NET TO REWIRE · '
-                         'ALT-CLICK DROPS PIN · DOUBLE-CLICK LABEL RENAMES</h3>'
-                         '<canvas id=sch></canvas></section>',
+               lambda s: '<section id=schwrap>'
+                         '<header class=panel-head><span class=panel-title>schematic</span>'
+                         '<span class=panel-note>click a pin then a net to rewire &middot; alt-click drops a pin &middot; double-click a label renames it</span></header>'
+                         '<canvas id=sch role=img aria-label="schematic"></canvas></section>',
                order=2.0)
 SLOTS.register("view", "inspector",
-               lambda s: '<section id=wrap3d><h3>3D</h3><canvas id=t3d></canvas>'
-                         '<h3>TIDY <span id=tidycov></span></h3><div id=tidy></div></section>',
+               lambda s: '<section id=wrap3d>'
+                         '<header class=panel-head><span class=panel-title>3D</span>'
+                         '<span class=panel-note>click to spin</span></header>'
+                         '<canvas id=t3d role=img aria-label="3D board preview"></canvas>'
+                         '<header class=panel-head><span class=panel-title>tidy</span>'
+                         '<span class=panel-note id=tidycov></span></header>'
+                         '<div id=tidy></div></section>',
                order=3.0)
 
 
@@ -103,40 +129,117 @@ BASE = os.path.dirname(SRC)
 PAGE = r"""<!doctype html><html><head><meta charset=utf-8><title>OCD Studio</title>
 <link rel=icon href="data:,">
 <style>
-:root{--bg:#0d0d0d;--panel:#141414;--line:#2a2a2a;--tx:#e8e8e8;--dim:#999;--acc:#f1c40f;--ok:#2ecc71;--bad:#e74c3c}
-body.light{--bg:#f4f1e8;--panel:#fff;--line:#ccc;--tx:#222;--dim:#666;--acc:#8a6d00;--ok:#1e8449;--bad:#c0392b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.45 monospace;height:100vh;display:flex;flex-direction:column}
-header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
-header b{color:var(--acc)}header select,header button{background:var(--bg);color:var(--tx);border:1px solid var(--line);font:inherit;padding:3px 8px;border-radius:4px}
-main{flex:1;display:grid;grid-template-columns:minmax(300px,420px) 1fr 1fr;grid-template-rows:1fr 1fr auto;gap:1px;background:var(--line);min-height:0}
-#galwrap{grid-column:1/4;max-height:190px}#gal canvas{width:150px;height:110px;border:1px solid var(--line);cursor:pointer}
-#gal figure{margin:0;text-align:center;font-size:11px}#gal figcaption{color:var(--dim)}
-#feas{color:var(--dim)}#feas b{color:var(--ok)}#feas i{color:var(--bad);font-style:normal}
-section{background:var(--bg);position:relative;min-height:0;display:flex;flex-direction:column}
-section h3{margin:0;padding:4px 10px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);letter-spacing:1px}
-#edwrap{grid-column:1;grid-row:1/3}#ed{overflow:auto;white-space:pre;padding:8px;outline:none;font:inherit;flex:1}
-#pcbwrap{grid-column:2;grid-row:1/3;position:relative}#schwrap{grid-column:3;grid-row:1}#wrap3d{grid-column:3;grid-row:2;overflow:auto}
-#tidy{padding:6px 10px;font-size:12px;overflow:auto}
+/* Paper spec sheet, one terminal. Tokens follow the recompile.online design
+   system: warm paper ground, white cards, one signal green, one dark surface
+   (the job-file editor). Sans carries what a person reads; mono is the
+   machine's voice (source, readouts, listings). State is a word in a pill. */
+:root{
+--paper:#f7f5f0;--paper-2:#efece4;--card:#fffdf8;--line:#e2ddd0;--line-2:#cfc8b6;
+--ink:#1a1d21;--ink-2:#4d545c;--ink-3:#7c848c;
+--signal:#0f5c37;--signal-ink:#0c4a2d;--signal-wash:#dcefe1;--ok-border:#9cc6aa;
+--bad:#8a2318;--bad-wash:#f5c9c2;--danger-border:#d59f96;
+--warn:#6b4a00;--warn-wash:#f2dbaa;--warn-border:#cbab72;
+--term:#101418;--term-2:#1a2129;--term-line:#2a333d;--term-text:#d8e2dc;
+--term-faint:#7f8b94;--term-key:#ffd8a0;--term-ok:#5fd894;--term-bad:#ff7364;
+--r:10px;--r-control:9px;--shadow:0 1px 2px rgba(26,29,33,.06),0 8px 24px -12px rgba(26,29,33,.18);
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:1rem/1.55 var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.skip{position:absolute;left:-9999px}.skip:focus{left:8px;top:8px;z-index:9;background:var(--card);padding:8px 12px;border:1px solid var(--line-2);border-radius:var(--r-control)}
+/* --- header: brand left, labelled control groups, status pills right --- */
+header.top{background:var(--card);border-bottom:1px solid var(--line)}
+header.top .inner{display:flex;align-items:center;gap:20px;padding:10px 20px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:1.02rem;letter-spacing:-.02em;color:var(--ink)}
+.brand svg{color:var(--ink)}
+.brand i{font-style:normal;font-weight:400;color:var(--ink-3)}
+.tbar{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;flex:1}
+.grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lbl{font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-right:2px}
+.grp.status{margin-left:auto}
+button,select,input,summary{font:600 .9rem/1.3 var(--sans);color:var(--ink);background:var(--card);border:1px solid var(--line-2);border-radius:var(--r-control);padding:9px 13px;cursor:pointer}
+button:hover,select:hover,summary:hover{background:var(--paper-2)}
+button:active{transform:translateY(1px)}
+button.primary{background:var(--signal);border-color:var(--signal-ink);color:#fff;box-shadow:0 1px 2px rgba(12,74,45,.3)}
+button.primary:hover{background:var(--signal-ink)}
+button[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+input{cursor:text;font-weight:400;font-variant-numeric:tabular-nums;padding:8px 10px}
+#ncand{width:3.2rem;text-align:center}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,[contenteditable]:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+details{position:relative;display:inline-block}
+summary{padding:9px 13px;list-style:none;display:inline-block}
+summary::-webkit-details-marker{display:none}
+details[open]>summary{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+details[open]>:not(summary){position:absolute;left:0;top:calc(100% + 6px);z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;min-width:max-content}
+details label{display:flex;align-items:center;gap:5px;font-size:.85rem;color:var(--ink-2)}
+details input{width:4.4rem}
+#cout,#dout{font:.82rem var(--mono);color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:8rem}
+/* --- pills: state is a word, never a bare colour --- */
+.pill{font-size:.75rem;font-weight:600;letter-spacing:.02em;padding:5px 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper-2);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill:empty{display:none}
+.pill.ok{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+.pill.bad{background:var(--bad-wash);border-color:var(--danger-border);color:var(--bad)}
+.feasline{font-size:.72rem;font-weight:600;padding:3px 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper-2);color:var(--ink-2);font-variant-numeric:tabular-nums}
+.feasline.fok{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+.feasline.fbad{background:var(--warn-wash);border-color:var(--warn-border);color:var(--warn)}
+.feasline.here{outline:2px solid var(--signal);outline-offset:1px}
+#stat:empty{display:none}
+#stat{font-size:.85rem;font-weight:600;padding:5px 10px;border-radius:var(--r-control);max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stat.ok{background:var(--signal-wash);color:var(--signal-ink);border:1px solid var(--ok-border)}
+#stat.err{background:var(--bad-wash);color:var(--bad);border:1px solid var(--danger-border)}
+/* --- grid of panel cards on the paper ground --- */
+main{flex:1;display:grid;grid-template-columns:minmax(320px,400px) 1fr 1fr;grid-template-rows:minmax(0,1.5fr) minmax(0,1fr);gap:16px;padding:16px 20px 20px;min-height:0;overflow:auto}
+section{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.panel-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--paper-2);border-bottom:1px solid var(--line);padding:8px 14px}
+.panel-title{font:.78rem/1.4 var(--mono);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.panel-note{font-size:.8rem;color:var(--ink-3)}
+.panel-note:last-child{margin-left:auto;text-align:right}
+/* job file left, tall; schematic + 3D/tidy right; PCB centre */
+#edwrap{grid-column:1;grid-row:1/3}
+#pcbwrap{grid-column:2;grid-row:1/3;position:relative}
+#schwrap{grid-column:3;grid-row:1}
+#wrap3d{grid-column:3;grid-row:2}
+#galwrap{grid-column:1/4}
+#gal{display:flex;gap:14px;overflow-x:auto;padding:14px}
+#gal canvas{width:190px;height:140px;border:1px solid var(--line-2);border-radius:6px;background:var(--card);cursor:pointer}
+#gal figure{margin:0;text-align:center;font-size:.8rem}
+#gal figcaption{color:var(--ink-3);font-variant-numeric:tabular-nums;padding-top:4px}
+#gal figure:hover canvas{border-color:var(--signal)}
+#ed{overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;word-break:break-all;padding:14px 16px;outline:none;flex:1;background:var(--term);color:var(--term-text);font:.82rem/1.7 var(--mono);tab-size:2}
+#ed:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+#pcbwrap .platewrap{position:relative;flex:1;min-height:0;background:var(--paper-2);border-radius:0 0 var(--r) var(--r);overflow:hidden}
+canvas{width:100%;height:100%;display:block}
+#pcb{cursor:grab}
+#wrap3d canvas{flex:1;min-height:0}
+#tidy{padding:4px 14px 12px;font:.82rem/1.9 var(--mono);color:var(--ink-2);overflow:auto;max-height:32%;font-variant-numeric:tabular-nums}
 #tidy div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-canvas{width:100%;height:100%;display:block;cursor:grab}
-#drc{position:absolute;bottom:0;left:0;right:0;max-height:38%;overflow:auto;background:color-mix(in srgb,var(--panel) 92%,transparent);border-top:1px solid var(--line);padding:6px 10px;font-size:12px}
-@media(max-width:900px){main{grid-template-columns:1fr;grid-template-rows:none;overflow:auto}
-#edwrap,#pcbwrap,#schwrap,#wrap3d,#galwrap{grid-column:1;grid-row:auto;min-height:60vh}}
-.err{color:var(--bad)}.warn{color:var(--acc)}.ok{color:var(--ok)}.dim{color:var(--dim)}
-.tok-k{color:#7fb4ff}.tok-c{color:var(--dim)}
-body.light .tok-k{color:#0050a0}
-#cost{color:var(--dim)}
-button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* DRC reads as a listing: dark terminal strip over the PCB plate */
+#drc{position:absolute;left:0;right:0;bottom:0;max-height:44%;overflow:auto;background:var(--term);color:var(--term-text);border-top:1px solid var(--term-line);padding:10px 14px;font:.82rem/1.75 var(--mono);font-variant-numeric:tabular-nums}
+#drc:empty{display:none}
+.err{color:var(--term-bad)}.warn{color:var(--term-key)}.ok{color:var(--term-ok)}
+#tidy .dim,#drc .dim{color:var(--term-faint)}
+#tidy .err{color:var(--bad)}#tidy .warn{color:var(--warn)}#tidy .ok{color:var(--signal-ink)}#tidy .dim{color:var(--ink-3)}
+.tok-k{color:#7fb4ff}.tok-c{color:var(--term-faint)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:1100px){main{grid-template-columns:minmax(0,1fr) 1fr;grid-template-rows:none}
+#edwrap,#pcbwrap{grid-column:auto;grid-row:auto;min-height:70vh}
+#galwrap,#schwrap,#wrap3d{grid-column:1/3}}
+@media(max-width:760px){main{grid-template-columns:minmax(0,1fr);padding:12px}
+#galwrap,#schwrap,#wrap3d{grid-column:1}#edwrap,#pcbwrap{min-height:60vh}
+.grp.status{margin-left:0}}
 </style></head><body>
-<header><b>OCD</b><span>studio</span><span id=cost></span><span id=ocdscore title="OCD neatness 0-100"></span>
+<a class=skip href=#ed>skip to the job file</a>
+<header class=top><div class=inner>
+<span class=brand><svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round></line></svg>OCD Studio <i>board &amp; PCB workshop</i></span>
 /*__TOOLBAR__*/
-</header>
+</div></header>
 <main>
 /*__VIEWS__*/
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let S=null, anim=null, theme='dark';
+let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
 function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy nothing)
   const R=cv.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);
@@ -144,39 +247,64 @@ function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy
   if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
   const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return [ctx,R];
 }
-const TRACECOLS=['#e74c3c','#3498db','#2ecc71','#9b59b6'];
-let bgCol='#0d0d0d'; // cached per theme; getComputedStyle per frame forces a style flush
+const TRACECOLS=['#8a2318','#1d5fa8','#0f5c37','#6b3fa0']; // net hues: red/blue/green/violet
+// canvas palette: paper ground, ink marks, one signal green (matches the sheet)
+const C={paper:'#f7f5f0',paper2:'#efece4',card:'#fffdf8',line:'#e2ddd0',line2:'#cfc8b6',ink:'#1a1d21',ink2:'#4d545c',ink3:'#7c848c',
+  signal:'#0f5c37',wash:'#dcefe1',bad:'#8a2318',warn:'#6b4a00',copper:'#9a7134'};
+const bgCol=C.paper; // PCB ground; getComputedStyle per frame forces a style flush
+// copper pour: a spec-sheet hatch with the thermal gaps punched out of it, so
+// the routing underneath still reads through the flood.
+let pourCv=null;
+function pourTile(px,py,w,h,cuts){
+  if(!pourCv){pourCv=document.createElement('canvas');}
+  if(pourCv.width!==px||pourCv.height!==py){pourCv.width=px;pourCv.height=py;}
+  const g=pourCv.getContext('2d');
+  g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,px,py);
+  g.strokeStyle=C.copper;g.globalAlpha=0.5;g.lineWidth=1.3; // 45 deg hatch, screen scale
+  for(let d=-py;d<px;d+=7){g.beginPath();g.moveTo(d,0);g.lineTo(d+py,py);g.stroke();}
+  g.globalAlpha=1;
+  g.globalCompositeOperation='destination-out'; // cutouts become holes, not slabs
+  for(const r of cuts)g.fillRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);
+  g.globalCompositeOperation='source-over';
+  return {cv:pourCv,ox:w,oy:h};
+}
 // state from server: parts{ref:{x,y,w,h}}, traces[{net,x1,y1,x2,y2,layer}], nets, drc, cost
 function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   const [ctx,R]=fit($('pcb'));
-  const W=R.width,H=R.height,s=Math.min(W/st.bw,H/st.bh),ox=(W-st.bw*s)/2,oy=(H-st.bh*s)/2;
+  const s0=Math.min(R.width/st.bw,R.height/st.bh),s=Math.max(1,s0);
+  const ox=(R.width-st.bw*s)/2,oy=(R.height-st.bh*s)/2;
   const X=x=>ox+x*s,Y=y=>oy+(st.bh-y)*s;
-  ctx.fillStyle=bgCol;ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle=theme==='dark'?'#123f12':'#ddd6c4';
+  ctx.fillStyle=bgCol;ctx.fillRect(0,0,R.width,R.height);
+  const cuts=(st.cuts&&st.cuts['0'])||[];
+  ctx.strokeStyle=C.line; // board grid sits under the copper, not on top of it
   for(let gx=0;gx<=st.bw;gx+=5){ctx.beginPath();ctx.moveTo(X(gx),Y(0));ctx.lineTo(X(gx),Y(st.bh));ctx.stroke();}
   for(let gy=0;gy<=st.bh;gy+=5){ctx.beginPath();ctx.moveTo(X(0),Y(gy));ctx.lineTo(X(st.bw),Y(gy));ctx.stroke();}
-  ctx.strokeStyle=theme==='dark'?'#1e5a1e':'#999';ctx.strokeRect(X(0),Y(st.bh),st.bw*s,st.bh*s);
+  if(st.pours&&Object.values(st.pours).some(lls=>lls.includes(0))){
+    const e=st.edge||0.3;
+    const px=Math.ceil((st.bw-2*e)*s),py=Math.ceil((st.bh-2*e)*s);
+    const tile=pourTile(px,py,(st.bw-2*e)*s,(st.bh-2*e)*s,cuts);
+    ctx.drawImage(tile.cv,0,0,px,py,X(e),Y(st.bh-e),tile.ox,tile.oy);
+  }
+  ctx.strokeStyle=C.line2;ctx.strokeRect(X(0),Y(st.bh),st.bw*s,st.bh*s);
   const cols=TRACECOLS;
   const n=Math.ceil(st.traces.length*t);
-  if(st.pours&&Object.values(st.pours).some(lls=>lls.includes(0))){
-    // top pour: translucent copper flood (fab edge inset), cutouts to bg
-    const e=st.edge||0.3;
-    ctx.fillStyle=theme==='dark'?'rgba(185,120,40,0.35)':'rgba(185,120,40,0.25)';
-    ctx.fillRect(X(e),Y(st.bh-e),(st.bw-2*e)*s,(st.bh-2*e)*s);
-    ctx.fillStyle=bgCol;
-    for(const r of (st.cuts&&st.cuts['0'])||[])ctx.fillRect(X(r[0]),Y(r[3]),(r[2]-r[0])*s,(r[3]-r[1])*s);
-  }
-  for(let i=0;i<n;i++){const g=st.traces[i];ctx.strokeStyle=cols[g.layer%4];ctx.lineWidth=Math.max(1,g.w*s);ctx.beginPath();ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));ctx.stroke();}
+  for(let i=0;i<n;i++){const g=st.traces[i];
+    ctx.strokeStyle=cols[g.layer%4];ctx.lineWidth=Math.max(1,g.w*s);
+    ctx.beginPath();ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));ctx.stroke();}
   for(const r in st.parts){const p=st.parts[r];
-    ctx.fillStyle=st.fixed&&st.fixed[r]?'#3a2f00':'#111';ctx.fillRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
-    ctx.strokeStyle='#f1c40f';ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
-    ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=st.fixed&&st.fixed[r]?C.wash:C.ink2; // pinned parts wear the signal wash
+    ctx.fillRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
+    ctx.strokeStyle=st.fixed&&st.fixed[r]?C.signal:C.ink;
+    ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
+    ctx.fillStyle=st.fixed&&st.fixed[r]?C.signal:'#f7f5f0';ctx.textAlign='center';ctx.textBaseline='middle';
     const fs=Math.min(12,Math.max(7,p.h*s*0.32)); // never wider than the box
-    ctx.font=`${fs}px monospace`;
+    ctx.font=`${fs}px ui-monospace,Menlo,monospace`;
     const label=r.length*fs*0.62>p.w*s?r.slice(0,Math.max(1,Math.floor(p.w*s/(fs*0.62))))+'…':r;
     ctx.fillText(label,X(p.x),Y(p.y));
     ctx.textBaseline='alphabetic';
-    if(st.silk!=='ref'&&p.value){ctx.fillStyle='#999';ctx.font=`${Math.min(9,fs)}px monospace`;ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}}
+    if(st.silk!=='ref'&&p.value&&p.h*s>18){ctx.fillStyle=C.ink3;ctx.font=`${Math.min(9,fs*0.8)}px ui-monospace,Menlo,monospace`;ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}
+    if(edHl.has(r)){ctx.strokeStyle=C.signal;ctx.lineWidth=3; // editor text selection → ring
+      ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);ctx.lineWidth=1;}}
   // instance groups (block stamping): shared dashed outline + tag, one hue per owner
   const groups={};
   for(const r in st.parts){const p=st.parts[r];if(!p.owner)continue;
@@ -184,38 +312,42 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
     g[0]=Math.min(g[0],p.x-p.w/2);g[1]=Math.min(g[1],p.y-p.h/2);
     g[2]=Math.max(g[2],p.x+p.w/2);g[3]=Math.max(g[3],p.y+p.h/2);}
   const hues=Object.keys(groups);
-  hues.forEach((o,i)=>{const g=groups[o],c=`hsl(${(i*137)%360},70%,55%)`;
+  hues.forEach((o,i)=>{const g=groups[o],c=`hsl(${(i*137)%360},55%,35%)`;
     ctx.strokeStyle=c;ctx.setLineDash([5,3]);
     ctx.strokeRect(X(g[0]-1),Y(g[3]+1),(g[2]-g[0]+2)*s,(g[3]-g[1]+2)*s);
-    ctx.setLineDash([]);ctx.fillStyle=c;ctx.font='10px monospace';ctx.textAlign='left';
+    ctx.setLineDash([]);ctx.fillStyle=c;ctx.font='10px ui-monospace,Menlo,monospace';ctx.textAlign='left';
     ctx.fillText(o.replace(/_$/,''),X(g[0]-1),Y(g[3]+1)-3);});
   return {s,ox,oy};
 }
 let view={s:1,ox:0,oy:0};
 let schSel=null, schDirty=true; // selected "REF.PIN"
+let edHl=new Set(), edPin=new Set(); // refs/pins named by the editor's text selection
 function drawSCH(st){
   if(schDirty){ // static until nets/selection change — not 20fps
     const [ctx,R]=fit($('sch'));
-    ctx.clearRect(0,0,R.width,R.height);
+    ctx.fillStyle=C.card||C.paper;ctx.fillRect(0,0,R.width,R.height);
     st._schmap={pins:[],nets:[]};
     const sch=st.sch||{order:[],px:{},rail_y:{},top:70,W:0},cols=TRACECOLS;
     const zw=sch.W||Math.max(...Object.values(sch.px),1)+60; // world px → fit
     const zx=Math.min(1,R.width/Math.max(1,zw)); // shrink-to-fit only, never upscale
     ctx.save();ctx.scale(zx,zx);
-  sch.order.forEach(r=>{ctx.fillStyle='#111';ctx.fillRect(sch.px[r]-50,sch.top-34,100,30);
-    ctx.strokeStyle='#e8e8e8';ctx.strokeRect(sch.px[r]-50,sch.top-34,100,30);
-    ctx.fillStyle='#e8e8e8';ctx.textAlign='center';ctx.fillText(r,sch.px[r],sch.top-20);});
+  sch.order.forEach(r=>{const hi=edHl.has(r); // editor selection lights the same box
+    ctx.fillStyle=hi?C.wash:C.paper2;ctx.fillRect(sch.px[r]-50,sch.top-34,100,30);
+    ctx.strokeStyle=hi?C.signal:C.ink;ctx.lineWidth=hi?2:1;
+    ctx.strokeRect(sch.px[r]-50,sch.top-34,100,30);ctx.lineWidth=1;
+    ctx.fillStyle=hi?C.signal:C.ink;ctx.textAlign='center';ctx.font='12px ui-monospace,Menlo,monospace';ctx.fillText(r,sch.px[r],sch.top-20);});
   Object.keys(st.nets).forEach((n,i)=>{const y=sch.rail_y[n];if(y===undefined)return;
     const xs=st.nets[n].map(pp=>sch.px[pp.split('.')[0]]).filter(x=>x!==undefined);
     if(!xs.length)return;
     ctx.strokeStyle=cols[i%4];ctx.lineWidth=2;ctx.beginPath();
     ctx.moveTo(Math.min(...xs),y);ctx.lineTo(Math.max(...xs),y);ctx.stroke();ctx.lineWidth=1;
-    ctx.fillStyle='#e8e8e8';ctx.fillText(n,Math.min(...xs)-8,y+4);
+    ctx.fillStyle=C.ink2;ctx.font='11px ui-monospace,Menlo,monospace';ctx.fillText(n,Math.min(...xs)-8,y+4);
     st._schmap.nets.push({n,x:((Math.min(...xs)+Math.max(...xs))/2)*zx,y:y*zx});
     st.nets[n].forEach(pp=>{const x=sch.px[pp.split('.')[0]];if(x===undefined)return;
       ctx.strokeStyle=cols[i%4];ctx.beginPath();ctx.moveTo(x,sch.top-4);ctx.lineTo(x,y);ctx.stroke();
-      const sel=schSel===pp;
-      ctx.fillStyle=sel?'#f1c40f':cols[i%4];ctx.beginPath();ctx.arc(x,y,4,0,7);ctx.fill();
+      const sel=schSel===pp||edPin.has(pp);
+      ctx.fillStyle=sel?C.ink:cols[i%4];ctx.beginPath();ctx.arc(x,y,4,0,7);ctx.fill();
+      if(sel){ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,7,0,7);ctx.stroke();ctx.lineWidth=1;}
       st._schmap.pins.push({pp,net:n,x:x*zx,y:y*zx});});});
     ctx.restore();
     schDirty=false;
@@ -290,6 +422,7 @@ c.addEventListener('dblclick',e=>{if(!S||!S._schmap)return;const R=c.getBounding
 })();
 function draw3D(st,rot){
   const [ctx,R]=fit($('t3d'));
+  ctx.fillStyle=C.card||C.paper;ctx.fillRect(0,0,R.width,R.height);
   const cx=R.width/2,cy=R.height/2+20,s=Math.min(R.width/(st.bw+20),R.height/(st.bh+14));
   const P=(x,y,z)=>{const a=rot,dx=x-st.bw/2,dy=y-st.bh/2;
     const rx=dx*Math.cos(a)-dy*Math.sin(a),ry=(dx*Math.sin(a)+dy*Math.cos(a))*0.5-z*0.9;
@@ -307,22 +440,22 @@ function draw3D(st,rot){
     faces.push({z:(z0+z1)/2,p:[c100,c110,c111,c101],c:cols.side});
     faces.push({z:(z0+z1)/2,p:[c110,c010,c011,c111],c:shade(cols.front,0.8)});
     faces.push({z:(z0+z1)/2,p:[c010,c000,c001,c011],c:shade(cols.side,0.8)});}
-  const MASK={top:'#0f6b0f',front:'#0a4a0a',side:'#0d5c0d'};
+  const MASK={top:'#0f5c37',front:'#0a3d25',side:'#0c4a2d'};
   box(0,0,0,st.bw,st.bh,1.6,MASK);
   // copper traces on top layer shimmer gold
   for(const t of st.traces.slice(0,400)){if(t.layer!==0)continue;
     const w=Math.max(0.15,t.w/2);
     faces.push({z:1.75,p:[P(t.x1-w,t.y1-w,1.7),P(t.x2+w,t.y1-w,1.7),P(t.x2+w,t.y2+w,1.7),P(t.x1-w,t.y2+w,1.7)],c:'#c9962e'});}
-  const MATS={chip:{top:'#232327',front:'#141416',side:'#1b1b1e'},tant:{top:'#d9a419',front:'#8a6a0a',side:'#b8890f'},
-    elec:{top:'#9aa3b5',front:'#5a6270',side:'#767f92'},led:{top:'#e02020',front:'#801010',side:'#b01414'},
-    steel:{top:'#c8ccd2',front:'#7a7e85',side:'#9ea3ab'},plastic:{top:'#1e1e22',front:'#101012',side:'#161618'},
+  const MATS={chip:{top:'#3a3f45',front:'#22262b',side:'#2c3136'},tant:{top:'#d9a419',front:'#8a6a0a',side:'#b8890f'},
+    elec:{top:'#9aa3b5',front:'#5a6270',side:'#767f92'},led:{top:'#c0392b',front:'#7a1a12',side:'#96261a'},
+    steel:{top:'#c8ccd2',front:'#7a7e85',side:'#9ea3ab'},plastic:{top:'#2b2f34',front:'#16191d',side:'#212528'},
     copper:{top:'#d9a832',front:'#8a6a1a',side:'#b8891f'}};
   for(const r in st.parts){const p=st.parts[r];
     const cols=MATS[p.mat]||MATS.chip;
     for(const bd of (p.bodies||[{w:p.w-0.6,h:p.h-0.6,z:1.6,hgt:p.h3d||1,dx:0,dy:0}])){
       box(p.x+bd.dx-bd.w/2,p.y+bd.dy-bd.h/2,bd.z,p.x+bd.dx+bd.w/2,p.y+bd.dy+bd.h/2,bd.z+bd.hgt,cols);}}
   faces.sort((a,b)=>a.z-b.z);
-  for(const f of faces){ctx.fillStyle=f.c;ctx.beginPath();ctx.moveTo(f.p[0][0],f.p[0][1]);for(let i=1;i<f.p.length;i++)ctx.lineTo(f.p[i][0],f.p[i][1]);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(0,0,0,.35)';ctx.stroke();}
+  for(const f of faces){ctx.fillStyle=f.c;ctx.beginPath();ctx.moveTo(f.p[0][0],f.p[0][1]);for(let i=1;i<f.p.length;i++)ctx.lineTo(f.p[i][0],f.p[i][1]);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(0,0,0,.28)';ctx.stroke();}
 }
 function renderAll(){if(!S||!S.cur)return;view=drawPCB(S.cur,1);drawSCH(S);if(spinOn){rot+=0.003;draw3D(S.cur,rot);dirty=true;}}
 let rot=0.6,spinOn=true,spinT=null,dirty=true; // render-on-demand: static board costs zero frames
@@ -366,9 +499,12 @@ function applyState(r,live){
 }
 function drawFeas(r){
   const f=r.feasible||{},el=$('feas');if(!el)return;
-  el.innerHTML='route@'+Object.keys(f).sort().map(L=>{
+  const ks=Object.keys(f).sort();
+  if(!ks.length)return;
+  // state is a word: the current layer count is marked, every count reads ok/unroutable
+  el.innerHTML='routing feasibility per layer count: '+ks.map(L=>{
     const v=f[L],here=+L===r.layers;
-    return `<span title="${v.segs} segs, ${v.wirelength}mm wire">${here?'<u>':''}${L}L ${v.ok?'<b>✓</b>':'<i>✗</i>'}${here?'</u>':''}</span>`;}).join(' ');
+    return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ');
 }
 // --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
 let galSeed=0;
@@ -378,12 +514,13 @@ function thumb(cand,i){
   const cap=document.createElement('figcaption');cap.textContent=`#${i} cost ${cand.cost}`;fig.appendChild(cap);
   fig.onclick=()=>pickCand(i);
   const ctx=cv.getContext('2d'),W=300,H=220,s=Math.min(W/S.bw,H/S.bh),ox=(W-S.bw*s)/2,oy=(H-S.bh*s)/2;
-  ctx.fillStyle='#111';ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle='#1e5a1e';ctx.strokeRect(ox,oy+S.bh*s,S.bw*s,-S.bh*s);
+  ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle=C.line2;ctx.strokeRect(ox,oy+S.bh*s,S.bw*s,-S.bh*s);
   for(const r in cand.pos){const p=S.parts[r];if(!p)continue;
     const [x,y]=cand.pos[r];
-    ctx.fillStyle=S.fixed&&S.fixed[r]?'#3a2f00':'#222';ctx.fillRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);
-    ctx.strokeStyle='#f1c40f';ctx.strokeRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);}
+    const fixed=S.fixed&&S.fixed[r];
+    ctx.fillStyle=fixed?C.wash:C.ink2;ctx.fillRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);
+    ctx.strokeStyle=fixed?C.signal:C.ink;ctx.strokeRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);}
   return fig;
 }
 async function genCands(){
@@ -556,7 +693,21 @@ $('ed').addEventListener('keydown',e=>{
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();hist('/undo');}
   else if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey))){e.preventDefault();hist('/redo');}
 });
-$('theme').onclick=()=>{theme=theme==='dark'?'light':'dark';document.body.className=theme==='light'?'light':'';$('theme').textContent=theme==='dark'?'light':'dark';bgCol=theme==='dark'?'#0d0d0d':'#f4f1e8';markDirty();};
+// selecting text in the editor highlights every ref it names, on PCB and SCH
+function edHighlight(){
+  if(!S||!S.cur)return;
+  const sel=window.getSelection();
+  const txt=(sel&&!sel.isCollapsed&&sel.anchorNode&&$('ed').contains(sel.anchorNode))?String(sel):'';
+  const refs=new Set(),pins=new Set();
+  txt.split(/[^\w.]+/).forEach(t=>{const r=t.split('.')[0];
+    if(!S.cur.parts[r])return;
+    refs.add(r);
+    if(t!==r)pins.add(t);}); // "U1.7" also rings that pin in the schematic
+  if(refs.size===edHl.size&&pins.size===edPin.size
+     &&[...refs].every(r=>edHl.has(r))&&[...pins].every(p=>edPin.has(p)))return;
+  edHl=refs;edPin=pins;markDirty();
+}
+document.addEventListener('selectionchange',edHighlight);
 $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=push;
 (async()=>{const r=await api('/init',{});
   $('placer').innerHTML=r.placers.map(p=>`<option>${p}</option>`).join('');
@@ -564,6 +715,23 @@ $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=p
   $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
   $('fab').innerHTML=r.fabs.map(p=>`<option>${p}</option>`).join('');
   setEditor(r.text);applyState(r,false);})();
+// file-watch: poll SRC hash; an external edit banners with one-click
+// reload (never auto: a keystroke debounce may be in flight, and
+// auto-reload would clobber it — the user picks the moment).
+let lastHash=null;
+async function watch(){try{
+  const p=await api('/poll',{});
+  if(lastHash===null){lastHash=p.hash;return;}
+  if(p.hash===lastHash||$('extbanner'))return;
+  if(p.clean)return;  // our own save (or untouched) — nothing external
+  lastHash=p.hash;
+  const b=document.createElement('div');
+  b.id='extbanner';b.style.cssText='background:#7a3;color:#fff;padding:4px 8px;cursor:pointer';
+  b.textContent='file changed on disk — click to reload (your edits stay in undo)';
+  b.onclick=async()=>{const r=await api('/reload',{});setEditor(r.text);applyState(r,false);b.remove();lastHash=null;};
+  document.body.prepend(b);
+}catch(e){}}
+setInterval(watch,2000);
 </script></body></html>
 """
 
@@ -581,7 +749,7 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 traces: list[dict[str, object]], cost: float,
                 drc: dict[str, object]) -> dict[str, object]:
     from ocdcircuit.geom3d import body_material
-    from ocdcircuit.parts import bodies_of
+    from ocdcircuit.parts import bodies_of, hole_drill, pad_size, pads_of
     from typing import cast
     parts: dict[str, dict[str, object]] = {}
     lib = b._lib()
@@ -609,15 +777,22 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 r, bh = _f(cyl2[0]), _f(cyl2[1])
                 h3d = max(h3d, bh)
                 bds.append({"w": r * 2, "h": r * 2, "z": 1.6 + _f(body.get("z", 0)),
-                            "hgt": bh, "dx": 0.0, "dy": 0.0})
+                            "hgt": bh, "dx": 0.0, "dy": 0.0, "cyl": True})
         # dominant material = tallest body (what you actually see).
         # bodies pre-rotated into board frame (mirrors geom3d.build).
-        rot = 0
-        try:
-            rot = int(p.attrs.get("rot", "0")) % 360
-        except ValueError:
-            rot = 0
-        pw, ph = (p.h, p.w) if rot in (90, 270) else (p.w, p.h)
+        rot = p.rot
+        pw, ph = p.wh()
+        # real pads in board frame: center + size (+ axle-swap on 90/270), drill,
+        # pin-1 flag — the footprint, not its bounding box.
+        pds: list[dict[str, object]] = []
+        for pin, (dx, dy) in pads_of(p.fp, lib).items():
+            rx, ry = p.rot_xy(dx, dy)
+            pwid, phei = pad_size(p.fp, pin, lib)
+            if rot in (90, 270):
+                pwid, phei = phei, pwid
+            pds.append({"x": round(rx, 3), "y": round(ry, 3),
+                        "w": pwid, "h": phei, "d": hole_drill(p.fp, pin, lib),
+                        "p1": str(pin) == "1"})
         if rot in (90, 270):
             for bd in bds:
                 bd["w"], bd["h"] = bd["h"], bd["w"]
@@ -625,7 +800,8 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                                               cast(float, bd["dy"]))
         parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
                       "value": p.value, "h3d": h3d, "owner": p.owner or "",
-                      "mat": mats[-1] if mats else "chip", "bodies": bds}
+                      "mat": mats[-1] if mats else "chip", "bodies": bds,
+                      "pads": pds}
     nets = {n: [f"{r}.{pin}" for r, pin in net.pins] for n, net in b.nets.items()}
     fixed = {str(c["ref"]): True for c in b.constraints if c.get("t") == "fixed"}
     sim_nets: dict[str, float] = {}
@@ -664,6 +840,16 @@ class H(http.server.BaseHTTPRequestHandler):
     # text-level (not Context undo — each build parses fresh). Cap 100.
     hist: list[str] = []
     redo: list[str] = []
+    # last text WE wrote to SRC (/poll tells them apart: disk ==
+    # saved means our save or untouched; anything else is external).
+    saved_text: str = ""
+
+    @staticmethod
+    def _disk() -> str:
+        try:
+            return open(SRC).read()
+        except OSError:
+            return ""
 
     @staticmethod
     def commit(text: str) -> None:
@@ -678,6 +864,7 @@ class H(http.server.BaseHTTPRequestHandler):
         try:
             with open(SRC, "w") as f:
                 f.write(H.src_text if H.src_text.endswith("\n") else H.src_text + "\n")
+            H.saved_text = H.src_text
         except OSError as e:
             print(f"studio: save failed: {e}", file=sys.stderr)
 
@@ -694,6 +881,12 @@ class H(http.server.BaseHTTPRequestHandler):
             # plugin-inventory surface: slot → [ids] (harness inventory shape)
             inv = {s: SLOTS.report(s) for s in UiSlots.slots}
             self._send(inv)
+            return
+        if self.path == "/poll":
+            import hashlib
+            disk = H._disk()
+            self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
+                        "clean": disk == H.saved_text})
             return
         if self.path != "/" and not self.path.startswith("/?"):
             self.send_response(204)  # favicon etc: silent, no console 404
@@ -713,6 +906,13 @@ class H(http.server.BaseHTTPRequestHandler):
         req = json.loads(self.rfile.read(n) or b"{}")
         try:
             if self.path == "/init":
+                self._send(self._build(H.src_text, True))
+            elif self.path == "/reload":
+                # file-watch: adopt external edits (client asks only when
+                # clean, or the user confirmed the banner).
+                H.src_text = H._disk() or H.src_text
+                H.commit(H.src_text)
+                H.saved_text = H.src_text
                 self._send(self._build(H.src_text, True))
             elif self.path == "/build":
                 text = str(req.get("text", H.src_text))
@@ -923,6 +1123,7 @@ def main() -> None:
     H.src_text = open(SRC).read() if os.path.isfile(SRC) else (
         "board demo 40x30\npart R1 R0805 1k\npart C1 C0805 100n\n"
         "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
+    H.saved_text = H.src_text
     H.commit(H.src_text)  # genesis commit — undo floor
     try:
         port = int(os.environ.get("OCD_PORT", "8077"))

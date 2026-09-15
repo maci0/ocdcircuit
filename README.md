@@ -62,12 +62,14 @@ Every surface honors them: CLI, studio dropdowns, and MCP tools.
 `.ocd` editor with highlighting | PCB (drag parts — they stay where dropped,
 everything else re-solves around them) | schematic | live 3D | DRC panel.
 Pick placer/router/fab/silk level from dropdowns — parts glide to the new
-solution with easing, traces grow net by net. 🎲 generates N candidate
+solution with easing, traces grow net by net. **candidates** generates N
 layouts in a filmstrip — click one to pick it, drag parts to nudge+fix,
-re-run the same or a different engine, rinse and repeat. Every step shows
-a routing-feasibility badge (`2L ✓` / `1L ✗`) per layer count. Light/dark
-toggle. Design rules stolen from tmog (`~/Desktop/tmog/DESIGN_RULES.md`) —
-cockpit, not report; motion is the product; one concept, one hue.
+re-run the same or a different engine, rinse and repeat. Every step shows a
+routing-feasibility badge (`2L routable` / `1L unroutable`) per layer count.
+The chrome follows the recompile.online design guide: paper ground, white
+panel cards, the `.ocd` editor as the one dark terminal, one signal green for
+actions and live state, every control carrying a visible word, every status
+stated as a word in a pill.
 
 ## Under the hood ([architecture](docs/ARCHITECTURE.md), authoring: `docs/PLUGINS.md`)
 

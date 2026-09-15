@@ -14,27 +14,49 @@ OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
 
 1. **Edit** `.ocd` (left) → 400ms debounce → quick rebuild
    (1 seed × 100 iters + `lroute` estimate, ~0.1s). Full quality comes
-   from **solve ▶** (or Ctrl+Enter): 5 seeds × 500 iters + chosen router.
+   from **solve** (or Ctrl+Enter): 5 seeds × 500 iters + chosen router.
 2. **Drag parts** on the PCB → drops `fix REF at x y` into the source,
    re-solves around it. Double-click a part to unpin. Instanced parts
    (`block`/`instance`) drag as a rigid group — one `fix` line per
    member, double-click unpins the whole group. Groups show as dashed
-   outlines with `Z1`/`Z2`… tags (one hue each). **⧉ stamp** appends
+   outlines with `Z1`/`Z2`… tags (one hue each). **stamp** appends
    another copy of the hovered instance and rebuilds.
-3. **🎲** generates N candidate layouts (filmstrip) → click picks,
-   drag nudges, re-run any engine.
-4. **Δ** shows what changed since the last edit (undo-history diff).
+3. **candidates** generates N candidate layouts (a filmstrip across the
+   top) → click picks, drag nudges, re-run any engine.
+4. **diff** shows what changed since the previous revision (undo-history diff).
 
 ## Header, left to right
 
-`cost` (wirelength) · `OCD nn/100 (grade)` neatness badge · theme ·
-solve ▶ · ⬇ fab (one-zip fab bundle) · 🎲 + count · undo/redo · Δ ·
-`⤓ svg` (cycles svg → sch → png, shift-click backwards) · `Ω`
-(trace/via/divider calculators, instant) · `⚡ dc` (simulate current
-board; shift-click toggles tran; needs `sim` lines or it tells you so) · `🩺`
-(tooling health: python, ngspice, plugins — lazy-checks on first open) · placer/router/fab/silk
-dropdowns · `route@1L ✓ 2L ✓` congestion hint per layer count
-(wirelength comparison — the real verdict is the DRC panel).
+The chrome is a paper spec sheet with one terminal: warm paper ground, white
+panel cards, the `.ocd` editor as the single dark surface, one signal green
+for actions and live state. Every control carries a visible word (a glyph
+alone is not a label), grouped as `engines` / `build` / `history` / `output`,
+with the state pills on the right.
+
+- **engines:** placer · router · fab · silk dropdowns.
+- **build:** `solve` (full quality, Ctrl+Enter) · `candidates` + count ·
+  `sim dc` (shift-click toggles tran; needs `sim` lines or it says so) ·
+  `stamp` (another copy of the hovered instance).
+- **history:** undo (Ctrl+Z) · redo (Ctrl+Y) · `diff` (what changed since the
+  previous revision).
+- **output:** `fab zip` (the whole bundle, one download) · `svg` (cycles
+  svg → sch → png, shift-click backwards) · `calc` (trace/via/divider
+  calculators, instant) · `health` (python, ngspice, plugins — lazy-checks on
+  first open).
+- **status pills:** `cost` (wirelength) · `OCD nn/100 (grade)` neatness ·
+  routing feasibility per layer count (`1L routable`, `2L unroutable (this
+  board)`) — wirelength is a hint, the real verdict is the DRC panel.
+
+## Panels
+
+Job file (left, the only dark surface) · PCB (centre, drag parts, DRC strip
+along the bottom) · schematic · 3D · tidy metrics. Each panel head carries its
+title and a one-line note on what the panel does. Status is always a word in a
+pill or a line of the listing, never a bare colour. Canvases draw on the paper
+ground: parts read as ink boxes, pinned parts wear the signal wash, pours are a
+copper hatch with thermal gaps cut out of the flood, and net hues are
+red/blue/green/violet. Selecting text in the job file highlights every ref it
+names on the PCB and in the schematic (a pin like `U1.7` rings that pin).
 
 ## Schematic
 

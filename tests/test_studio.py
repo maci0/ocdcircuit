@@ -23,6 +23,28 @@ BOARD = os.path.join(ROOT, "boards", "blinky_555.ocd")
 BUILD_BUDGET = 0.2  # seconds, the goal number; steady-state only (see warm-up)
 PCB_BRIGHT_MIN = 0.02  # healthy shot = 0.08, black-PCB shot = 0.0000
 
+# editor text selection → PCB/SCH highlight: drive the studio's own
+# edHighlight() against DOM stubs (no browser needed) and read what it picked.
+HL_STUB = """
+let dirty=0;const markDirty=()=>{dirty++;};
+const $=()=>({contains:n=>!!(n&&n.ed)});
+const S={cur:{parts:{U1:1,R1:1,R2:1,PSU_J1:1}}};
+let sel={isCollapsed:false,anchorNode:{ed:1},text:'',toString(){return this.text;}};
+const window={getSelection:()=>sel};
+let edHl=new Set(), edPin=new Set();
+"""
+HL_DRIVE = """
+function pick(text,inside){sel={isCollapsed:text==='',anchorNode:inside?{ed:1}:{ed:0},
+  text,toString(){return text;}};edHighlight();}
+const out=[];
+pick('fix PSU_J1 at -0.5 20.8',true);out.push([...edHl].join(','));
+pick('U1.7',true);out.push([...edHl].join(',')+':'+[...edPin].join(','));
+pick('N_DIS L1 :: R1.2 <--> R2.1 <--> U1.7',true);out.push([...edHl].sort().join(','));
+const d=dirty;pick('U1.7',false);out.push((dirty>d)+':'+[...edHl].length);
+console.log(out.join('|'));
+"""
+HL_EXPECT = "PSU_J1|U1:U1.7|R1,R2,U1|true:0"
+
 
 def free_port() -> int:
     s = socket.socket()
@@ -148,6 +170,18 @@ def main() -> None:
         text = open(BOARD).read()
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})  # warm-up: cold caches aren't UX
+        # file-watch: /poll reports clean after our save; an external
+        # edit flips it dirty; /reload adopts it (undo keeps ours)
+        _p0 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        assert _p0["clean"] is True, _p0
+        with open(BOARD, "a") as _f:
+            _f.write("# external edit\n")
+        _p1 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        assert _p1["clean"] is False, _p1
+        _r = post(base, "/reload", {})
+        assert "error" not in _r, _r
+        _p2 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        assert _p2["clean"] is True, _p2
         t = time.time()
         d = post(base, "/build", {"text": text, "placer": "diffusion",
                                  "router": "maze"})
@@ -168,6 +202,32 @@ def main() -> None:
             assert not r.get("error"), (key, r.get("error"))
             assert len(cast(str, r["data"])) > 1000, (key, len(cast(str, r["data"])))
         print("render svg+sch ok")
+
+        # the page ships as one inline script: syntax + the highlight wiring.
+        # node is dev-only here — skip rather than fail when it's absent.
+        node = shutil.which("node")
+        if not node:
+            print("no node: editor-highlight check skipped")
+        else:
+            page = urllib.request.urlopen(base + "/").read().decode()
+            pjs = page[page.index("<script>") + 8:page.index("</script>")]
+            import re as _re
+            fn = _re.search(r"function edHighlight\(\)\{.*?\n\}", pjs, _re.S)
+            assert fn, "editor selection does not drive the highlight"
+            with tempfile.TemporaryDirectory() as td:
+                ent = os.path.join(td, "page.js")
+                open(ent, "w").write(pjs)
+                _rn = subprocess.run([node, "--check", ent], capture_output=True,
+                                     text=True, timeout=60)
+                assert _rn.returncode == 0, _rn.stderr[-400:]
+                hl = os.path.join(td, "hl.js")
+                open(hl, "w").write(HL_STUB + fn.group(0) + HL_DRIVE)
+                _rn = subprocess.run([node, hl], capture_output=True, text=True,
+                                     timeout=60)
+                assert _rn.returncode == 0, _rn.stderr[-400:]
+                assert _rn.stdout.strip() == HL_EXPECT, _rn.stdout
+            assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
+            print("editor highlight → pcb/sch ok")
 
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
