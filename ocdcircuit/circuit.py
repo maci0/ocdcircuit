@@ -91,9 +91,13 @@ class Block:
     """Reusable subcircuit template: raw .ocd lines with LOCAL refs.
     Stamped per `instance` (see agent._instance). Never placed directly."""
 
-    def __init__(self, name: str, lines: list[str]) -> None:
+    def __init__(self, name: str, lines: list[str],
+                 ports: list[str] | None = None) -> None:
         self.name = name
         self.lines = list(lines)
+        # typed interface: only these nets may `join` (rest stay private).
+        # Empty = legacy loose stamping (any net may join).
+        self.ports = list(ports or [])
 
 
 class Board(Component):
@@ -105,6 +109,7 @@ class Board(Component):
         self.width, self.height, self.layers = width, height, layers
         self._fab: str = "jlc"
         self.meta: dict[str, str] = {}  # `meta k v` lines: title/rev/desc/...
+        self.comments: list[str] = []  # `#` lines: filled by the parser, re-emitted by dumps
         self.proj: dict[str, object] = {}  # board.toml: placer/router/drc picks (never dumped)
         self.parts: dict[str, Part] = {}
         self.nets: dict[str, Net] = {}
@@ -116,8 +121,10 @@ class Board(Component):
         self.custom_sym: dict[str, dict[str, object]] = {}  # from `sym` lines
         self.sym_src: dict[str, str] = {}  # sym name -> source path
         self.blocks: dict[str, Block] = {}  # block templates
+        self.block_src: dict[str, str] = {}  # block name -> `use` path (imported, not dumped)
         self.instances: list[dict[str, object]] = []  # {block, prefix, join}
         self._block_open: str | None = None  # parser scratch (not dumped)
+        self._block_ports: list[str] = []  # ports of the open block
         self._block_lines: list[str] | None = None
         self._lib_cache: dict[str, dict[str, object]] | None = None
         self._lib_parts_key: str | None = None
@@ -314,7 +321,8 @@ class Board(Component):
 
     def import_fp(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Import: fp / kicad / eagle (.lbr) / eagle-brd (.brd) /
-        tscircuit / pcb (.kicad_pcb or .brd, sniffed) / easyeda (Std JSON)."""
+        tscircuit / pcb (.kicad_pcb, .brd, .pcb, Altium ASCII — sniffed) /
+        easyeda (Std JSON) / altium (Altium ASCII or P-CAD .pcb)."""
         out = self._run("importer", key, **k)
         assert isinstance(out, dict)
         return out

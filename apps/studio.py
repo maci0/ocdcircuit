@@ -50,7 +50,12 @@ TOOLBAR = (
     '<div class="grp"><span class=lbl>history</span>'
     '<button id=undo title="undo (Ctrl+Z)">undo</button>'
     '<button id=redo title="redo (Ctrl+Y)">redo</button>'
-    '<button id=diffprev title="what changed since the previous revision">diff</button></div>'
+    '<button id=diffprev title="what changed since the previous revision">diff</button>'
+    '<button id=commit title="commit the open file to git (Ctrl+S)">commit</button></div>'
+    '<div class="grp"><span class=lbl>agent</span>'
+    '<button id=chatbtn title="show or hide the agent chat panel">chat</button>'
+    '<label class=auto title="apply a proposal without asking, but only when '
+    'it builds DRC-clean"><input type=checkbox id=chatauto>auto</label></div>'
     '<div class="grp"><span class=lbl>output</span>'
     '<button id=fab_dl title="download the fab bundle as one zip">fab zip</button>'
     '<button id=dl title="download a render (cycles svg, sch, png; shift-click backwards)">svg</button>'
@@ -82,15 +87,57 @@ SLOTS.register("view", "gallery",
 SLOTS.register("view", "editor",
                lambda s: '<section id=edwrap>'
                          '<header class=panel-head><span class=panel-title>job file</span>'
-                         '<span class=panel-note>board.ocd &middot; saved on every good build</span>'
+                         '<span class=panel-note id=srcnote>board.ocd &middot; saved on every good build</span>'
                          '<span class=panel-note>edit here or drag on the PCB &middot; rebuilds in 0.4s</span></header>'
                          '<div id=ed contenteditable spellcheck=false role=textbox aria-multiline=true '
-                         'aria-label=".ocd source, edits rebuild the board"></div></section>',
+                         'aria-label=".ocd source, edits rebuild the board"></div>'
+                         '<div id=srcpanels>'
+                         + SLOTS.render("panel-left", None)
+                         + '</div></section>',
                order=0.0)
+SLOTS.register("panel-left", "filetree",
+               lambda s: '<section id=filetree class=side>'
+                         '<header class=panel-head><span class=panel-title>project</span>'
+                         '<span class=panel-note id=treenote></span></header>'
+                         '<div id=tree></div></section>',
+               order=0.0)
+SLOTS.register("panel-left", "chat",
+               lambda s: '<section id=chat class=side>'
+                         '<header class=panel-head><span class=panel-title>agent</span>'
+                         '<span class=panel-note id=chatwhere></span>'
+                         '<button id=chatclear title="forget this conversation">clear</button></header>'
+                         '<div id=msgs role=log aria-live=polite aria-label="agent conversation"></div>'
+                         '<form id=composer><textarea id=ask rows=2 aria-label="message to the agent" '
+                         'placeholder="ask about this board, or say what to change (Ctrl+Enter)"></textarea>'
+                         '<button id=send class=primary type=submit>send</button></form>'
+                         '</section>',
+               order=1.0)
+SLOTS.register("view", "vcs",
+               lambda s: '<section id=vcswrap>'
+                         '<header class=panel-head><span class=panel-title>revisions</span>'
+                         '<span class=panel-note id=vcsnote></span>'
+                         '<span class=panel-note>git history of the board directory</span></header>'
+                         '<div id=vcs></div></section>',
+               order=5.0)
 SLOTS.register("view", "pcb",
                lambda s: '<section id=pcbwrap>'
                          '<header class=panel-head><span class=panel-title>PCB</span>'
-                         '<span class=panel-note>drag a part to pin it &middot; double-click to unpin</span></header>'
+                         '<span class=panel-note>drag a part to pin it &middot; double-click to unpin</span>'
+                         '<details id=layerbox title="show or hide layers and marks on this canvas">'
+                         '<summary>layers</summary>'
+                         '<div id=layers role=group aria-label="visible layers">'
+                         '<span class=lbl>copper</span><div id=cu class=row></div>'
+                         '<span class=lbl>marks</span><div id=marks class=row></div>'
+                         '<button id=layersall type=button>show all</button></div></details>'
+                         '<details id=partbox title="show or hide individual parts on this canvas">'
+                         '<summary>parts</summary>'
+                         '<div id=partpanel role=group aria-label="visible parts">'
+                         '<div id=partbar><input id=partfilter type=search '
+                         'placeholder="filter ref, value, footprint" aria-label="filter parts">'
+                         '<button id=parthide type=button title="hide every part">none</button>'
+                         '<button id=partshow type=button title="show every part">all</button>'
+                         '<span id=partnote class=panel-note></span></div>'
+                         '<div id=partlist></div></div></details></header>'
                          '<div class=platewrap><canvas id=pcb role=img aria-label="PCB layout"></canvas>'
                          '<div id=drc role=status aria-live=polite></div></div></section>',
                order=1.0)
@@ -174,6 +221,30 @@ details[open]>summary{background:var(--signal-wash);border-color:var(--ok-border
 details[open]>:not(summary){position:absolute;left:0;top:calc(100% + 6px);z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;min-width:max-content}
 details label{display:flex;align-items:center;gap:5px;font-size:.85rem;color:var(--ink-2)}
 details input{width:4.4rem}
+/* layer/part visibility: a column panel, not the one-row calculator dropdown */
+.panel-head{overflow:visible} /* the dropdown panels must escape the head */
+#layerbox>#layers,#partbox>#partpanel{display:block;flex-direction:column;width:17rem;min-width:0;gap:0;left:auto;right:0}
+#pcbwrap>header{flex-wrap:wrap;row-gap:6px}
+#layerbox,#partbox{margin-left:auto}
+#layerbox+details{margin-left:0}
+#layers .lbl{display:block;font-size:.68rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:6px 0 4px}
+#layers .row{display:flex;flex-wrap:wrap;gap:4px}
+#layers label{display:inline-flex;align-items:center;gap:4px;font:.75rem var(--mono);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:pointer}
+#layers label.on{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink);font-weight:600}
+#layers label.off{color:var(--ink-3);text-decoration:line-through}
+#layers input{width:auto;margin:0;accent-color:var(--signal)}
+#layersall{margin-top:8px;font-size:.78rem;padding:5px 10px}
+#partbar{display:flex;gap:6px;align-items:center;padding-bottom:6px;border-bottom:1px solid var(--line)}
+#partfilter{width:100%;font-size:.82rem;padding:5px 8px}
+#parthide,#partshow{font-size:.75rem;padding:4px 8px}
+#partlist{max-height:15rem;overflow:auto;margin-top:4px}
+#partlist label{display:flex;align-items:center;gap:6px;font:.8rem var(--mono);padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap}
+#partlist label:hover{background:var(--paper-2)}
+#partlist label.hidden{color:var(--ink-3);text-decoration:line-through}
+#partlist input{width:auto;margin:0;accent-color:var(--signal)}
+#partlist .pv{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
+#partnote{font-size:.72rem;color:var(--ink-3);margin-left:auto;white-space:nowrap}
+.selpart{font-weight:600;color:var(--signal-ink)}
 #cout,#dout{font:.82rem var(--mono);color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:8rem}
 /* --- pills: state is a word, never a bare colour --- */
 .pill{font-size:.75rem;font-weight:600;letter-spacing:.02em;padding:5px 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper-2);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -189,24 +260,74 @@ details input{width:4.4rem}
 #stat.ok{background:var(--signal-wash);color:var(--signal-ink);border:1px solid var(--ok-border)}
 #stat.err{background:var(--bad-wash);color:var(--bad);border:1px solid var(--danger-border)}
 /* --- grid of panel cards on the paper ground --- */
-main{flex:1;display:grid;grid-template-columns:minmax(320px,400px) 1fr 1fr;grid-template-rows:minmax(0,1.5fr) minmax(0,1fr);gap:16px;padding:16px 20px 20px;min-height:0;overflow:auto}
+main{flex:1 1 0;height:0;display:grid;grid-template-columns:minmax(320px,400px) 1fr 1fr;grid-template-rows:minmax(0,1.5fr) minmax(0,1fr);gap:16px;padding:16px 20px 20px;min-height:0;overflow:auto}
 section{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
 .panel-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--paper-2);border-bottom:1px solid var(--line);padding:8px 14px}
 .panel-title{font:.78rem/1.4 var(--mono);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
 .panel-note{font-size:.8rem;color:var(--ink-3)}
 .panel-note:last-child{margin-left:auto;text-align:right}
 /* job file left, tall; schematic + 3D/tidy right; PCB centre */
-#edwrap{grid-column:1;grid-row:1/3}
+#edwrap{grid-column:1;grid-row:1/3;min-height:34rem}
 #pcbwrap{grid-column:2;grid-row:1/3;position:relative}
 #schwrap{grid-column:3;grid-row:1}
-#wrap3d{grid-column:3;grid-row:2}
+#wrap3d{grid-column:3;grid-row:2;overflow:auto}
 #galwrap{grid-column:1/4}
+#vcswrap{grid-column:1/4}
+/* job file column: editor, project files, then the agent chat */
+#edwrap{display:grid;grid-template-rows:auto minmax(12rem,min(52%,34rem)) minmax(0,1fr);overflow:hidden;min-height:0}
+#srcpanels{display:grid;grid-template-rows:minmax(6rem,11rem) minmax(0,1fr);gap:12px;padding:12px;border-top:1px solid var(--line);min-height:0;overflow:hidden}
+#srcpanels section{box-shadow:none;overflow:hidden}
+#filetree{min-height:0;max-height:11rem}
+.side{min-height:0}
+#tree{flex:1;min-height:0;overflow:auto;padding:8px 10px;font:.85rem/1.5 var(--mono)}
+#tree div.trow{display:flex;gap:6px;align-items:baseline;padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap}
+#tree div.trow:hover{background:var(--paper-2)}
+#tree div.trow.active{background:var(--signal-wash);color:var(--signal-ink);font-weight:600}
+#tree div.tdir{color:var(--ink-3);cursor:default}
+#tree .tsize{color:var(--ink-3);font-size:.72rem;margin-left:auto;font-variant-numeric:tabular-nums}
+#msgs{overflow:auto;padding:10px 12px;flex:1;min-height:4rem}
+.msg{margin:0 0 10px;font-size:.9rem;line-height:1.55}
+.msg .who{font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);display:block}
+.msg.me{color:var(--ink-2)}
+.msg.bot{color:var(--ink)}
+.msg.err{color:var(--bad);background:var(--bad-wash);border:1px solid var(--danger-border);border-radius:var(--r-control);padding:8px 10px}
+.msg.bot pre{background:var(--paper-2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow:auto;font:.8rem/1.6 var(--mono);margin:6px 0 0}
+.msg .tools{color:var(--ink-3);font:.75rem var(--mono);display:block;margin-top:4px}
+#composer{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--paper-2)}
+#composer textarea{flex:1;resize:none;font:.9rem/1.5 var(--sans);padding:9px 11px;border:1.5px solid var(--line-2);border-radius:var(--r-control);background:var(--card);color:var(--ink)}
+#composer textarea:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
+#composer button{align-self:flex-end}
+label.auto{display:inline-flex;align-items:center;gap:4px;font-size:.75rem;font-weight:600;color:var(--ink-2)}
+label.auto input{width:auto;padding:0}
+/* proposals: a diff you accept or refuse, never a silent write */
+.prop{border:1px solid var(--line-2);border-radius:var(--r-control);background:var(--card);margin:8px 0 0;overflow:hidden}
+.prop .phead{display:flex;align-items:center;gap:8px;background:var(--paper-2);border-bottom:1px solid var(--line);padding:6px 10px;font-size:.78rem}
+.prop .phead b{font-family:var(--mono)}
+.prop .phead .grow{flex:1}
+.prop .prow{display:flex;gap:8px;padding:8px 10px;border-top:1px solid var(--line)}
+.prop pre{margin:0;max-height:16rem;overflow:auto;padding:8px 10px;font:.78rem/1.55 var(--mono);background:var(--term);color:var(--term-text)}
+.dl-add{color:var(--term-ok)}.dl-del{color:var(--term-bad)}.dl-at{color:var(--term-faint)}
+#vcs{overflow:auto;padding:6px 12px 12px;font:.85rem/1.7 var(--mono);max-height:16rem}
+#vcs div.rev{display:flex;gap:10px;align-items:baseline;padding:2px 0;cursor:pointer;white-space:nowrap}
+#vcs div.rev:hover{color:var(--signal-ink)}
+#vcs .rh{color:var(--signal-ink);font-weight:600}
+#vcs .rd{color:var(--ink-3)}
+#vcs .rs{overflow:hidden;text-overflow:ellipsis}
+#vcs pre{margin:8px 0 0;background:var(--term);color:var(--term-text);border-radius:6px;padding:10px 12px;overflow:auto;font:.78rem/1.6 var(--mono);max-height:22rem}
+#vcs .dirty{color:var(--warn)}
+/* the agent panel is opt-in: off by default, so the first thing the studio
+   shows is the board, not a chat box */
+#chat{display:none}  /* its 1fr row collapses with it: the tree grows */
+body.chatty #chat{display:flex}
+.toast{position:fixed;right:18px;bottom:18px;z-index:9;background:var(--term);color:var(--term-text);
+  border:1px solid var(--term-line);border-radius:var(--r-control);padding:9px 13px;font:.85rem var(--mono);
+  box-shadow:var(--shadow);max-width:40ch;overflow:hidden;text-overflow:ellipsis}
 #gal{display:flex;gap:14px;overflow-x:auto;padding:14px}
 #gal canvas{width:190px;height:140px;border:1px solid var(--line-2);border-radius:6px;background:var(--card);cursor:pointer}
 #gal figure{margin:0;text-align:center;font-size:.8rem}
 #gal figcaption{color:var(--ink-3);font-variant-numeric:tabular-nums;padding-top:4px}
 #gal figure:hover canvas{border-color:var(--signal)}
-#ed{overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;word-break:break-all;padding:14px 16px;outline:none;flex:1;background:var(--term);color:var(--term-text);font:.82rem/1.7 var(--mono);tab-size:2}
+#ed{overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;word-break:break-all;padding:14px 16px;outline:none;flex:1;min-height:0;background:var(--term);color:var(--term-text);font:.82rem/1.7 var(--mono);tab-size:2}
 #ed:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
 #pcbwrap .platewrap{position:relative;flex:1;min-height:0;background:var(--paper-2);border-radius:0 0 var(--r) var(--r);overflow:hidden}
 canvas{width:100%;height:100%;display:block}
@@ -224,10 +345,12 @@ canvas{width:100%;height:100%;display:block}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media(max-width:1100px){main{grid-template-columns:minmax(0,1fr) 1fr;grid-template-rows:none}
 #edwrap,#pcbwrap{grid-column:auto;grid-row:auto;min-height:70vh}
-#galwrap,#schwrap,#wrap3d{grid-column:1/3}}
+#galwrap,#schwrap,#wrap3d,#vcswrap{grid-column:1/3}}
 @media(max-width:760px){main{grid-template-columns:minmax(0,1fr);padding:12px}
-#galwrap,#schwrap,#wrap3d{grid-column:1}#edwrap,#pcbwrap{min-height:60vh}
+#galwrap,#schwrap,#wrap3d,#vcswrap{grid-column:1}#edwrap,#pcbwrap{min-height:60vh}
+#srcpanels{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
 .grp.status{margin-left:0}}
+@media(min-width:1500px){#srcpanels{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-rows:minmax(0,1fr)}}
 </style></head><body>
 <a class=skip href=#ed>skip to the job file</a>
 <header class=top><div class=inner>
@@ -250,7 +373,8 @@ function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy
 const TRACECOLS=['#8a2318','#1d5fa8','#0f5c37','#6b3fa0']; // net hues: red/blue/green/violet
 // canvas palette: paper ground, ink marks, one signal green (matches the sheet)
 const C={paper:'#f7f5f0',paper2:'#efece4',card:'#fffdf8',line:'#e2ddd0',line2:'#cfc8b6',ink:'#1a1d21',ink2:'#4d545c',ink3:'#7c848c',
-  signal:'#0f5c37',wash:'#dcefe1',bad:'#8a2318',warn:'#6b4a00',copper:'#9a7134'};
+  signal:'#0f5c37',wash:'#dcefe1',bad:'#8a2318',warn:'#6b4a00',copper:'#9a7134',
+  pad:'#d9a821',padline:'#8a6d00'}; // pad copper: same pair the SVG/PNG renders use
 const bgCol=C.paper; // PCB ground; getComputedStyle per frame forces a style flush
 // copper pour: a spec-sheet hatch with the thermal gaps punched out of it, so
 // the routing underneath still reads through the flood.
@@ -268,18 +392,66 @@ function pourTile(px,py,w,h,cuts){
   g.globalCompositeOperation='source-over';
   return {cv:pourCv,ox:w,oy:h};
 }
-// state from server: parts{ref:{x,y,w,h}}, traces[{net,x1,y1,x2,y2,layer}], nets, drc, cost
+// --- visibility: what the canvas shows (a view, never a document edit) ---
+// Off-list marks: ref, value, pads, pour, grid. Layers are keyed by the same
+// index traces carry (0 = F.Cu, 1 = B.Cu, then In1.Cu...), so the toggles name
+// exactly the layers the fab export does. Persisted per browser.
+const MARKLABEL={ref:"designators",value:"values",pads:"pads",pour:"copper pour",grid:"grid"};
+let VIS={layers:{},parts:{},marks:{},filter:""};
+try{const s=JSON.parse(localStorage.getItem("ocd-studio-vis")||"{}");
+  VIS.layers=s.layers||{};VIS.parts=s.parts||{};VIS.marks=s.marks||{};}catch(e){}
+function visSave(){try{localStorage.setItem("ocd-studio-vis",JSON.stringify(
+  {layers:VIS.layers,parts:VIS.parts,marks:VIS.marks}));}catch(e){}}
+function layerNames(st){ // same stack the KiCad export writes
+  const n=Math.max(1,+st.layers||2);
+  if(n===1)return["F.Cu"];
+  if(n===2)return["F.Cu","B.Cu"];
+  return["F.Cu"].concat(Array.from({length:n-2},(_,i)=>`In${i+1}.Cu`),["B.Cu"]);
+}
+const SILKMARKS=["silk","mask"];
+function visLayer(name,st){
+  const v=VIS.layers[name];
+  if(v===undefined){
+    const s=st.silk||"full";
+    if(name==="silk")return s!=="none"&&s!=="off";
+    if(name==="mask")return s==="full";
+    return true;
+  }
+  return !!v;
+}
+const isCu=n=>/\.Cu$/.test(n);
+function visMark(k,st){ // explicit choice wins; otherwise silk/mask decide
+  const v=VIS.marks[k];
+  if(v!==undefined)return !!v;
+  if(!st)return true;
+  if(k==="pads")return visLayer("mask",st); // pads are the mask openings
+  return visLayer("silk",st);               // ref/value/pour marks
+}
+function partShown(r,st){ // visibility + the parts filter
+  if(VIS.parts[r]===false)return false;
+  const f=VIS.filter.trim().toLowerCase();
+  if(!f)return true;
+  const p=(st&&st.parts&&st.parts[r])||{};
+  return (r+" "+(p.value||"")+" "+(p.fp||"")).toLowerCase().includes(f);
+}
+function setAllParts(on,st){
+  Object.keys((st&&st.parts)||{}).forEach(r=>{VIS.parts[r]=on;});
+  visSave();renderParts();markDirty();
+}
 function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
+  view.t=t;
   const [ctx,R]=fit($('pcb'));
   const s0=Math.min(R.width/st.bw,R.height/st.bh),s=Math.max(1,s0);
   const ox=(R.width-st.bw*s)/2,oy=(R.height-st.bh*s)/2;
   const X=x=>ox+x*s,Y=y=>oy+(st.bh-y)*s;
   ctx.fillStyle=bgCol;ctx.fillRect(0,0,R.width,R.height);
   const cuts=(st.cuts&&st.cuts['0'])||[];
-  ctx.strokeStyle=C.line; // board grid sits under the copper, not on top of it
-  for(let gx=0;gx<=st.bw;gx+=5){ctx.beginPath();ctx.moveTo(X(gx),Y(0));ctx.lineTo(X(gx),Y(st.bh));ctx.stroke();}
-  for(let gy=0;gy<=st.bh;gy+=5){ctx.beginPath();ctx.moveTo(X(0),Y(gy));ctx.lineTo(X(st.bw),Y(gy));ctx.stroke();}
-  if(st.pours&&Object.values(st.pours).some(lls=>lls.includes(0))){
+  if(visMark('grid',st)){
+    ctx.strokeStyle=C.line; // board grid sits under the copper, not on top of it
+    for(let gx=0;gx<=st.bw;gx+=5){ctx.beginPath();ctx.moveTo(X(gx),Y(0));ctx.lineTo(X(gx),Y(st.bh));ctx.stroke();}
+    for(let gy=0;gy<=st.bh;gy+=5){ctx.beginPath();ctx.moveTo(X(0),Y(gy));ctx.lineTo(X(st.bw),Y(gy));ctx.stroke();}
+  }
+  if(visMark('pour',st)&&st.pours&&Object.values(st.pours).some(lls=>lls.includes(0))){
     const e=st.edge||0.3;
     const px=Math.ceil((st.bw-2*e)*s),py=Math.ceil((st.bh-2*e)*s);
     const tile=pourTile(px,py,(st.bw-2*e)*s,(st.bh-2*e)*s,cuts);
@@ -287,27 +459,45 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   }
   ctx.strokeStyle=C.line2;ctx.strokeRect(X(0),Y(st.bh),st.bw*s,st.bh*s);
   const cols=TRACECOLS;
-  const n=Math.ceil(st.traces.length*t);
+  const names=layerNames(st);
+  const n=Math.min(Math.ceil(st.traces.length*t),MAX_SEGS);
   for(let i=0;i<n;i++){const g=st.traces[i];
+    const nm=names[g.layer];
+    if(nm&&!visLayer(nm,st))continue; // layer hidden: its copper is not drawn
     ctx.strokeStyle=cols[g.layer%4];ctx.lineWidth=Math.max(1,g.w*s);
     ctx.beginPath();ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));ctx.stroke();}
-  for(const r in st.parts){const p=st.parts[r];
+  for(const r in st.parts){
+    if(!partShown(r,st))continue;
+    const p=st.parts[r];
     ctx.fillStyle=st.fixed&&st.fixed[r]?C.wash:C.ink2; // pinned parts wear the signal wash
     ctx.fillRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
     ctx.strokeStyle=st.fixed&&st.fixed[r]?C.signal:C.ink;
     ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);
-    ctx.fillStyle=st.fixed&&st.fixed[r]?C.signal:'#f7f5f0';ctx.textAlign='center';ctx.textBaseline='middle';
+    // the footprint itself, not its box: real pads + drills + pin-1, so an 0805
+    // and a SOIC8 stop looking alike (same geometry the SVG/PNG renders use)
+    if(visMark('pads',st))for(const pd of (p.pads||[])){
+      const cx=X(p.x+pd.x),cy=Y(p.y+pd.y),pw=Math.max(1,pd.w*s),ph=Math.max(1,pd.h*s);
+      ctx.fillStyle=C.pad;ctx.strokeStyle=C.padline;
+      ctx.fillRect(cx-pw/2,cy-ph/2,pw,ph);ctx.strokeRect(cx-pw/2,cy-ph/2,pw,ph);
+      if(pd.d>0){ctx.fillStyle=bgCol;ctx.beginPath();ctx.arc(cx,cy,Math.max(0.8,pd.d*s/2),0,7);ctx.fill();}
+      if(pd.p1){ctx.fillStyle=C.ink3;ctx.beginPath();ctx.arc(cx,cy,Math.max(0.8,0.22*s),0,7);ctx.fill();}}
     const fs=Math.min(12,Math.max(7,p.h*s*0.32)); // never wider than the box
-    ctx.font=`${fs}px ui-monospace,Menlo,monospace`;
-    const label=r.length*fs*0.62>p.w*s?r.slice(0,Math.max(1,Math.floor(p.w*s/(fs*0.62))))+'…':r;
-    ctx.fillText(label,X(p.x),Y(p.y));
+    ctx.font=`${fs}px ui-monospace,Menlo,monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
+    if(visMark('ref',st)&&visLayer('silk',st)){
+      ctx.fillStyle=st.fixed&&st.fixed[r]?C.signal:'#f7f5f0';
+      const label=r.length*fs*0.62>p.w*s?r.slice(0,Math.max(1,Math.floor(p.w*s/(fs*0.62))))+'…':r;
+      ctx.fillText(label,X(p.x),Y(p.y));
+    }
     ctx.textBaseline='alphabetic';
-    if(st.silk!=='ref'&&p.value&&p.h*s>18){ctx.fillStyle=C.ink3;ctx.font=`${Math.min(9,fs*0.8)}px ui-monospace,Menlo,monospace`;ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}
+    if(visMark('value',st)&&visLayer('silk',st)&&st.silk!=='ref'&&p.value&&p.h*s>18){
+      ctx.fillStyle=C.ink3;ctx.font=`${Math.min(9,fs*0.8)}px ui-monospace,Menlo,monospace`;
+      ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}
     if(edHl.has(r)){ctx.strokeStyle=C.signal;ctx.lineWidth=3; // editor text selection → ring
       ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);ctx.lineWidth=1;}}
   // instance groups (block stamping): shared dashed outline + tag, one hue per owner
   const groups={};
-  for(const r in st.parts){const p=st.parts[r];if(!p.owner)continue;
+  for(const r in st.parts){if(!partShown(r,st))continue;
+    const p=st.parts[r];if(!p.owner)continue;
     const g=groups[p.owner]||(groups[p.owner]=[1e9,1e9,-1e9,-1e9]);
     g[0]=Math.min(g[0],p.x-p.w/2);g[1]=Math.min(g[1],p.y-p.h/2);
     g[2]=Math.max(g[2],p.x+p.w/2);g[3]=Math.max(g[3],p.y+p.h/2);}
@@ -319,7 +509,8 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
     ctx.fillText(o.replace(/_$/,''),X(g[0]-1),Y(g[3]+1)-3);});
   return {s,ox,oy};
 }
-let view={s:1,ox:0,oy:0};
+let view={s:1,ox:0,oy:0,t:1};
+const MAX_SEGS=25000; // dense boards route 25k+: drawing all of them every frame is a slideshow
 let schSel=null, schDirty=true; // selected "REF.PIN"
 let edHl=new Set(), edPin=new Set(); // refs/pins named by the editor's text selection
 function drawSCH(st){
@@ -440,19 +631,32 @@ function draw3D(st,rot){
     faces.push({z:(z0+z1)/2,p:[c100,c110,c111,c101],c:cols.side});
     faces.push({z:(z0+z1)/2,p:[c110,c010,c011,c111],c:shade(cols.front,0.8)});
     faces.push({z:(z0+z1)/2,p:[c010,c000,c001,c011],c:shade(cols.side,0.8)});}
+  function cyl(cxx,cyy,rad,z0,z1,cols){ // round bodies (electrolytics, headers)
+    const N=12,top=[],bot=[];
+    for(let i=0;i<N;i++){const a=i/N*2*Math.PI;
+      top.push(P(cxx+rad*Math.cos(a),cyy+rad*Math.sin(a),z1));
+      bot.push(P(cxx+rad*Math.cos(a),cyy+rad*Math.sin(a),z0));}
+    for(let i=0;i<N;i++){const j=(i+1)%N;
+      faces.push({z:(z0+z1)/2,p:[bot[i],bot[j],top[j],top[i]],c:cols.side});}
+    faces.push({z:z1,p:top,c:cols.top});
+    faces.push({z:z0,p:bot,c:shade(cols.top,0.35)});}
   const MASK={top:'#0f5c37',front:'#0a3d25',side:'#0c4a2d'};
   box(0,0,0,st.bw,st.bh,1.6,MASK);
-  // copper traces on top layer shimmer gold
-  for(const t of st.traces.slice(0,400)){if(t.layer!==0)continue;
-    const w=Math.max(0.15,t.w/2);
-    faces.push({z:1.75,p:[P(t.x1-w,t.y1-w,1.7),P(t.x2+w,t.y1-w,1.7),P(t.x2+w,t.y2+w,1.7),P(t.x1-w,t.y2+w,1.7)],c:'#c9962e'});}
+  // copper traces on top layer shimmer gold (hidden with that layer)
+  if(visLayer(layerNames(st)[0],st))
+    for(const g of st.traces.slice(0,400)){if(g.layer!==0)continue;
+      const w=Math.max(0.15,g.w/2);
+      faces.push({z:1.75,p:[P(g.x1-w,g.y1-w,1.7),P(g.x2+w,g.y1-w,1.7),P(g.x2+w,g.y2+w,1.7),P(g.x1-w,g.y2+w,1.7)],c:'#c9962e'});}
   const MATS={chip:{top:'#3a3f45',front:'#22262b',side:'#2c3136'},tant:{top:'#d9a419',front:'#8a6a0a',side:'#b8890f'},
     elec:{top:'#9aa3b5',front:'#5a6270',side:'#767f92'},led:{top:'#c0392b',front:'#7a1a12',side:'#96261a'},
     steel:{top:'#c8ccd2',front:'#7a7e85',side:'#9ea3ab'},plastic:{top:'#2b2f34',front:'#16191d',side:'#212528'},
     copper:{top:'#d9a832',front:'#8a6a1a',side:'#b8891f'}};
-  for(const r in st.parts){const p=st.parts[r];
+  for(const r in st.parts){
+    if(!partShown(r,st))continue; // the 3D view hides what the PCB view hides
+    const p=st.parts[r];
     const cols=MATS[p.mat]||MATS.chip;
     for(const bd of (p.bodies||[{w:p.w-0.6,h:p.h-0.6,z:1.6,hgt:p.h3d||1,dx:0,dy:0}])){
+      if(bd.cyl){cyl(p.x+bd.dx,p.y+bd.dy,bd.w/2,bd.z,bd.z+bd.hgt,cols);continue;}
       box(p.x+bd.dx-bd.w/2,p.y+bd.dy-bd.h/2,bd.z,p.x+bd.dx+bd.w/2,p.y+bd.dy+bd.h/2,bd.z+bd.hgt,cols);}}
   faces.sort((a,b)=>a.z-b.z);
   for(const f of faces){ctx.fillStyle=f.c;ctx.beginPath();ctx.moveTo(f.p[0][0],f.p[0][1]);for(let i=1;i<f.p.length;i++)ctx.lineTo(f.p[i][0],f.p[i][1]);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(0,0,0,.28)';ctx.stroke();}
@@ -471,7 +675,13 @@ function animate(frames,traces,done){
   function step(){
     if(i>=frames.length){S.cur.traces=[];let n=0;dirty=true;
       (function grow(){n+=3;S.cur.traces=traces.slice(0,n);dirty=true;if(n<traces.length)anim=requestAnimationFrame(grow);else{S.cur.traces=traces;done&&done();}})();return;}
-    const f=frames[i],to=f.pos;let k=0;const N=14;
+    const f=frames[i],to={};
+    for(const r in f.pos){  // hidden parts snap, they do not glide
+      const p=S.cur.parts[r];
+      if(!p||!partShown(r,S.cur)){if(p){p.x=f.pos[r][0];p.y=f.pos[r][1];}}
+      else to[r]=f.pos[r];
+    }
+    let k=0;const N=14;
     (function tw(){k++;const e=ease(k/N);
       for(const r in to){const a=from[r]||to[r],b=to[r];
         S.cur.parts[r]={...S.cur.parts[r],x:a[0]+(b[0]-a[0])*e,y:a[1]+(b[1]-a[1])*e};}
@@ -482,19 +692,23 @@ function animate(frames,traces,done){
 }
 async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json();}
 function statMsg(txt,ok){const el=$('stat');el.textContent=txt||'';el.className=!txt?'':ok?'ok':'err';}
-let deb=null;
+let deb=null, pulseq=0; // monotonic: a slow build must not land on a newer board
+function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
 $('ed').addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(push,400);});
 async function push(){
-  const text=$('ed').innerText;
-  const r=await api('/build',{text,placer:$('placer').value,router:$('router').value,fab:$('fab').value,silk:$('silk').value});
+  const text=$('ed').innerText, seq=++pulseq;
+  const r=await api('/build',{text,src:SRCREL,placer:$('placer').value,
+    router:$('router').value,fab:$('fab').value,silk:$('silk').value});
+  if(seq!==pulseq)return;   // the editor moved on (or another board opened)
   if(r.error){statMsg(r.error);S=null;return;}
   statMsg('');applyState(r,false);
 }
 function applyState(r,live){
   S=r;S.cur=r;markDirty();spinBriefly(); // render live on the state itself (bw/bh/pours/fixed ride along)
+  notePlacement(r);
   if(live&&r.frames&&r.frames.length)animate(r.frames,r.traces,()=>{drawDRC(r);});
   else{S.cur.traces=r.traces;$('cost').textContent=`cost ${r.cost}`;drawDRC(r);}
-  drawFeas(r);
+  drawFeas(r);renderLayers(r);renderParts(r);
   if(document.activeElement!==$('ed'))setEditor(r.text);
 }
 function drawFeas(r){
@@ -506,6 +720,119 @@ function drawFeas(r){
     const v=f[L],here=+L===r.layers;
     return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ');
 }
+// --- layer and part visibility controls (view state, never a board edit) --
+function renderLayers(st){
+  const cu=$('cu'),marks=$('marks');
+  if(!cu)return;
+  st=st||(S&&S.cur)||{layers:2,silk:'full'};
+  cu.innerHTML='';marks.innerHTML='';
+  layerNames(st).forEach(nm=>{
+    const on=visLayer(nm,st);
+    const id='lay_'+nm.replace(/[^\w]/g,'_');
+    cu.appendChild(layerRow(nm,nm,on,id));
+  });
+  SILKMARKS.forEach(nm=>{
+    const on=visLayer(nm,st);
+    marks.appendChild(layerRow(nm==='silk'?'silkscreen':'mask',nm,on,'mark_'+nm));
+  });
+  Object.keys(MARKLABEL).forEach(k=>{ // ref/value ride the silkscreen toggle
+    if(k==='ref'||k==='value')return;
+    marks.appendChild(layerRow(MARKLABEL[k],k,visMark(k,st),'mark_'+k));
+  });
+}
+function layerRow(label,key,on,id){
+  const l=document.createElement('label');
+  l.className=on?'on':'off';
+  const i=document.createElement('input');
+  i.type='checkbox';i.checked=on;i.id=id;
+  i.onchange=()=>{
+    if(isCu(key))VIS.layers[key]=i.checked; else if(SILKMARKS.includes(key))VIS.layers[key]=i.checked;
+    else VIS.marks[key]=i.checked;
+    visSave();
+    const st=(S&&S.cur)||null;
+    renderLayers(st);renderParts(st);markDirty();
+  };
+  l.append(i,document.createTextNode(label));
+  l.title=isCu(key)?`copper layer ${key}`:`${label} on the PCB canvas`;
+  return l;
+}
+const MAX_ROWS=400; // DOM rows, not parts: 5400 checkboxes brick the page
+function renderParts(st){
+  const box=$('partlist');
+  if(!box)return;
+  st=st||(S&&S.cur)||{parts:{}};
+  const all=Object.keys(st.parts||{}).sort();
+  // a filter searches every part (the list is capped, the search is not)
+  const refs=(VIS.filter?all.filter(r=>partShown(r,st)):all).slice(0,MAX_ROWS);
+  if(!VIS.filter&&all.length>MAX_ROWS){
+    const shown=new Set(refs);
+    edHl.forEach(r=>{if(!shown.has(r))refs.push(r);}); // keep the selection reachable
+    refs.sort();
+  }
+  const same=box.children.length===refs.length
+    && refs.every((r,i)=>box.children[i]&&box.children[i].dataset.ref===r);
+  if(!same)box.innerHTML=''; // first draw, or a different board
+  refs.forEach((r,i)=>{
+    let l=box.children[i];
+    if(!l||l.dataset.ref!==r){
+      l=document.createElement('label');
+      l.dataset.ref=r;
+      const cb=document.createElement('input');
+      cb.type='checkbox';
+      cb.onchange=()=>{VIS.parts[r]=cb.checked;visSave();paintParts();markDirty();};
+      const nm=document.createElement('span');nm.textContent=r;
+      const v=document.createElement('span');v.className='pv';
+      l.append(cb,nm,v);
+      if(box.children[i])box.replaceChild(l,box.children[i]);
+      else box.appendChild(l);
+    }
+    const p=st.parts[r]||{};
+    const v=l.querySelector('.pv');
+    v.textContent=[p.value||'',p.fp||''].filter(Boolean).join(' '); // filterable
+    v.title=v.textContent;
+  });
+  paintParts();
+}
+function paintParts(){ // the rows are the source of truth for the note
+  const box=$('partlist');
+  if(!box)return;
+  const total=Object.keys((S&&S.cur&&S.cur.parts)||{}).length;
+  const refs=Array.from(box.children).map(l=>l.dataset.ref).filter(Boolean);
+  let hidden=0;
+  refs.forEach((r,i)=>{
+    const l=box.children[i];
+    if(!l)return;
+    const on=VIS.parts[r]!==false;
+    if(!on)hidden++;
+    l.dataset.hidden=on?'':'1';
+    l.className=(on?'':'hidden ')+(edHl.has(r)?'selpart':'');
+    l.querySelector('input').checked=on;
+    // the filter greys the rest, it does not detach the rows (no stale nodes)
+    l.style.opacity='1'; // a filter selects rows; it cannot dim rows that are not here
+  });
+  $('partnote').textContent=!total?'no parts'
+    :(total>refs.length?`${refs.length-hidden}/${refs.length} of ${total} (capped)`
+                       :`${refs.length-hidden}/${refs.length} shown`);
+}
+$('partfilter').addEventListener('input',()=>{VIS.filter=$('partfilter').value;renderParts();markDirty();});
+$('parthide').onclick=()=>setAllParts(false,S&&S.cur);
+$('partshow').onclick=()=>setAllParts(true,S&&S.cur);
+$('layersall').onclick=()=>{
+  VIS.layers={};VIS.marks={};visSave();
+  const st=(S&&S.cur)||null;renderLayers(st);markDirty();
+};
+function onlyBox(open){ // the two panels overlap: never show both
+  [['layerbox','partbox'],['partbox','layerbox']].forEach(([a,b])=>{
+    if($(a)===open&&$(a).open)$(b).open=false;
+  });
+}
+$('layerbox').addEventListener('toggle',()=>onlyBox($('layerbox')));
+$('partbox').addEventListener('toggle',()=>onlyBox($('partbox')));
+document.addEventListener('keydown',e=>{
+  if(e.target===$('ed')||e.target===$('ask'))return; // typing, not a shortcut
+  if(e.key==='l'||e.key==='L'){$('layerbox').open=!$('layerbox').open;}
+  else if(e.key==='p'||e.key==='P'){$('partbox').open=!$('partbox').open;}
+});
 // --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
 let galSeed=0;
 function thumb(cand,i){
@@ -565,17 +892,36 @@ function tidyVal(v){
 }
 function drawTidy(r){
   const t=r.tidy||{};
+  if(r.dense){ // metrics and the routability probe are skipped at this size
+    $('tidycov').textContent='';
+    $('tidy').innerHTML='<div class=dim>tidy metrics skipped on a dense board '
+      +`(${Object.keys(r.parts||{}).length} parts) — run the CLI for the full report</div>`;
+    $('ocdscore').textContent='OCD n/a (dense)';
+    return;
+  }
   $('tidycov').textContent=t.coverage?`(${t.coverage})`:'';
   const rows=Object.entries(t).filter(([k])=>k!=='coverage'&&k!=='routed_segs')
     .map(([k,v])=>`<div><span class=dim>${k}</span> ${tidyVal(v)}</div>`).join('');
   $('tidy').innerHTML=rows;
   const sc=r.score; // OCD neatness 0-100 next to cost
-  if(sc)$('ocdscore').textContent=`OCD ${sc.total}/100 (${sc.grade})`;
+  if(sc&&!sc.dense)$('ocdscore').textContent=`OCD ${sc.total}/100 (${sc.grade})`;
+}
+// A dense board says so: it is loaded from the file's own positions, its
+// metrics are skipped, and its parts list is capped. Never let the page look
+// broken when the board is simply large.
+function notePlacement(r){
+  const n=Object.keys(r.parts||{}).length;
+  const skip=(r.skipped||[]).join(' + ');
+  if(r.dense)statMsg(`dense board: ${n} parts loaded as saved`
+    +(skip?` (${skip} skipped — run the CLI for those)`:'')+'.',true);
+  else if(r.placed===false)statMsg('loaded as saved — solve to re-place',true);
 }
 function setEditor(t){$('ed').innerText=t;}
 // drag parts on pcb
 (()=>{const c=$('pcb');let drag=null,dragGroup=null;
-function hit(mx,my){for(const r in S.cur.parts){const p=S.cur.parts[r];
+function hit(mx,my){for(const r in S.cur.parts){
+  if(!S.cur.parts[r]||!partShown(r,S.cur))continue; // hidden parts are not targets
+  const p=S.cur.parts[r];
   const x=view.ox+p.x*view.s,y=view.oy+(S.bh-p.y)*view.s;
   if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4)return r;}return null;}
 c.addEventListener('mousedown',e=>{if(!S)return;const R=c.getBoundingClientRect();
@@ -598,7 +944,15 @@ c.addEventListener('mouseup',async()=>{if(!drag)return;const moved=dragGroup||[d
   // drop fix lines right after board/use block (group order kept)
   let idx=lines.findIndex(l=>/^(part|net|fix|keep|route|trace|power|silk)\b/.test(l));if(idx<0)idx=lines.length;
   moved.forEach((rr,i)=>{const p=S.cur.parts[rr];lines.splice(idx+i,0,`fix ${rr} at ${p.x} ${p.y}`);});
-  $('ed').innerText=lines.join('\n');push();});
+  // The pin is written either way (it is the truth about where the part is),
+  // but re-placing thousands of parts is minutes: ask before hanging the page.
+  $('ed').innerText=lines.join('\n');
+  if(S&&S.cur&&S.cur.dense&&!confirm(
+      `Re-place ${Object.keys(S.cur.parts).length} parts around the pin?\n\n`
+      +'This runs the placer over a dense board and can take minutes.\n'
+      +'Cancel keeps the pin and re-loads from the file instead.')){
+    loadBoard();return;}
+  push();});
 c.addEventListener('dblclick',()=>{ // unpin: remove fix (whole group if instanced)
   if(!S||!S.cur||!S.cur.hover)return;
   const r=S.cur.hover,o=S.cur.parts[r].owner;
@@ -690,9 +1044,211 @@ $('stamp').onclick=()=>{ // repeat-layout: stamp another copy of hovered instanc
 };
 $('ed').addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();$('solve').click();}
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();commitBoard();}
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();hist('/undo');}
   else if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey))){e.preventDefault();hist('/redo');}
 });
+// --- project files: browse, open, and say which file is the board -------
+let TREE=[],SRCREL='',VC={},DIR='.',ROOTREL='.';
+function treeRow(e,depth){
+  const d=document.createElement('div');
+  d.className='trow '+(e.kind==='dir'?'tdir':'tfile')+(e.path===SRCREL?' active':'');
+  d.style.paddingLeft=(4+depth*13)+'px';
+  d.textContent=e.kind==='dir'?e.name+'/':e.name;
+  d.title=e.kind==='dir'?'folder — click to open it':e.path;
+  if(e.kind==='file'){
+    if(e.bytes){const s=document.createElement('span');s.className='tsize';
+      s.textContent=(+e.bytes/1024).toFixed(1)+'k';d.appendChild(s);}
+    d.onclick=()=>e.name.endsWith('.ocd')?openFile(e.path):previewFile(e.path);
+  }else{
+    d.onclick=()=>loadTree(e.path);
+  }
+  return d;
+}
+function renderTree(){
+  const t=$('tree');t.innerHTML='';
+  // one level at a time: this directory, then a way back up while inside root
+  if(DIR!=='.'){const up=DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.';
+    t.appendChild(treeRow({name:'.. ('+(up==='.'?ROOTREL:up)+')',path:up,kind:'dir'},0));}
+  if(!TREE.length){const e=document.createElement('div');e.className='trow tdir';e.textContent='(no text files)';t.appendChild(e);}
+  TREE.forEach(e=>t.appendChild(treeRow(e,1)));
+}
+async function loadTree(dir){
+  const f=await fetch('/fs?dir='+encodeURIComponent(dir||'.')).then(x=>x.json());
+  if(f.error){statMsg(f.error);return;}
+  DIR=f.dir||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';VC=f.vcs||{};
+  TREE=f.tree||[];
+  $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
+  renderTree();
+}
+async function previewFile(path){
+  const r=await api('/fs/read',{path});
+  if(r.error){statMsg(r.error);return;}
+  msg('bot','preview of '+path+' (read-only here; open a .ocd in the editor to edit it).\n'
+      +r.text.split('\n').slice(0,40).join('\n'));
+}
+async function openFile(path){
+  cancelPush();  // a queued rebuild of the old board must not follow us here
+  const r=await api('/fs/open',{path});
+  if(r.error){statMsg(r.error);return;}
+  statMsg('');$('msgs').innerHTML='';
+  setQueue([]);  // the server dropped the old board's proposals with it
+  applyState(r,false);
+  toast('opened '+path);
+  const f=await fetch('/fs').then(x=>x.json());
+  if(!f.error){DIR=f.base||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';TREE=f.tree||[];
+    $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
+    $('chatwhere').textContent=SRCREL;
+    $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
+    renderTree();}
+  loadVCS();
+}
+// --- agent chat --------------------------------------------------------
+function msg(who,text){
+  const el=document.createElement('p');
+  el.className='msg '+(who==='you'?'me':who);
+  const w=document.createElement('span');w.className='who';w.textContent=who;
+  el.appendChild(w);
+  el.appendChild(document.createTextNode(text)); // textContent: never innerHTML
+  $('msgs').appendChild(el);
+  $('msgs').scrollTop=$('msgs').scrollHeight;
+  return el;
+}
+function renderDiff(p,text){
+  p.textContent='';
+  String(text).split('\n').forEach(ln=>{
+    const d=document.createElement('div');
+    d.className=ln.startsWith('@@')||/^(\+\+\+|---)/.test(ln)?'dl-at'
+      :ln.startsWith('+')?'dl-add':ln.startsWith('-')?'dl-del':'';
+    d.textContent=ln;
+    p.appendChild(d);
+  });
+}
+function propose(pr,onQueue){
+  const box=document.createElement('div');box.className='prop';
+  const head=document.createElement('div');head.className='phead';
+  const b=document.createElement('b');b.textContent=pr.path;
+  const g=document.createElement('span');g.className='grow';
+  const apply=document.createElement('button');apply.textContent='apply';
+  const drop=document.createElement('button');drop.textContent='reject';
+  head.append('proposed edit to ',b,g,apply,drop);
+  const pre=document.createElement('pre');renderDiff(pre,pr.diff||'');
+  box.append(head,pre);
+  apply.onclick=async()=>{
+    apply.disabled=drop.disabled=true;
+    const r=await api('/chat/apply',{id:pr.id});
+    if(r.error){msg('err',r.error);apply.disabled=drop.disabled=false;return;}
+    if(r.state)applyState(r.state,false);
+    else loadVCS();
+    box.remove();
+    msg('bot','applied '+pr.path+(r.state?'':' (not the open board)')
+        +(r.note?' — '+r.note:''));
+    if(onQueue)onQueue(r.proposals||[]);
+    loadVCS();
+  };
+  drop.onclick=async()=>{
+    apply.disabled=drop.disabled=true;
+    const r=await api('/chat/reject',{id:pr.id});
+    box.remove();
+    msg('bot','rejected '+pr.path+' — nothing was written');
+    if(onQueue)onQueue(r.proposals||[]);
+  };
+  $('msgs').appendChild(box);
+  $('msgs').scrollTop=$('msgs').scrollHeight;
+  return box;
+}
+// a turn may propose several files: every card lives in one queue, and each
+// apply/reject removes its own card without disturbing the others
+function setQueue(list){
+  $('msgs').querySelectorAll('.prop').forEach(e=>e.remove());
+  (list||[]).forEach(p=>propose(p,setQueue));
+}
+async function chat(text,auto){
+  msg('you',text);
+  const wait=msg('bot','thinking…');
+  const r=await api('/chat',{text,auto:!!auto});
+  wait.remove();
+  if(r.error){msg('err',r.error);setQueue(r.proposals);return;}
+  msg('bot',r.reply||'(no reply)');
+  if(r.log&&r.log.length)msg('bot','tools: '+r.log.join(' · '));
+  if(r.note)msg('bot',r.note);
+  if(r.proposals&&r.proposals.length)setQueue(r.proposals);
+  if(r.state)applyState(r.state,false);
+  if(r.applied)loadVCS();
+}
+$('composer').addEventListener('submit',e=>{
+  e.preventDefault();
+  const t=$('ask').value.trim();if(!t)return;
+  $('ask').value='';
+  chat(t,$('chatauto').checked);
+});
+$('ask').addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();$('composer').requestSubmit();}
+});
+$('chatclear').onclick=async()=>{await api('/chat/reset',{});$('msgs').innerHTML='';};
+// --- revisions: the board directory's git log --------------------------
+async function loadVCS(){
+  const r=await api('/vcs',{path:SRCREL||null});
+  if(r.error){$('vcsnote').textContent=r.error;return;}
+  VC=r.status||{};
+  $('vcsnote').textContent=VC.repo
+    ? `${VC.branch} · `+(VC.dirty?'uncommitted changes in '+VC.board:'clean')
+    : 'not a git repository';
+  const box=$('vcs');box.innerHTML='';
+  if(!VC.repo){box.textContent='commit from the toolbar once this directory is a repo';return;}
+  (r.log||[]).forEach(c=>{
+    const d=document.createElement('div');d.className='rev';
+    const h=document.createElement('span');h.className='rh';h.textContent=c.hash;
+    const dt=document.createElement('span');dt.className='rd';dt.textContent=c.date;
+    const s=document.createElement('span');s.className='rs';s.textContent=c.subject;
+    d.append(h,dt,s);
+    d.onclick=async()=>{
+      const x=await api('/vcs/diff',{hash:c.hash});
+      const pre=document.createElement('pre');pre.textContent=x.error||x.diff;
+      const old=box.querySelector('pre');if(old)old.remove();
+      d.after(pre);
+    };
+    box.appendChild(d);
+  });
+}
+async function commitBoard(){
+  if(!VC.repo){statMsg('not a git repository');return;}
+  const m=prompt('commit message',(SRCREL||'board')+': ');
+  if(!m)return;
+  const r=await api('/vcs/commit',{message:m});
+  if(r.error){statMsg(r.error);return;}
+  toast(r.commit||'committed');
+  loadVCS();
+}
+function toast(t){
+  const b=document.createElement('div');b.className='toast';b.textContent=t;
+  document.body.appendChild(b);
+  setTimeout(()=>b.remove(),2600);
+}
+async function loadBoard(){ // parse + route what is on disk; never re-place
+  const r=await api('/load',{});
+  if(r.error){statMsg(r.error);return;}
+  setEditor(r.text);applyState(r,false);
+}
+async function boot(){
+  // /load parses the file and routes what is there. It does not re-place:
+  // a 5k-part board takes minutes to place, and the file already says where
+  // the parts go. `solve` is the explicit ask for a fresh placement.
+  const r=await api('/load',{});
+  $('placer').innerHTML=r.placers.map(p=>`<option>${p}</option>`).join('');
+  $('router').innerHTML=r.routers.map(p=>`<option>${p}</option>`).join('');
+  $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
+  $('fab').innerHTML=r.fabs.map(p=>`<option>${p}</option>`).join('');
+  setEditor(r.text);applyState(r,false);
+  const f=await fetch('/fs').then(x=>x.json()); // browser state is a GET
+  if(f.error){$('treenote').textContent=f.error;return;}
+  DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
+  $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
+  $('chatwhere').textContent=SRCREL;
+  $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
+  renderTree();
+  loadVCS();
+}
 // selecting text in the editor highlights every ref it names, on PCB and SCH
 function edHighlight(){
   if(!S||!S.cur)return;
@@ -709,12 +1265,14 @@ function edHighlight(){
 }
 document.addEventListener('selectionchange',edHighlight);
 $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=push;
-(async()=>{const r=await api('/init',{});
-  $('placer').innerHTML=r.placers.map(p=>`<option>${p}</option>`).join('');
-  $('router').innerHTML=r.routers.map(p=>`<option>${p}</option>`).join('');
-  $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
-  $('fab').innerHTML=r.fabs.map(p=>`<option>${p}</option>`).join('');
-  setEditor(r.text);applyState(r,false);})();
+$('chatbtn').onclick=()=>{
+  document.body.classList.toggle('chatty');
+  const on=document.body.classList.contains('chatty');
+  $('chatbtn').classList.toggle('primary',on);
+  if(on)$('ask').focus();
+};
+(async()=>{await boot();})();
+
 // file-watch: poll SRC hash; an external edit banners with one-click
 // reload (never auto: a keystroke debounce may be in flight, and
 // auto-reload would clobber it — the user picks the moment).
@@ -738,7 +1296,12 @@ setInterval(watch,2000);
 
 def _sch_state(b: Board) -> dict[str, object]:
     """Schematic geometry for the canvas: same sch_layout() the SVG
-    renderer uses, so both pictures always agree."""
+    renderer uses, so both pictures always agree. On a dense board the layout
+    is ~17s of work to draw a picture nobody can read (5400 boxes across the
+    canvas), so it is skipped and the canvas stays empty."""
+    if len(b.parts) >= DENSE_PARTS:
+        return {"order": [], "px": {}, "rail_y": {}, "top": 70, "W": 0,
+                "skipped": "board is dense — the schematic is not laid out"}
     from ocdcircuit.plugins import sch_layout
     lay = sch_layout(b)
     return {"order": lay["order"], "px": lay["px"], "rail_y": lay["rail_y"],
@@ -753,10 +1316,22 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
     from typing import cast
     parts: dict[str, dict[str, object]] = {}
     lib = b._lib()
+    # Per-part footprint geometry is ~190s across 5,420 parts, and at that
+    # density a pad is a sub-pixel dot: a dense board ships boxes only, so the
+    # page opens in seconds. The compact state is flagged for the client.
+    compact = len(b.parts) >= DENSE_PARTS
     for ref, p in b.parts.items():
         h3d = 1.0
         mats: list[str] = []
         bds: list[dict[str, object]] = []
+        if compact:
+            rot = p.rot
+            pw, ph = p.wh()
+            parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
+                          "value": p.value, "fp": p.fp, "h3d": h3d,
+                          "owner": p.owner or "", "mat": "chip",
+                          "bodies": [], "pads": []}
+            continue
         for body in bodies_of(p.fp, lib):
             mat = body_material(p.fp, body)
             mats.append(mat)
@@ -799,7 +1374,8 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 bd["dx"], bd["dy"] = p.rot_xy(cast(float, bd["dx"]),
                                               cast(float, bd["dy"]))
         parts[ref] = {"x": p.x, "y": p.y, "w": pw, "h": ph,
-                      "value": p.value, "h3d": h3d, "owner": p.owner or "",
+                      "value": p.value, "fp": p.fp, "h3d": h3d,
+                      "owner": p.owner or "",
                       "mat": mats[-1] if mats else "chip", "bodies": bds,
                       "pads": pds}
     nets = {n: [f"{r}.{pin}" for r, pin in net.pins] for n, net in b.nets.items()}
@@ -825,13 +1401,185 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
             for lls in pours.values() for ll in lls}
     edge = float(cast(float, _fab_get(b.fab).get("edge", 0.3)))
     return {"text": text, "parts": parts, "nets": nets, "fixed": fixed,
+            "compact": compact,
             "bw": b.width, "bh": b.height, "layers": b.layers,
             "frames": frames,
             "traces": traces, "cost": round(cost, 1), "sim": sim_nets,
             "sim_problems": sim_problems, "pours": pours, "cuts": cuts,
             "edge": edge,
-            "errors": drc["errors"], "warnings": drc["warnings"],
+            "errors": _brief(drc["errors"]), "warnings": _brief(drc["warnings"]),
             "fab": drc.get("fab", "jlc"), "silk": 1, "sch": _sch_state(b)}
+
+
+# --- project files -------------------------------------------------------
+# Everything the browser and the agent touch is relative to the project ROOT
+# (the directory of the board that is open) and guarded: no absolute paths,
+# no .., no symlink escape. Text files only, writes only to .ocd/.toml/.md.
+TEXT_EXT = {".ocd", ".toml", ".md", ".txt", ".fp", ".json", ".py", ".csv", ".kicad_mod"}
+WRITE_EXT = {".ocd", ".toml", ".md"}
+SKIP_DIR = {"__pycache__", ".git", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+            "node_modules", ".venv", "venv", "out", "outputs", ".scratch"}
+ROOT = os.path.abspath(os.environ.get("OCD_ROOT") or BASE)
+if not os.path.isdir(ROOT):  # a bad OCD_ROOT must not take the studio down
+    print(f"studio: OCD_ROOT {os.environ.get('OCD_ROOT')!r} is not a directory, "
+          f"using {BASE}", file=sys.stderr)
+    ROOT = BASE
+
+
+def _rel(path: object) -> str:
+    """Normalise a client-supplied relative path. `..` is allowed *here* and
+    resolved against the project root by _abs, which then re-checks the
+    result: the browser may walk up inside the project, never out of it."""
+    p = str(path or ".").strip().replace("\\", "/").lstrip("/")
+    if p in ("", "."):
+        return "."
+    return "/".join(q for q in p.split("/") if q not in ("", "."))
+
+
+def _abs(path: object, *, must_exist: bool = False, near: str | None = None) -> str:
+    """Resolve a client path. A plain name is tried next to the open board
+    first (a sibling fetch), then at the project ROOT; in both cases the result
+    must stay inside ROOT, with symlinks resolved first so a link out of the
+    project is refused rather than followed."""
+    rel = _rel(path)
+    root = os.path.realpath(ROOT)
+    full = os.path.realpath(os.path.join(ROOT, rel))
+    if near and not (full != root and full.startswith(root + os.sep)):
+        alt = os.path.realpath(os.path.join(near, rel))
+        if alt != root and alt.startswith(root + os.sep):
+            if not must_exist or os.path.exists(alt):
+                full = alt
+    if full != root and not full.startswith(root + os.sep):
+        raise ValueError(f"{rel}: outside the project root")
+    if must_exist and not os.path.exists(full):
+        raise ValueError(f"{rel}: no such file")
+    return full
+
+
+def _tree(rel: str = ".", depth: int = 0) -> list[dict[str, str]]:
+    """Directory listing, one level. Paths are relative to ROOT, so the client
+    can call /fs/open on them without knowing where the root is."""
+    out: list[dict[str, str]] = []
+    if depth > 3:
+        return out
+    d = _abs(rel, must_exist=True)
+    if not os.path.isdir(d):
+        raise ValueError(f"{rel}: not a directory")
+    for name in sorted(os.listdir(d)):
+        if name.startswith(".") or name in SKIP_DIR:
+            continue
+        p = os.path.join(d, name)
+        r = os.path.relpath(p, ROOT).replace(os.sep, "/")
+        if os.path.isdir(p):
+            out.append({"name": name, "path": r, "kind": "dir"})
+        elif os.path.splitext(name)[1].lower() in TEXT_EXT:
+            out.append({"name": name, "path": r, "kind": "file",
+                        "bytes": str(os.path.getsize(p))})
+    return out
+
+
+def _read(rel: object) -> str:
+    full = _abs(rel, must_exist=True)
+    if os.path.splitext(full)[1].lower() not in TEXT_EXT:
+        raise ValueError(f"{rel}: not a text file")
+    if os.path.getsize(full) > 2_000_000:
+        raise ValueError(f"{rel}: too large to edit")
+    try:
+        return open(full, encoding="utf8").read()
+    except UnicodeDecodeError as e:
+        raise ValueError(f"{rel}: not utf-8 text") from e
+
+
+def _git(*args: str, timeout: float = 20.0) -> str:
+    import subprocess
+    try:
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True,
+                           text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ValueError(f"git {' '.join(args)}: {e}") from e
+    if r.returncode:
+        raise ValueError((r.stderr or r.stdout).strip()[:300] or "git failed")
+    return r.stdout
+
+
+def _git_log(n: int = 30, path: object = None) -> list[dict[str, str]]:
+    """Commits touching the open board (or the whole project when asked).
+    %x1f unit separator so a commit subject with spaces survives."""
+    args = ["log", f"-{n}", "--date=short",
+            "--pretty=format:%h%x1f%ad%x1f%an%x1f%s"]
+    target = _rel(path) if path is not None else "."
+    if target != ".":
+        args += ["--", target]
+    out = _git(*args)
+    rows = []
+    for line in out.splitlines():
+        f = line.split("\x1f")
+        if len(f) == 4:
+            rows.append({"hash": f[0], "date": f[1], "who": f[2], "subject": f[3]})
+    return rows
+
+
+def _git_status() -> dict[str, object]:
+    try:
+        _git("rev-parse", "--is-inside-work-tree")
+    except ValueError:
+        return {"repo": False, "branch": "", "files": []}
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD").strip()
+    rel = _rel(os.path.relpath(SRC, ROOT))
+    porcelain = _git("status", "--porcelain", "--", rel).strip()
+    dirty = [ln for ln in porcelain.splitlines() if ln.strip()]
+    return {"repo": True, "branch": branch, "files": dirty,
+            "board": rel, "dirty": bool(dirty)}
+
+
+def _unified(a: str, b: str, name: str, limit: int = 160) -> str:
+    """Unified diff of two texts. Real difflib, capped so a full rewrite
+    cannot flood the panel or the model's context."""
+    import difflib
+    lines = list(difflib.unified_diff(
+        a.splitlines(), b.splitlines(), fromfile=f"a/{name}", tofile=f"b/{name}",
+        lineterm="", n=2))
+    if len(lines) > limit:
+        return "\n".join(lines[:limit] + [f"… {len(lines) - limit} more lines"])
+    return "\n".join(lines) or "(no textual change)"
+
+
+# A board of a few thousand parts can report millions of DRC failures (every
+# unplaced pin is an ERC error). Serialising that list is what actually kills
+# the page: it reached 920 MB on monster6502. The UI shows a head; the count
+# stays honest so nothing is hidden.
+MAX_ISSUES = 60
+# A dense board is a different product: routing alone is seconds, so the
+# studio loads it from the file's own positions and trims the rest.
+DENSE_PARTS = 1200
+MAX_SEGS = 60000  # traces shipped to the canvas (monster6502 routes ~26k)
+
+
+def _brief(issues: object) -> list[str]:
+    """First MAX_ISSUES of a (possibly enormous) DRC list, plus one summary
+    line when it was cut."""
+    items = [str(x) for x in cast(list[object], issues)]
+    if len(items) <= MAX_ISSUES:
+        return items
+    return items[:MAX_ISSUES] + [
+        f"… {len(items) - MAX_ISSUES} more of {len(items)} suppressed "
+        "(open the CLI report for the full list)"]
+
+
+def _board_digest() -> str:
+    """What the model needs to know about the open board without asking for it:
+    header, parts, nets. Keeps a weak model from hallucinating refs."""
+    try:
+        b = agent.loads(H.src_text, base=BASE)
+    except Exception:
+        return f"(the current {os.path.basename(SRC)} does not parse)"
+    parts = ", ".join(f"{r}={p.fp}" + (f"({p.value})" if p.value else "")
+                      for r, p in sorted(b.parts.items()))
+    nets = "; ".join(f"{n}: " + " ".join(f"{r}.{pin}" for r, pin in net.pins)
+                     for n, net in sorted(b.nets.items()))
+    return (f"open file: {os.path.relpath(SRC, ROOT)}  "
+            f"board {b.name} {b.width:g}x{b.height:g} {b.layers}L\n"
+            f"parts: {parts}\nnets: {nets}")
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -843,6 +1591,160 @@ class H(http.server.BaseHTTPRequestHandler):
     # last text WE wrote to SRC (/poll tells them apart: disk ==
     # saved means our save or untouched; anything else is external).
     saved_text: str = ""
+    # The file H.src_text came from. A /build may carry text for a board other
+    # than the open one; writing that text to SRC once destroyed a 298 KB
+    # board (monster6502.ocd became 1.6 KB of a different board). Save only
+    # when the text and the destination are the same board.
+    save_target: str = ""
+    # the open project root (moves when another board is opened) and the
+    # chat transcript (bounded; cleared when the open file changes).
+    root: str = BASE
+    chat: list[dict[str, str]] = []
+    # proposals the panel is offering, each fingerprinted with the board
+    # revision it was made against, so /chat/apply cannot write a proposal
+    # into a board that has moved on since (and a batch is not replayable).
+    props: list[dict[str, object]] = []
+    rev: int = 0  # bumps whenever the open board's text changes
+
+    @staticmethod
+    def open_file(path: object) -> None:
+        """Switch the open board: SRC/BASE are module globals (every route
+        resolves `use` includes against BASE), so set both and re-init.
+        ROOT — the project the browser and the agent may touch — stays put:
+        it is the directory the studio was started in, and switching boards
+        inside it (including to a sibling project) is the point."""
+        g = globals()
+        full = _abs(path, must_exist=True, near=BASE)
+        if os.path.splitext(full)[1].lower() != ".ocd":
+            raise ValueError(f"{path}: only .ocd boards can be opened")
+        g["SRC"] = full
+        g["BASE"] = os.path.dirname(full)
+        H.src_text = _read(os.path.relpath(full, ROOT))
+        H.save_target = SRC  # this text is this board's
+        H.hist = [H.src_text]
+        H.redo = []
+        H.chat = []
+        H.props = []
+        H.rev += 1  # a different board entirely
+        H.saved_text = ""  # force the next save; /poll compares against it
+
+    @staticmethod
+    def _apply(path: str, text: str) -> dict[str, object]:
+        """Validate then persist a proposal: parse, place, route, DRC. A bad
+        proposal changes nothing — the file on disk keeps the last good build.
+        Returns {path, state} where state is None for a non-board file."""
+        full = _abs(path, near=BASE)
+        rel = os.path.relpath(full, ROOT)
+        if os.path.splitext(full)[1].lower() not in WRITE_EXT:
+            raise ValueError(f"{rel}: refusing that extension (writable: "
+                             + ", ".join(sorted(WRITE_EXT)) + ")")
+        if rel != os.path.relpath(SRC, ROOT):
+            # a sibling file: a sibling .ocd is parsed in place (a broken module
+            # is never written), a note or manifest is just text. The client
+            # re-inits against the open board either way.
+            if os.path.splitext(full)[1].lower() == ".ocd":
+                agent.loads(text, base=os.path.dirname(full))
+            with open(full, "w", encoding="utf8") as f:
+                f.write(text)
+            return {"path": rel, "state": None}
+        st = H._build(text, False)  # raises on a parse error: nothing written
+        H.src_text = str(st["text"])
+        H.commit(H.src_text)  # bumps the revision: earlier proposals go stale
+        H.save()
+        return {"path": rel, "state": st}
+
+    @staticmethod
+    def _stage(files: dict[str, str]) -> tuple[list[dict[str, object]], list[str]]:
+        """Diff every proposed file and queue it for apply/reject. Returns
+        (proposals, refused) — a path outside the project is refused here,
+        not silently dropped. Each proposal carries the board revision it was
+        made against."""
+        props: list[dict[str, object]] = []
+        refused: list[str] = []
+        for path, text in files.items():
+            try:
+                full = _abs(path, near=BASE)
+                rel = os.path.relpath(full, ROOT)
+                old = _read(rel) if os.path.exists(full) else ""
+            except ValueError as e:
+                refused.append(str(e))
+                continue
+            props.append({"id": rel, "path": rel, "text": text,
+                          "diff": _unified(old, text, rel), "rev": H.rev})
+        H.props = props + [p for p in H.props if str(p["id"]) not in
+                           {str(q["id"]) for q in props}]
+        return props, refused
+
+    @staticmethod
+    def ask(message: str, auto: bool) -> dict[str, object]:
+        """One chat turn. The model may answer or propose file edits; each
+        proposal is diffed, and auto-applied only when it builds DRC-clean."""
+        from ocdcircuit import llm as _llm
+        H.chat.append({"role": "user", "content": message})
+        H.chat = H.chat[-24:]
+        ctx = _board_digest()
+        tools = {"fs.list": lambda p, _b: "\n".join(
+                     f"{e['name']}{'/' if e['kind'] == 'dir' else ''}"
+                     for e in _tree(p or ".")),
+                 "fs.read": lambda p, _b: _read(p)}
+        msgs = ([{"role": "system", "content": "Current board:\n" + ctx}]
+                if ctx else []) + H.chat
+        try:
+            out = _llm.run(msgs, tools)
+        except _llm.LLMError as e:
+            H.chat.pop()  # do not keep a turn the model never saw
+            return {"error": str(e)}
+        H.chat.append({"role": "assistant", "content": str(out["reply"])})
+        H.chat = H.chat[-24:]
+        res: dict[str, object] = {"reply": out["reply"], "log": out["log"],
+                                  "applied": False}
+        files = cast(dict[str, str], out["files"])
+        if not files:
+            return res
+        props, refused = H._stage(files)
+        res["proposals"] = props
+        if refused:
+            res["error"] = "; ".join(refused)
+        if not props:
+            return res
+        if not auto:
+            return res
+        # auto: apply in order, stopping at the first proposal that does not
+        # build — later ones were written against a tree this one has changed
+        for i, p in enumerate(props):
+            one = H.apply_one(str(p["id"]))
+            st = cast(dict[str, object] | None, one.get("state"))
+            errs = list(cast(list[object], st["errors"])) if st else []
+            if one.get("error") or errs:
+                res["applied"] = False
+                res["error"] = str(one.get("error") or "; ".join(
+                    str(e) for e in errs[:3]))
+                res["note"] = (f"applied {i} of {len(props)} proposed files; "
+                               "review the rest by hand")
+                res["proposals"] = [q for q in H.props
+                                    if str(q["id"]) in {str(r["id"]) for r in props[i:]}]
+                return res
+            if st:
+                res["state"] = st
+        res["applied"] = True
+        res["proposals"] = []
+        for p in props:  # each applied file leaves the queue
+            H.props = [q for q in H.props if q["id"] != p["id"]]
+        return res
+
+    @staticmethod
+    def apply_one(pid: str) -> dict[str, object]:
+        """Apply one queued proposal by id, refusing one made against an
+        older revision of the open board (the text the model read is gone)."""
+        prop = next((p for p in H.props if str(p["id"]) == pid), None)
+        if prop is None:
+            return {"error": f"{pid}: no such proposal (ask again)"}
+        if int(cast(int, prop["rev"])) != H.rev:
+            return {"error": f"{pid}: the board changed since this proposal "
+                             "was made — ask again or apply it by hand"}
+        out = H._apply(str(prop["path"]), str(prop["text"]))
+        H.props = [p for p in H.props if str(p["id"]) != pid]
+        return out
 
     @staticmethod
     def _disk() -> str:
@@ -856,15 +1758,35 @@ class H(http.server.BaseHTTPRequestHandler):
         if not H.hist or H.hist[-1] != text:
             H.hist.append(text)
             H.hist = H.hist[-100:]
+            H.rev += 1  # real text change: proposals against it are stale
         H.redo.clear()
+
+    # A save must never destroy a board. The studio holds one text buffer but
+    # serves any board, and a /build carrying board B once wrote B over board A
+    # (monster6502.ocd: 298 KB -> 1.6 KB). Two guards, both cheap.
+    SHRINK = 0.5  # refuse a rewrite that drops more than half the file
 
     @staticmethod
     def save() -> None:
         """Persist the .ocd source of truth to disk (edits are real)."""
+        text = H.src_text if H.src_text.endswith("\n") else H.src_text + "\n"
+        if H.save_target and os.path.abspath(H.save_target) != os.path.abspath(SRC):
+            print(f"studio: refusing to save to {SRC}: the buffer belongs to "
+                  f"{H.save_target}", file=sys.stderr)
+            return
+        try:
+            old = os.path.getsize(SRC)
+        except OSError:
+            old = 0
+        if old and len(text) < old * H.SHRINK:
+            print(f"studio: refusing to write {len(text)} bytes over {old} bytes "
+                  f"at {SRC} (wrong board?)", file=sys.stderr)
+            return
         try:
             with open(SRC, "w") as f:
-                f.write(H.src_text if H.src_text.endswith("\n") else H.src_text + "\n")
+                f.write(text)
             H.saved_text = H.src_text
+            H.save_target = SRC
         except OSError as e:
             print(f"studio: save failed: {e}", file=sys.stderr)
 
@@ -888,6 +1810,21 @@ class H(http.server.BaseHTTPRequestHandler):
             self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
                         "clean": disk == H.saved_text})
             return
+        if self.path.startswith("/fs"):
+            # project browser: ?dir= picks the directory (default: the board's
+            # own). Paths come back relative to ROOT, so /fs/open can take them.
+            try:
+                from urllib.parse import parse_qs, urlparse
+                q = parse_qs(urlparse(self.path).query)
+                base = os.path.relpath(BASE, ROOT).replace(os.sep, "/")
+                d = (q.get("dir") or [base])[0] or base
+                self._send({"root": os.path.relpath(ROOT, os.getcwd()),
+                            "src": os.path.relpath(SRC, ROOT).replace(os.sep, "/"),
+                            "base": base, "dir": _rel(d),
+                            "tree": _tree(d), "vcs": _git_status()})
+            except ValueError as e:
+                self._send({"error": str(e)})
+            return
         if self.path != "/" and not self.path.startswith("/?"):
             self.send_response(204)  # favicon etc: silent, no console 404
             self.end_headers()
@@ -904,9 +1841,16 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         n = int(self.headers.get("Content-Length", 0))
         req = json.loads(self.rfile.read(n) or b"{}")
+        print(f"REQ {self.path} src={os.path.relpath(SRC, ROOT)} "
+              f"want={req.get('src')!r}", flush=True, file=sys.stderr)
         try:
             if self.path == "/init":
                 self._send(self._build(H.src_text, True))
+            elif self.path == "/load":
+                # Open a board without re-placing it: parse + route + DRC only.
+                # Placing 5k parts is minutes, and the file already says where
+                # they go; `solve` is the explicit ask for a fresh placement.
+                self._send(self._build(H.src_text, False, {"no_place": True}))
             elif self.path == "/reload":
                 # file-watch: adopt external edits (client asks only when
                 # clean, or the user confirmed the banner).
@@ -916,14 +1860,26 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send(self._build(H.src_text, True))
             elif self.path == "/build":
                 text = str(req.get("text", H.src_text))
+                want = req.get("src")
+                if isinstance(want, str) and want and want != os.path.relpath(SRC, ROOT):
+                    # the browser was editing a different board when this
+                    # keystroke was captured: drop it, the caller re-reads
+                    self._send({"stale": True, "error": f"board changed to "
+                                f"{os.path.relpath(SRC, ROOT)} — edit again"})
+                    return
                 st = self._build(text, False, req)
                 H.src_text = str(st["text"])  # only keep good builds
+                H.save_target = SRC
                 H.commit(H.src_text)
+                # The client builds the board it has open; if the text was not
+                # from SRC at all (a stale tab, a pasted board), do not write it
+                # over the file on disk.
                 H.save()
                 self._send(st)
             elif self.path == "/solve":
                 st = self._build(H.src_text, True, req)
                 H.src_text = str(st["text"])
+                H.save_target = SRC
                 H.commit(H.src_text)
                 H.save()
                 self._send(st)
@@ -947,7 +1903,8 @@ class H(http.server.BaseHTTPRequestHandler):
                             "layers": b.layers})
             elif self.path == "/pick":
                 from ocdcircuit import solver as _solver
-                from typing import cast
+                # (cast is imported at module level; a local import here would
+                # shadow it for every earlier branch in this function)
                 b = agent.loads(H.src_text, base=BASE)
                 key = req.get("placer")
                 assert key is None or isinstance(key, str)
@@ -1043,6 +2000,66 @@ class H(http.server.BaseHTTPRequestHandler):
                 from ocdcircuit.circuit import Board as _B
                 r = _B("doctor").doctor()
                 self._send({"ok": r["ok"], "checks": r["checks"]})
+            elif self.path == "/chat":
+                text = str(req.get("text", "")).strip()
+                if not text:
+                    self._send({"error": "say something first"})
+                    return
+                self._send(H.ask(text, bool(req.get("auto"))))
+            elif self.path == "/chat/apply":
+                applied = H.apply_one(str(req.get("id", "")))
+                if "error" not in applied:
+                    # a written file that fails a rule: the text is the truth
+                    # and the model is told what it broke next turn
+                    st0 = cast(dict[str, object] | None, applied["state"])
+                    errs0 = list(cast(list[object], st0["errors"])) if st0 else []
+                    if errs0:
+                        H.chat.append({"role": "user", "content":
+                                       "the board now builds but DRC reports: "
+                                       + "; ".join(str(e) for e in errs0[:3])})
+                        applied["note"] = "applied, but DRC reports " + "; ".join(
+                            str(e) for e in errs0[:3])
+                    _st = st0
+                    if _st is None:  # a non-board file: re-init so the UI matches
+                        _st = self._build(H.src_text, False)
+                    applied["state"] = _st
+                applied["proposals"] = H.props
+                self._send(applied)
+            elif self.path == "/chat/reject":
+                pid = str(req.get("id", ""))
+                if pid:
+                    H.props = [p for p in H.props if str(p["id"]) != pid]
+                else:
+                    H.props = []
+                self._send({"ok": True, "proposals": H.props})
+            elif self.path == "/chat/reset":
+                H.chat = []
+                H.props = []
+                self._send({"ok": True})
+            elif self.path == "/fs/open":
+                H.open_file(str(req.get("path", "")))
+                self._send(self._build(H.src_text, False))
+            elif self.path == "/fs/read":
+                rel = str(req.get("path", ""))
+                self._send({"path": rel, "text": _read(rel)})
+            elif self.path == "/vcs":
+                self._send({"log": _git_log(40, req.get("path")),
+                            "status": _git_status()})
+            elif self.path == "/vcs/diff":
+                h = str(req.get("hash", ""))
+                if h:
+                    self._send({"diff": _git("show", "--stat", "--patch",
+                                             "--no-color", h)[:20000]})
+                else:
+                    rel = _rel(os.path.relpath(SRC, ROOT))
+                    self._send({"diff": _git("diff", "--no-color", "--", rel)[:20000]})
+            elif self.path == "/vcs/commit":
+                rel = _rel(os.path.relpath(SRC, ROOT))
+                msg = str(req.get("message", "")).strip() or "studio: update " + rel
+                _git("add", "--", rel)
+                out = _git("commit", "-m", msg)
+                self._send({"ok": True, "commit": out.strip().splitlines()[-1][:200],
+                            "log": _git_log(40, rel), "status": _git_status()})
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -1061,18 +2078,40 @@ class H(http.server.BaseHTTPRequestHandler):
         _pp = b.proj.get("placer")
         _rr = b.proj.get("router")
         _dd = b.proj.get("drc")
-        placer = str(req.get("placer", _pp if isinstance(_pp, str) else placers[0])) if placers else "diffusion"
-        router = str(req.get("router", _rr if isinstance(_rr, str) else routers[0])) if routers else "lroute"
+        # Always name the engine. The engine's own "choose for me" path
+        # (key=None) is the wrong pick here: on monster6502 an unnamed router
+        # took 196s against 1.8s for the explicit `lroute` key. The UI shows
+        # which engine ran, so the named default is also the honest one.
+        _p, _r = req.get("placer"), req.get("router")
+        placer: str = (str(_p) if _p else
+                       str(_pp) if isinstance(_pp, str) else
+                       (placers[0] if placers else "diffusion"))
+        router: str = (str(_r) if _r else
+                       str(_rr) if isinstance(_rr, str) else
+                       (routers[0] if routers else "lroute"))
         silksel = str(req.get("silk", silks[1] if len(silks) > 1 else silks[0])) if silks else "full"
         b.fab = str(req.get("fab", getattr(b, "fab", "jlc")))
         frames: list[dict[str, object]] = []
         # keystroke path: 1 seed × 100 iters + lroute estimate (~10x maze).
         # solve ▶ keeps full quality: 5 seeds × 500 iters + chosen router.
         quick = not animate and not req.get("full")
-        cost = b.place(placer, seeds=1 if quick else 5,
-                       iters=100 if quick else 500,
-                       frames=frames if animate else None, every=25)
-        assert isinstance(cost, float)
+        # A dense board multiplies every stage: one quick pass is minutes, so
+        # the load path skips placing entirely and the rest of the work is
+        # trimmed to what a page can wait for. `dense` tells the client.
+        dense = len(b.parts) >= DENSE_PARTS
+        # Dense boards are loaded, not solved: placing 5,420 parts is ~9
+        # minutes at the cheapest settings the studio can ask for, so the
+        # studio shows what the file says and points at the CLI for placement.
+        # Anything smaller is placed here as usual (~0.1s for a 10-part board,
+        # which is the common case and must not regress).
+        place_it = not (dense and not req.get("dense_place"))
+        if place_it:
+            cost = b.place(placer, seeds=1 if quick else 5,
+                           iters=100 if quick else 500,
+                           frames=frames if animate else None, every=25)
+            assert isinstance(cost, float)
+        else:
+            cost = 0.0  # no placement: parts keep the positions the file gave them
         rframes: list[dict[str, object]] = []
         n = b.route_board("lroute" if quick else router,
                           frames=rframes if animate else None)
@@ -1080,17 +2119,44 @@ class H(http.server.BaseHTTPRequestHandler):
         drcsel = req.get("drc")
         drc_keys = ([str(drcsel)] if isinstance(drcsel, str)
                     else list(_dd) if isinstance(_dd, list) else None)
-        drc = b.check("all", keys=drc_keys)
+        dense_skip: list[str] = []
+        if dense and not req.get("full"):
+            # The ask was to see the board, not to wait four minutes for DRC.
+            drc = {"errors": [], "warnings": [
+                f"DRC not run on this {len(b.parts)}-part board: the check "
+                "scales with routed geometry and takes minutes. Run "
+                "`python -m apps.ocd check` for the full report."],
+                "fab": getattr(b, "fab", "jlc")}
+            dense_skip.append("drc")
+        else:
+            drc = b.check("all", keys=drc_keys)
         assert isinstance(drc, dict)
-        st_tidy = b.score(tidy=True)
-        st_score = b.score()
+        # Dense board: the scoring passes alone are ~55s each (and the tidy
+        # metrics ~51s), which is what turned a load into a four-minute wait.
+        # Skip both and say so; the CLI still reports them, and a normal board
+        # is unaffected. The routability probe is a maze pass — also skipped.
+        st_tidy: object
+        st_score: object
+        if dense:
+            st_tidy = {"coverage": "skipped (board is dense — run the CLI)"}
+            st_score = {"total": 0, "grade": "?", "dense": True}
+        else:
+            st_tidy = b.score(tidy=True)
+            st_score = b.score()
         st_lint = b.lint()
         from ocdcircuit import solver as _solver
-        feas = _solver.feasible(b)  # untouched board (own snapshot/rollback)
+        feas = {} if dense else _solver.feasible(b)
         traces = [{"net": t.net, "x1": t.x1, "y1": t.y1, "x2": t.x2,
                    "y2": t.y2, "layer": t.layer, "w": t.width}
-                  for t in b.traces]
+                  for t in b.traces[:MAX_SEGS]]
         st = board_state(b, agent.dumps(b), frames, traces, cost, drc)
+        st["dense"] = dense
+        st["compact"] = bool(st.get("compact"))
+        st["placed"] = place_it
+        st["segcount"] = n
+        if dense and not place_it:
+            dense_skip.insert(0, "placement")
+        st["skipped"] = dense_skip
         H._decorate(st, b, st_tidy, feas, placers, routers, silksel, silks,
                     st_score, st_lint)
         H.src_text = str(st["text"])
@@ -1124,7 +2190,11 @@ def main() -> None:
         "board demo 40x30\npart R1 R0805 1k\npart C1 C0805 100n\n"
         "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
     H.saved_text = H.src_text
+    H.save_target = SRC
     H.commit(H.src_text)  # genesis commit — undo floor
+    H.root = ROOT        # project browser/agent root (OCD_ROOT or the board's dir)
+    H.props = []         # no proposals pending
+    H.rev = 0            # revision 1 is the genesis commit above
     try:
         port = int(os.environ.get("OCD_PORT", "8077"))
     except ValueError:

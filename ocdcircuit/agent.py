@@ -296,14 +296,19 @@ def dumps(board: Board) -> str:
     """The human-readable circuit language (.ocd): one fact per line.
     Python (Board API) builds it, JSON is the wire IR, this is what
     humans read/write. Round-trips through loads(): boards with includes
-    dump `use` lines + local content only; reload re-merges identically."""
+    dump `use` lines + local content only; reload re-merges identically.
+    Comments survive the round trip (they head the file)."""
     owned = {p.ref for p in board.parts.values() if p.owner}
-    L = [f"board {board.name} {board.width:g}x{board.height:g} {board.layers}L"]
+    L = list(board.comments)  # `#` lines first, exactly as they were read
+    L.append(f"board {board.name} {board.width:g}x{board.height:g} {board.layers}L")
     for k in sorted(board.meta):
         L.append(f"meta {k} {board.meta[k]}")
     for bname in sorted(board.blocks):
-        L.append(f"block {bname}")
-        L.extend(f"  {ln}" for ln in board.blocks[bname].lines)
+        if bname in board.block_src:
+            continue  # imported via `use` — comes back on reload
+        bl = board.blocks[bname]
+        L.append(f"block {bname}" + (" ports " + " ".join(bl.ports) if bl.ports else ""))
+        L.extend(f"  {ln}" for ln in bl.lines)
         L.append("end")
     for inc in board.includes:
         L.append(f"use {inc['path']}" + (f" as {inc['prefix']}" if inc.get("prefix") else "") +
@@ -320,10 +325,13 @@ def dumps(board: Board) -> str:
         attrs = "".join(f" {k}={_q(v)}" for k, v in sorted(p.attrs.items())
                         if k not in ("x", "y"))
         L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
-    # fp/sym lines up front: must exist before parts use them
+    # fp/sym lines go directly after the board header: they must exist before
+    # parts use them, and the parser wants the header first (comments head the
+    # file, so index 1 is no longer "after the header" once comments exist).
     fps = [f"fp {board.fp_src[name]}" for name in sorted(board.custom_fp) if name in board.fp_src]
     syms = [f"sym {board.sym_src[name]}" for name in sorted(board.custom_sym) if name in board.sym_src]
-    L[1:1] = fps + syms
+    at = next((i for i, ln in enumerate(L) if ln.startswith("board ")), 0) + 1
+    L[at:at] = fps + syms
     # fold layer/width constraints onto the net line (first wins on dupes —
     # but conflicting dupes stay unfolded as route/trace lines, otherwise
     # dumps would flip last-wins runtime resolution)
@@ -495,10 +503,57 @@ def loads(text: str, base: str | os.PathLike[str] | None = None) -> Board:
     return _loads(text, basedir, stack=(), top=True)
 
 
+def _import_ref(b: Board, kw: str, line: str, base: str,
+                stack: tuple[str, ...], err: ErrFn) -> None:
+    """`fp`/`sym PATH`: import a footprint or symbol file into the board and
+    remember the path as written (dumps must stay portable). Also used for
+    lines that appeared before the board header, once the header is known."""
+    toks = line.split(None, 1)
+    if len(toks) != 2:
+        raise err(f"want: {kw} PATH/to/part.{'fp' if kw == 'fp' else 'sym'}")
+    fn = os.path.normpath(os.path.join(base, toks[1]))
+    if kw == "fp":
+        if fn in stack:
+            raise err(f"footprint cycle: {toks[1]!r}")
+        ext = os.path.splitext(fn)[1].lower()
+        key = {".fp": "fp", ".kicad_mod": "kicad", ".pretty": "kicad",
+               ".lbr": "eagle", ".brd": "pcb", ".json": "tscircuit"}.get(ext)
+        if key is None:
+            raise err(f"unknown footprint format {ext!r}")
+        try:
+            out = b.import_fp(key, path=fn)
+        except (OSError, ValueError, KeyError, AssertionError) as e:
+            raise err(e)
+        names = out.get("names", [out.get("name")])
+        for n in cast(list[object], names):
+            if isinstance(n, str) and n in b.fp_src:
+                b.fp_src[n] = toks[1]
+        return
+    try:
+        sym = b.import_sym(path=fn)
+    except (OSError, ValueError, KeyError, AssertionError) as e:
+        raise err(e)
+    name = sym.get("name")
+    if isinstance(name, str) and name in b.sym_src:
+        b.sym_src[name] = toks[1]
+
+
 def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> Board:
     from .circuit import Board
     b: Board | None = None
+    # `#` lines are comments, not data: keep them so dumps() can re-emit them.
+    # ponytail: flat list, emitted at the top — comments mid-file migrate up
+    # (dumps already reorders the file). A source-map layer if position matters.
+    comments: list[str] = []
+    # fp/sym lines that arrive before the header: imported as soon as it does
+    pending: list[tuple[str, str]] = []
     for ln, raw in enumerate(text.splitlines(), 1):
+        if raw.lstrip().startswith("#"):
+            # a comment inside a block body belongs to the block, which keeps
+            # its own lines — do not lift it to the file header
+            if not (b is not None and b._block_open is not None):
+                comments.append(raw.rstrip())
+            continue
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
@@ -535,15 +590,29 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                           int(m.group(4)) if m.group(4) else 2)
                 continue
             # else: bare "board WxH" resize form → handled as constraint below
+        if b is not None and pending:  # queued fp/sym lines, header now known
+            for kw0, line0 in list(pending):
+                pending.remove((kw0, line0))
+                _import_ref(b, kw0, line0, base, stack, err)
         if b is None:
+            if kw in ("fp", "sym"):
+                pending.append((kw, line))  # applied once the header arrives
+                continue
             raise err("board header first")
         if kw == "block":
-            m = re.match(r"^block\s+(\S+)$", line, re.I)
+            m = re.match(r"^block\s+(\S+)(?:\s+ports\s+(.+))?$", line, re.I)
             if not m:
-                raise err("want: block NAME")
-            if b is not None and b._block_open is not None:
+                raise err("want: block NAME [ports A B ...]")
+            if b._block_open is not None:
                 raise err("nested blocks not supported (flatten it)")
+            ports = m.group(2).split() if m.group(2) else []
+            if len(set(ports)) != len(ports):
+                raise err(f"duplicate port in {ports!r}")
+            for p in ports:
+                if not re.fullmatch(r"\w+", p):
+                    raise err(f"bad port name {p!r} (want \\w+)")
             b._block_open = m.group(1)
+            b._block_ports = ports
             b._block_lines = []
             continue
         if kw == "end":
@@ -553,8 +622,9 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             name = b._block_open
             if name in b.blocks:
                 raise err(f"duplicate block {name!r}")
-            b.blocks[name] = _Block(name, b._block_lines or [])
+            b.blocks[name] = _Block(name, b._block_lines or [], b._block_ports)
             b._block_open = None
+            b._block_ports = []
             b._block_lines = None
             continue
         if kw == "instance":
@@ -564,42 +634,10 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 raise err("want: instance BLOCK as PREFIX [join NET ...]")
             _instance(b, m.group(1), m.group(2), m.group(3), err)
             continue
-        if kw == "fp":
-            toks = line.split(None, 1)
-            if len(toks) != 2:
-                raise err("want: fp PATH/to/part.fp")
-            fn = os.path.normpath(os.path.join(base, toks[1]))
-            if fn in stack:
-                raise err(f"footprint cycle: {toks[1]!r}")
-            ext = os.path.splitext(fn)[1].lower()
-            key = {".fp": "fp", ".kicad_mod": "kicad", ".pretty": "kicad",
-                   ".lbr": "eagle", ".brd": "pcb", ".json": "tscircuit"}.get(ext)
-            if key is None:
-                raise err(f"unknown footprint format {ext!r}")
-            try:
-                out = b.import_fp(key, path=fn)
-            except (OSError, ValueError, KeyError, AssertionError) as e:
-                raise err(e)
-            # keep the as-written path for dumps (like `use` lines):
-            # the joined fn is absolute, which would unportablize saves.
-            _names = out.get("names", [out.get("name")])
-            for _n in cast(list[object], _names):
-                if isinstance(_n, str) and _n in b.fp_src:
-                    b.fp_src[_n] = toks[1]
-        elif kw == "sym":
-            toks = line.split(None, 1)
-            if len(toks) != 2:
-                raise err("want: sym PATH/to/part.sym")
-            fn = os.path.normpath(os.path.join(base, toks[1]))
-            try:
-                out = b.import_sym(path=fn)
-            except (OSError, ValueError, KeyError, AssertionError) as e:
-                raise err(e)
-            _sn = out.get("name")
-            if isinstance(_sn, str) and _sn in b.sym_src:
-                b.sym_src[_sn] = toks[1]
+        if kw in ("fp", "sym"):
+            _import_ref(b, kw, line, base, stack, err)
             continue
-        elif kw == "part":
+        if kw == "part":
             _exec_part(b, line, err)
         elif kw == "meta":
             toks = line.split(None, 2)
@@ -619,6 +657,9 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 b._constrain_raw(c)
     if b is None:
         raise ValueError("empty circuit")
+    b.comments = comments
+    if pending:  # fp/sym lines but never a board header to import them into
+        raise ValueError(f"line 1: board header first: {pending[0][1]!r}")
     if top:
         _validate(b)
     return b
@@ -661,6 +702,16 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
             raise err(f"ref clash: {new!r} (use `as` for a unique prefix)")
         parent.add_part(new, p.fp, p.value, attrs=dict(p.attrs) or None)
         parent.parts[new].owner = pre
+    for bname, blk in child.blocks.items():
+        # block library: `use lib.ocd` imports templates unprefixed (one
+        # global block namespace; a clash is a loud error, not a silent
+        # shadow). Provenance in block_src so dumps() skips them — they
+        # come back via the `use` line, like owned parts.
+        if bname in parent.blocks:
+            raise err(f"block clash: {bname!r} (rename one of them)")
+        from .circuit import Block as _Block
+        parent.blocks[bname] = _Block(bname, blk.lines, blk.ports)
+        parent.block_src[bname] = path
     for n, net in child.nets.items():
         # explicit `join` wins; power-style nets auto-join; rest prefixed
         target = (n if (joins and n in joins) or (join is None and n in AUTO_JOIN)
@@ -697,7 +748,8 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
                               "owner": pre})
     parent.includes.append({"path": path, "prefix": prefix or child.name,
                             "join": sorted(joins)})
-    parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
+    if child.parts:
+        parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
 
 
 def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
@@ -812,6 +864,11 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
     if block not in parent.blocks:
         raise err(f"unknown block {block!r}")
     joins = set(join.split()) if join else set()
+    blk = parent.blocks[block]
+    if blk.ports:
+        bad = sorted(j for j in joins if j not in blk.ports)
+        if bad:
+            raise err(f"instance {block} joins non-port {bad} (ports: {' '.join(blk.ports)})")
     pre = prefix + "_"
     # parse block lines into a throwaway board, then merge like _include
     child = _Board("__block__")
@@ -830,6 +887,11 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
             if c is None:
                 raise err(f"in block {block}: unknown statement: {line!r}")
             child._constrain_raw(c)
+    if blk.ports:
+        have = set(child.nets)
+        missing = sorted(p for p in blk.ports if p not in have)
+        if missing:
+            raise err(f"block {block} declares ports {missing} with no such net")
     for ref, p in child.parts.items():
         new = pre + ref
         if new in parent.parts:

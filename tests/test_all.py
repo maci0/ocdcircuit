@@ -205,6 +205,11 @@ assert _mnd.check()["errors"] == []
 # codec fixpoint: every grammar production dumps→parses→dumps identically
 _pre = ("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")
+# comments are data the user wrote: they survive a build (the studio rewrites
+# the file from dumps() on every good build, so losing them loses real notes)
+_cmt = agent.loads("# keep this board tiny\n" + _pre, base=EX)
+assert agent.dumps(_cmt).startswith("# keep this board tiny"), agent.dumps(_cmt)[:60]
+assert agent.dumps(agent.loads(agent.dumps(_cmt), base=EX)) == agent.dumps(_cmt)
 for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6",
               "route-grid 0.2", "route-penalty bend 3 via 20", "power N GND", "class hv width=0.8",
               "match N GND", "diff N GND gap 0.5", "silk 2", "nc R1.1",
@@ -717,7 +722,7 @@ for pl in ["diffusion", "compact", "thermal"]:
 import glob as _glob
 _farm = sorted(_glob.glob(os.path.join(EX, "*.ocd"))
                + _glob.glob(os.path.join(EX, "*", "*.ocd")))
-_farm = [f for f in _farm if "/out/" not in f]
+_farm = [f for f in _farm if "/out/" not in f and "/lib/" not in f]
 assert len(_farm) >= 8, _farm
 for _ff2 in _farm:
     _bf2 = agent.loads(open(_ff2).read(), base=os.path.dirname(_ff2))
@@ -1947,6 +1952,43 @@ _egf = _ebb.export("eagle", outdir=tempfile.mkdtemp())[0]
 assert _egf.endswith(".brd") and _ET.parse(_egf) is not None
 _egrt = agent.from_ir(foreign.eagle_brd(open(_egf).read()))
 assert sorted(_egrt.parts) == ["R1", "R2"] and sorted(_egrt.nets) == ["GND", "N"]
+# altium ASCII export round-trips (refs + nets + traces, exact geometry)
+_alf = _ebb.export("altium", outdir=tempfile.mkdtemp())[0]
+assert _alf.endswith(".PcbDocAscii") and "|RECORD=Component|" in open(_alf).read()
+_alrt = agent.from_ir(foreign.altium_ascii(open(_alf).read()))
+assert sorted(_alrt.parts) == ["R1", "R2"] and sorted(_alrt.nets) == ["GND", "N"]
+assert {(p.ref, round(p.x, 3), round(p.y, 3)) for p in _alrt.parts.values()} == \
+    {(p.ref, round(p.x, 3), round(p.y, 3)) for p in _ebb.parts.values()}
+assert all(len(_alrt.parts[r].pins_of(_alrt._lib())) == 2 for r in ("R1", "R2"))
+assert len(cast(list[dict[str, object]], _alrt_ir_traces := cast(
+    dict[str, object], foreign.altium_ascii(open(_alf).read())).get(
+    "_imported_traces", []))) == len(_ebb.traces)
+# importer:altium sniffs both ASCII export and P-CAD .pcb; binary rejected
+_ali = Board("ali", 40, 30)
+_ar = _ali.import_fp("altium", path=_alf)
+assert _ar["parts"] == 2 and _ar["nets"] == 2 and _ar["traces"] == len(_ebb.traces)
+_ali2 = Board("ali2", 40, 30)
+with tempfile.NamedTemporaryFile("w", suffix=".pcb", delete=False) as _pf3:
+    _pf3.write("(ACCEL_ASCII \"t\"\n(asciiHeader (fileUnits mm))\n"
+               "(library (padStyleDef \"s\" (holeDiam 0.8)\n"
+               "  (padShape (layerNumRef 1) (padShapeType Rect)"
+               " (shapeWidth 1.0) (shapeHeight 1.5))))\n"
+               "(netlist \"n\" (net \"GND\" (node \"J1 1\")))\n"
+               "(pcbDesign \"p\" (layerDef \"Top\" (layerNum 1) (layerType Signal))\n"
+               " (multiLayer (pad (padNum 1) (padStyleRef \"s\")"
+               " (pt 10 10) (netNameRef \"GND\")))\n"
+               " (layerContents (layerNumRef 1) (line (pt 10 10) (pt 20 10)"
+               " (width 0.5) (netNameRef \"GND\")))))\n")
+_ar3 = _ali2.import_fp("altium", path=_pf3.name)
+assert _ar3["parts"] == 1 and _ar3["nets"] == 1 and _ar3["traces"] == 1
+assert _ar3["skipped"] == ["arcs", "text", "pours", "planes"]
+with tempfile.NamedTemporaryFile("wb", suffix=".PcbDoc", delete=False) as _bf3:
+    _bf3.write(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" + b"\x00" * 64)
+try:
+    Board("ali3", 40, 30).import_fp("altium", path=_bf3.name)
+    assert False, "binary .PcbDoc must be rejected"
+except ValueError:
+    pass
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
                   base=os.path.join(EX, "mitox"))
@@ -2036,8 +2078,37 @@ _bm.place(seeds=1, iters=30)
 _bm.route_board()
 assert _bm.nets["A_HV"].width == 0.8
 assert agent.dumps(agent.loads(agent.dumps(_bm), base=EX)) == agent.dumps(_bm)
+# block ports: join of a non-port errors, missing-port declares error,
+# unjoined ports warn as islands, lib blocks arrive via `use`
+_bp3 = agent.loads("board t 60x40 2L\nblock ch ports VCC GND\npart R R0805 10k\n"
+                  "net VCC: R.1\nnet GND: R.2\nend\n"
+                  "instance ch as A join VCC GND\ninstance ch as B join VCC\n"
+                  "net VCC: A_R.1 B_R.1\nnet GND: A_R.2\n", base=EX)
+assert agent.dumps(agent.loads(agent.dumps(_bp3), base=EX)) == agent.dumps(_bp3)
+assert _bp3.blocks["ch"].ports == ["VCC", "GND"]
+assert any("B leaves port GND unjoined" in w for w in cast(list[str], _bp3.lint()["warnings"]))
+assert not [w for w in cast(list[str], _bp3.lint()["warnings"]) if "A leaves port" in w]
+with tempfile.TemporaryDirectory() as _ld2:
+    open(os.path.join(_ld2, "lib.ocd"), "w").write(
+        "board lib 10x10\nblock ch ports VCC GND\npart R R0805 10k\n"
+        "net VCC: R.1\nnet GND: R.2\nend\n")
+    _bl = agent.loads("board t 60x40 2L\nuse lib.ocd\npart X R0805 1k\n"
+                      "instance ch as A join VCC GND\n"
+                      "net VCC: X.1\nnet GND: X.2\n", base=_ld2)
+    assert _bl.blocks["ch"].ports == ["VCC", "GND"]
+    assert _bl.block_src == {"ch": "lib.ocd"}
+    assert "block ch" not in agent.dumps(_bl)  # imported blocks ride the `use` line
+    assert agent.dumps(agent.loads(agent.dumps(_bl), base=_ld2)) == agent.dumps(_bl)
+    assert agent.loads(open(os.path.join(EX, "lib", "tmc2209.ocd")).read(),
+                       base=os.path.join(EX, "lib")).blocks["tmc2209"].ports == ["VM", "GND", "V3V3"]
 for _bbad, _bfrag in [
-    ("board t 10x10\nblock a\npart R1 R0805\nblock b\n", "nested blocks"),
+    ("board t 60x40 2L\nblock ch ports VCC GND\npart R R0805 10k\n"
+     "net VCC: R.1\nnet GND: R.2\nend\ninstance ch as A join VCC BOGUS\n", "non-port"),
+    ("board t 60x40 2L\nblock ch ports NOPE\npart R R0805 10k\n"
+     "net N: R.1\nend\ninstance ch as A\n", "no such net"),
+    ("board t 60x40 2L\nblock ch ports VCC VCC\npart R R0805 10k\n"
+     "net VCC: R.1\nend\n", "duplicate port"),
+    ("board t 60x40 2L\nblock a\npart R1 R0805\nblock b\n", "nested blocks"),
     ("board t 10x10\nend\n", "end without block"),
     ("board t 10x10\nblock a\npart R1 R0805\nend\nblock a\npart R2 R0805\nend\n", "duplicate block"),
     ("board t 10x10\ninstance nope as X\n", "unknown block"),
