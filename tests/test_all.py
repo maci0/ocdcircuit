@@ -191,6 +191,17 @@ assert wc is not None and wc["width"] == 0.5
 cc = agent.parse_constraint("class highvolt width=0.8 clearance=0.5 note=x")
 assert cc is not None and cc["t"] == "class" and cc["width"] == 0.8 \
     and cc["clearance"] == 0.5 and cc["note"] == "x"
+# meander: match groups grow shorter nets toward the longest (skew narrows)
+_mnd = agent.loads("board t 80x40 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
+                   "part R3 R0805 10k\npart R4 R0805 10k\nA :: R1.1 R2.1\n"
+                   "B :: R3.1 R4.1\nmatch A B\nfix R1 at 5 10\nfix R2 at 25 10\n"
+                   "fix R3 at 5 30\nfix R4 at 12 30\n", base=EX)
+_mnd.place(seeds=1, iters=30)
+_mnd.route_board("maze")
+from ocdcircuit.solver import _net_length as _mlen
+_mskew = abs(_mlen(_mnd, "A") - _mlen(_mnd, "B"))
+assert _mskew < 1.0, _mskew  # converged (was ~13 without meander)
+assert _mnd.check()["errors"] == []
 # codec fixpoint: every grammar production dumps→parses→dumps identically
 _pre = ("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")

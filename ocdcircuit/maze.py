@@ -281,6 +281,7 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                     _rebuild_blocked(copper, halo, cells_of)
                     still.append(fname)
         failed = still
+    _meander(board, new, grid, copper)
     board.emit(lambda: board.traces.__setitem__(slice(None), new),
                    lambda: board.traces.__setitem__(slice(None), old))
     return len(new)
@@ -436,6 +437,76 @@ def _path_segs(board: Board, net: str, path: list[tuple[int, int, int]],
     if (ax, ay) != (bx, by):
         out.append(S(net, ax * grid, ay * grid, bx * grid, by * grid, bl, width))
     return out
+
+
+def _meander(board: Board, new: list[Seg], grid: float,
+             copper: set[tuple[int, int, int]]) -> None:
+    """Skew-driven length match: for each `match` group, grow shorter nets
+    toward the longest with rectangular bumps (up to 6 per net, ≤2mm each)
+    on the longest straight run. A bump is skipped when it leaves the
+    board or hits copper; DRC still reports residual skew — this narrows
+    it, not zeroes it.
+    # ponytail: match groups only (diff pairs need coupled bumps that
+    # hold the gap — build when a diff board needs it)."""
+    from typing import cast
+    from .circuit import Seg as S
+
+    def _len(nm: str) -> float:
+        return sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1)
+                   for s in new if s.net == nm)
+
+    def _bump(nm: str, short: float) -> bool:
+        runs = sorted(
+            (s for s in new if s.net == nm and (s.x1 == s.x2 or s.y1 == s.y2)),
+            key=lambda s: abs(s.x2 - s.x1) + abs(s.y2 - s.y1), reverse=True)
+        if not runs:
+            return False
+        s = runs[0]
+        horiz = s.y1 == s.y2
+        h = min(short / 2.0, 2.0)
+        for _try in range(2):
+            nh = h if _try == 0 else h / 2.0
+            if nh < grid:
+                return False
+            if horiz:
+                ny = s.y1 + nh
+                if not (0 <= ny <= board.height):
+                    continue
+                cells = [(int((s.x1 + s.x2) / 2 / grid), int(ny / grid), s.layer)]
+            else:
+                nx = s.x1 + nh
+                if not (0 <= nx <= board.width):
+                    continue
+                cells = [(int(nx / grid), int((s.y1 + s.y2) / 2 / grid), s.layer)]
+            if any(cc in copper for cc in cells):
+                continue
+            new.remove(s)
+            if horiz:
+                new.append(S(nm, s.x1, s.y1, s.x1, ny, s.layer, s.width))
+                new.append(S(nm, s.x1, ny, s.x2, ny, s.layer, s.width))
+                new.append(S(nm, s.x2, ny, s.x2, s.y2, s.layer, s.width))
+            else:
+                new.append(S(nm, s.x1, s.y1, nx, s.y1, s.layer, s.width))
+                new.append(S(nm, nx, s.y1, nx, s.y2, s.layer, s.width))
+                new.append(S(nm, nx, s.y2, s.x2, s.y2, s.layer, s.width))
+            return True
+        return False
+
+    for c in board.constraints:
+        if not isinstance(c, dict) or c.get("t") != "match":
+            continue
+        nets = [n for n in cast(list[str], c.get("nets", []))
+                if isinstance(n, str) and n in board.nets]
+        if len(nets) < 2:
+            continue
+        for _round in range(6):
+            target = max(_len(n) for n in nets)
+            grew = False
+            for nm in nets:
+                if target - _len(nm) >= 1.0 and _bump(nm, target - _len(nm)):
+                    grew = True
+            if not grew:
+                break
 
 
 def _dir(px: int, py: int, sx: int, sy: int, gx: int, gy: int) -> tuple[int, int]:
