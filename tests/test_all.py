@@ -1546,7 +1546,8 @@ from ocdcircuit.circuit import CONSTRAINT_TYPES as _CT
 assert _arms == set(_CT), (_arms ^ set(_CT))
 # Part rotation: rot parses + clamps, wh swaps on 90/270, rot_xy rotates offsets
 from ocdcircuit.circuit import Part as _Part
-_rp = _Part("R1", "R0805", "", 10, 10, 2.0, 1.0, attrs={"rot": "90"})
+_rp = _Part(ref="R1", fp="R0805", value="", x=10, y=10, w=2.0, h=1.0,
+            attrs={"rot": "90"})
 assert (_rp.rot, _rp.wh(), _rp.rot_xy(1, 0)) == (90, (1.0, 2.0), (0, 1))
 _rp.attrs["rot"] = "180"
 assert (_rp.rot, _rp.wh(), _rp.rot_xy(1, 0)) == (180, (2.0, 1.0), (-1, 0))

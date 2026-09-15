@@ -693,7 +693,8 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
             h = meta["h"]
             assert isinstance(w, float) and isinstance(h, float)
             from .circuit import Part as _Part
-            proto.parts[ref] = _Part(ref, p.fp, p.value, p.x, p.y, w, h)
+            proto.parts[ref] = _Part(ref=ref, fp=p.fp, value=p.value,
+                                     x=p.x, y=p.y, w=w, h=h)
         # internal nets only (both ends inside the group)
         for n, net in board.nets.items():
             pins = [(r, q) for r, q in net.pins if r in board.parts and board.parts[r].owner == owner]
@@ -1100,7 +1101,8 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
                 w, h = meta["w"], meta["h"]
                 assert isinstance(w, float) and isinstance(h, float)
                 from .circuit import Part as _Part
-                proto.parts[ref] = _Part(ref, p.fp, p.value, p.x, p.y, w, h)
+                proto.parts[ref] = _Part(ref=ref, fp=p.fp, value=p.value,
+                                     x=p.x, y=p.y, w=w, h=h)
             for n, net in board.nets.items():
                 pins = [(r, q) for r, q in net.pins
                         if r in board.parts and board.parts[r].owner == owner]

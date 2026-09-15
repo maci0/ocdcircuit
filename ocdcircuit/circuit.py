@@ -5,7 +5,7 @@ snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
 """
 from __future__ import annotations
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import json
 import math
@@ -78,26 +78,35 @@ class _AttrDict(dict[str, str]):
             self[k] = v
 
 
+@dataclass(eq=False, kw_only=True)  # eq=False: identity semantics, as before
 class Part:
-    def __init__(self, ref: str, fp: str, value: str = "", x: float = 0.0,
-                 y: float = 0.0, w: float | None = None, h: float | None = None,
-                 owner: str | None = None, attrs: dict[str, str] | None = None) -> None:
-        self.ref, self.fp, self.value = ref, fp, value
-        self.x, self.y = x, y
-        self.owner = owner  # include prefix that owns it (None = local)
-        self._rot: int | None = None
-        self._wh: tuple[float, float] | None = None
-        self.attrs: dict[str, str] = _AttrDict(self, attrs)  # lcsc, rot, mpn...
-        if w is None or h is None:
-            meta = FOOTPRINTS[fp]
-            assert isinstance(meta["w"], float) and isinstance(meta["h"], float)
-            w, h = meta["w"], meta["h"]
-        self.w, self.h = w, h
-        # Cached rotation geometry. The placer/router inner loops ask for these
-        # tens of millions of times per dense board (34M `rot` + 32M `wh` calls
-        # was ~11s of a 41s discrete6502 placement); _AttrDict drops the cache
-        # on EVERY attrs mutation, not just set_attr (direct writes are the
-        # norm: tests, agents, undo closures).
+    """One placed part. Keyword-only on purpose: the constructor used to take
+    nine positional parameters, and a seven-argument call silently put `attrs`
+    into `owner` (see the git log). `w`/`h` default from the footprint table.
+    """
+
+    ref: str
+    fp: str
+    value: str = ""
+    x: float = 0.0
+    y: float = 0.0
+    w: float
+    h: float
+    owner: str | None = None  # include prefix that owns it (None = local)
+    attrs: dict[str, str] = field(default_factory=dict)  # lcsc, rot, mpn...
+    # Cached rotation geometry. The placer/router inner loops ask for these
+    # tens of millions of times per dense board (34M `rot` + 32M `wh` calls
+    # was ~11s of a 41s discrete6502 placement); _AttrDict drops the cache
+    # on EVERY attrs mutation, not just set_attr (direct writes are the
+    # norm: tests, agents, undo closures).
+    _rot: int | None = field(default=None, init=False, repr=False, compare=False)
+    _wh: tuple[float, float] | None = field(default=None, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # w/h are required: every constructor already passes the footprint's
+        # courtyard (Board.add_part reads it from the library). The old
+        # `None` fallback looked up FOOTPRINTS here and was never reached.
+        self.attrs = _AttrDict(self, self.attrs or None)
 
     @property
     def rot(self) -> int:
@@ -148,15 +157,16 @@ class Part:
         return list(pads_of(self.fp, cast(dict[str, Footprint] | None, lib)))
 
 
+@dataclass(eq=False)
 class Net:
-    def __init__(self, name: str, width: float = 0.3,
-                 layer: int | None = None,
-                 attrs: dict[str, str] | None = None) -> None:
-        self.name = name
-        self.pins: list[tuple[str, str]] = []  # (ref, pin)
-        self.width = width
-        self.layer = layer  # None = auto
-        self.attrs: dict[str, str] = dict(attrs or {})  # class=, etc.
+    name: str
+    width: float = 0.3
+    layer: int | None = None  # None = auto
+    attrs: dict[str, str] = field(default_factory=dict)  # class=, etc.
+    pins: list[tuple[str, str]] = field(default_factory=list, init=False)  # (ref, pin)
+
+    def __post_init__(self) -> None:
+        self.attrs = dict(self.attrs or {})  # own the dict, never alias a caller's
 
 
 @dataclass(eq=False)  # eq=False: identity semantics, as before dataclass
@@ -481,8 +491,7 @@ class Board(Component):
         active = self.plugins().active.get("parts")
         if self._lib_cache is not None and self._lib_parts_key == active:
             return self._lib_cache
-        from .parts import FOOTPRINTS as STD
-        merged: dict[str, dict[str, object]] = dict(STD)
+        merged: dict[str, dict[str, object]] = dict(FOOTPRINTS)
         merged.update(self.custom_fp)
         try:
             plug = self.plugins().get("parts")
@@ -603,7 +612,8 @@ class Board(Component):
         # 9-slot signature: (ref, fp, value, x, y, w, h, owner, attrs).
         # Calling with 7 positionals put attrs into owner and then collided
         # with attrs=, so every part with a custom footprint raised TypeError.
-        p = Part(ref, fp, value, px, py, w, h, None, attrs)
+        p = Part(ref=ref, fp=fp, value=value, x=px, y=py, w=w, h=h,
+                 attrs=attrs or {})
         old = self.parts.get(ref)
 
         def _add() -> None:
