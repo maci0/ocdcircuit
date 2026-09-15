@@ -148,7 +148,7 @@ def parse_constraint(text: str) -> Constraint | None:
     if m:
         return {"t": "near", "a": m.group(1), "b": m.group(2),
                 "w": float(m.group(3) or 2.0)}
-    m = re.match(r"fix (\w+) at ([\d.]+) ([\d.]+)$", t, re.I)
+    m = re.match(r"fix (\w+) at (-?[\d.]+) (-?[\d.]+)$", t, re.I)
     if m:
         return {"t": "fixed", "ref": m.group(1), "x": float(m.group(2)), "y": float(m.group(3))}
     m = re.match(r"route (\w+) on (top|bottom|\d+)$", t, re.I)

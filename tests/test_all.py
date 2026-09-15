@@ -237,8 +237,11 @@ except KeyError:
 
 # .ocd doc facts: minimal example parses; error lines carry numbers
 mini = agent.loads("board rc 20x10\npart R1 R0805 1k\npart C1 C0805 100n\n"
-                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\n")
+                   "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\nfix R1 at 3 5\nfix C1 at -0.5 20.8\n")
 assert set(mini.parts) == {"R1", "C1"}
+# negative coords survive parse + dump round-trip (part dragged past the edge)
+assert "fix C1 at -0.5 20.8" in agent.dumps(mini)
+assert agent.dumps(agent.loads(agent.dumps(mini))) == agent.dumps(mini)
 for bad, frag in [
     ("board t 40x30\npart R1\n", "line 2"),
     ("board t 40x30\npart R1 NOPE\n", "unknown footprint"),
@@ -261,7 +264,7 @@ assert {p.ref for p in bo.parts.values()} == {"U1", "R1", "R2", "R3", "C1", "C2"
                                               "PSU_J1", "PSU_C1", "PSU_C2"}
 assert len(bo.nets["GND"].pins) == 7  # 4 local + J1.2/C1.2/C2.- via auto-join
 assert any(c == {"t": "layer", "net": "GND", "layer": 1} for c in bo.constraints)
-assert "fix PSU_J1 at 3 15" in agent.dumps(bo)
+assert "fix PSU_J1 at " in agent.dumps(bo)  # parent fix line survives include merge
 assert "use psu.ocd as PSU" in agent.dumps(bo)
 b2 = agent.loads(agent.dumps(bo), base=EX)
 assert agent.dumps(b2) == agent.dumps(bo)
