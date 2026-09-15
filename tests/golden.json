@@ -20,9 +20,9 @@
   "segs": 38
  },
  "blinky_555.ocd/diffusion/maze/1L": {
-  "hash": "91b481e05648844a",
+  "hash": "b749f8c7b5582611",
   "parts": 10,
-  "segs": 112
+  "segs": 110
  },
  "bme690_carrier.ocd/diffusion/maze/2L": {
   "hash": "9fbc132ad4ba6b1f",
@@ -30,9 +30,9 @@
   "segs": 86
  },
  "breath_ketone.ocd/diffusion/maze/2L": {
-  "hash": "a73f5526b3fc5997",
+  "hash": "bab5809cb8aac463",
   "parts": 31,
-  "segs": 565
+  "segs": 552
  },
  "e2e_driver4.ocd/diffusion/maze/2L": {
   "hash": "ea8e50809bf362b6",

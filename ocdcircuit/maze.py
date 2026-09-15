@@ -59,12 +59,16 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
            own: set[tuple[int, int, int]],
            nx: int, ny: int, nl: int, bend: float, via: float,
            novia: set[tuple[int, int]] | None = None,
+           hist: dict[tuple[int, int, int], float] | None = None,
            ) -> list[tuple[int, int, int]] | None:
     """(gx, gy, layer) search. own-net cells are free (copper reuse).
     soft (part courtyard) cells passable at +SOFT per cell — escapes work,
     open field preferred. blocked is per-layer: copper on L0 never walls
-    L1 (FR4 between); PTH pads/vias arrive expanded on every layer."""
+    L1 (FR4 between); PTH pads/vias arrive expanded on every layer.
+    hist: negotiated-congestion history — cells used by ripped/failed
+    routes cost +HIST each, steering retries around past congestion."""
     SOFT = 15.0
+    HIST = 2.0
     INF = float("inf")
     sx, sy, sl = start
     gx, gy = goal
@@ -109,6 +113,8 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
                     st += 15.0
                 ng = g + st + (via if l2 != ll else 0.0)
                 key = (nx2, ny2, l2)
+                if hist and key not in own:
+                    ng += HIST * hist.get(key, 0.0)
                 if ng < best.get(key, INF):
                     best[key] = ng
                     prev[key] = node
@@ -194,12 +200,17 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     from .drc import pour_layers
     poured = pour_layers(board)  # poured nets need no traces on pour layers
     failed: list[str] = []
+    # negotiated-congestion history: cells used by ripped/failed routes
+    # cost extra on retries, steering around past congestion (doc §order-a).
+    hist: dict[tuple[int, int, int], float] = {}
     for net in order:
         if net.layer is not None and net.layer in poured.get(net.name, []):
             continue  # plane covers this layer — nothing to route
         if not _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
-                          pad_cells, copper, halo, cells_of, new, frames):
+                          pad_cells, copper, halo, cells_of, new, frames, hist):
             failed.append(net.name)
+            for cell in cells_of.get(net.name, ()):
+                hist[cell] = hist.get(cell, 0.0) + 1.0
     # rip-up retry: victim = blocker with most cells inside the failed net's
     # corridor (pads bbox grown 4mm), not nearest endpoints — big blockers
     # wall off whole regions. A 2nd round runs only if the 1st strictly
@@ -242,20 +253,23 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                 continue
             ripped = [s for s in new if s.net == best]
             new[:] = [s for s in new if s.net != best]
+            victim_cells = set(cells_of.get(best, ()))
             del cells_of[best]
             _rebuild_blocked(copper, halo, cells_of)
             if _route_one(board, fnet, grid, bend, via, nx, ny, base_blocked,
-                          pad_cells, copper, halo, cells_of, new, frames):
+                          pad_cells, copper, halo, cells_of, new, frames, hist):
                 bnet = board.nets[best]
                 bpts = [(r, board.pad_pos(r, q)) for r, q in bnet.pins if r in board.parts]
                 if len(bpts) >= 2 and not _route_one(
                         board, bnet, grid, bend, via, nx, ny, base_blocked,
-                        pad_cells, copper, halo, cells_of, new, frames):
+                        pad_cells, copper, halo, cells_of, new, frames, hist):
                     if _round == 1:
                         _fallback(board, bnet, bpts, new)
                     else:
                         still.append(best)
             else:
+                for _cell in victim_cells:  # victim's cells congested this retry
+                    hist[_cell] = hist.get(_cell, 0.0) + 1.0
                 if _round == 1:
                     _fallback(board, fnet, fpts, new)
                     for s in ripped:  # restore ripped net as flagged fallback
@@ -297,7 +311,8 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                pad_cells: dict[tuple[int, int], str],
                copper: set[tuple[int, int, int]], halo: set[tuple[int, int, int]],
                cells_of: dict[str, set[tuple[int, int, int]]],
-               new: list[Seg], frames: list[Frame] | None) -> bool:
+               new: list[Seg], frames: list[Frame] | None,
+               hist: dict[tuple[int, int, int], float] | None = None) -> bool:
     """Route one net with current blockage. Returns True if maze-succeeded.
     copper/halo are per-layer (FR4 isolates); pads expand onto all layers.
     Legs follow a rectilinear MST over pads (research §5), not pin order —
@@ -343,7 +358,7 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
              min(ny - 1, max(0, int(a[1] / grid))), layer)
         g = (min(nx - 1, max(0, int(b[0] / grid))),
              min(ny - 1, max(0, int(b[1] / grid))))
-        path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via, novia)
+        path = _astar(s, g, blocked, soft, own, nx, ny, board.layers, bend, via, novia, hist)
         if path is None:
             return False
         new.extend(_path_segs(board, net.name, path, grid, net.width))

@@ -167,9 +167,9 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   [shove](https://docs.kicad.org/doxygen/classPNS_1_1SHOVE.html),
   [diff-pair](https://docs.kicad.org/doxygen/pns__diff__pair__placer_8cpp_source.html)).
 - Relevance: current A* + bend/via + soft terrain already covers the basics.
-  Upgrades in order: (a) negotiated-congestion-lite (gated 2-round rip-up
-  retry already shipped in `maze.py`; remaining gain is per-cell history +
-  present-usage adder across iterations); (b) skip Hadlock
+  Upgrades in order: (a) negotiated-congestion-lite — shipped: 2-round
+  rip-up retry + per-cell history/HIST adder across iterations
+  (`maze.py`; blinky-1L 112→110 segs, breath_ketone 565→552, DRC-clean); (b) skip Hadlock
   re-tuning while the heuristic is admissible. Length meanders only if
   skew-driven routing is required; else keep reporting skew via DRC warnings.
 
