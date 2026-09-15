@@ -940,8 +940,12 @@ function drawTidy(r){
 function notePlacement(r){
   const n=Object.keys(r.parts||{}).length;
   const skip=(r.skipped||[]).join(' + ');
-  if(r.dense)statMsg(`dense board: ${n} parts loaded as saved`
-    +(skip?` (${skip} skipped — run the CLI for those)`:'')+'.',true);
+  // A dense board usually carries no layout in its file (only pinned parts
+  // have positions), so say what it needs and where to get it rather than
+  // letting the canvas look broken. `solve` works but is minutes at this size.
+  if(r.dense)statMsg(`${n} parts, loaded as saved`
+    +(skip?` — ${skip} skipped at this size (run the CLI for those)`:'')
+    +'. "solve" places it here, but takes minutes.',true);
   else if(r.placed===false)statMsg('loaded as saved — solve to re-place',true);
 }
 function setEditor(t){$('ed').innerText=t;}
