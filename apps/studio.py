@@ -902,6 +902,8 @@ function drawDRC(r){
   else if(!li.errors.length)h+='<div class=ok>✓ DRC clean ('+r.fab+')</div>';
   h+=r.warnings.slice(0,5).map(w=>`<div class=warn>~ ${w}</div>`).join('');
   h+=(li.warnings||[]).slice(0,3).map(w=>`<div class=warn>~ lint: ${w}</div>`).join('');
+  const rec=(r.recommend&&r.recommend.items)||[];
+  h+=rec.slice(0,6).map(it=>`<div class=warn>+ ${it.kind}: ${it.msg}</div>`).join('');
   if(r.sim&&Object.keys(r.sim).length)h+='<div class=ok>⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')+'</div>';
   if(r.sim_problems&&r.sim_problems.length)h+=r.sim_problems.map(p=>`<div class=err>⚡✗ ${p}</div>`).join('');
   if(r.tran&&Object.keys(r.tran).length)h+='<div class=ok>⚡tran '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')+'</div>';
@@ -1462,6 +1464,7 @@ WRITE_EXT = {".ocd", ".toml", ".md"}
 SKIP_DIR = {"__pycache__", ".git", ".mypy_cache", ".ruff_cache", ".pytest_cache",
             "node_modules", ".venv", "venv", "out", "outputs", ".scratch"}
 ROOT = os.path.abspath(os.environ.get("OCD_ROOT") or BASE)
+START_DIR = BASE  # the board directory as launched, before any /fs/open
 if not os.path.isdir(ROOT):  # a bad OCD_ROOT must not take the studio down
     print(f"studio: OCD_ROOT {os.environ.get('OCD_ROOT')!r} is not a directory, "
           f"using {BASE}", file=sys.stderr)
@@ -1479,23 +1482,36 @@ def _rel(path: object) -> str:
 
 
 def _abs(path: object, *, must_exist: bool = False, near: str | None = None) -> str:
-    """Resolve a client path. A plain name is tried next to the open board
-    first (a sibling fetch), then at the project ROOT; in both cases the result
-    must stay inside ROOT, with symlinks resolved first so a link out of the
-    project is refused rather than followed."""
+    """Resolve a client path. A bare name is tried next to the open board
+    first (a sibling fetch), then at the project ROOT. Every candidate is
+    realpath'd and must land inside ROOT, so a symlink out of the project is
+    refused rather than followed. The ordering matters: with the root first,
+    `blinky_555.ocd` cannot be reached from a board opened in a subdirectory."""
     rel = _rel(path)
     root = os.path.realpath(ROOT)
-    full = os.path.realpath(os.path.join(ROOT, rel))
-    if near and not (full != root and full.startswith(root + os.sep)):
-        alt = os.path.realpath(os.path.join(near, rel))
-        if alt != root and alt.startswith(root + os.sep):
-            if not must_exist or os.path.exists(alt):
-                full = alt
-    if full != root and not full.startswith(root + os.sep):
+    # board's directory, then the directory the studio started in, then ROOT.
+    # ROOT may be wider than the start dir (OCD_ROOT), so it is last; a board
+    # under boards/ is unreachable from a sibling directory without the first.
+    seeds = [s for s in (near, START_DIR) if s]
+    seeds.append(ROOT)
+    seen: set[str] = set()
+    inside = None
+    blocked = False
+    for s in seeds:
+        base = os.path.realpath(s)
+        if base in seen or not os.path.isdir(base):
+            continue
+        seen.add(base)
+        rp = os.path.realpath(os.path.join(base, rel))
+        if rp != root and not rp.startswith(root + os.sep):
+            blocked = True  # a traversal: say so, do not call it "missing"
+            continue
+        inside = rp
+        if not must_exist or os.path.exists(rp):
+            return rp
+    if inside is None and blocked:
         raise ValueError(f"{rel}: outside the project root")
-    if must_exist and not os.path.exists(full):
-        raise ValueError(f"{rel}: no such file")
-    return full
+    raise ValueError(f"{rel}: no such file")
 
 
 def _tree(rel: str = ".", depth: int = 0) -> list[dict[str, str]]:
@@ -2222,6 +2238,7 @@ class H(http.server.BaseHTTPRequestHandler):
         st["silk"] = silksel
         st["score"] = score if score is not None else b.score()
         st["lint"] = lint if lint is not None else b.lint()
+        st["recommend"] = b.recommend()
 
     def log_message(self, *a: object) -> None:
         pass

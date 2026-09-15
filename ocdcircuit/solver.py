@@ -97,12 +97,16 @@ def _keepout_cost(board: Board) -> float:
 def cost(board: Board) -> float:
     parts = list(board.parts.values())
     c = wirelength(board)
-    for i in range(len(parts)):
-        for j in range(i + 1, len(parts)):
-            a, b = parts[i], parts[j]
-            aw, ah, bw, bh = (*a.wh(), *b.wh())
-            if (abs(a.x - b.x) < (aw + bw) / 2 + 0.4 and
-                    abs(a.y - b.y) < (ah + bh) / 2 + 0.4):
+    # Overlap scan is O(n^2) — 14.7M pairs on monster6502, each asking for two
+    # boxes four times. Precompute (x, y, w/2+0.2, h/2+0.2) per part once;
+    # aw+bw then equals (aw+bw)/2+0.4 exactly, so placements do not move.
+    box = [(p.x, p.y, p.wh()[0] / 2 + 0.2, p.wh()[1] / 2 + 0.2)
+           for p in parts]
+    for i in range(len(box)):
+        ax, ay, aw, ah = box[i]
+        for j in range(i + 1, len(box)):
+            bx, by, bw, bh = box[j]
+            if abs(ax - bx) < aw + bw and abs(ay - by) < ah + bh:
                 c += 1e6
     m = edge_margin(board)
     lib = board._lib()
