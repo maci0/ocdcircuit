@@ -740,6 +740,11 @@ they answer different questions:
 Work in this order and say what you actually see, never what a board like
 this usually has:
 
+Never list a designator you cannot actually read, and never continue a
+sequence (R1, R2, R3...) past what is visible: an invented run of parts is
+worse than a short honest list, and it wastes the whole answer. Prefer the
+ICs and connectors you can identify over exhaustively counting passives.
+
 1. INVENTORY. Every reference designator you can read, its side, its package
    (0402/0603/0805/SOT-23/SOIC-8/QFN/TO-220/...) and any marking on the body.
    Mark anything you are guessing as `?`.
@@ -814,13 +819,44 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
 
 
 def extract_ocd(reply: str) -> str:
-    """Pull the ```ocd block out of a model reply (any fence label works)."""
+    """Pull the ```ocd block out of a model reply (any fence label works).
+
+    Tolerates an unterminated block: a model that hit its token limit
+    mid-answer still wrote real lines, and discarding them over a missing
+    closing fence turns a partial result into no result. Also drops the
+    runaway repetition small models fall into (`part R1..R400`, all
+    identical), which is usually what ate the token budget in the first
+    place — measured on qwen2.5vl:7b reading a real board.
+    """
     import re
-    for m in re.finditer(r"```(\w*)\n(.*?)```", reply, re.S):
+    for m in re.finditer(r"```(\w*)\n(.*?)(?:```|\Z)", reply, re.S):
         body = m.group(2)
         if m.group(1).lower() in ("ocd", "") and "board " in body:
-            return body.strip() + "\n"
-    raise ValueError("no ```ocd block in the reply")
+            return _dedupe(body).strip() + "\n"
+    raise ValueError(
+        "no ```ocd block in the reply (the model may have run out of tokens, "
+        "or cannot see images \u2014 check OCD_LLM_MODEL)")
+
+
+def _dedupe(body: str, run: int = 8) -> str:
+    """Drop consecutive same-shaped lines past `run` repeats. A degenerate
+    decoder emits hundreds of `part R<n> 0402 100R` lines differing only by
+    an incrementing number; keeping the first few preserves the intent
+    without letting a stuck model define the board."""
+    import re
+    out: list[str] = []
+    shape: str | None = None
+    n = 0
+    for line in body.splitlines():
+        s = re.sub(r"\d+", "#", line.strip())
+        if s and s == shape:
+            n += 1
+            if n >= run:
+                continue
+        else:
+            shape, n = s, 0
+        out.append(line)
+    return "\n".join(out)
 
 
 def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
@@ -971,6 +1007,21 @@ def demo() -> None:
         pass
     else:
         raise AssertionError("extract_ocd accepted a reply with no board")
+    # truncated reply (model hit its token cap mid-block): keep what it wrote
+    assert extract_ocd("```ocd\nboard x 10x10 2\npart R1 R0805 1k") == (
+        "board x 10x10 2\npart R1 R0805 1k\n")
+    # degenerate repetition (observed on qwen2.5vl:7b): keep a few, drop the run
+    runaway = ("```ocd\nboard x 10x10 2\n"
+               + "".join(f"part R{i} R0805 1k\n" for i in range(1, 300)) + "```")
+    kept = extract_ocd(runaway)
+    assert "board x 10x10 2" in kept, "dedupe dropped the board line"
+    assert 5 <= kept.count("part R") <= 12, (
+        f"dedupe kept {kept.count('part R')} repeated lines")
+    # distinct lines must survive: dedupe keys on shape, not on similarity
+    varied = ("```ocd\nboard x 10x10 2\n"
+              + "".join(f"part U{i} SOIC8 c{i}\nnet N{i} :: U{i}.1 <--> U{i}.2\n"
+                        for i in range(1, 30)) + "```")
+    assert extract_ocd(varied).count("part U") == 29, "dedupe ate distinct parts"
     print("pcbscan demo ok")
 
 
