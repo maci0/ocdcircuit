@@ -7,12 +7,9 @@ Scores placer output against die-true golden positions:
   overlaps above the golden floor (golden itself scores GOLDEN_OV via
   front/back stacking; 0 is NOT the target),
   runtime. Run: python -m benches.monster6502.bench [seeds] [iters]  (defaults reproduce SOURCES baseline)
-
-# ponytail: single-scale harness, no cli framework — argparse when reused.
 """
 from __future__ import annotations
 import os
-import sys
 import time
 
 from ocdcircuit import agent
@@ -71,15 +68,14 @@ def overlaps(b: object) -> int:
 
 
 def main() -> None:
-    if any(a in ("-h", "--help") for a in sys.argv[1:]):
-        print("usage: python -m benches.monster6502.bench [seeds] [iters] [placer]")
-        return
-    try:
-        seeds = int(sys.argv[1]) if len(sys.argv) > 1 else BASE_SEEDS
-        iters = int(sys.argv[2]) if len(sys.argv) > 2 else BASE_ITERS
-    except ValueError:
-        raise SystemExit("usage: python -m benches.monster6502.bench [seeds] [iters] [placer]")
-    placer = sys.argv[3] if len(sys.argv) > 3 else "diffusion"
+    import argparse
+    ap = argparse.ArgumentParser(prog="python -m benches.monster6502.bench",
+                                 description="Score placer output vs die-true golden positions.")
+    ap.add_argument("seeds", type=int, nargs="?", default=BASE_SEEDS)
+    ap.add_argument("iters", type=int, nargs="?", default=BASE_ITERS)
+    ap.add_argument("placer", nargs="?", default="diffusion")
+    a = ap.parse_args()
+    seeds, iters, placer = a.seeds, a.iters, a.placer
     try:
         b = agent.loads(open(os.path.join(HERE, "monster6502.ocd")).read(), base=HERE)
     except OSError:

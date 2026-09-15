@@ -12,7 +12,6 @@ Positions: layout.json mm (netlist.json pos units are NOT mil — ignored).
 Board 291x322 6L. DNP ballast excluded.
 
 Usage: python -m benches.monster6502.convert  # writes monster6502.ocd (needs netlist.json + layout.json)
-# ponytail: no cli args, single-purpose script — flags when reused.
 """
 from __future__ import annotations
 import json
@@ -107,10 +106,9 @@ def _block_members(comps: list[dict[str, object]]
 
 
 def main() -> None:
-    import sys
-    if any(a in ("-h", "--help") for a in sys.argv[1:]):
-        print("usage: python -m benches.monster6502.convert  # writes monster6502.ocd")
-        return
+    import argparse
+    argparse.ArgumentParser(prog="python -m benches.monster6502.convert",
+                            description="Convert netlist/layout JSON to monster6502.ocd.").parse_args()
     raw = json.load(open(os.path.join(HERE, "netlist.json")))
     lay = json.load(open(os.path.join(HERE, "layout.json")))
     # positions: layout.json is authoritative (true mm, matches board 290.8x322.1)
