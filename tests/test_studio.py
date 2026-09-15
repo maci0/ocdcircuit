@@ -131,25 +131,40 @@ def main() -> None:
     # bad OCD_PORT falls back to 8077 with a stderr note (no traceback):
     # the server boots and serves instead of dying in main()
     import urllib.request as _url
+    # A studio already listening on 8077 (a developer's `make run`) would answer
+    # the probe below, so the URL check would pass without OUR child ever
+    # booting — and stderr would still be empty, failing the note assertion for
+    # the wrong reason. Probe first and, when it is busy, assert only the note.
+    _busy = False
+    try:
+        _url.urlopen("http://localhost:8077/slots", timeout=1).read()
+        _busy = True
+        print("8077 already serving: checking the stderr note only")
+    except OSError:
+        pass
     fb = subprocess.Popen(
         [sys.executable, "-c",
          "import os; os.environ['OCD_PORT']='bogus'; "
          "import apps.studio as S; S.main()"],
         cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    _booted = False
     try:
-        for _ in range(100):
-            try:
-                _url.urlopen("http://localhost:8077/slots", timeout=1).read()
-                break
-            except OSError:
-                time.sleep(0.1)
+        if not _busy:
+            for _ in range(100):
+                try:
+                    _url.urlopen("http://localhost:8077/slots", timeout=1).read()
+                    _booted = True
+                    break
+                except OSError:
+                    time.sleep(0.1)
         else:
-            raise AssertionError("fallback server did not boot: "
-                                 + str(fb.stderr.read()[:300] if fb.stderr else b""))
+            time.sleep(1.0)  # our child only needs to print its note
     finally:
         fb.terminate()
         _err = fb.stderr.read().decode() if fb.stderr else ""
-        assert "bad OCD_PORT" in _err, _err[:300]
+    assert "bad OCD_PORT" in _err, _err[:300]
+    if not _busy:
+        assert _booted, "fallback server did not boot on 8077"
     # UI contributions are disposable: every _slot() keeps the disposer
     # register() handed back, and unload_ui() runs them LIFO — the previous
     # code dropped the disposer, which made all ten rows permanent module state
