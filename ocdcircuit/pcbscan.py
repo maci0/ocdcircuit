@@ -508,8 +508,18 @@ def height_field(imgs: list[Any], xforms: list[dict[str, float]],
                 if peak > 0.02 and abs(dy) < tile / 3 and abs(dx) < tile / 3:
                     res[i - 1, ty, tx] = float(math.hypot(dy, dx))
     hm = np.nan_to_num(_nanmedian(res))
-    hi = float(np.percentile(hm, 97))
-    hm = np.clip(hm / max(hi, 1e-6), 0, 1)
+    # Subtract the noise floor, do NOT rescale to full range. Residual
+    # misregistration puts a baseline wobble on every tile, including the
+    # bare laminate; normalising by a high percentile would stretch that
+    # wobble to full scale and paint a flat board as if it were covered in
+    # tall parts. The low quantile IS the board plane, and what survives
+    # above it by more than the plane's own spread is a real standoff.
+    floor = float(np.percentile(hm, 25))
+    spread = float(np.percentile(hm, 75)) - floor
+    hm = np.maximum(hm - (floor + spread), 0.0)
+    hi = float(np.percentile(hm, 99))
+    if hi > 1e-6:
+        hm = np.clip(hm / hi, 0, 1)
     return resize(hm[..., None], out_w, out_h)[..., 0]
 
 
@@ -842,10 +852,10 @@ def demo() -> None:
 
     # each recovered transform must invert the one we applied
     for t, (s, r) in zip(xf[1:], ((0.72, 12.0), (1.31, -21.0))):
-        assert abs(t["scale"] - 1 / s) < 0.18 * (1 / s), \
+        assert abs(t["scale"] - 1 / s) < 0.03 * (1 / s), \
             f"scale off: got {t['scale']:.3f} want {1 / s:.3f}"
         got = (t["rot"] - (-r)) % 360
-        assert min(got, 360 - got) <= 20, f"rotation off: {t['rot']} vs {-r}"
+        assert min(got, 360 - got) <= 2.0, f"rotation off: {t['rot']} vs {-r}"
 
     rgb, cover = stitch(views, xf, w, h)
     assert rgb.shape == (h, w, 3) and rgb.dtype == np.uint8
@@ -866,6 +876,46 @@ def demo() -> None:
 
     hm = height_field(views, xf, w, h)
     assert hm.shape == (h, w) and 0.0 <= float(hm.min()) and float(hm.max()) <= 1.0
+
+    # height must answer the question it claims to: parts that stand off the
+    # board read high, a flat board reads flat. Shoot a board whose parts
+    # parallax-shift with the camera while the substrate stays put.
+    ph, pw = 300, 400
+    flat = np.full((ph, pw, 3), 40, dtype=np.float32)
+    flat[..., 1] = 100
+    for i in range(8):
+        flat[20 + i * 34:26 + i * 34, 30:370] = (190, 150, 60)
+    flat = np.clip(flat + rng.normal(0, 3, flat.shape), 0, 255)
+    boxes = [(80, 110, 26, 38), (210, 280, 24, 34)]
+    onmask = np.zeros((ph, pw), dtype=bool)
+    for cy, cx, hh, hw_ in boxes:
+        onmask[cy - hh:cy + hh, cx - hw_:cx + hw_] = True
+
+    def _shoot(shift: int) -> Any:
+        im = flat.copy()
+        for cy, cx, hh, hw_ in boxes:   # standoff -> parallax shift
+            x0, x1 = max(0, cx - hw_ + shift), min(pw, cx + hw_ + shift)
+            if x1 > x0:
+                im[cy - hh:cy + hh, x0:x1] = (30, 30, 32)
+                im[cy - hh + 6:cy - hh + 16, x0 + 5:x0 + 26] = (228, 228, 224)
+        return np.clip(im + rng.normal(0, 3, im.shape), 0, 255)
+
+    ident = {"scale": 1.0, "rot": 0.0, "dx": 0.0, "dy": 0.0, "peak": 1.0}
+    relief = height_field([_shoot(s) for s in (0, -6, 6, -11, 11)],
+                          [dict(ident) for _ in range(5)], pw, ph)
+    on = float(relief[onmask].mean())
+    off = float(relief[~onmask].mean())
+    assert on > off * 2.5, f"standoff not detected (parts {on:.3f} vs board {off:.3f})"
+
+    same = [np.nan_to_num(warp(flat, 1.0, 0.0, dx, dy, pw, ph), nan=20.0)
+            for dx, dy in ((0, 0), (3, -2), (-4, 3))]
+    flatm = height_field(same, [{"scale": 1.0, "rot": 0.0, "dx": -dx,
+                                 "dy": -dy, "peak": 1.0}
+                                for dx, dy in ((0, 0), (3, -2), (-4, 3))],
+                         pw, ph)
+    assert float(flatm.mean()) < 0.2, (
+        f"flat board reported relief {float(flatm.mean()):.3f} — the height "
+        "normalisation is stretching registration noise into fake parts")
 
     ply = splat_ply(rgb, hm, 0.1, step=8)
     assert ply.startswith(b"ply\nformat binary_little_endian")
