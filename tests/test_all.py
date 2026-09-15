@@ -3041,5 +3041,22 @@ else:
         pass
     else:
         raise AssertionError("scan accepted a non-list photos=")
+    try:
+        Board("scanreg").scan(photos=["a.png"], docs="manual.pdf")
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("scan accepted a non-list docs=")
+    try:
+        Board("scanreg").scan(photos=["a.png"], answers=["q", "a"])
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("scan accepted a non-dict answers=")
+    # the owner's context and the model's questions both reach the prompt
+    _ctx = _pcbscan.context_block("a PSU board", None, {"Volts?": "12V"})
+    assert "a PSU board" in _ctx and "Q: Volts?\nA: 12V" in _ctx
+    assert _pcbscan.extract_questions(
+        "```questions\n1. What is it from?\n```") == ["What is it from?"]
 
 print("ALL OK")

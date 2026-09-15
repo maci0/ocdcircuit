@@ -28,9 +28,11 @@ USAGE = """usage:
   ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
   ocd xray <board.ocd> <fab.png> fab x-ray vs design: score + divergences
-  ocd scan [--out DIR] [--mm W] [--no-llm] [--note T] <photo|dir|glob>...
+  ocd scan [--out DIR] [--mm W] [--no-llm] [--note T] [--doc F]
+           [--answer Q=A] <photo|dir|glob>...
                                  photos of a real board -> stitch, enhance,
-                                 3D splat, analysis, draft .ocd
+                                 3D splat, analysis, draft .ocd (--doc reads
+                                 a manual/datasheet; the model may ask back)
   ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
@@ -639,11 +641,18 @@ def cmd_scan(agent: object, args: list[str]) -> int:
     import glob as _glob
     if not args or args[0] in ("-h", "--help"):
         print("usage: ocd scan [--out DIR] [--mm WIDTH] [--no-llm] "
-              "[--note TEXT] <photo|dir|glob>...\n"
+              "[--note TEXT] [--doc FILE] [--answer 'Q=A'] "
+              "<photo|dir|glob>...\n"
               "  filenames containing 'bot'/'back' are read as the bottom "
-              "side, everything else as top")
+              "side, everything else as top\n"
+              "  --doc    a manual or datasheet (.pdf/.txt/.md) to read "
+              "alongside the photos; repeatable\n"
+              "  --answer reply to a question an earlier run asked; "
+              "repeatable")
         return 1
     outdir, mm, use_llm, note = "scan", None, True, ""
+    docs: list[str] = []
+    answers: dict[str, str] = {}
     paths: list[str] = []
     i = 0
     while i < len(args):
@@ -659,6 +668,16 @@ def cmd_scan(agent: object, args: list[str]) -> int:
             i += 2
         elif a == "--note" and i + 1 < len(args):
             note, i = args[i + 1], i + 2
+        elif a == "--doc" and i + 1 < len(args):
+            docs.append(args[i + 1])
+            i += 2
+        elif a == "--answer" and i + 1 < len(args):
+            if "=" not in args[i + 1]:
+                print("ocd: --answer wants 'question=answer'")
+                return 1
+            q, _, ans = args[i + 1].partition("=")
+            answers[q.strip()] = ans.strip()
+            i += 2
         elif a == "--no-llm":
             use_llm, i = False, i + 1
         elif a.startswith("-"):
@@ -686,7 +705,8 @@ def cmd_scan(agent: object, args: list[str]) -> int:
     from ocdcircuit.circuit import Board as _B
     try:
         r = _B("scan").scan(photos=files, outdir=outdir, board_mm=mm,
-                            note=note, llm=use_llm)
+                            note=note, docs=docs or None,
+                            answers=answers or None, llm=use_llm)
     except (OSError, ValueError, KeyError, RuntimeError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1
@@ -708,6 +728,12 @@ def cmd_scan(agent: object, args: list[str]) -> int:
                      f"{r.get('draft_nets', '?')} nets)")
     if "draft_error" in r:
         _out().print(f"scan: no usable draft ({r['draft_error']})")
+    asked = cast(list[str], r.get("questions", []))
+    if asked:
+        _out().print("\nscan: the model asked — answer with "
+                     "--answer 'question=your answer' and re-run:")
+        for q in asked:
+            _out().print(f"  ? {q}")
     return 0
 
 

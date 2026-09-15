@@ -1592,8 +1592,12 @@ class PcbScanPlugin(Plugin[dict[str, object]]):
     lot and emit a draft .ocd.
 
     scan(photos=[...] | {'top': [...], 'bottom': [...]}, outdir=..,
-         board_mm=<known board width in mm>, note=.., llm=False)
+         board_mm=<known board width in mm>, note=.., docs=[manual.pdf],
+         answers={question: reply}, llm=False)
 
+    note/docs are what the owner knows (a description, a manual, a
+    datasheet); the model may ask questions back, returned under
+    `questions`, and answers= feeds them to a better-informed second pass.
     llm=False stops after the deterministic artifacts (no endpoint needed).
     Needs numpy; Pillow only for non-PNG photos.
     cordis-boundary: file reads/writes + HTTP are outside-context
@@ -1612,10 +1616,18 @@ class PcbScanPlugin(Plugin[dict[str, object]]):
         assert outdir is None or isinstance(outdir, str)
         note = k.get("note", "")
         assert isinstance(note, str)
+        docs = k.get("docs")
+        assert docs is None or isinstance(docs, list), (
+            "scan docs= wants a list of manual/datasheet paths")
+        answers = k.get("answers")
+        assert answers is None or isinstance(answers, dict), (
+            "scan answers= wants {question: reply}")
         return _scan.reverse(
             cast("list[str] | dict[str, list[str]]", photos),
             outdir or f"{board.name}-scan",
             board_mm=(_f(mm, 0.0) or None), note=note,
+            docs=cast("list[str] | None", docs),
+            answers=cast("dict[str, str] | None", answers),
             llm_analysis=bool(k.get("llm", True)))
 
 
@@ -1629,6 +1641,20 @@ class DiffPlugin(Plugin[str]):
         other = k.get("other")
         assert isinstance(other, _B)
         return _diff.diff(board, other)
+
+
+class CollabPlugin(Plugin[dict[str, object]]):
+    """Realtime ops for a shared board: collab(op={ops:[...]}) validates
+    and applies one op (agent.apply_patch — structured edits only, undoable
+    like everything). The room (SSE + presence) lives in collab.py; this is
+    the plugin-architecture face of it: swap keys to change merge policy."""
+    kind, key = "collab", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import collab as _collab
+        op = k.get("op", k.get("ops", {}))
+        assert isinstance(op, dict), "collab wants op={ops: [...]}"
+        return _collab.apply_op(board, op)
 
 
 class DoctorPlugin(Plugin[dict[str, object]]):
@@ -2031,7 +2057,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              SymImporter, SchLibImporter,
              TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
-             ScorePlugin, DiffPlugin, XrayCompare, PcbScanPlugin, QuotePlugin,
+             ScorePlugin, DiffPlugin, CollabPlugin, XrayCompare, PcbScanPlugin, QuotePlugin,
              StdPrice, KnollPrice, JlcApiPrice,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
              PngRenderer, KicadRenderer, BlenderRenderer, PcbdrawRenderer,
