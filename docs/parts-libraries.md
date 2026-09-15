@@ -251,8 +251,9 @@ for Y" boolean, so ocdcircuit models verdicts instead of computing them.
   either.
 - **Data model for ocd (ranked, judgment)**: (i) `alternates` attr on the
   part — `part U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN,TLC555CP` —
-  PROPOSED (BOM exporter does not yet emit the column; OCD.md documents the
-  attr); ERC/placer/sim ignore (same footprint+value by construction); footprint equality checked at load,
+  SHIPPED (BOM exporter emits the unioned Alternates column; OCD.md
+  documents the attr); ERC/placer/sim ignore (same footprint+value by
+  construction); footprint equality checked at load,
   **pinout compatibility stays a human attestation**. Covers ~90% of real
   need (stock-outs) in ~10 lines. (ii) Passive equivalence needs no syntax:
   BOM already groups by (value, footprint) — "any 10k 0603" is procurement
