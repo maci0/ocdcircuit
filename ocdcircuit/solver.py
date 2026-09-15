@@ -945,6 +945,13 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
     for t in range(iters):
         T = 1 - t / iters
         step = (0.25 + 0.65 * T) * (0.3 + 0.7 * T)
+        # This loop is Gauss-Seidel: each group reads LIVE positions, so a
+        # group updated earlier in the scan has already moved when a later
+        # group looks at it. Anything read from outside the scan is therefore
+        # stale. Three attempts to exploit that failed the fingerprint gate —
+        # snapshotting positions into the spatial hash, hoisting per-part
+        # geometry, and memoising group centroids for the pair loop. Caching
+        # here is only valid for values that do not move (hw/hh, pad offsets).
         # spatial hash of all parts (rebuilt per iter — positions move)
         grid: dict[tuple[int, int], list[str]] = {}
         for r, q in board.parts.items():
