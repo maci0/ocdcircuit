@@ -5,6 +5,8 @@
     ocd status <circuit.ocd> refresh STATUS.md (score, DRC, ERC, sim)
     ocd diff <a.ocd> <b.ocd> what changed: parts, nets, size, constraints
     ocd xray <board.ocd> <fab.png>  fab x-ray vs design: score + divergences
+    ocd scan <photos...>     reverse-engineer a real board from photos
+    ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
     ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
     ocd lint <circuit.ocd>   static source lint, no place/route
     ocd kb list|search|read|add|fetch|ask  board knowledgebase (`kb/`: notes + datasheets)
@@ -26,6 +28,10 @@ USAGE = """usage:
   ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
   ocd xray <board.ocd> <fab.png> fab x-ray vs design: score + divergences
+  ocd scan [--out DIR] [--mm W] [--no-llm] [--note T] <photo|dir|glob>...
+                                 photos of a real board -> stitch, enhance,
+                                 3D splat, analysis, draft .ocd
+  ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
   ocd kb list|search|read|add|fetch|ask  kb/: notes + datasheets, agent-readable
@@ -380,6 +386,54 @@ def cmd_xray(agent: object, args: list[str]) -> int:
     return 0
 
 
+def cmd_quote(agent: object, args: list[str]) -> int:
+    if not args or "-h" in args or "--help" in args:
+        print("usage: ocd quote <circuit.ocd> [qty] [--bare] [--fab F]  (parts via live JLC or price= attr)")
+        return 1
+    bare_only = "--bare" in args
+    fabs: list[str] = []
+    rest: list[str] = []
+    skip = False
+    for i, a in enumerate(args):
+        if skip:
+            skip = False
+            continue
+        if a == "--fab" and i + 1 < len(args):
+            fabs.append(args[i + 1])
+            skip = True
+        elif a != "--bare":
+            rest.append(a)
+    if not rest:
+        print("usage: ocd quote <circuit.ocd> [qty] [--bare] [--fab F]")
+        return 1
+    try:
+        b = _load(agent, rest[0])
+        qty = int(rest[1]) if len(rest) > 1 else 5
+        r = b.quote(qty=qty, fabs=fabs or None, no_parts=bare_only)
+    except (OSError, ValueError, KeyError, AssertionError) as e:
+        print(f"ocd: {e}")
+        return 1
+    rows = cast(list[dict[str, object]], r["rows"])
+    _table(f"quote {r['board']} x{r['qty']} ({r['stamp']})",
+           [(str(x["fab"]),
+             f"bare ${x['bare_total']} (${x['bare_per_board']}/bd)"
+             + (f"  asm ${x['asm_total']} (${x['asm_per_board']}/bd)" if "asm_total" in x else "")
+             + (f"  ! {x['error']}" if "error" in x else ""))
+            for x in rows])
+    jlcs = [x for x in rows if x.get("fab") == "jlc" and isinstance(x.get("asm"), dict)]
+    if jlcs:
+        asm = cast(dict[str, object], jlcs[0]["asm"])
+        unp = cast(list[str], asm.get("unpriced", []))
+        _out().print(f"jlc assembly: fees ${asm['fees']} + parts "
+                     f"${asm['parts_per_board']}/board ({asm['parts']} parts, "
+                     f"{asm['joints']} joints, {asm['sources']})")
+        if unp:
+            _out().print(f"[yellow]unpriced ({len(unp)}): {' '.join(unp[:12])}"
+                         f" — add price= attrs or check LCSC codes[/yellow]")
+    _out().print(f"[dim]{r['note']}[/dim]")
+    return 0
+
+
 def cmd_score(agent: object, args: list[str]) -> int:
     fab, placer, router, _sim, rest = _flags(args)
     if len(rest) != 1 or rest[0] in ("-h", "--help"):
@@ -579,6 +633,84 @@ def cmd_kb(agent: object, args: list[str]) -> int:
     return 1
 
 
+def cmd_scan(agent: object, args: list[str]) -> int:
+    """Photos of a real board → stitch/enhance/splat artifacts, and (unless
+    --no-llm) a vision-model analysis plus a draft .ocd."""
+    import glob as _glob
+    if not args or args[0] in ("-h", "--help"):
+        print("usage: ocd scan [--out DIR] [--mm WIDTH] [--no-llm] "
+              "[--note TEXT] <photo|dir|glob>...\n"
+              "  filenames containing 'bot'/'back' are read as the bottom "
+              "side, everything else as top")
+        return 1
+    outdir, mm, use_llm, note = "scan", None, True, ""
+    paths: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--out" and i + 1 < len(args):
+            outdir, i = args[i + 1], i + 2
+        elif a == "--mm" and i + 1 < len(args):
+            try:
+                mm = float(args[i + 1])
+            except ValueError:
+                print(f"ocd: --mm wants a number, got {args[i + 1]!r}")
+                return 1
+            i += 2
+        elif a == "--note" and i + 1 < len(args):
+            note, i = args[i + 1], i + 2
+        elif a == "--no-llm":
+            use_llm, i = False, i + 1
+        elif a.startswith("-"):
+            print(f"ocd: unknown flag {a}")
+            return 1
+        else:
+            paths.append(a)
+            i += 1
+    files: list[str] = []
+    for p in paths:
+        if os.path.isdir(p):
+            files += sorted(f for f in _glob.glob(os.path.join(p, "*"))
+                            if os.path.isfile(f))
+        elif any(ch in p for ch in "*?["):
+            files += sorted(_glob.glob(p))
+        else:
+            files.append(p)
+    if not files:
+        print("ocd: no photos matched")
+        return 1
+    missing = [f for f in files if not os.path.isfile(f)]
+    if missing:
+        print(f"ocd: no such file: {missing[0]}")
+        return 1
+    from ocdcircuit.circuit import Board as _B
+    try:
+        r = _B("scan").scan(photos=files, outdir=outdir, board_mm=mm,
+                            note=note, llm=use_llm)
+    except (OSError, ValueError, KeyError, RuntimeError, AssertionError) as e:
+        print(f"ocd: {e}")
+        return 1
+    for side, s in sorted(cast(dict[str, dict[str, object]],
+                               r.get("sides", {})).items()):
+        _table(f"{side}: {s['used']}/{s['photos']} photos registered",
+               [("reference", str(s["reference"])),
+                ("canvas", f"{s['canvas']} px @ {s['mm_per_px']} mm/px"),
+                ("coverage", str(s["coverage_mean"])),
+                ("relief", str(s["relief"])),
+                ("dropped", ", ".join(cast(list[str], s["dropped"])) or "none"),
+                ("files", str(len(cast(dict[str, str], s["files"]))))])
+    _out().print(f"scan: artifacts in {outdir}/ (manifest.json)")
+    if "analysis" in r:
+        _out().print(f"scan: analysis {r['analysis']}")
+    if "draft" in r:
+        _out().print(f"scan: draft {r['draft']} "
+                     f"({r.get('draft_parts', '?')} parts, "
+                     f"{r.get('draft_nets', '?')} nets)")
+    if "draft_error" in r:
+        _out().print(f"scan: no usable draft ({r['draft_error']})")
+    return 0
+
+
 def cmd_plugins(agent: object, args: list[str]) -> int:
     if args and args[0] in ("-h", "--help"):
         print("usage: ocd plugins [kind]")
@@ -633,6 +765,10 @@ def main(argv: list[str]) -> int:
         return cmd_diff(agent, args[1:])
     if args[0] == "xray":
         return cmd_xray(agent, args[1:])
+    if args[0] == "scan":
+        return cmd_scan(agent, args[1:])
+    if args[0] == "quote":
+        return cmd_quote(agent, args[1:])
     if args[0] == "score":
         return cmd_score(agent, args[1:])
     if args[0] == "lint":

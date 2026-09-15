@@ -255,6 +255,18 @@ def main() -> None:
         assert _me.get("user") == "tester", _me
         _in = get(base, "/").decode()
         assert "id=ed" in _in, _in[:200]
+        # static shell markers (in the HTML) …
+        for frag in ("id=viewtabs", "data-v=pcb", "data-v=sch", "data-v=t3d",
+                     "data-v=docs", "id=themebtn"):
+            assert frag in _in, f"flux work missing: {frag}"
+        # …plus runtime-built pieces (in the inline script, created by JS)
+        # and the followups CSS rule (in <style>, not <script>)
+        _pjs = _in[_in.index("<script>") + 8:_in.index("</script>")]
+        for frag in ("setDark", "setView", "followups", "thought",
+                     "contextmenu", "rotRefs", "unpinRefs"):
+            assert frag in _pjs, f"flux work missing: {frag}"
+        assert "followups:empty" in _in, "flux work missing: followups:empty"
+        print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
         assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh
         _nb = post(base, "/shelf/new", {"name": "hello"})
@@ -333,6 +345,18 @@ def main() -> None:
         _xb = post(base, "/xray", {"png": "!!!not-base64!!!"})
         assert "error" in _xb, _xb
         print(f"xray compare ok (score={_xc['score']})")
+        # quote route: cheapest-first bare table + JLC assembly, bad fab errors
+        _qq = post(base, "/quote", {"qty": 5})
+        assert not _qq.get("error"), _qq.get("error")
+        _qrows = cast(list[dict[str, object]], _qq["rows"])
+        assert len(_qrows) == 11 and _qrows[0]["fab"] == "jlc", _qrows[:2]
+        assert "asm_total" in [r for r in _qrows if r["fab"] == "jlc"][0]
+        _qqb = post(base, "/quote", {"qty": 5, "no_parts": True})
+        assert all("asm_total" not in r
+                   for r in cast(list[dict[str, object]], _qqb["rows"]))
+        _qqbad = post(base, "/quote", {"fabs": ["nope"]})
+        assert "error" in _qqbad, _qqbad
+        print(f"quote ok (cheapest={_qrows[0]['fab']} bare=${_qrows[0]['bare_total']})")
 
         # the page ships as one inline script: syntax + the highlight wiring.
         # node is dev-only here — skip rather than fail when it's absent.
@@ -514,6 +538,8 @@ def main() -> None:
             assert "id=kbfetch" in page and "id=kbask" in page, "kb controls missing"
             assert "id=xraybar" in page, "xray panel missing from the page"
             assert "id=xraygo" in page and "id=xrayfile" in page, "xray controls missing"
+            assert "id=quote" in page, "quote panel missing from the page"
+            assert "id=qgo" in page and "id=qqty" in page, "quote controls missing"
             slots = json.loads(urllib.request.urlopen(kbase + "/slots", timeout=5).read())
             assert "kb" in slots["view"], slots
             kl = post(kbase, "/kb/list", {})

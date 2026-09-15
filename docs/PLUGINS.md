@@ -23,7 +23,7 @@ board.use("router", "mine")               # hot-swap, undoable
 
 Kinds (see `plugins.py` for keys): `placer placer→float` · `router→int` ·
 `layers` · `drc/erc→dict` · `exporter→[files]` · `renderer→str|bytes` ·
-`silk/importer/calc/simulate/lint/score/doctor→dict` · `diff→str` · `parts` · `xray→dict`.
+`silk/importer/calc/simulate/lint/score/doctor→dict` · `diff→str` · `parts` · `xray→dict` · `quote→dict` · `price→dict`.
 
 Current keys (from a live registry — count, don't hand-edit):
 `placer` compact/diffusion/hierarchical/multilevel/thermal/tidy ·
@@ -33,7 +33,9 @@ eagle/eagle-brd/easyeda/fp/kicad/pcb/schlib/sym/tscircuit/altium/altium-sch · `
 all/assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg/xray ·
 `simulate` gates/mna/ngspice · `silk` fab/full/ref · `drc` all/erc/fab/jlc-flex ·
 `layers` greedy · `config` toml · `calc`/`diff`/`doctor`/`lint`/`parts`/`score` std ·
-`xray` std (fab PNG vs design: score + divergences).
+`xray` std (fab PNG vs design: score + divergences) ·
+`quote` std (fab price comparison: bare per fab + JLC assembly) ·
+`price` std/knoll (unit-price provider: manual attr → offline JLC DB → knoll live).
 
 Rules: engine imports inside `run()` (keeps `import ocdcircuit` light);
 failure memory means `run` may raise — the registry fences it, no cleanup

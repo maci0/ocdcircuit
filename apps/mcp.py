@@ -5,7 +5,7 @@ Methods: initialize, tools/list, tools/call, ping. Notifications ignored.
 
 Tools: load_board, get_state, apply_patch, set_state, undo,
 parse_constraint, place, candidates, apply_candidate, feasible, route,
-check, score, diff, lint, doctor, export, render, xray, import_footprint,
+check, score, diff, lint, doctor, export, render, xray, quote, import_footprint,
 calc, simulate, use_plugin, list_plugins, solve, kb (board knowledgebase:
 list/search/read the kb/ notes + datasheets, add a path/url/text, fetch).
 State: one board in memory; load_board replaces it (old one undoable? no —
@@ -309,6 +309,19 @@ def t_fabs(a: dict[str, object]) -> dict[str, object]:
                      for k, v in sorted(PROFILES.items())}}
 
 
+def t_quote(a: dict[str, object]) -> dict[str, object]:
+    """Fab price comparison: bare per fab + JLC assembly with parts."""
+    from ocdcircuit.util import as_int as _ii
+    b = _board()
+    fabs = a.get("fabs", a.get("fab"))
+    if isinstance(fabs, str):
+        fabs = [fabs]
+    assert fabs is None or isinstance(fabs, list)
+    no_parts = a.get("no_parts", a.get("bare", False))
+    assert isinstance(no_parts, bool)
+    return b.quote(qty=_ii(a.get("qty"), 5), fabs=fabs, no_parts=no_parts)
+
+
 def t_calc(a: dict[str, object]) -> dict[str, object]:
     b = _board()
     key = a.get("key")
@@ -459,6 +472,7 @@ TOOLS: dict[str, object] = {
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda|altium|altium-sch", "path": "file"}),
     "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
     "fabs": (t_fabs, {}),
+    "quote": (t_quote, {"qty?": 5, "fabs?": "[fab keys]", "no_parts?": "bare PCB only"}),
     "calc": (t_calc, {"what": "trace|amps|via|divider|pick", "amps": 1.0}),
     "simulate": (t_sim, {"what": "dc|tran", "key?": "mna|ngspice|gates",
                            "t_end?": "tran end", "steps?": "tran steps",

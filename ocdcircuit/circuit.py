@@ -501,6 +501,27 @@ class Board(Component):
         assert isinstance(out, dict)
         return out
 
+    def scan(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Reverse-engineer a physical board from photos:
+        scan(photos=[...], board_mm=.., llm=False) → stitch + enhancement
+        stack + parallax height + gaussian splat, plus the analysis and a
+        draft .ocd when a vision model is configured."""
+        out = self._run("scan", key, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def quote(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Fab price comparison: bare per fab + JLC assembly with parts."""
+        out = self._run("quote", key, **k)
+        assert isinstance(out, dict)
+        return out
+
+    def price(self, ref: str, key: str | None = None, **k: object) -> dict[str, object]:
+        """One part's unit price via the `price` provider (std → knoll live)."""
+        out = self._run("price", key, ref=ref, **k)
+        assert isinstance(out, dict)
+        return out
+
     def configure(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Project config: board.toml defaults (fab/placer/router/drc…).
         A plugin like everything else; applied picks land in board.proj."""

@@ -519,6 +519,76 @@ for _ff in fab.list_fabs():
     _fr = _bfab.check("fab", fab=_ff)
     assert isinstance(_fr["errors"], list) and _fr["fab"] == _ff, _ff
 assert _bfab.check("fab", fab="eurocircuits")["errors"] == []
+# quote: bare models every fab cheapest-first; manual price= beats live lookup
+from ocdcircuit import quote as _qq
+_qb = agent.loads("board q 40x30 2L\npart R1 R0805 10k price=0.02\npart C1 C0805 100n price=0.01\n"
+                  "N :: R1.1 C1.1\nGND :: R1.2 C1.2\n", base=EX)
+_qb.place(seeds=1, iters=20)
+_qb.route_board()
+_qr = _qq.compare(_qb, qty=5)
+_qrows = cast(list[dict[str, object]], _qr["rows"])
+assert [r["fab"] for r in _qrows][:2] == ["jlc", "allpcb"], _qrows[:3]
+_jasm = cast(dict[str, object], [r for r in _qrows if r["fab"] == "jlc"][0]["asm"])
+assert _jasm["parts_per_board"] == 0.03 and _jasm["sources"] == {"manual": 2}, _jasm
+assert _jasm["unpriced"] == [], _jasm
+_qbare = _qq.compare(_qb, qty=5, with_parts=False)
+assert all("asm_total" not in r for r in cast(list[dict[str, object]], _qbare["rows"]))
+_qosh = cast(list[dict[str, object]],
+             _qq.compare(_qb, qty=5, fabs=["oshpark"])["rows"])
+assert _qosh[0]["boards"] == 6  # 3-packs snap
+try:
+    _qq.compare(_qb, fabs=["nope"])
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+try:
+    _qq.compare(_qb, qty=0)
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+try:
+    _qq.bare(_qb, "jlc", qty=0)
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+_ql1 = agent.loads("board q1 40x30 1L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+try:
+    _qq.bare(_ql1, "oshpark")  # oshpark is 2,4L only
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+assert _qb.quote()["stamp"] == "2026-09"  # Board.quote dispatch
+try:
+    _qb.quote(qty=0)
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+# price is a cordis provider: std/knoll mounted, hot-swappable, fenced on crash
+assert _qb.plugins().list("price") == ["knoll", "std"]
+assert _qb.price("R1") == {"price": 0.02, "source": "manual"}
+assert _qb.price("R1", "std") == {"price": 0.02, "source": "manual"}
+_qb.use("price", "knoll")
+assert _qb.price("R1", "knoll")["source"] in ("unpriced", "jlc-live", "offline")
+_qb.use("price", "std")
+class _QBoom(Plugin[dict[str, object]]):
+    kind, key = "price", "boom"
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        raise RuntimeError("boom")
+_QBoom("price:boom").mount(_qb.ctx)
+try:
+    _qb.price("R1", "boom")
+    raise AssertionError("should have raised")
+except RuntimeError:
+    pass
+assert _qb.plugins().failed[("price", "boom")].startswith("RuntimeError")
+_jqr = cast(list[dict[str, object]], _qb.quote(qty=5, fabs=["jlc"])["rows"])
+assert _jqr[0]["asm_total"]  # quote survives fenced provider
+_qb.use("price", "std")  # active was boom... re-arm to std
+try:
+    _qb.price("ZZZ", "std")
+    raise AssertionError("should have raised")
+except KeyError:
+    pass
 # flex: bend/stiffener round-trip, DRC, no maze vias in dynamic bends
 _fb = agent.loads("board f 60x20 2L\npart J1 PINHD4\npart U1 SOIC8 X\n"
                   "net A: J1.1 U1.1\nnet B: J1.2 U1.2\n"
@@ -1140,7 +1210,7 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 29
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 30
 assert len(cast(list[object], _call("footprints", {})["footprints"])) >= 100
 assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
            _call("footprints", {"q": "R0805"})["footprints"]))
@@ -1157,6 +1227,20 @@ assert len(cast(str, _call("render", {"key": "xray"})["data"])) > 1000
 # MCP xray: `xray` without png is a clean error, not a fence trip
 _xe = _rpc("tools/call", {"name": "xray", "arguments": {"png": "!!!not-base64!!!"}})
 assert "error" in _xe, _xe
+# MCP quote: cheapest-first bare table + JLC assembly (+ error, not fence trip)
+_xq = _call("quote", {"qty": 5})
+_xrows = cast(list[dict[str, object]], _xq["rows"])
+assert len(_xrows) == 11 and _xq["stamp"], _xq
+assert all(float(cast(float, _xrows[i]["bare_total"]))
+           <= float(cast(float, _xrows[i + 1]["bare_total"]))
+           for i in range(len(_xrows) - 1)), _xrows
+assert _xrows[0]["fab"] == "jlc", _xrows[0]
+_jlcr = [r for r in _xrows if r["fab"] == "jlc"][0]
+assert "asm_total" in _jlcr and cast(dict[str, object], _jlcr["asm"])["parts"] == 10
+_xqb = _call("quote", {"qty": 5, "no_parts": True})
+assert all("asm_total" not in r for r in cast(list[dict[str, object]], _xqb["rows"]))
+_xqbad = _rpc("tools/call", {"name": "quote", "arguments": {"fabs": ["nope"]}})
+assert "error" in _xqbad, _xqbad
 # load_board replaces a published board, and the replace runs the inverse:
 # the previous board is unloaded (retire + O-Remove), not dropped with its
 # fiber and journal intact (in-process, so the old object is reachable here)
@@ -1482,6 +1566,14 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_xray(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
                                         os.path.join(_np, "nope.png")]) == 1
     assert _ocd.main(["ocd", "xray", "--help"]) == 1
+    # ocd quote: cheapest-first table (+ JLC assembly), bad fab is exit 1
+    assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"), "5"]) == 0
+    assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
+                                         "--bare", "--fab", "jlc", "--fab", "oshpark"]) == 0
+    assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
+                                         "--fab", "nope"]) == 1
+    assert _ocd.cmd_quote(_ocd._boot(), ["--help"]) == 1
+    assert _ocd.main(["ocd", "quote", "--help"]) == 1
     # main() dispatch: shorthand, flags, help, usage errors (README quickstart)
     assert _ocd.main(["ocd", os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.main(["ocd", "run", "--placer", "compact", "--router", "maze",

@@ -1368,11 +1368,14 @@ class AltiumImporter(Plugin[dict[str, object]]):
 
 class AltiumSchImporter(Plugin[dict[str, object]]):
     """Schematic importer: native binary .SchDoc (components + wires +
-    netlabels/powerports → parts/nets) onto THIS board. Placement is
-    schematic, not physical — run a placer after import."""
+    netlabels/powerports → parts/nets) onto THIS board. Repeat per sheet:
+    shared netlabels merge, colliding refs get a sheet-stem prefix,
+    sheet-local N1..Nn auto-nets stay separate. Placement is schematic,
+    not physical — run a placer after import."""
     kind, key = "importer", "altium-sch"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import os
         from .foreign import _bin_schdoc, _OLE_MAGIC
         path = k.get("path", "")
         assert isinstance(path, str) and path
@@ -1381,7 +1384,8 @@ class AltiumSchImporter(Plugin[dict[str, object]]):
         if raw[:8] != _OLE_MAGIC:
             raise ValueError("not a binary .SchDoc (OLE); "
                              "native schematic import needs the .SchDoc file")
-        return _board_ir_into(board, _bin_schdoc(raw))
+        stem = os.path.splitext(os.path.basename(path))[0]
+        return _board_ir_into(board, _bin_schdoc(raw, sheet=stem))
 
 
 class EagleBoardImporter(Plugin[dict[str, object]]):
@@ -1425,12 +1429,22 @@ def _board_ir_into(board: Board, ir: dict[str, object]) -> dict[str, object]:
     for fn, meta in nb.custom_fp.items():
         if fn not in board._lib():
             board.add_footprint(fn, meta)
+    # multi-sheet merge: IR may carry board.sheet (SchDoc filename stem).
+    # Shared netlabels (GND…) merge by name; colliding refs get a sheet
+    # prefix; sheet-local N1..Nn auto-nets get one too (never merge).
+    sheet = str(cast(dict[str, object], ir.get("board", {})).get("sheet", ""))
+    prefix = (sheet + "_") if sheet else ""
+    ren: dict[str, str] = {}
+    for ref in nb.parts:
+        ren[ref] = (prefix + ref) if prefix and ref in board.parts else ref
     for ref, p in nb.parts.items():
-        board.add_part(ref, p.fp, p.value, p.x, p.y,
+        board.add_part(ren[ref], p.fp, p.value, p.x, p.y,
                        attrs=dict(p.attrs) or None)
     for n, net in nb.nets.items():
+        if prefix and n.startswith("N") and n[1:].isdigit():
+            n = prefix + n
         for ref, pin in net.pins:
-            board.connect(n, ref, pin)
+            board.connect(n, ren.get(ref, ref), pin)
     binfo = cast(dict[str, object], ir.get("board", {}))
     ncu = binfo.get("layers", 2)
     assert isinstance(ncu, int)
@@ -1545,6 +1559,40 @@ class ScorePlugin(Plugin[dict[str, object]]):
         if k.get("tidy"):
             return _score.tidy(board)
         return _score.score(board)
+
+
+class PcbScanPlugin(Plugin[dict[str, object]]):
+    """Reverse-engineer a physical board from photos: stitch N handheld
+    shots per side, enhance for markings/copper/edges, recover standoff by
+    parallax, bake a 3D gaussian splat, then let a vision model read the
+    lot and emit a draft .ocd.
+
+    scan(photos=[...] | {'top': [...], 'bottom': [...]}, outdir=..,
+         board_mm=<known board width in mm>, note=.., llm=False)
+
+    llm=False stops after the deterministic artifacts (no endpoint needed).
+    Needs numpy; Pillow only for non-PNG photos.
+    cordis-boundary: file reads/writes + HTTP are outside-context
+    emissions (§6.1), withheld until run()."""
+    kind, key = "scan", "photo"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import pcbscan as _scan
+        photos = k.get("photos", k.get("paths"))
+        assert isinstance(photos, (list, dict)), (
+            "scan needs photos=[path, ...] or "
+            "photos={'top': [...], 'bottom': [...]}")
+        mm = k.get("board_mm")
+        assert mm is None or isinstance(mm, (int, float, str))
+        outdir = k.get("outdir")
+        assert outdir is None or isinstance(outdir, str)
+        note = k.get("note", "")
+        assert isinstance(note, str)
+        return _scan.reverse(
+            cast("list[str] | dict[str, list[str]]", photos),
+            outdir or f"{board.name}-scan",
+            board_mm=(_f(mm, 0.0) or None), note=note,
+            llm_analysis=bool(k.get("llm", True)))
 
 
 class DiffPlugin(Plugin[str]):
@@ -1701,6 +1749,140 @@ class GatesPlugin(Plugin[dict[str, object]]):
         return _gates.run(board, ticks, **k)
 
 
+class QuotePlugin(Plugin[dict[str, object]]):
+    """Fab price comparison: bare PCB per fab + JLC assembly with parts.
+    Estimates from published proto pricing (not quotes); qty=N sets boards."""
+    kind, key = "quote", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        from . import quote as _quote
+        from .util import as_int as _ii
+        qty = _ii(k.get("qty"), 5)
+        fabs = k.get("fabs", k.get("fab"))
+        if isinstance(fabs, str):
+            fabs = [fabs]
+        assert fabs is None or isinstance(fabs, list)
+        no_parts = k.get("no_parts", k.get("bare", False))
+        assert isinstance(no_parts, bool)
+        return _quote.compare(board, qty, fabs, not no_parts)
+
+
+class StdPrice(Plugin[dict[str, object]]):
+    """Unit-price provider: answers {price, source} per part ref from the
+    board's own data. `price=` attr when set; else the offline JLC SQLite
+    (populated via the KiCad MCP download) when present; else unpriced.
+    `quote` prefers this provider, then knoll live, then unpriced."""
+    kind, key = "price", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import math
+        ref = k.get("ref", "")
+        assert isinstance(ref, str) and ref
+        raw = board.parts[ref].attrs.get("price")  # KeyError = unknown ref
+        if isinstance(raw, bool):
+            return {"price": None, "source": "unpriced"}
+        if isinstance(raw, (int, float)):
+            v = float(raw)
+            if math.isfinite(v) and v >= 0:
+                return {"price": v, "source": "manual"}
+            raise ValueError(f"price {raw!r} on {ref} must be ≥0")
+        if isinstance(raw, str) and raw.strip():
+            try:
+                v = float(raw.strip().lstrip("$"))
+            except ValueError:
+                raise ValueError(f"price {raw!r} on {ref} is not a number")
+            if math.isfinite(v) and v >= 0:
+                return {"price": v, "source": "manual"}
+            raise ValueError(f"price {raw!r} on {ref} must be ≥0")
+        lcsc = k.get("lcsc", "")
+        assert isinstance(lcsc, str)
+        off = _price_offline(lcsc)
+        if off is not None:
+            return {"price": off, "source": "offline"}
+        return {"price": None, "source": "unpriced"}
+
+
+def _price_offline(lcsc: str) -> float | None:
+    """One unit price from the offline JLC SQLite, else None. Read-only open;
+    missing/corrupt/empty DB is not an error — the caller falls through."""
+    import math
+    import os
+    import sqlite3
+    db = os.path.expanduser("~/.local/share/kicad-mcp/jlcpcb_parts.db")
+    if not lcsc or not os.path.isfile(db):
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+        try:
+            row = con.execute("SELECT price_json FROM components WHERE lcsc=?",
+                              (lcsc.lstrip("Cc"),)).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    try:
+        import json
+        br = json.loads(row[0] or "[]")
+        v = float(br[0].get("price"))
+    except (ValueError, TypeError, IndexError, AttributeError, KeyError):
+        return None
+    return v if math.isfinite(v) and v >= 0 else None
+
+
+class KnollPrice(Plugin[dict[str, object]]):
+    """Unit-price provider: knoll's live JLC lookup (LCSC exact, MPN exact).
+    Needs network + knoll's checkout (KNOLL_SRC or ~/Desktop/knoll/src);
+    unreachable/absent → unpriced, never an error. Loaded via importlib spec
+    so knoll stays an undeclared checkout, not a dependency and never on
+    sys.path. cordis-boundary: network emission, withheld until run()."""
+    kind, key = "price", "knoll"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import math
+        lcsc = k.get("lcsc", "")
+        mpn = k.get("mpn", "")
+        assert isinstance(lcsc, str) and isinstance(mpn, str)
+        v, src = _knoll_price(lcsc, mpn)
+        if v is None:
+            return {"price": None, "source": "unpriced"}
+        assert math.isfinite(v) and v >= 0
+        return {"price": v, "source": src}
+
+
+def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
+    import importlib.util
+    import math
+    import os
+    for cand in (os.environ.get("KNOLL_SRC"), os.path.expanduser("~/Desktop/knoll/src")):
+        if not cand:
+            continue
+        mod = os.path.join(cand, "knoll", "stock.py")
+        if not os.path.isfile(mod):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("_knoll_stock", mod)
+            assert spec is not None and spec.loader is not None
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            r = m.lookup_jlc(lcsc, mpn)
+        except Exception:
+            return None, "unpriced"
+        if not isinstance(r, dict) or r.get("price") is None:
+            return None, "unpriced"
+        pv = r["price"]
+        assert isinstance(pv, (int, float, str))
+        try:
+            v = float(pv)
+            if not math.isfinite(v) or v < 0:
+                return None, "unpriced"
+        except (TypeError, ValueError):
+            return None, "unpriced"
+        return v, "jlc-live"
+    return None, "unpriced"
+
+
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer, TidyPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
@@ -1715,7 +1897,8 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              SymImporter, SchLibImporter,
              TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
-             ScorePlugin, DiffPlugin, XrayCompare,
+             ScorePlugin, DiffPlugin, XrayCompare, PcbScanPlugin, QuotePlugin,
+             StdPrice, KnollPrice,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
              PngRenderer, KicadRenderer, BlenderRenderer, PcbdrawRenderer,
              EasyedaRenderer, Html3dRenderer, XrayRenderer, AllRenderer)

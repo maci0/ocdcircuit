@@ -35,6 +35,23 @@ Units: mm. `min_trace`/`min_space` are 1oz copper; heavier copper needs
 wider geometry (bump `trace` widths or expect DRC errors — that's the
 checker doing its job).
 
+## Price comparison (`ocd quote`, `quote:std`)
+
+`ocd quote board.ocd [qty] [--bare] [--fab F]` prices the board bare at
+every fab plus JLC assembled: parametric bare-PCB models fit to published
+prototype pricing (JLC $2/5pcs 2L, OSH Park $5/in², …) + the JLC Economic
+PCBA fee schedule (setup $8.18, joints $0.0016, extended-part loading
+$3.07). Parts price through the `price` provider chain: `price:std`
+(`price=` attr, then the offline JLC SQLite when populated), then
+`price:knoll` (knoll's live JLC lookup by `lcsc=`/`mpn=`, needs network +
+knoll's checkout via `KNOLL_SRC`), else unpriced-and-named. Swap providers
+with `b.use("price", "knoll")`; a crashing provider is fenced and the next
+source serves. Other fabs are bare-only (their assembly is per-order
+quote). **Estimates, not quotes** — every number carries its fit date
+(`stamp`), re-verify before ordering. Sources:
+[JLC assembly pricing](https://jlcpcb.com/help/article/pcb-assembly-price),
+[JLC vs PCBWay vs OSH Park 2026](https://pamfinds.com/guides/jlcpcb-vs-pcbway-vs-osh-park/).
+
 Sources: [JLCPCB capabilities](https://jlcpcb.com/capabilities/Capabilities),
 [PCBWay capabilities](https://www.pcbway.com/capabilities.html),
 [OSH Park](https://oshpark.com), [Seeed Fusion](https://www.seeedstudio.com/fusion.html),

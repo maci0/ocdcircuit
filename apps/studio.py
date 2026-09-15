@@ -88,7 +88,12 @@ TOOLBAR = (
     '<label>Rb <input id=drb size=5 value=10k aria-label="divider bottom R"></label>'
     '<div id=dout></div></details>'
     '<details id=doc title="tooling health: python, ngspice, plugins"><summary>health</summary>'
-    '<div id=docout>click to check</div></details></div>'
+    '<div id=docout>click to check</div></details>'
+    '<details id=quote title="fab price comparison: bare per fab, JLC assembled"><summary>quote</summary>'
+    '<label>qty <input id=qqty value=5 size=3 aria-label="boards ordered"></label>'
+    '<label><input type=checkbox id=qbare> bare only</label>'
+    '<button id=qgo type=button class=primary title="compare fab prices for the open board">compare</button>'
+    '<div id=qout role=status aria-live=polite></div></details></div>'
     '<div class="grp status"><span id=cost class=pill title="total wirelength">cost</span>'
     '<span id=ocdscore class=pill title="OCD neatness, 0-100"></span>'
     '<span id=feas class=pill title="routing feasibility per layer count"></span>'
@@ -142,7 +147,7 @@ _slot("view", "vcs",
 _slot("view", "pcb",
                lambda s: '<section id=pcbwrap>'
                          '<header class=panel-head><span class=panel-title>PCB</span>'
-                         '<span class=panel-note>drag a part to pin it &middot; double-click to unpin</span>'
+                         '<span class=panel-note>drag a part to pin it &middot; double-click unpins &middot; right-click rotates</span>'
                          '<details id=layerbox title="show or hide layers and marks on this canvas">'
                          '<summary>layers</summary>'
                          '<div id=layers role=group aria-label="visible layers">'
@@ -529,6 +534,17 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 .msg.err{color:var(--bad);background:var(--bad-wash);border:1px solid var(--danger-border);border-radius:var(--r-control);padding:8px 10px}
 .msg.bot pre{background:var(--paper-2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow:auto;font:.8rem/1.6 var(--mono);margin:6px 0 0}
 .msg .tools{color:var(--ink-3);font:.75rem var(--mono);display:block;margin-top:4px}
+/* agent timeline: a turn reads as thought → tools → reply, not a bare log.
+Flux shows its work; the log lines already exist, they just needed a shape. */
+.thought{margin:0 0 4px;font-size:.8rem;color:var(--ink-3)}
+.thought summary{padding:2px 0;border:0;background:none;font:.78rem var(--mono);cursor:pointer}
+.thought summary:hover{background:none;text-decoration:underline}
+.thought ul{margin:4px 0 6px;padding-left:1.1rem;font:.78rem/1.7 var(--mono)}
+.thought li.ok{color:var(--ink-2)}
+.thought li.bad{color:var(--bad)}
+#followups{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px}
+#followups:empty{display:none}
+#followups button{font-size:.78rem;padding:4px 10px}
 #composer{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--paper-2)}
 #composer textarea{flex:1;resize:none;font:.9rem/1.5 var(--sans);padding:9px 11px;border:1.5px solid var(--line-2);border-radius:var(--r-control);background:var(--card);color:var(--ink)}
 #composer textarea:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
@@ -587,12 +603,32 @@ canvas{width:100%;height:100%;display:block}
 #srcpanels{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
 .grp.status{margin-left:0}}
 @media(min-width:1500px){#srcpanels{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-rows:minmax(0,1fr)}}
+/* Flux-dark: the same tokens, re-pointed. One class, no second stylesheet. */
+body.dark{--paper:#101418;--paper-2:#1a2129;--card:#161c22;--line:#2a333d;--line-2:#3a4550;
+--ink:#d8e2dc;--ink-2:#aeb8c0;--ink-3:#7f8b94;
+--signal:#5fd894;--signal-ink:#5fd894;--signal-wash:#123526;--ok-border:#2a5a3d;
+--bad:#ff7364;--bad-wash:#3a1a16;--danger-border:#6a2a22;
+--warn:#ffd8a0;--warn-wash:#3a2c14;--warn-border:#6a522a;}
+body.dark #ed{background:#0a0d11}
+body.dark #composer{background:var(--paper-2)}
+/* view tabs: Flux's Docs/Schematic/Layout/3D row, our panels underneath */
+#viewtabs{display:flex;gap:4px;margin-left:8px}
+#viewtabs button{font-size:.8rem;padding:5px 12px}
+#viewtabs button.on{background:var(--signal);border-color:var(--signal-ink);color:#fff}
+body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{display:none}
+body.tabs[data-view=pcb] #pcbwrap{display:flex}
+body.tabs[data-view=sch] #schwrap{display:flex}
+body.tabs[data-view=t3d] #wrap3d{display:flex}
+body.tabs[data-view=docs] #kbwrap{display:flex}
+body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{grid-column:2/4;grid-row:1/3}
 </style></head><body>
 <a class=skip href=#ed>skip to the job file</a>
 <header class=top><div class=inner>
 <span class=brand><svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round></line></svg>OCD Studio <i>board &amp; PCB workshop</i></span>
 <span id=me class=pill title="logged in as"></span>
 <button id=logoutbtn title="log out of the studio">log out</button>
+<button id=themebtn title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
+<nav id=viewtabs role=tablist aria-label="views"><button data-v=pcb role=tab title="PCB layout">Layout</button><button data-v=sch role=tab title="schematic">Schematic</button><button data-v=t3d role=tab title="3D preview">3D</button><button data-v=docs role=tab title="notes and datasheets">Docs</button></nav>
 /*__TOOLBAR__*/
 </div></header>
 <main>
@@ -615,9 +651,18 @@ function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy
 }
 const TRACECOLS=['#8a2318','#1d5fa8','#0f5c37','#6b3fa0']; // net hues: red/blue/green/violet
 // canvas palette: paper ground, ink marks, one signal green (matches the sheet)
+// dark theme re-points these at paint time (readTheme), never at draw time.
 const C={paper:'#f7f5f0',paper2:'#efece4',card:'#fffdf8',line:'#e2ddd0',line2:'#cfc8b6',ink:'#1a1d21',ink2:'#4d545c',ink3:'#7c848c',
   signal:'#0f5c37',wash:'#dcefe1',bad:'#8a2318',warn:'#6b4a00',copper:'#9a7134',
   pad:'#d9a821',padline:'#8a6d00'}; // pad copper: same pair the SVG/PNG renders use
+const CDARK={paper:'#101418',paper2:'#1a2129',card:'#161c22',line:'#2a333d',line2:'#3a4550',ink:'#d8e2dc',ink2:'#aeb8c0',ink3:'#7f8b94',
+  signal:'#5fd894',wash:'#123526',bad:'#ff7364',warn:'#ffd8a0',copper:'#c9962e',
+  pad:'#d9a821',padline:'#8a6d00'};
+const CLIGHT={...C};
+function readTheme(){ // Flux-dark: one class on body re-points the palette
+  const dark=document.body.classList.contains('dark');
+  Object.assign(C,dark?CDARK:CLIGHT);
+  return dark;}
 const bgCol=C.paper; // PCB ground; getComputedStyle per frame forces a style flush
 // copper pour: a spec-sheet hatch with the thermal gaps punched out of it, so
 // the routing underneath still reads through the flood.
@@ -930,7 +975,7 @@ function draw3D(st,rot){
   faces.sort((a,b)=>a.z-b.z);
   for(const f of faces){ctx.fillStyle=f.c;ctx.beginPath();ctx.moveTo(f.p[0][0],f.p[0][1]);for(let i=1;i<f.p.length;i++)ctx.lineTo(f.p[i][0],f.p[i][1]);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(0,0,0,.28)';ctx.stroke();}
 }
-function renderAll(){if(!S||!S.cur)return;view=drawPCB(S.cur,1);drawSCH(S);if(spinOn){rot+=0.003;draw3D(S.cur,rot);dirty=true;}}
+function renderAll(){if(!S||!S.cur)return;readTheme();view=drawPCB(S.cur,1);drawSCH(S);if(spinOn){rot+=0.003;draw3D(S.cur,rot);dirty=true;}}
 let rot=0.6,spinOn=true,spinT=null,dirty=true; // render-on-demand: static board costs zero frames
 function loop(){if(dirty){dirty=false;renderAll();}requestAnimationFrame(loop);}
 requestAnimationFrame(loop);
@@ -1197,6 +1242,23 @@ function notePlacement(r){
   else if(r.placed===false)statMsg('loaded as saved — solve to re-place',true);
 }
 function setEditor(t){$('ed').innerText=t;}
+function unpinRefs(gone){ // drop fix lines for refs; true when something left
+  const lines=$('ed').innerText.split('\n')
+    .filter(l=>{const m=l.match(/^fix\s+(\S+)\s+at\s/);return !m||!gone.has(m[1]);});
+  if(lines.length===$('ed').innerText.split('\n').length)return false;
+  $('ed').innerText=lines.join('\n');push();return true;}
+function rotRefs(refs){ // rotate 90°: bump rot= on the part line (add or +90)
+  const lines=$('ed').innerText.split('\n');
+  const hit=new Set();
+  const out=lines.map(l=>{const m=l.match(/^part\s+(\S+)\s+(\S+)(.*)$/);
+    if(!m||!refs.has(m[1]))return l;hit.add(m[1]);
+    const cur=(m[3].match(/rot=(\d+)/)||[])[1];
+    const nx=cur?((+cur+90)%360):90;
+    const rest=m[3].replace(/\s*rot=\d+/,'');
+    return `part ${m[1]} ${m[2]} rot=${nx}${rest}`;});
+  const miss=[...refs].filter(r=>!hit.has(r));
+  if(miss.length){statMsg('no part line for '+miss.join(', '));return;}
+  $('ed').innerText=out.join('\n');push();}
 // drag parts on pcb
 (()=>{const c=$('pcb');let drag=null,dragGroup=null;
 function hit(mx,my){for(const r in S.cur.parts){
@@ -1236,10 +1298,13 @@ c.addEventListener('mouseup',async()=>{if(!drag)return;const moved=dragGroup||[d
 c.addEventListener('dblclick',()=>{ // unpin: remove fix (whole group if instanced)
   if(!S||!S.cur||!S.cur.hover)return;
   const r=S.cur.hover,o=S.cur.parts[r].owner;
-  const gone=new Set(o?Object.keys(S.cur.parts).filter(k=>S.cur.parts[k].owner===o):[r]);
-  const lines=$('ed').innerText.split('\n')
-    .filter(l=>{const m=l.match(/^fix\s+(\S+)\s+at\s/);return !m||!gone.has(m[1]);});
-  if(lines.length!==$('ed').innerText.split('\n').length){$('ed').innerText=lines.join('\n');push();}});
+  unpinRefs(new Set(o?Object.keys(S.cur.parts).filter(k=>S.cur.parts[k].owner===o):[r]));});
+c.addEventListener('contextmenu',e=>{ // right-click: rotate here, unpin there
+  e.preventDefault();if(!S||!S.cur)return;const R=c.getBoundingClientRect();
+  const r=hit(e.clientX-R.left,e.clientY-R.top);
+  if(!r)return; // empty board: browser menu stays suppressed, nothing to do
+  const o=S.cur.parts[r].owner;
+  rotRefs(new Set(o?Object.keys(S.cur.parts).filter(k=>S.cur.parts[k].owner===o):[r]));});
 })();
 $('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value,full:true});if(r.error){statMsg(r.error);return;}statMsg('');applyState(r,true);};
 $('dice').onclick=genCands;
@@ -1284,6 +1349,14 @@ function calcLive(){
   $('dout').textContent=(V>=0&&Rt>0&&Rb>0)?`Vout ${(V*Rb/(Rt+Rb)).toFixed(2)}V`:'';
 }
 ['ca','cdt','dv','drt','drb'].forEach(id=>$(id).addEventListener('input',calcLive));
+if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open board
+  const q=Math.max(1,parseInt($('qqty').value)||5);
+  const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
+  if(r.error){$('qout').textContent=r.error;return;}
+  $('qout').innerHTML=(r.rows||[]).map(x=>
+    `<div><span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
+    +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
+};
 $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
   if(!$('doc').open||$('docout').dataset.done)return;
   const r=await api('/doctor',{});
@@ -1410,7 +1483,8 @@ async function openFile(path){
 function msg(who,text){
   const el=document.createElement('p');
   el.className='msg '+(who==='you'?'me':who);
-  const w=document.createElement('span');w.className='who';w.textContent=who;
+  const w=document.createElement('span');w.className='who';
+  w.textContent=who==='bot'?'flux':who; // the agent has a name, like its counterpart
   el.appendChild(w);
   el.appendChild(document.createTextNode(text)); // textContent: never innerHTML
   $('msgs').appendChild(el);
@@ -1472,12 +1546,52 @@ async function chat(text,auto){
   const r=await api('/chat',{text,auto:!!auto});
   wait.remove();
   if(r.error){msg('err',r.error);setQueue(r.proposals);return;}
+  const tn=(r.proposals||[]).filter(p=>/\.ocd$/.test(p.path||''));
+  if(tn.length){ // plan checklist: the turn's file edits as checkable steps
+    const det=document.createElement('details');det.className='thought';det.open=true;
+    const sum=document.createElement('summary');
+    sum.textContent=`plan: ${tn.length} file${tn.length===1?'':'s'} proposed`;
+    const ul=document.createElement('ul');
+    tn.forEach(p=>{const li=document.createElement('li');li.className='ok';
+      li.textContent='◻ '+p.path;ul.appendChild(li);});
+    det.append(sum,ul);$('msgs').appendChild(det);
+    $('msgs').scrollTop=$('msgs').scrollHeight;
+  }
+  if(r.log&&r.log.length){ // thought trace: what the agent actually did
+    const det=document.createElement('details');det.className='thought';
+    const sum=document.createElement('summary');
+    sum.textContent=`thought for ${r.log.length} step${r.log.length===1?'':'s'}`;
+    const ul=document.createElement('ul');
+    r.log.forEach(ln=>{const li=document.createElement('li');
+      li.className=/failed|error/i.test(ln)?'bad':'ok';li.textContent=ln;
+      ul.appendChild(li);});
+    det.append(sum,ul);$('msgs').appendChild(det);
+    $('msgs').scrollTop=$('msgs').scrollHeight;
+  }
   msg('bot',r.reply||'(no reply)');
-  if(r.log&&r.log.length)msg('bot','tools: '+r.log.join(' · '));
+  followups(r.reply||'');
   if(r.note)msg('bot',r.note);
   if(r.proposals&&r.proposals.length)setQueue(r.proposals);
   if(r.state)applyState(r.state,false);
   if(r.applied)loadVCS();
+}
+// follow-up chips: Flux's "Route and verify / Add thermal copper" row.
+// Mined from the reply's own next-steps, else the three generic moves.
+function followups(reply){
+  let box=$('followups');
+  if(!box){box=document.createElement('div');box.id='followups';
+    $('composer').before(box);}
+  box.innerHTML='';
+  const picks=[];
+  reply.split('\n').forEach(ln=>{
+    const m=ln.match(/^(?:\d+[.)]\s*|[-*]\s+)(.{12,80})$/);
+    if(m&&/rout|check|valid|verif|test|place|thermal|copper|drc|fix/i.test(m[1])
+       &&picks.length<3)picks.push(m[1].trim());});
+  if(!picks.length)picks.push('Route and verify','Check DRC','Explain this board');
+  picks.slice(0,3).forEach(q=>{const b=document.createElement('button');
+    b.textContent=q.length>34?q.slice(0,33)+'…':q;b.title=q;
+    b.onclick=()=>chat(q,$('chatauto').checked);
+    box.appendChild(b);});
 }
 $('composer').addEventListener('submit',e=>{
   e.preventDefault();
@@ -1556,6 +1670,31 @@ async function boot(){
   renderTree();
   loadVCS();
   $('logoutbtn').onclick=async()=>{await api('/auth/logout',{});location.href='/';};
+  try{if(JSON.parse(localStorage.getItem('ocd-studio-dark')||'0'))setDark(true);}catch(e){}
+  $('themebtn').onclick=()=>setDark(!document.body.classList.contains('dark'));
+  document.querySelectorAll('#viewtabs button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+  try{const v=localStorage.getItem('ocd-studio-view');if(v)setView(v);}catch(e){}
+  // cockpit ↔ tabs: double-click a tab returns to the all-at-once cockpit
+  document.querySelectorAll('#viewtabs button').forEach(b=>b.ondblclick=()=>{
+    document.body.classList.remove('tabs');
+    document.querySelectorAll('#viewtabs button').forEach(x=>x.classList.remove('on'));});
+}
+function setDark(on){
+  document.body.classList.toggle('dark',on);
+  $('themebtn').textContent=on?'paper':'dark';
+  try{localStorage.setItem('ocd-studio-dark',on?'1':'0');}catch(e){}
+  markDirty();
+}
+function setView(v){
+  let tabs=document.body.classList.contains('tabs');
+  if(!tabs){ // first pick enables tab mode (cockpit is the default)
+    document.body.classList.add('tabs');tabs=true;}
+  document.body.dataset.view=v;
+  document.querySelectorAll('#viewtabs button').forEach(b=>{
+    const on=b.dataset.v===v;b.classList.toggle('on',tabs&&on);
+    b.setAttribute('aria-selected',on?'true':'false');});
+  try{localStorage.setItem('ocd-studio-view',v);}catch(e){}
+  renderAll();markDirty();
 }
 // selecting text in the editor highlights every ref it names, on PCB and SCH
 function edHighlight(){
@@ -2701,6 +2840,19 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send({"score": r["score"], "missing": r["missing"],
                             "extra": r["extra"], "divs": divs[:20],
                             "overlay": r["overlay"]})
+            elif self.path == "/quote":  # fab price comparison for the open board
+                from ocdcircuit.util import as_int as _iiq
+                b = agent.loads(H.src_text, base=BASE)
+                fabs = req.get("fabs", req.get("fab"))
+                if isinstance(fabs, str):
+                    fabs = [fabs]
+                assert fabs is None or isinstance(fabs, list)
+                try:
+                    self._send(b.quote(qty=_iiq(req.get("qty"), 5), fabs=fabs,
+                                       no_parts=bool(req.get("no_parts", False))))
+                except (ValueError, KeyError, AssertionError) as e:
+                    self._send({"error": f"{type(e).__name__}: {e}"})
+                    return
             elif self.path == "/simulate":  # dc | tran on current text
                 what = str(req.get("what", "dc"))
                 b = agent.loads(H.src_text, base=BASE)
