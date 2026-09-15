@@ -81,8 +81,8 @@ def plane_plots(board: Board) -> dict[int, list[Draw]]:
     except at pads). Returns {layer: [cutout rects]}; empty when the
     board declares no pours.
     # ponytail: rect cutouts, not polygon subtraction -- JLC renders the
-    # bbox union fine at these clearances; exact boolean ops if a fab
-    # ever rejects a plot (none has).
+    # bbox union fine at these clearances (e2e pours export DRC-clean);
+    # exact boolean ops if a fab ever rejects a plot (none has).
     """
     from .drc import fp_keepouts, pour_layers, zone_at
     from .parts import hole_drill, pads_of

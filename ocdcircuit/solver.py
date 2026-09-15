@@ -9,7 +9,9 @@ Animation: optimize(..., frames=True) records per-seed snapshots
 [{cost, pos:{ref:(x,y)}}]; route(..., frames=True) records per-net segment
 batches. The studio UI tweens between snapshots (ease-out cubic) — parts
 glide, traces grow. Headless callers pay nothing (default off).
-# ponytail: O(n^2) forces, L-router only — push-and-shove when warnings annoy.
+# ponytail: scalar O(n²) repulsion is exact and instant at shipped scales
+# (all boards place in <1s; diffusion is the default path). Vector path
+# above covers n≥16 when numpy exists; push-and-shove when warnings annoy.
 """
 from __future__ import annotations
 import random
