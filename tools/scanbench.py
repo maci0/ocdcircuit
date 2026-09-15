@@ -1,0 +1,217 @@
+"""Benchmark the photo scan against a real board with a published schematic.
+
+Fetches the NComputing L130 reverse-engineering project (real 3000x3000
+photos of both sides, plus the KiCad schematic its author reconstructed),
+simulates a 20-photo handheld shoot from that real board texture, and scores
+what the pipeline recovers against ground truth.
+
+Three numbers, because three different things can be wrong:
+
+  registration  did each photo land in the right place?  (vs the exact
+                transform used to synthesise it: rotation deg, scale %)
+  stitch        is the composite closer to the real board than one photo?
+                (mean |err| and NCC of bandpassed structure, plus the
+                ceiling the same stitcher reaches with perfect transforms)
+  enhancement   did the contrast stack make markings more legible?
+                (median local contrast vs the raw stitch)
+
+The handheld shoot is simulated rather than shot by hand for the only reason
+that matters here: ground truth. Real handheld photos have no known
+transform, so a lock could only be eyeballed, never measured. The board
+texture, silkscreen, solder joints and copper are all real.
+
+Usage:  python -m tools.scanbench [outdir]      (default /tmp/scanbench)
+        SCANBENCH_LLM=1 also runs the vision analysis stage.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+import urllib.request
+from typing import Any
+
+REPO = "https://raw.githubusercontent.com/gzalo/ncomputing-l130/main"
+FILES = {"top.jpg": "docs/img/top.jpg", "bottom.jpg": "docs/img/bottom.jpg",
+         "l130.kicad_sch": "pcb/l130.kicad_sch"}
+SHOTS = 10          # per side
+WORK = 1400         # working resolution of the simulated captures
+
+
+def fetch(cache: str) -> bool:
+    """Download the board photos + schematic once. False if offline."""
+    os.makedirs(cache, exist_ok=True)
+    for name, path in FILES.items():
+        dest = os.path.join(cache, name)
+        if os.path.exists(dest) and os.path.getsize(dest) > 1000:
+            continue
+        try:
+            with urllib.request.urlopen(f"{REPO}/{path}", timeout=180) as r:
+                data = r.read()
+        except Exception as e:      # noqa: BLE001 - offline is a valid answer
+            print(f"  cannot fetch {name}: {e}")
+            return False
+        with open(dest, "wb") as f:
+            f.write(data)
+        print(f"  fetched {name} ({len(data) // 1024} KB)")
+    return True
+
+
+def ground_truth(sch: str) -> list[tuple[str, str]]:
+    """(ref, value) for every component in the published schematic."""
+    import re
+    s = open(sch).read()
+    hits = re.findall(
+        r'\(property "Reference" "([A-Z]+\d+)"[\s\S]{0,600}?'
+        r'\(property "Value" "([^"]*)"', s)
+    return sorted(set(hits))
+
+
+def shoot(P: Any, cache: str, out: str) -> dict[str, dict[str, float]]:
+    """Simulate a handheld shoot from the real photos: random scale,
+    rotation and offset per frame, plus the nuisances that actually break
+    registration — exposure swings, white balance drift, a specular glare
+    blob, an occasional finger, and sensor noise."""
+    import numpy as np
+    rng = np.random.default_rng(42)
+    os.makedirs(out, exist_ok=True)
+    gt: dict[str, dict[str, float]] = {}
+    for side in ("top", "bottom"):
+        src = P.fit(P.load(os.path.join(cache, f"{side}.jpg")), WORK)
+        h, w = src.shape[:2]
+        for n in range(SHOTS):
+            s = float(rng.uniform(0.65, 1.45))
+            rot = float(rng.uniform(-30, 30))
+            dx, dy = float(rng.uniform(-70, 70)), float(rng.uniform(-70, 70))
+            v = np.nan_to_num(P.warp(src, s, rot, dx, dy, w, h), nan=12.0)
+            v = v * float(rng.uniform(0.7, 1.35))
+            v = v * np.array([rng.uniform(.9, 1.1), 1.0, rng.uniform(.9, 1.1)])
+            gy, gx = np.mgrid[0:h, 0:w]
+            cy, cx = rng.uniform(0, h), rng.uniform(0, w)
+            v += 200 * np.exp(-(((gy - cy) ** 2 + (gx - cx) ** 2)
+                                / (2 * (w * 0.16) ** 2)))[..., None]
+            if n % 4 == 3:
+                yy = int(rng.uniform(0, h - 120))
+                v[yy:yy + 120, :180] = (190, 148, 128)
+            v = np.clip(v + rng.normal(0, 6, v.shape), 0, 255)
+            name = f"{side}_{n:02d}.png"
+            P.write_png(os.path.join(out, name), v)
+            gt[name] = {"scale": s, "rot": rot, "dx": dx, "dy": dy}
+    return gt
+
+
+def main(argv: list[str]) -> int:
+    root = argv[1] if len(argv) > 1 else "/tmp/scanbench"
+    cache, shots = os.path.join(root, "board"), os.path.join(root, "shoot")
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        from ocdcircuit import pcbscan as P
+    except RuntimeError as e:
+        print(f"scanbench needs numpy: {e}")
+        return 1
+    import numpy as np
+
+    print(f"== fetching the reference board into {cache}")
+    if not fetch(cache):
+        print("offline - cannot run the benchmark")
+        return 1
+    gtc = ground_truth(os.path.join(cache, "l130.kicad_sch"))
+    print(f"  schematic ground truth: {len(gtc)} components "
+          f"({', '.join(r for r, _ in gtc[:6])}...)")
+
+    print(f"== simulating {SHOTS * 2} handheld photos from the real board")
+    gt = shoot(P, cache, shots)
+
+    print("== registration")
+    errs: list[tuple[float, float, float]] = []
+    for side in ("top", "bottom"):
+        paths = sorted(os.path.join(shots, f)
+                       for f in os.listdir(shots) if f.startswith(side))
+        imgs = [P.fit(P.load(p)) for p in paths]
+        names = [os.path.basename(p) for p in paths]
+        ref = int(max(range(len(imgs)),
+                      key=lambda i: P.sharpness(P.gray(imgs[i]))))
+        rg = P.gray(imgs[ref])
+        for i, n in enumerate(names):
+            if i == ref:
+                continue
+            t = P.register(rg, P.gray(imgs[i]))
+            es = gt[names[ref]]["scale"] / gt[n]["scale"]
+            er = (gt[names[ref]]["rot"] - gt[n]["rot"]) % 360
+            dr = (t["rot"] - er) % 360
+            dr = min(dr, 360 - dr)
+            ds = abs(t["scale"] - es) / es
+            errs.append((dr, ds, t["peak"]))
+    ok = [e for e in errs if e[0] < 3 and e[1] < 0.05]
+    print(f"  locked {len(ok)}/{len(errs)} "
+          f"({100 * len(ok) / max(len(errs), 1):.0f}%)")
+    print(f"  median error: {np.median([e[0] for e in ok]):.2f} deg, "
+          f"{100 * np.median([e[1] for e in ok]):.2f}% scale")
+    bad = [e[2] for e in errs if e not in ok]
+    print(f"  score separation: good >= {min(e[2] for e in ok):.2f}, "
+          f"bad <= {max(bad):.2f}" if bad and ok else "  (no failures)")
+
+    print("== stitch (top side)")
+    paths = sorted(os.path.join(shots, f)
+                   for f in os.listdir(shots) if f.startswith("top"))
+    imgs = [P.fit(P.load(p)) for p in paths]
+    names = [os.path.basename(p) for p in paths]
+    ref = int(max(range(len(imgs)), key=lambda i: P.sharpness(P.gray(imgs[i]))))
+    order = [ref] + [i for i in range(len(imgs)) if i != ref]
+    ordered = [imgs[i] for i in order]
+    h, w = ordered[0].shape[:2]
+    rg = P.gray(ordered[0])
+    xf = [{"scale": 1.0, "rot": 0.0, "dx": 0.0, "dy": 0.0, "peak": 1.0}]
+    xf += [P.register(rg, P.gray(im)) for im in ordered[1:]]
+
+    truth = P.fit(P.load(os.path.join(cache, "top.jpg")), WORK)
+    g = gt[names[ref]]
+    expect = np.nan_to_num(P.warp(truth, g["scale"], g["rot"], g["dx"],
+                                  g["dy"], w, h), nan=0.0)
+    mask = expect.sum(2) > 1
+
+    def quality(x: Any) -> tuple[float, float]:
+        err = float(np.mean(np.abs(x[mask] - expect[mask])))
+        a = P.bandpass(P.gray(x))[mask]
+        b = P.bandpass(P.gray(expect))[mask]
+        a, b = a - a.mean(), b - b.mean()
+        return err, float(a @ b / np.sqrt((a @ a) * (b @ b)))
+
+    e1, n1 = quality(np.clip(ordered[0], 0, 255).astype(np.float32))
+    keep = [i for i, t in enumerate(xf) if t["peak"] >= 0.30]
+    st, cover = P.stitch([ordered[i] for i in keep], [xf[i] for i in keep], w, h)
+    e2, n2 = quality(st.astype(np.float32))
+    print(f"  single photo : mean|err| {e1:5.1f}  structNCC {n1:.3f}")
+    print(f"  gated stitch : mean|err| {e2:5.1f}  structNCC {n2:.3f}  "
+          f"({len(keep)}/{len(xf)} frames, coverage {cover.mean():.2f})")
+    print(f"  -> error {e1 / max(e2, 1e-6):.1f}x lower than one photo")
+
+    print("== enhancement (median local contrast, 16px tiles)")
+
+    def locstd(x: Any) -> float:
+        hh, ww = x.shape[0] // 16, x.shape[1] // 16
+        v = x[:hh * 16, :ww * 16].reshape(hh, 16, ww, 16)
+        return float(np.median(v.transpose(0, 2, 1, 3).reshape(hh, ww, 256)
+                               .std(axis=2)))
+
+    raw = locstd(P.gray(st))
+    for k, im in P.enhance(st).items():
+        print(f"  {k:9s} {locstd(P.gray(im)):6.2f}  ({locstd(P.gray(im)) / raw:.1f}x raw)")
+
+    if os.environ.get("SCANBENCH_LLM"):
+        print("== vision analysis (SCANBENCH_LLM set)")
+        out = os.path.join(root, "scan")
+        t0 = time.time()
+        r = P.reverse(sorted(os.path.join(shots, f) for f in os.listdir(shots)),
+                      out, board_mm=100.0)
+        print(f"  {time.time() - t0:.0f}s -> {r.get('analysis')}")
+        for k in ("draft", "draft_parts", "draft_nets", "draft_error"):
+            if k in r:
+                print(f"  {k}: {r[k]}")
+    print("\nbenchmark done")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
