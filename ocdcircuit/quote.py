@@ -76,16 +76,17 @@ def assembly_parts(board: Board) -> list[dict[str, object]]:
 
 
 def unit_price(board: Board, ref: str) -> tuple[float | None, str]:
-    """One part's unit USD: the board's `price` provider first (std: `price=`
-    attr, then offline JLC DB), then knoll live JLC; else unpriced. Provider
-    calls go through Board.price → _run, so a crashing provider is fenced
-    in failure memory like every other plugin (not silently swallowed)."""
+    """One part's unit USD: the board's `price` providers in order (std:
+    `price=` attr + offline DB; jlc-api: official JLC API; knoll: keyless
+    live lookup); else unpriced. Provider calls go through Board.price →
+    _run, so a crashing provider is fenced in failure memory like every
+    other plugin (not silently swallowed)."""
     from .core import Plugin
     p = board.parts.get(ref)
     if p is None:  # KeyError on unknown ref (fixable input)
         raise KeyError(f"no part {ref!r}")
     lcsc, mpn = str(p.attrs.get("lcsc", "")), str(p.attrs.get("mpn", ""))
-    for key in ("std", "knoll"):
+    for key in ("std", "jlc-api", "knoll"):
         try:
             out = board.price(ref, key, lcsc=lcsc, mpn=mpn)
         except (ValueError, KeyError, OSError, AssertionError):

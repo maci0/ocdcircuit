@@ -784,6 +784,74 @@ def export_altium(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def export_pcad(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.pcb (P-CAD ASCII, ACCEL_ASCII — Altium's own interchange:
+    File > Save As > P-CAD in Altium opens it). Patterns carry pad stacks,
+    compDefs bind refs, netlist nodes join pins, layerContents carries
+    tracks/pours. Mirrors what foreign.pcad_ascii parses, so export→import
+    round-trips."""
+    from .parts import hole_drill, pad_size, pads_of
+    os.makedirs(outdir, exist_ok=True)
+    lib = board._lib()
+    L: list[str] = []
+    A = L.append
+    A(f'ACCEL_ASCII "{board.name}"')
+    A("(asciiHeader (asciiVersion 3 0) (fileUnits mm))")
+    A('(library "ocd"')
+    seen: dict[str, str] = {}  # fp -> style prefix
+    for p in sorted(board.parts.values(), key=lambda q: q.fp):
+        if p.fp in seen:
+            continue
+        seen[p.fp] = f"s{len(seen)}"
+        for pin in sorted(pads_of(p.fp, lib)):
+            dr = hole_drill(p.fp, pin, lib)
+            pw, ph = pad_size(p.fp, pin, lib)
+            st = f"{seen[p.fp]}p{pin}"
+            shape = "Ellipse" if dr > 0 else "Rect"
+            A(f'  (padStyleDef "{st}" (holeDiam {dr:.4f})')
+            A(f'    (padShape (layerNumRef 1) (padShapeType {shape})'
+              f' (shapeWidth {max(pw, dr):.4f}) (shapeHeight {max(ph, dr):.4f})))')
+    for fp, pre in sorted(seen.items(), key=lambda kv: kv[1]):
+        A(f'  (patternDef "{fp}" (originalName "{fp}")')
+        A("    (multiLayer")
+        for pin in sorted(pads_of(fp, lib)):
+            dx, dy = pads_of(fp, lib)[pin][:2]
+            A(f'      (pad (padNum {pin}) (padStyleRef "{pre}p{pin}") (pt {dx:.4f} {dy:.4f}))')
+        A("    ))")
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        A(f'  (compDef "{p.ref}" (attachedPattern "{p.fp}"))')
+    A(")")
+    A('(netlist "ocd"')
+    for n, net in sorted(board.nets.items()):
+        A(f'  (net "{n}"')
+        for r, q in net.pins:
+            A(f'    (node "{r} {q}")')
+        A("  )")
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        A(f'  (compInst "{p.ref}" (compRef "{p.ref}") (compValue "{p.value or p.fp}"))')
+    A(")")
+    A('(pcbDesign "ocd" (pcbDesignHeader (workspaceSize 200.0 150.0))')
+    for i, ln in enumerate(["Top", "Bottom"][:max(board.layers, 1)], 1):
+        A(f'  (layerDef "{ln}" (layerNum {i}) (layerType Signal))')
+    A("  (multiLayer")
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        A(f'    (pattern "{p.ref}" (patternRef "{p.fp}") (refDesRef "{p.ref}")'
+          f' (pt {p.x:.4f} {p.y:.4f}))')
+    A("  )")
+    for li in range(min(board.layers, 10)):
+        A(f"  (layerContents (layerNumRef {li + 1})")
+        for t in sorted(board.traces, key=lambda s: (s.net, s.x1, s.y1, s.x2, s.y2)):
+            if t.layer != li or t.via:
+                continue
+            A(f'    (line (pt {t.x1:.4f} {t.y1:.4f}) (pt {t.x2:.4f} {t.y2:.4f})'
+              f' (width {t.width:.4f}) (netNameRef "{t.net}"))')
+        A("  )")
+    A(")")
+    fn = os.path.join(outdir, f"{board.name}.pcb")
+    open(fn, "w").write("\n".join(L) + "\n")
+    return [fn]
+
+
 def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.brd (Eagle XML): libraries/packages from footprints,
     elements, signals with contactrefs, Dimension wires. Mirrors what

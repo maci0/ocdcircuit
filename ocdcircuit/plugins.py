@@ -345,6 +345,18 @@ class EagleExporter(Plugin[list[str]]):
         return export.export_eagle(board, outdir)
 
 
+class SchLibExporter(Plugin[list[str]]):
+    """Native binary .SchLib (one storage per symbol, pins + designators).
+    Round-trips through importer:schlib."""
+    kind, key = "exporter", "schlib"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_schlib(board, outdir)
+
+
 class KicadSchExporter(Plugin[list[str]]):
     """KiCad .kicad_sch: box symbols on the shared sch_layout grid, one
     wire per pin-to-rail drop, one global_label per net. ERC-clean."""
@@ -367,6 +379,18 @@ class AltiumExporter(Plugin[list[str]]):
         outdir = k.get("outdir", "out")
         assert isinstance(outdir, str)
         return export.export_altium(board, outdir)
+
+
+class PcadExporter(Plugin[list[str]]):
+    """P-CAD ASCII (.pcb ACCEL_ASCII — Altium opens it natively).
+    Round-trips through importer:pcb."""
+    kind, key = "exporter", "pcad"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_pcad(board, outdir)
 
 
 class BundleExporter(Plugin[list[str]]):
@@ -1883,12 +1907,122 @@ def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
     return None, "unpriced"
 
 
+class JlcApiPrice(Plugin[dict[str, object]]):
+    """Unit-price provider: official JLCPCB parts API (HMAC-SHA256 authed).
+    Creds from env (JLCPCB_APP_ID/KEY/SECRET) or ~/.secrets/jlcpcb — never
+    committed, never logged. Unapproved/missing creds → unpriced (the API
+    returns 401 until JLC approves the app); never an error. cordis-boundary:
+    network emission, withheld until run()."""
+    kind, key = "price", "jlc-api"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import math
+        lcsc = k.get("lcsc", "")
+        assert isinstance(lcsc, str)
+        v = _jlc_api_price(lcsc)
+        if v is None:
+            return {"price": None, "source": "unpriced"}
+        assert math.isfinite(v) and v >= 0
+        return {"price": v, "source": "jlc-api"}
+
+
+def _jlc_api_creds() -> tuple[str, str, str] | None:
+    """(app_id, access_key, secret) from env or ~/.secrets/jlcpcb, else None.
+    The secrets file holds access/secret lines; the app id rides alongside
+    (env JLCPCB_APP_ID or the file's AppID line when present)."""
+    import os
+    app = os.environ.get("JLCPCB_APP_ID", "")
+    acc = os.environ.get("JLCPCB_API_KEY", "")
+    sec = os.environ.get("JLCPCB_API_SECRET", "")
+    if acc and sec:
+        return (app, acc, sec)
+    try:
+        lines = open(os.path.expanduser("~/.secrets/jlcpcb")).read().splitlines()
+    except OSError:
+        return None
+    vals: dict[str, str] = {}
+    for ln in lines:
+        if ":" in ln:
+            k, v = ln.split(":", 1)
+            vals[k.strip().lower()] = v.strip()
+    acc = vals.get("accesskey", "")
+    sec = vals.get("secretkey", "")
+    app = app or vals.get("appid", "")
+    if acc and sec:
+        return (app, acc, sec)
+    return None
+
+
+def _jlc_api_price(lcsc: str) -> float | None:
+    """One unit price via the official parts API, else None. Any failure —
+    no creds, 401 (app still in review), network, bad shape — is unpriced."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+    import math
+    import secrets
+    import time
+    import urllib.error
+    import urllib.request
+    creds = _jlc_api_creds()
+    if not creds or not lcsc:
+        return None
+    app_id, access, secret = creds
+    if not app_id:
+        return None
+    body = json.dumps({}, separators=(",", ":"))
+    nonce = "".join(secrets.choice(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        for _ in range(32))
+    ts = int(time.time())
+    sig = base64.b64encode(hmac.new(
+        secret.encode(),
+        f"POST\n/component/getComponentInfos\n{ts}\n{nonce}\n{body}\n".encode(),
+        hashlib.sha256).digest()).decode()
+    req = urllib.request.Request(
+        "https://jlcpcb.com/external/component/getComponentInfos",
+        data=body.encode(),
+        headers={"Authorization": f'JOP appid="{app_id}",accesskey="{access}",'
+                 f'nonce="{nonce}",timestamp="{ts}",signature="{sig}"',
+                 "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read(8 << 20))
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return None
+    # untrusted body: tolerate any shape; find our LCSC in the page
+    try:
+        comps = data.get("data", {}).get("list", [])
+        if not isinstance(comps, list):
+            return None
+        want = lcsc.lstrip("Cc").upper()
+        for c in comps:
+            if not isinstance(c, dict):
+                continue
+            num = str(c.get("componentCode", "") or c.get("lcsc", "")).lstrip("Cc").upper()
+            if num != want:
+                continue
+            for key in ("price", "unitPrice", "priceList"):
+                pv = c.get(key)
+                if isinstance(pv, (int, float)) and math.isfinite(pv) and pv >= 0:
+                    return float(pv)
+                if isinstance(pv, list) and pv and isinstance(pv[0], dict):
+                    pv0 = pv[0].get("price")
+                    if isinstance(pv0, (int, float)) and math.isfinite(pv0) and pv0 >= 0:
+                        return float(pv0)
+    except (AttributeError, TypeError):
+        return None
+    return None
+
+
 _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              HierarchicalPlacer, MultilevelPlacer, TidyPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
              FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
-             EagleExporter, EasyedaExporter, AltiumExporter,
+             EagleExporter, EasyedaExporter, AltiumExporter, PcadExporter,
+             SchLibExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,
              FpImporter, KicadImporter, EagleImporter, EagleBoardImporter,
@@ -1898,7 +2032,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
              ScorePlugin, DiffPlugin, XrayCompare, PcbScanPlugin, QuotePlugin,
-             StdPrice, KnollPrice,
+             StdPrice, KnollPrice, JlcApiPrice,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
              PngRenderer, KicadRenderer, BlenderRenderer, PcbdrawRenderer,
              EasyedaRenderer, Html3dRenderer, XrayRenderer, AllRenderer)

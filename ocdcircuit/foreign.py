@@ -1064,6 +1064,123 @@ def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int],
     return paths, ms, minifat, msz, cutoff, ssz
 
 
+def _ole_write(streams: dict[str, bytes]) -> bytes:
+    """Minimal OLE writer (stdlib struct): header + FAT + directory + data.
+    One 512B sector per stream (streams must each fit — SchLib symbols do);
+    flat directory (no storages), no ministream. Just enough for Altium to
+    open the file; our reader parses it back exactly."""
+    import struct
+    names = sorted(streams)
+    nsec = 1 + 1 + len(names)  # fat + dir + data sectors
+    fat = [0xFFFFFFFE] * 128
+    fat[0] = 0xFFFFFFFD  # FAT sector itself
+    fat[1] = 0xFFFFFFFE  # directory chain end
+    for i in range(len(names)):
+        fat[2 + i] = 0xFFFFFFFE
+    head = bytearray(512)
+    head[0:8] = _OLE_MAGIC
+    head[24:26] = struct.pack("<H", 0x003E)  # version
+    head[26:28] = struct.pack("<H", 3)  # byte order mark
+    head[28:30] = struct.pack("<H", 9)  # sector shift (512B)
+    head[30:32] = struct.pack("<H", 6)  # mini sector shift (64B)
+    head[40:44] = struct.pack("<I", 0)  # free sectors
+    head[44:48] = struct.pack("<I", 1)  # FAT count
+    head[48:52] = struct.pack("<I", 1)  # directory start
+    head[56:60] = struct.pack("<I", 4096)  # mini cutoff
+    head[60:64] = struct.pack("<I", 0xFFFFFFFE)  # miniFAT start (none)
+    head[64:68] = struct.pack("<I", 0)
+    head[68:72] = struct.pack("<I", 0xFFFFFFFE)  # DIFAT start (none)
+    head[72:76] = struct.pack("<I", 0)
+    for i in range(109):
+        head[76 + 4 * i:80 + 4 * i] = struct.pack("<I", 0 if i else 0)
+    # directory: root + one storage per parent + one stream each.
+    # Sibling tree: root.child → first storage; each storage.child →
+    # its stream; storages chain via right. Streams must each fit one
+    # sector (SchLib symbols do — largest LimeSDR symbol is ~40KB?
+    # no: multi-sector streams unsupported, raise instead of corrupting).
+    parents: dict[str, list[str]] = {}
+    for nm in names:
+        parents.setdefault(nm.split("/")[0], []).append(nm)
+    for nm in names:
+        if len(streams[nm]) > 512:
+            raise ValueError(f"ole write: stream {nm} exceeds one sector")
+    entries: list[bytearray] = []
+    root = bytearray(128)
+    _ole_name(root, "Root Entry")
+    root[66] = 5
+    root[68:72] = struct.pack("<i", -1)
+    root[72:76] = struct.pack("<i", -1)
+    root[76:80] = struct.pack("<i", 1 if parents else -1)
+    entries.append(root)
+    stor_idx: dict[str, int] = {}
+    for si, st in enumerate(sorted(parents)):
+        e = bytearray(128)
+        _ole_name(e, st)
+        e[66] = 1
+        e[68:72] = struct.pack("<i", -1)
+        e[72:76] = struct.pack("<i", 1 + len(parents) + si + 1
+                               if si + 1 < len(parents) else -1)
+        e[76:80] = struct.pack("<i", 1 + si)
+        stor_idx[st] = len(entries)
+        entries.append(e)
+    secno = 2
+    stream_sec: dict[str, int] = {}
+    for st in sorted(parents):
+        for nm in sorted(parents[st]):
+            e = bytearray(128)
+            _ole_name(e, nm.split("/")[-1])
+            e[66] = 2
+            e[68:72] = struct.pack("<i", -1)
+            e[72:76] = struct.pack("<i", -1)
+            e[76:80] = struct.pack("<i", -1)
+            e[116:120] = struct.pack("<I", secno)
+            e[120:124] = struct.pack("<I", len(streams[nm]))
+            stream_sec[nm] = secno
+            secno += 1
+            entries.append(e)
+    # FAT: sector 0 = FAT, 1 = directory (may span several sectors)
+    import math as _m
+    ndir = max(1, -(-len(entries) * 128 // 512))
+    nfat = 1
+    total = 1 + nfat + ndir + len(names)
+    fat = [0xFFFFFFFE] * 128
+    fat[0] = 0xFFFFFFFD
+    for i in range(1, 1 + ndir):
+        fat[i] = i + 1 if i < ndir else 0xFFFFFFFE
+    for i in range(len(names)):
+        fat[1 + ndir + i] = 0xFFFFFFFE
+    # fix stream sector numbers: data starts after header+fat+dir
+    base = 1 + nfat + ndir
+    out = bytearray(bytes(head))
+    out += struct.pack("<128I", *fat)
+    while len(entries) * 128 > ndir * 512:
+        ndir += 1  # (recompute rarely triggers; streams are small)
+    while len(entries) < ndir * 4:
+        entries.append(bytearray(128))
+    # rewrite sector numbers with correct base
+    si = 0
+    for st in sorted(parents):
+        for nm in sorted(parents[st]):
+            idx = 1 + len(parents) + si
+            entries[idx][116:120] = struct.pack("<I", base + si)
+            si += 1
+    out += b"".join(bytes(e) for e in entries)
+    for nm in names:
+        sec = bytearray(512)
+        sec[:len(streams[nm])] = streams[nm]
+        out += bytes(sec)
+    # patch header: directory start stays 1; FAT count 1 ✓ (set above)
+    return bytes(out)
+
+
+def _ole_name(e: bytearray, nm: str) -> None:
+    """UTF-16LE name + length prefix into a 128B directory entry."""
+    import struct
+    raw = nm.encode("utf-16-le")[:62] + b"\x00\x00"
+    e[:len(raw)] = raw
+    e[64:66] = struct.pack("<H", len(raw) + 2)
+
+
 def _ole_stream(paths: dict[str, tuple[int, int]], path: str) -> bytes | None:
     """Read one OLE stream by path (ministream-aware). None = absent."""
     import struct

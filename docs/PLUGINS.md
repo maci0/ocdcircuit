@@ -35,7 +35,7 @@ all/assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg/xray ·
 `layers` greedy · `config` toml · `calc`/`diff`/`doctor`/`lint`/`parts`/`score` std ·
 `xray` std (fab PNG vs design: score + divergences) ·
 `quote` std (fab price comparison: bare per fab + JLC assembly) ·
-`price` std/knoll (unit-price provider: manual attr → offline JLC DB → knoll live).
+`price` std/knoll/jlc-api (unit-price provider: manual attr → offline JLC DB → knoll live → official JLC API).
 
 Rules: engine imports inside `run()` (keeps `import ocdcircuit` light);
 failure memory means `run` may raise — the registry fences it, no cleanup

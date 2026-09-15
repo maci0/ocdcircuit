@@ -313,22 +313,58 @@ def register(ref_g: Any, img_g: Any, *, scales: tuple[float, ...] = SCALES,
            "dx": float(best["dx"] / k), "dy": float(best["dy"] / k),
            "peak": float(best["peak"])}
 
-    # Final translation refine in the full-resolution frame. Everything above
-    # solved at REG px, so dx/dy carry that level's quantisation scaled up —
-    # a pixel there is several here, and a few pixels of slip is exactly what
-    # blurs the silkscreen the whole pipeline exists to read.
-    full = warp(img_g, out["scale"], out["rot"], out["dx"], out["dy"],
-                ref_g.shape[1], ref_g.shape[0])
-    seen = np.isfinite(full)
-    if np.count_nonzero(seen) > full.size * 0.15:
-        rb = bandpass(ref_g)
-        cb = np.where(seen, bandpass(np.where(seen, full, 0.0)), 0.0)
-        dy, dx, _pk = _phase(rb - float(np.mean(rb)),
-                             cb - float(np.mean(cb)))
-        if abs(dy) < ref_g.shape[0] / 4 and abs(dx) < ref_g.shape[1] / 4:
-            out["dx"] += float(dx)
-            out["dy"] += float(dy)
-    return out
+    return polish(ref_g, img_g, out)
+
+
+def polish(ref_g: Any, img_g: Any, t: dict[str, float]) -> dict[str, float]:
+    """Refine a transform at the frame's native resolution.
+
+    Everything above is solved at REG px, so its residual error is scaled up
+    on the way out: half a degree and half a percent are invisible at 512 px
+    and are several pixels of slip across a real 1400 px board — exactly the
+    smear that turns a median stitch into a blurrier picture than one photo.
+    Rotation and scale have to be polished too, not just translation: a
+    small rotation error cannot be undone by any shift, and it is the one
+    that destroys fine traces at the edges of the frame.
+
+    Coordinate descent on rotation and scale, translation re-solved by FFT
+    for each trial (it is free and exact), scored by NCC on bandpassed
+    structure. Never returns something worse than it was given.
+    """
+    np = _numpy()
+    rh, rw = ref_g.shape[:2]
+    ref_b = bandpass(ref_g)
+    ref_c = ref_b - float(np.mean(ref_b))
+
+    def score(scale: float, rot: float) -> dict[str, float]:
+        cand = warp(img_g, scale, rot, 0.0, 0.0, rw, rh)
+        seen = np.isfinite(cand)
+        if np.count_nonzero(seen) < seen.size * 0.10:
+            return {"scale": scale, "rot": rot, "dx": 0.0, "dy": 0.0,
+                    "peak": -1.0}
+        filled = np.where(seen, bandpass(np.where(seen, cand, 0.0)), 0.0)
+        dy, dx, _pk = _phase(ref_c, filled - float(np.mean(filled)))
+        iy, ix = int(round(dy)), int(round(dx))
+        return {"scale": scale, "rot": rot, "dx": float(dx), "dy": float(dy),
+                "peak": _ncc(ref_b,
+                             np.roll(np.roll(filled, iy, axis=0), ix, axis=1),
+                             np.roll(np.roll(seen, iy, axis=0), ix, axis=1))}
+
+    best = score(t["scale"], t["rot"])
+    if best["peak"] < 0:
+        return t
+    dr, ds = 0.5, 0.004          # half a degree, half a percent: the residue
+    for _ in range(5):
+        trial = [score(best["scale"] * (1 + s), best["rot"] + r)
+                 for s in (-ds, 0.0, ds) for r in (-dr, 0.0, dr)
+                 if (s, r) != (0.0, 0.0)]
+        top = max(trial, key=lambda c: c["peak"])
+        if top["peak"] > best["peak"]:
+            best = top
+        else:
+            dr, ds = dr / 2.0, ds / 2.0
+    return {"scale": best["scale"], "rot": best["rot"] % 360,
+            "dx": best["dx"], "dy": best["dy"], "peak": best["peak"]}
 
 
 # ------------------------------------------------------------- stitching
@@ -629,11 +665,13 @@ def scan_side(paths: list[str], outdir: str, side: str,
         {"scale": 1.0, "rot": 0.0, "dx": 0.0, "dy": 0.0, "peak": 1.0}]
     for im in imgs[1:]:
         xforms.append(register(ref_g, gray(im)))
-    # peak is an NCC (-1..1) on bandpassed structure. Correct locks measured
-    # as low as 0.18 on glare-heavy frames while genuine mismatches sat
-    # under 0.05, so the gate goes below the observed good floor: dropping a
-    # real photo costs coverage, and the median already tolerates a bad one.
-    keep = [i for i, t in enumerate(xforms) if t["peak"] >= 0.10]
+    # peak is an NCC (-1..1) on bandpassed structure after polish. Measured
+    # on a real board (NComputing L130 photos, simulated handheld shoot):
+    # correct locks scored >= 0.37, genuine mismatches <= 0.22. A frame that
+    # lands in the gap is the one case worth being strict about — a
+    # misregistered photo does not just add noise, it drags the median into
+    # a double-exposed blur that no amount of enhancement recovers.
+    keep = [i for i, t in enumerate(xforms) if t["peak"] >= 0.30]
     dropped = [names[i] for i in range(len(names)) if i not in keep]
     imgs = [imgs[i] for i in keep]
     xforms = [xforms[i] for i in keep]
@@ -848,7 +886,7 @@ def demo() -> None:
     for v in views[1:]:
         t = register(ref_g, gray(v))
         xf.append(t)
-        assert t["peak"] > 0.10, f"registration failed to lock on: {t}"
+        assert t["peak"] > 0.30, f"registration failed to lock on: {t}"
 
     # each recovered transform must invert the one we applied
     for t, (s, r) in zip(xf[1:], ((0.72, 12.0), (1.31, -21.0))):

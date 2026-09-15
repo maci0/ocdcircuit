@@ -563,13 +563,21 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
-# price is a cordis provider: std/knoll mounted, hot-swappable, fenced on crash
-assert _qb.plugins().list("price") == ["knoll", "std"]
+# price is a cordis provider: std/knoll/jlc-api mounted, hot-swappable, fenced on crash
+assert _qb.plugins().list("price") == ["jlc-api", "knoll", "std"]
 assert _qb.price("R1") == {"price": 0.02, "source": "manual"}
 assert _qb.price("R1", "std") == {"price": 0.02, "source": "manual"}
 _qb.use("price", "knoll")
 assert _qb.price("R1", "knoll")["source"] in ("unpriced", "jlc-live", "offline")
 _qb.use("price", "std")
+# jlc-api: unpriced until JLC approves the app (401), never an error, never a secret leak
+_japi = _qb.price("C1", "jlc-api")
+assert _japi == {"price": None, "source": "unpriced"}, _japi
+from ocdcircuit import plugins as _plug
+_creds = _plug._jlc_api_creds()
+assert _creds is None or (isinstance(_creds, tuple) and len(_creds) == 3)
+assert _plug._jlc_api_price("") is None
+assert _plug._jlc_api_price("C999999") is None  # 401 in review → unpriced
 class _QBoom(Plugin[dict[str, object]]):
     kind, key = "price", "boom"
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:

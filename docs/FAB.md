@@ -43,8 +43,11 @@ prototype pricing (JLC $2/5pcs 2L, OSH Park $5/in², …) + the JLC Economic
 PCBA fee schedule (setup $8.18, joints $0.0016, extended-part loading
 $3.07). Parts price through the `price` provider chain: `price:std`
 (`price=` attr, then the offline JLC SQLite when populated), then
-`price:knoll` (knoll's live JLC lookup by `lcsc=`/`mpn=`, needs network +
-knoll's checkout via `KNOLL_SRC`), else unpriced-and-named. Swap providers
+`price:jlc-api` (official JLCPCB parts API — creds from `JLCPCB_APP_ID` /
+`JLCPCB_API_KEY` / `JLCPCB_API_SECRET` env or `~/.secrets/jlcpcb`, never
+committed; unpriced until JLC approves the app), then `price:knoll`
+(knoll's live JLC lookup by `lcsc=`/`mpn=`, needs network + knoll's
+checkout via `KNOLL_SRC`), else unpriced-and-named. Swap providers
 with `b.use("price", "knoll")`; a crashing provider is fenced and the next
 source serves. Other fabs are bare-only (their assembly is per-order
 quote). **Estimates, not quotes** — every number carries its fit date
