@@ -54,13 +54,48 @@ def free_port() -> int:
     return port
 
 
-def post(base: str, path: str, body: dict[str, object]) -> dict[str, object]:
+_JAR: dict[str, str] = {}  # base -> "ocd_user=..." (login gate sessions)
+
+
+def post(base: str, path: str, body: dict[str, object],
+         cookie: str = "") -> dict[str, object]:
     q = urllib.request.Request(base + path, json.dumps(body).encode(),
                                {"Content-Type": "application/json"})
+    ck = cookie or _JAR.get(base, "")
+    if ck:
+        q.add_header("Cookie", ck)
     out = urllib.request.urlopen(q, timeout=30).read()
     res = json.loads(out)
     assert isinstance(res, dict)
     return res
+
+
+def get(base: str, path: str) -> bytes:
+    q = urllib.request.Request(base + path)
+    if _JAR.get(base):
+        q.add_header("Cookie", _JAR[base])
+    out = urllib.request.urlopen(q, timeout=30).read()
+    assert isinstance(out, bytes)
+    return out
+
+
+def login(base: str) -> str:
+    """First account on a throwaway ROOT: signup returns the session cookie."""
+    import http.client as _hc
+    from urllib.parse import urlparse as _up
+    u = _up(base)
+    assert u.hostname
+    c = _hc.HTTPConnection(u.hostname, u.port, timeout=30)
+    c.request("POST", "/auth/signup",
+              json.dumps({"user": "tester", "password": "testtest12"}),
+              {"Content-Type": "application/json"})
+    r = c.getresponse()
+    setck = r.getheader("Set-Cookie", "")
+    res = json.loads(r.read())
+    assert not res.get("error"), res
+    assert "ocd_user=" in setck, setck
+    _JAR[base] = setck.split(";")[0].strip()
+    return _JAR[base]
 
 
 def png_brightness(path: str, x0: int, y0: int, x1: int, y1: int,
@@ -172,6 +207,7 @@ def main() -> None:
         sys.path.insert(0, ROOT)
     from apps import studio as _st_ui
     assert "kb" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
+    assert "inspector" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
     assert len(_st_ui._UI_DISPOSERS) == 10, len(_st_ui._UI_DISPOSERS)
     _st_ui.unload_ui()
     assert _st_ui.SLOTS.report("view") == [] and _st_ui.SLOTS.report("toolbar") == []
@@ -180,9 +216,15 @@ def main() -> None:
 
     port = free_port()
     base = f"http://localhost:{port}"
-    env = dict(os.environ, OCD_PORT=str(port))
-    board_orig = open(BOARD).read()  # studio saves to disk; restore after
-    srv = subprocess.Popen([sys.executable, "-m", "apps.studio", BOARD],
+    # auth writes .ocd-users + .users/ beside ROOT: point the server at a
+    # throwaway copy so the test never litters the repo (nor trips the
+    # single-tenant signup on a dirty checkout).
+    troot = tempfile.mkdtemp(prefix="ocd-auth-")
+    for _fn in ("blinky_555.ocd", "psu.ocd"):
+        shutil.copy(os.path.join(ROOT, "boards", _fn), os.path.join(troot, _fn))
+    env = dict(os.environ, OCD_PORT=str(port), OCD_ROOT=troot)
+    srv = subprocess.Popen([sys.executable, "-m", "apps.studio",
+                            os.path.join(troot, "blinky_555.ocd")],
                            cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
     try:
@@ -195,14 +237,65 @@ def main() -> None:
         else:
             raise AssertionError("studio did not boot")
 
+        # landing replaces the logged-out screen: hero up top, login one
+        # click behind, shelf after. No cookie → hero + POSTs refused.
+        _gate = urllib.request.urlopen(base + "/").read().decode()
+        assert "Design PCBs with AI" in _gate, _gate[:200]
+        assert "id=herogo" in _gate and "id=ed" not in _gate, _gate[:200]
+        _refused = post(base, "/build", {"text": "x"})
+        assert _refused.get("login") is True, _refused
+        _bad = post(base, "/auth/login",
+                    {"user": "tester", "password": "wrongwrong"})
+        assert "error" in _bad, _bad
+        login(base)
+        _dup = post(base, "/auth/signup",
+                    {"user": "second", "password": "testtest12"})
+        assert "already has an account" in str(_dup.get("error")), _dup
+        _me = post(base, "/auth/me", {})
+        assert _me.get("user") == "tester", _me
+        _in = get(base, "/").decode()
+        assert "id=ed" in _in, _in[:200]
+        _sh = post(base, "/shelf", {})
+        assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh
+        _nb = post(base, "/shelf/new", {"name": "hello"})
+        assert not _nb.get("error"), _nb
+        _boards = _nb.get("boards")
+        assert isinstance(_boards, list)
+        assert any(isinstance(b, dict) and b.get("name") == "hello.ocd"
+                   for b in _boards), _nb
+        _nb2 = post(base, "/shelf/new", {"name": "hello"})
+        assert "already on your shelf" in str(_nb2.get("error")), _nb2
+        _lo = post(base, "/auth/logout", {})
+        assert _lo.get("ok") is True, _lo
+        _JAR.pop(base, None)
+        _out = urllib.request.urlopen(base + "/").read().decode()
+        assert "Design PCBs with AI" in _out, _out[:200]
+        # users persist on disk, so re-signup refuses — log back in instead
+        import http.client as _hc2
+        from urllib.parse import urlparse as _up2
+        _u2 = _up2(base)
+        assert _u2.hostname
+        _c2 = _hc2.HTTPConnection(_u2.hostname, _u2.port, timeout=30)
+        _c2.request("POST", "/auth/login",
+                    json.dumps({"user": "tester", "password": "testtest12"}),
+                    {"Content-Type": "application/json"})
+        _r2 = _c2.getresponse()
+        _ck2 = _r2.getheader("Set-Cookie", "")
+        assert "ocd_user=" in _ck2, _ck2
+        _JAR[base] = _ck2.split(";")[0].strip()
+        print("auth gate + shelf ok")
+
         text = open(BOARD).read()
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})  # warm-up: cold caches aren't UX
         # file-watch: /poll reports clean after our save; an external
-        # edit flips it dirty; /reload adopts it (undo keeps ours)
+        # edit flips it dirty; /reload adopts it (undo keeps ours).
+        # NOTE: SRC is the troot copy (OCD_ROOT), so poll + edit touch the
+        # copy; the repo BOARD stays pristine.
+        tboard = os.path.join(troot, "blinky_555.ocd")
         _p0 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
         assert _p0["clean"] is True, _p0
-        with open(BOARD, "a") as _f:
+        with open(tboard, "a") as _f:
             _f.write("# external edit\n")
         _p1 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
         assert _p1["clean"] is False, _p1
@@ -225,11 +318,21 @@ def main() -> None:
         assert isinstance(lint["errors"], list), lint
         print(f"build {dt:.2f}s score={score['total']} ok")
 
-        for key in ("svg", "sch"):
+        for key in ("svg", "sch", "xray"):
             r = post(base, "/render", {"key": key})
             assert not r.get("error"), (key, r.get("error"))
             assert len(cast(str, r["data"])) > 1000, (key, len(cast(str, r["data"])))
-        print("render svg+sch ok")
+        print("render svg+sch+xray ok")
+        # x-ray compare: own PNG mostly agrees, bad upload is an error not a 500
+        _own = post(base, "/render", {"key": "png"})
+        assert not _own.get("error"), _own.get("error")
+        _xc = post(base, "/xray", {"png": _own["data"]})
+        assert not _xc.get("error"), _xc.get("error")
+        assert cast(float, _xc["score"]) > 40, _xc
+        assert isinstance(_xc["divs"], list) and "overlay" in _xc, _xc
+        _xb = post(base, "/xray", {"png": "!!!not-base64!!!"})
+        assert "error" in _xb, _xb
+        print(f"xray compare ok (score={_xc['score']})")
 
         # the page ships as one inline script: syntax + the highlight wiring.
         # node is dev-only here — skip rather than fail when it's absent.
@@ -237,11 +340,14 @@ def main() -> None:
         if not node:
             print("no node: editor-highlight check skipped")
         else:
-            page = urllib.request.urlopen(base + "/").read().decode()
+            page = get(base, "/").decode()
             pjs = page[page.index("<script>") + 8:page.index("</script>")]
             import re as _re
-            fn = _re.search(r"function edHighlight\(\)\{.*?\n\}", pjs, _re.S)
-            assert fn, "editor selection does not drive the highlight"
+            _fnm: object = _re.search(r"function edHighlight\(\)\{.*?\n\}", pjs, _re.S)
+            assert _fnm, "editor selection does not drive the highlight"
+            assert isinstance(_fnm, _re.Match)
+            src = _fnm.group(0)
+            assert src
             with tempfile.TemporaryDirectory() as td:
                 ent = os.path.join(td, "page.js")
                 open(ent, "w").write(pjs)
@@ -249,7 +355,7 @@ def main() -> None:
                                      text=True, timeout=60)
                 assert _rn.returncode == 0, _rn.stderr[-400:]
                 hl = os.path.join(td, "hl.js")
-                open(hl, "w").write(HL_STUB + fn.group(0) + HL_DRIVE)
+                open(hl, "w").write(HL_STUB + src + HL_DRIVE)
                 _rn = subprocess.run([node, hl], capture_output=True, text=True,
                                      timeout=60)
                 assert _rn.returncode == 0, _rn.stderr[-400:]
@@ -262,7 +368,9 @@ def main() -> None:
         import re
         m = re.search(r"fix (\S+) at ([\d.]+) ([\d.]+)", text)
         assert m, "blinky needs a fix line for the diff check"
-        moved = text.replace(m.group(0),
+        m0 = m.group(0)
+        assert m0 and m.group(1)
+        moved = text.replace(m0,
                              f"fix {m.group(1)} at {float(m.group(2)) + 1} {m.group(3)}", 1)
         d2 = post(base, "/build", {"text": moved, "placer": "diffusion",
                                    "router": "maze"})
@@ -351,6 +459,9 @@ def main() -> None:
         if not chrom:
             print("no chromium: browser half skipped")
             return
+        # headless chromium sends no session cookie, so it sees the
+        # landing hero: the shot must be console-clean; the markup asserts
+        # the hero above.
         with tempfile.TemporaryDirectory() as td:
             shot = os.path.join(td, "shot.png")
             log = os.path.join(td, "console.log")
@@ -361,18 +472,15 @@ def main() -> None:
                      f"--screenshot={shot}", "--enable-logging=stderr",
                      base + "/"], capture_output=False, stderr=lf, timeout=120)
             assert os.path.isfile(shot), "no screenshot"
-            frac, w, h = png_brightness(shot, 420, 120, 860, 750)
-            assert (w, h) == (1280, 900), (w, h)
-            assert frac > PCB_BRIGHT_MIN, f"PCB black? bright={frac:.4f}"
             errlog = open(log, "rb").read().decode("utf8", "replace")
             bad = [ln for ln in errlog.splitlines()
                    if "CONSOLE" in ln and ("Uncaught" in ln or "ERROR" in ln)]
             assert not bad, bad[:3]
-            print(f"screenshot pcb-bright={frac:.4f} console-clean ok")
+            print("screenshot landing console-clean ok")
     finally:
         srv.terminate()
-        with open(BOARD, "w") as f:
-            f.write(board_orig)
+        shutil.rmtree(troot, ignore_errors=True)
+        _JAR.pop(base, None)
 
     # --- knowledgebase panel: its own throwaway project (kb/ lives beside the
     # .ocd, and the repo's boards/ must not collect test documents) ----------
@@ -400,9 +508,12 @@ def main() -> None:
                     time.sleep(0.1)
             else:
                 raise AssertionError("kb studio did not boot")
-            page = urllib.request.urlopen(kbase + "/").read().decode()
+            login(kbase)
+            page = get(kbase, "/").decode()
             assert "id=kbwrap" in page, "kb panel missing from the page"
             assert "id=kbfetch" in page and "id=kbask" in page, "kb controls missing"
+            assert "id=xraybar" in page, "xray panel missing from the page"
+            assert "id=xraygo" in page and "id=xrayfile" in page, "xray controls missing"
             slots = json.loads(urllib.request.urlopen(kbase + "/slots", timeout=5).read())
             assert "kb" in slots["view"], slots
             kl = post(kbase, "/kb/list", {})

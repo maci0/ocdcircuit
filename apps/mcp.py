@@ -5,7 +5,7 @@ Methods: initialize, tools/list, tools/call, ping. Notifications ignored.
 
 Tools: load_board, get_state, apply_patch, set_state, undo,
 parse_constraint, place, candidates, apply_candidate, feasible, route,
-check, score, diff, lint, doctor, export, render, import_footprint,
+check, score, diff, lint, doctor, export, render, xray, import_footprint,
 calc, simulate, use_plugin, list_plugins, solve, kb (board knowledgebase:
 list/search/read the kb/ notes + datasheets, add a path/url/text, fetch).
 State: one board in memory; load_board replaces it (old one undoable? no —
@@ -14,6 +14,7 @@ Every mutation flows through Context, so undo reverts the last effect.
 """
 from __future__ import annotations
 from ocdcircuit.util import as_int as _i
+import base64 as _b64
 import json
 import os
 import subprocess
@@ -233,7 +234,6 @@ def t_export(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_render(a: dict[str, object]) -> dict[str, object]:
-    import base64
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
@@ -241,10 +241,38 @@ def t_render(a: dict[str, object]) -> dict[str, object]:
     out = b.render(key, **args)
     if isinstance(out, bytes):
         return {"key": key, "encoding": "base64",
-                "data": base64.b64encode(out).decode()}
+                "data": _b64.b64encode(out).decode()}
     if isinstance(out, list):
         return {"key": key, "encoding": "files", "data": out}
     return {"key": key, "encoding": "text", "data": out}
+
+
+def t_xray(a: dict[str, object]) -> dict[str, object]:
+    """Fab x-ray vs design: png = path | base64 bytes → score + divergences.
+    `png` doubles as the scan id: bytes are the upload, a short string is
+    the path of a scan already on disk (OSError when missing)."""
+    import binascii
+    b = _board()
+    raw = a.get("png", a.get("raw", a.get("data", a.get("path", ""))))
+    assert isinstance(raw, (str, bytes)), "xray needs png=<path or PNG bytes>"
+    if isinstance(raw, str) and len(raw) > 64:
+        try:
+            raw = _b64.b64decode(raw, validate=True)  # upload bytes, else a path
+        except (ValueError, binascii.Error):
+            pass
+    args: dict[str, object] = {}
+    for k in ("pxmm", "thr", "dx", "dy", "scale", "min_cells", "max_divs"):
+        if a.get(k) is not None:
+            v = a[k]
+            assert isinstance(v, (int, float)) and not isinstance(v, bool), (
+                f"xray {k} must be a number")
+            args[k] = int(v) if k in ("thr", "min_cells", "max_divs") else v
+    out = b.xray(None, png=raw, **args)  # str = path (OSError when missing)
+    divs = out.get("divs")
+    assert isinstance(divs, list)
+    return {"score": out["score"], "missing": out["missing"],
+            "extra": out["extra"], "divs": divs[:20],
+            "overlay": out["overlay"]}
 
 
 def t_import(a: dict[str, object]) -> dict[str, object]:
@@ -424,6 +452,10 @@ TOOLS: dict[str, object] = {
     "doctor": (t_doctor, {}),
     "export": (t_export, {"key": "exporter?", "outdir": "out", "fab?": "one-shot fab override"}),
     "render": (t_render, {"key": "renderer?"}),
+    "xray": (t_xray, {"png": "fab scan: path | base64 PNG bytes",
+                      "thr?": "copper cutoff 0-255", "dx?": "mm",
+                      "dy?": "mm", "scale?": 1.0, "min_cells?": 3,
+                      "max_divs?": 50}),
     "import_footprint": (t_import, {"key": "fp|kicad|eagle|eagle-brd|tscircuit|pcb|easyeda|altium|altium-sch", "path": "file"}),
     "footprints": (t_footprints, {"q?": "substring filter (empty = all 101)"}),
     "fabs": (t_fabs, {}),

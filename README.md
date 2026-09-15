@@ -123,11 +123,14 @@ stated as a word in a pill.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
-- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (28 tools:
-  load/solve/patch/set_state/undo/context/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render/footprints/fabs/…)
+- **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (29 tools:
+  load/solve/patch/set_state/undo/context/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render/xray/footprints/fabs/…)
   — any MCP client can drive boards, gallery-pick layouts, probe routability,
   browse footprints + fab profiles, search the board's kb/ notes + datasheets,
   and inspect live fiber/coeffect state.
+- **X-ray check** (`renderer:xray` + `xray:std`): stacked-copper reference
+  view of the board; upload the fab's x-ray PNG and get a score plus boxed
+  divergences (`ocd xray board.ocd fab.png`, studio x-ray panel, MCP `xray`).
   `match`/`diff` constraints cover length + diff pairs.
 - **Context paradigm** ([the paper](https://arxiv.org/abs/2608.25512)):
   every edit carries its inverse (`Context.effect`, fires once), every module

@@ -78,7 +78,7 @@ TOOLBAR = (
     'it builds DRC-clean"><input type=checkbox id=chatauto>auto</label></div>'
     '<div class="grp"><span class=lbl>output</span>'
     '<button id=fab_dl title="download the fab bundle as one zip">fab zip</button>'
-    '<button id=dl title="download a render (cycles svg, sch, png; shift-click backwards)">svg</button>'
+    '<button id=dl title="download a render (cycles svg, sch, png, xray; shift-click backwards)">svg</button>'
     '<details id=calc title="trace width and divider calculators"><summary>calc</summary>'
     '<label>A <input id=ca size=4 value=1 aria-label="trace current A"></label>'
     '<label>dT <input id=cdt size=3 value=10 aria-label="temperature rise C"></label>'
@@ -172,6 +172,18 @@ _slot("view", "inspector",
                          '<header class=panel-head><span class=panel-title>3D</span>'
                          '<span class=panel-note>click to spin</span></header>'
                          '<canvas id=t3d role=img aria-label="3D board preview"></canvas>'
+                         '<header class=panel-head><span class=panel-title>x-ray</span>'
+                         '<span class=panel-note>reference + fab scan check</span></header>'
+                         '<div id=xraybar><input id=xrayfile type=file accept="image/png,.png" '
+                         'aria-label="fab x-ray PNG to compare against the design">'
+                         '<button id=xraysvg type=button title="the reference x-ray view">reference</button>'
+                         '<button id=xraygo type=button class=primary title="compare the chosen scan against the design">compare</button>'
+                         '<label>dx <input id=xraydx value=0 size=3 aria-label="scan x offset mm"></label>'
+                         '<label>dy <input id=xraydy value=0 size=3 aria-label="scan y offset mm"></label>'
+                         '<label>sc <input id=xraysc value=1 size=4 aria-label="scan scale"></label>'
+                         '<label>cu <input id=xraythr value=100 size=3 aria-label="copper brightness cutoff"></label></div>'
+                         '<div id=xraystat role=status aria-live=polite></div>'
+                         '<div id=xraydivs></div>'
                          '<header class=panel-head><span class=panel-title>tidy</span>'
                          '<span class=panel-note id=tidycov></span></header>'
                          '<div id=tidy></div></section>',
@@ -202,6 +214,187 @@ _slot("view", "kb",
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "boards", "blinky_555.ocd")
 SRC = os.path.abspath(SRC)
 BASE = os.path.dirname(SRC)
+
+# THESIS: the logged-out screen is a launchpad, not a wall — Flux's hero
+# (dark cosmos, glowing prompt, honest flow strip) earns the signup; the form
+# waits one click behind. OWN-WORLD: login-gate terminal tokens; the visual is
+# the product (live board canvas, traces + glow dots, no stock photo, no
+# invented stats). STORY: visitor gets the offer in one viewport, starts
+# designing via the account form, lands on the shelf. FIRST VIEWPORT: nav,
+# hook, glowing prompt card over the board visual, single CTA. FORM: Persuade
+# surface in the established world, no seed roll (brief-pinned).
+# FINISH: unreviewed and undocumented is unfinished; this build ends with the
+# finish review, the verdict, and DESIGN.md
+LOGIN_PAGE = r"""<!doctype html><html><head><meta charset=utf-8><title>OCD Studio — design PCBs with AI</title>
+<link rel=icon href="data:,">
+<style>
+:root{
+--term:#101418;--term-2:#1a2129;--term-line:#2a333d;--term-text:#d8e2dc;
+--term-faint:#7f8b94;--term-bad:#ff7364;--term-ok:#5fd894;--term-key:#ffd8a0;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--term);color:var(--term-text);font:1rem/1.55 var(--sans)}
+/* hero: nav, hook, glowing prompt over the live board, one CTA. The prompt
+sits over the visual (like Flux's card over its PCB render), so the canvas
+is atmosphere behind real content — never decoration. */
+.hero{position:relative;overflow:hidden;text-align:center;
+padding:1rem 1.5rem 3.5rem;min-height:92vh;display:flex;flex-direction:column}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%}
+.hero>*:not(canvas){position:relative}
+.nav{display:flex;align-items:center;gap:1rem;max-width:70rem;margin:0 auto;width:100%}
+.brand{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.1rem;
+letter-spacing:-.02em;color:#fff;text-decoration:none}
+.brand em{font-style:normal;color:var(--term-ok)}
+.nav .sp{flex:1}
+.nav button{font:600 .9rem var(--sans);padding:.5rem 1rem;border-radius:8px;cursor:pointer}
+#loginbtn{background:transparent;color:var(--term-text);border:1px solid var(--term-line)}
+#loginbtn:hover{border-color:var(--term-ok)}
+#topcta{background:var(--term-ok);border:1px solid var(--term-ok);color:#06130d}
+#topcta:hover{filter:brightness(1.07)}
+h1{font-size:clamp(2.2rem,5vw,3.4rem);letter-spacing:-.03em;margin:12vh 0 .3rem;color:#fff}
+.dek{color:var(--term-faint);font-size:1.05rem;margin:0 0 2rem}
+.prompt{max-width:34rem;margin:0 auto;width:100%;background:rgba(16,20,24,.92);
+border:1px solid #7a3fd1;border-radius:14px;padding:1.1rem 1.2rem;text-align:left;
+box-shadow:0 0 0 1px rgba(122,63,209,.35),0 18px 60px -12px rgba(122,63,209,.55)}
+.prompt p{margin:0 0 .9rem;font-size:1.02rem;line-height:1.7;color:var(--term-text)}
+.prompt button{width:100%;font:600 1rem var(--sans);padding:.8rem;border-radius:9px;
+border:1px solid var(--term-ok);background:var(--term-ok);color:#06130d;cursor:pointer}
+.prompt button:hover{filter:brightness(1.07)}
+/* honest strip: the flow, never invented counts (no fake builders stat) */
+.flowline{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin:2.2rem 0 0;
+font:.82rem var(--mono);color:var(--term-faint)}
+.flowline b{color:var(--term-ok);font-weight:600}
+/* proof strip: what the tool does, never invented counts */
+/* gate: the account form, one click behind the hero */
+.gate{display:none;min-height:100vh;grid-template-columns:minmax(22rem,34rem) 1fr}
+body.authed .hero,body.gating .hero{display:none}
+body.gating .gate{display:grid}
+.form{padding:clamp(2rem,6vh,4.5rem) clamp(1.5rem,4vw,3.5rem);display:flex;flex-direction:column;
+justify-content:center;gap:1rem;max-width:30rem;width:100%;margin:0 auto}
+.form h2{font-size:1.6rem;letter-spacing:-.02em;margin:.5rem 0 0;color:#fff}
+.sub{color:var(--term-faint);font-size:.92rem;margin:0 0 .5rem}
+label{display:grid;gap:.3rem;font-size:.85rem;font-weight:600}
+input{font:1rem var(--sans);padding:.7rem .9rem;border-radius:9px;border:1px solid var(--term-line);
+background:var(--term-2);color:var(--term-text)}
+input:focus{outline:2px solid var(--term-ok);outline-offset:1px;border-color:var(--term-ok)}
+.form button{font:600 1rem var(--sans);padding:.75rem;border-radius:9px;border:1px solid var(--term-ok);
+background:var(--term-ok);color:#06130d;cursor:pointer}
+.form button:hover{filter:brightness(1.07)}
+button.ghost{background:transparent;color:var(--term-text);border-color:var(--term-line)}
+#err{color:var(--term-bad);font:.85rem var(--mono);min-height:1.4em;margin:0}
+#shelf{display:none;gap:.4rem}
+#shelf.has{display:grid}
+#shelf button{text-align:left;font-family:var(--mono);font-size:.85rem;background:var(--term-2);
+color:var(--term-text);border-color:var(--term-line);padding:.6rem .8rem}
+#newboard{display:none;gap:.5rem}
+#newboard.has{display:grid}
+.fine{color:var(--term-faint);font-size:.78rem}
+.visual{position:relative;min-height:100vh;overflow:hidden;background:#0a0f14}
+.visual canvas{position:absolute;inset:0;width:100%;height:100%}
+.visual figcaption{position:absolute;left:1.5rem;bottom:1.2rem;right:1.5rem;color:#fff;
+font:.85rem var(--mono);opacity:.85}
+a{color:var(--term-ok)}
+@media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}}
+@media(prefers-reduced-motion:reduce){.hero canvas,.visual canvas{display:none}}
+</style></head><body>
+<!-- landing: hero first, account form one click behind, shelf after login -->
+<header class=hero><canvas id=art aria-hidden=true></canvas>
+<nav class=nav><span class=brand><svg width=22 height=22 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></span>
+<span class=sp></span><button id=loginbtn type=button>Log in</button>
+<button id=topcta type=button>Start designing</button></nav>
+<h1>Design PCBs with AI</h1>
+<p class=dek>What do you want to build today?</p>
+<div class=prompt><p>Describe your board — the copilot drafts the schematic,
+places parts, routes traces. You stay the lead engineer.</p>
+<button id=herogo type=button>Start designing with AI</button></div>
+<div class=flowline><span><b>1</b> idea</span><span>→</span><span><b>2</b> schematic</span><span>→</span><span><b>3</b> layout</span><span>→</span><span><b>4</b> make</span></div>
+</header>
+<main class=gate><div class=form>
+<div class=brand><svg width=24 height=24 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></div>
+<h2 id=title>Create your Studio account</h2>
+<p class=sub id=sub>Create an account to start building hardware, from anywhere.</p>
+<p id=err role=alert aria-live=polite></p>
+<form id=f><label>Username<input id=u autocomplete=username maxlength=32 required></label>
+<label>Password<input id=p type=password autocomplete=current-password minlength=8 required></label>
+<button id=go type=submit>Create account</button>
+<button id=swap type=button class=ghost>Have an account? Log in</button></form>
+<div id=shelf role=group aria-label="your boards"></div>
+<form id=newboard><label>New board<input id=nbname placeholder=blinky maxlength=32></label>
+<button type=submit>New board</button></form>
+<p class=fine>Local-first: accounts live in this studio only (.ocd-users beside the boards).</p>
+</div>
+<figure class=visual><canvas id=art2 aria-hidden=true></canvas>
+<figcaption>idea → schematic → layout → make · drag parts · solve · fab zip</figcaption></figure>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let mode='signup', me=null;
+function paint(c){const x=c.getContext('2d');let t=Math.random()*10; // one authored visual, two canvases
+function frame(){if(!c.isConnected)return;
+const r=c.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);
+c.width=Math.max(1,r.width*d);c.height=Math.max(1,r.height*d);
+x.setTransform(d,0,0,d,0,0);const W=r.width,H=r.height;t+=0.004;
+const g=x.createLinearGradient(0,0,W,H);
+g.addColorStop(0,'#0a1410');g.addColorStop(.55,'#0c1a30');g.addColorStop(1,'#0a0f14');
+x.fillStyle=g;x.fillRect(0,0,W,H);
+x.fillStyle='rgba(255,255,255,.5)';
+for(let i=0;i<90;i++){x.globalAlpha=.12+((i*13)%10)/60;
+x.fillRect((i*97.3)%W,(i*57.7)%H,1.2,1.2);}
+x.globalAlpha=1;
+const bw=Math.max(200,W*.62),bh=Math.max(140,H*.42),ox=(W-bw)/2,oy=(H-bh)/2+20;
+x.strokeStyle='rgba(95,216,148,.35)';x.lineWidth=1.5;x.strokeRect(ox,oy,bw,bh);
+const cols=['#c0392b','#3a7bd5','#5fd894','#9b7bd5'];
+for(let i=0;i<4;i++){const y0=oy+20+i*(bh-40)/3;
+x.strokeStyle=cols[i];x.lineWidth=3;x.globalAlpha=.8;
+x.beginPath();x.moveTo(ox,y0);
+x.bezierCurveTo(ox+bw*.3,y0-40,ox+bw*.6,y0+40,ox+bw,y0-10+((i*29)%30));x.stroke();
+const tt=(t+i*.25)%1;
+x.fillStyle='#ffd8a0';x.beginPath();
+x.arc(ox+bw*tt,y0+Math.sin(tt*6.28+i)*14,3.5,0,7);x.fill();}
+x.globalAlpha=1;x.fillStyle='#d9a821';
+for(let i=0;i<8;i++){const px=ox+20+i*(bw-40)/7;
+x.fillRect(px-3,oy-5,6,4);x.fillRect(px-3,oy+bh+1,6,4);}
+if(!matchMedia('(prefers-reduced-motion: reduce)').matches)requestAnimationFrame(frame);}
+frame();}
+paint($('art'));paint($('art2'));
+function gate(){document.body.classList.add('gating');}
+$('herogo').onclick=gate;$('topcta').onclick=gate;
+$('loginbtn').onclick=()=>{gate();setMode('login');};
+async function api(p,b){const r=await fetch(p,{method:'POST',
+headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
+async function boot(){const r=await api('/auth/me',{});
+if(r.user){me=r.user;gate();showShelf();}else if(r.needs_setup){setMode('signup');}else setMode('login');}
+function setMode(m){mode=m;gate();
+$('title').textContent=m==='signup'?'Create your Studio account':'Log in to OCD Studio';
+$('go').textContent=m==='signup'?'Create account':'Log in';
+$('swap').textContent=m==='signup'?'Have an account? Log in':'New here? Create an account';}
+$('swap').onclick=()=>setMode(mode==='signup'?'login':'signup');
+$('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';
+const u=$('u').value.trim(),p=$('p').value;
+if(!u){$('err').textContent="Username can't be blank!";return;}
+const r=await api(mode==='signup'?'/auth/signup':'/auth/login',{user:u,password:p});
+if(r.error){$('err').textContent=r.error;return;}
+me=r.user||u;showShelf();};
+async function showShelf(){$('f').style.display='none';
+$('title').textContent='Welcome, '+me;
+$('sub').textContent='Pick a board to open the workshop, or start a new one.';
+const r=await api('/shelf',{});
+const box=$('shelf');box.innerHTML='';box.classList.add('has');
+$('newboard').classList.add('has');
+if(!r.boards.length){box.innerHTML='<span class=fine>no boards yet — name one below</span>';}
+r.boards.forEach(b=>{const btn=document.createElement('button');
+btn.textContent=b.name+' · '+b.mtime;
+btn.onclick=()=>location.href='/?board='+encodeURIComponent(b.name.replace(/\.ocd$/,''));
+box.appendChild(btn);});}
+$('newboard').onsubmit=async e=>{e.preventDefault();
+const r=await api('/shelf/new',{name:$('nbname').value});
+if(r.error){$('err').textContent=r.error;return;}
+showShelf();};
+boot();
+</script></body></html>
+"""
 
 PAGE = r"""<!doctype html><html><head><meta charset=utf-8><title>OCD Studio</title>
 <link rel=icon href="data:,">
@@ -398,6 +591,8 @@ canvas{width:100%;height:100%;display:block}
 <a class=skip href=#ed>skip to the job file</a>
 <header class=top><div class=inner>
 <span class=brand><svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round></line></svg>OCD Studio <i>board &amp; PCB workshop</i></span>
+<span id=me class=pill title="logged in as"></span>
+<button id=logoutbtn title="log out of the studio">log out</button>
 /*__TOOLBAR__*/
 </div></header>
 <main>
@@ -405,6 +600,11 @@ canvas{width:100%;height:100%;display:block}
 </main>
 <script>
 const $=id=>document.getElementById(id);
+async function api(path,body){const r=await fetch(path,{method:'POST',
+headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+const j=await r.json();
+if(j&&j.login){location.href='/';throw new Error('login');} // session died mid-work
+return j;}
 let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
 function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy nothing)
@@ -759,7 +959,6 @@ function animate(frames,traces,done){
       if(k<N)anim=requestAnimationFrame(tw);else{for(const r in to)S.cur.parts[r]={...S.cur.parts[r],x:to[r][0],y:to[r][1]};i++;step();}})();}
   step();
 }
-async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json();}
 function statMsg(txt,ok){const el=$('stat');el.textContent=txt||'';el.className=!txt?'':ok?'ok':'err';}
 let deb=null, pulseq=0; // monotonic: a slow build must not land on a newer board
 function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
@@ -1051,8 +1250,8 @@ $('fab_dl').onclick=async()=>{
   a.href='data:application/zip;base64,'+r.zip;a.download=r.name;a.click();
   statMsg(`${r.name} (${(r.bytes/1024).toFixed(0)}KB)`,true);
 };
-$('dl').onclick=async()=>{ // cycle svg → sch → png (shift-click backwards)
-  const keys=['svg','sch','png'];
+$('dl').onclick=async()=>{ // cycle svg → sch → png → xray (shift-click backwards)
+  const keys=['svg','sch','png','xray'];
   dlIdx=(dlIdx+((window.event&&window.event.shiftKey)?-1:1)+keys.length)%keys.length;
   const key=keys[dlIdx];
   $('dl').textContent=`⤓ ${key}`;
@@ -1094,6 +1293,28 @@ $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
   $('docout').dataset.done='1';
 });
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
+// x-ray: reference download + fab-scan upload vs the design (score + boxes)
+let xrayRaw='';
+if($('xrayfile'))$('xrayfile').onchange=()=>{const f=$('xrayfile').files[0];if(!f)return;
+  const rd=new FileReader();rd.onload=()=>{xrayRaw=String(rd.result).split(',',1)[1]||'';
+    $('xraystat').textContent=`${f.name} ready — compare to check it`;};
+  rd.readAsDataURL(f);};
+if($('xraysvg'))$('xraysvg').onclick=async()=>{
+  const r=await api('/render',{key:'xray'});if(r.error){$('xraystat').textContent=r.error;return;}
+  const a=document.createElement('a');
+  a.href=`data:image/svg+xml,${encodeURIComponent(r.data)}`;
+  a.download=r.name;a.click();$('xraystat').textContent=r.name;};
+if($('xraygo'))$('xraygo').onclick=async()=>{
+  if(!xrayRaw){$('xraystat').textContent='pick a fab PNG first';return;}
+  const pv=(id,fb)=>{const v=parseFloat($(id).value);return Number.isFinite(v)?v:fb;};
+  const r=await api('/xray',{png:xrayRaw,dx:pv('xraydx',0),dy:pv('xraydy',0),
+    scale:pv('xraysc',1),thr:Math.round(pv('xraythr',100))});
+  if(r.error){$('xraystat').textContent=r.error;return;}
+  $('xraystat').textContent=`score ${r.score} — missing ${r.missing}px extra ${r.extra}px`;
+  $('xraydivs').innerHTML=(r.divs||[]).map(d=>
+    `<div><span class=dim>${d.kind}</span> ${d.x} ${d.y} ${d.w}x${d.h}mm</div>`).join('')
+    ||'<div class=dim>no divergences</div>';
+  if(r.overlay){const w=open('','_blank');if(w)w.document.write(r.overlay);}};
 async function hist(op){
   const r=await api(op,{});
   if(r.error){statMsg(r.error);return;}
@@ -1313,6 +1534,10 @@ async function loadBoard(){ // parse + route what is on disk; never re-place
   setEditor(r.text);applyState(r,false);
 }
 async function boot(){
+  // whoami: a stale cookie lands here sessionless — bounce to the gate.
+  try{const me=await api('/auth/me',{});
+    if(me&&me.user){$('me').textContent=me.user;}
+    else{location.href='/';return;}}catch(e){location.href='/';return;}
   // /load parses the file and routes what is there. It does not re-place:
   // a 5k-part board takes minutes to place, and the file already says where
   // the parts go. `solve` is the explicit ask for a fresh placement.
@@ -1330,6 +1555,7 @@ async function boot(){
   $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
   renderTree();
   loadVCS();
+  $('logoutbtn').onclick=async()=>{await api('/auth/logout',{});location.href='/';};
 }
 // selecting text in the editor highlights every ref it names, on PCB and SCH
 function edHighlight(){
@@ -1595,13 +1821,132 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
 TEXT_EXT = {".ocd", ".toml", ".md", ".txt", ".fp", ".json", ".py", ".csv", ".kicad_mod"}
 WRITE_EXT = {".ocd", ".toml", ".md"}
 SKIP_DIR = {"__pycache__", ".git", ".mypy_cache", ".ruff_cache", ".pytest_cache",
-            "node_modules", ".venv", "venv", "out", "outputs", ".scratch"}
+            "node_modules", ".venv", "venv", "out", "outputs", ".scratch",
+            ".users"}
+GITIGNORE_AUTH = ".ocd-users\n.users/\n"
 ROOT = os.path.abspath(os.environ.get("OCD_ROOT") or BASE)
 START_DIR = BASE  # the board directory as launched, before any /fs/open
 if not os.path.isdir(ROOT):  # a bad OCD_ROOT must not take the studio down
     print(f"studio: OCD_ROOT {os.environ.get('OCD_ROOT')!r} is not a directory, "
           f"using {BASE}", file=sys.stderr)
     ROOT = BASE
+
+
+# --- accounts: local users with salted passwords, cookie sessions -----------
+# stdlib only (hashlib scrypt + secrets): no new deps. Users live one per line
+# in <ROOT>/.ocd-users (name:salt_hex:hash_hex). Sessions are bearer tokens in
+# memory — a restart re-asks the login. This studio is single-tenant by
+# design: the first signup owns it; later signups are refused (add invites
+# when multi-user matters).
+_AUTH_COOKIE = "ocd_user"
+_USERS_FILE = ".ocd-users"
+_SESSIONS: dict[str, str] = {}  # token -> username
+
+
+def _users_path() -> str:
+    return os.path.join(ROOT, _USERS_FILE)
+
+
+def _read_users() -> dict[str, tuple[str, str]]:
+    """name -> (salt_hex, hash_hex). Missing file = no accounts yet."""
+    out: dict[str, tuple[str, str]] = {}
+    try:
+        with open(_users_path()) as f:
+            for line in f:
+                parts = line.rstrip("\n").split(":")
+                if len(parts) == 3 and parts[0]:
+                    out[parts[0]] = (parts[1], parts[2])
+    except OSError:
+        pass
+    return out
+
+
+def _write_user(name: str, password: str) -> None:
+    import hashlib
+    import secrets
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
+    with open(_users_path(), "a", encoding="utf8") as f:
+        f.write(f"{name}:{salt.hex()}:{digest.hex()}\n")
+    # secrets must never be committed: keep them out of git on first signup
+    try:
+        gi = os.path.join(ROOT, ".gitignore")
+        have = open(gi).read() if os.path.isfile(gi) else ""
+        if _USERS_FILE not in have:
+            with open(gi, "a", encoding="utf8") as f:
+                if have and not have.endswith("\n"):
+                    f.write("\n")
+                f.write(GITIGNORE_AUTH)
+    except OSError:
+        pass
+
+
+def _check_user(name: str, password: str) -> bool:
+    import hashlib
+    import hmac
+    users = _read_users()
+    if name not in users:
+        return False
+    salt_hex, want = users[name]
+    try:
+        digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex),
+                                n=16384, r=8, p=1)
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(digest.hex(), want)
+
+
+def _new_session(name: str) -> str:
+    import secrets
+    tok = secrets.token_urlsafe(32)
+    _SESSIONS[tok] = name
+    while len(_SESSIONS) > 64:  # ponytail: cap sessions in memory; restart clears all anyway
+        _SESSIONS.pop(next(iter(_SESSIONS)))
+    return tok
+
+
+def _authed(headers: object) -> str | None:
+    """Username for a valid session cookie, else None."""
+    get = getattr(headers, "get", None)
+    cookie = get("Cookie", "") if get else ""
+    for chunk in str(cookie).split(";"):
+        k, _, v = chunk.strip().partition("=")
+        if k.strip() == _AUTH_COOKIE and v.strip() in _SESSIONS:
+            return _SESSIONS[v.strip()]
+    return None
+
+
+def _user_dir(name: str) -> str:
+    """Per-user shelf: <ROOT>/.users/<name>/ for boards (hidden from _tree)."""
+    d = os.path.join(ROOT, ".users", name)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+STARTER_OCD = """board {name} 40x30
+part R1 R0805 10k
+part C1 C0805 100n
+net N: R1.2 C1.1
+net GND: R1.1 C1.2
+"""
+
+
+def _shelf(name: str) -> list[dict[str, str]]:
+    """The user's boards: name, size, modified."""
+    import time
+    d = _user_dir(name)
+    rows: list[dict[str, str]] = []
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".ocd"):
+            continue
+        try:
+            st = os.stat(os.path.join(d, fn))
+            rows.append({"name": fn, "bytes": str(st.st_size),
+                         "mtime": time.strftime("%Y-%m-%d %H:%M",
+                                                time.localtime(st.st_mtime))})
+        except OSError:
+            continue
+    return rows
 
 
 def _rel(path: object) -> str:
@@ -2061,11 +2406,18 @@ class H(http.server.BaseHTTPRequestHandler):
         except OSError as e:
             print(f"studio: save failed: {e}", file=sys.stderr)
 
-    def _send(self, obj: object) -> None:
+    def _send(self, obj: object, cookie: str | None = None) -> None:
         body = json.dumps(obj).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if cookie:
+            # HttpOnly + SameSite=Lax: the browser holds it, JS never reads it
+            self.send_header("Set-Cookie",
+                             f"{_AUTH_COOKIE}={cookie}; Path=/; HttpOnly; SameSite=Lax")
+        elif cookie == "":
+            self.send_header("Set-Cookie",
+                             f"{_AUTH_COOKIE}=; Path=/; Max-Age=0")
         self.end_headers()
         self.wfile.write(body)
 
@@ -2100,6 +2452,34 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_response(204)  # favicon etc: silent, no console 404
             self.end_headers()
             return
+        # members' workshop: no session cookie → the login screen. /auth/*
+        # stays open (it is how you get the cookie). The gate lives here, not
+        # in a proxy, so `python -m apps.studio` is the whole setup.
+        user = _authed(self.headers)
+        if user is None:
+            body = LOGIN_PAGE.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        from urllib.parse import parse_qs, urlparse
+        q = parse_qs(urlparse(self.path).query)
+        want = (q.get("board") or [""])[0]
+        if want:
+            # shelf boards only: alnum/_/- inside the user's own dir, else the
+            # launch board. Server-side: the cookie names the user, the query
+            # names only the file.
+            clean = "".join(c for c in want if c.isalnum() or c in "_-")[:32]
+            cand = os.path.join(_user_dir(user), (clean or "_") + ".ocd")
+            if os.path.isfile(cand):
+                g = globals()
+                g["SRC"], g["BASE"] = cand, os.path.dirname(cand)
+                H.src_text = _read(os.path.relpath(cand, ROOT))
+                H.save_target = cand
+                H.hist, H.redo, H.chat, H.props = [H.src_text], [], [], []
+                H.saved_text = ""
         page = PAGE.replace("/*__TOOLBAR__*/", SLOTS.render("toolbar", None))
         page = page.replace("/*__VIEWS__*/", SLOTS.render("view", None))
         body = page.encode()
@@ -2115,7 +2495,65 @@ class H(http.server.BaseHTTPRequestHandler):
         print(f"REQ {self.path} src={os.path.relpath(SRC, ROOT)} "
               f"want={req.get('src')!r}", flush=True, file=sys.stderr)
         try:
-            if self.path == "/init":
+            if self.path.startswith("/auth/"):
+                pass  # the gate is the page; these routes ARE the keyhole
+            elif _authed(self.headers) is None:
+                self._send({"error": "log in first", "login": True})
+                return
+            if self.path == "/auth/signup":
+                name = str(req.get("user", "")).strip()
+                password = str(req.get("password", ""))
+                if not name or not password:
+                    self._send({"error": "a name and a password, both"})
+                elif not name.replace("_", "").replace("-", "").isalnum() or len(name) > 32:
+                    self._send({"error": "names are letters, digits, _ and - (32 max)"})
+                elif len(password) < 8:
+                    self._send({"error": "password needs 8+ characters"})
+                elif name in _read_users():
+                    self._send({"error": f"{name} exists — log in instead"})
+                elif _read_users():
+                    # single-tenant: first account owns the studio (invites later)
+                    self._send({"error": "this studio already has an account"})
+                else:
+                    _write_user(name, password)
+                    self._send({"ok": True, "user": name}, cookie=_new_session(name))
+            elif self.path == "/auth/login":
+                name, password = str(req.get("user", "")).strip(), str(req.get("password", ""))
+                if not _check_user(name, password):
+                    self._send({"error": "wrong name or password"})
+                else:
+                    self._send({"ok": True, "user": name}, cookie=_new_session(name))
+            elif self.path == "/auth/logout":
+                get = getattr(self.headers, "get", None)
+                for chunk in str(get("Cookie", "") if get else "").split(";"):
+                    k, _, v = chunk.strip().partition("=")
+                    if k.strip() == _AUTH_COOKIE:
+                        _SESSIONS.pop(v.strip(), None)
+                self._send({"ok": True}, cookie="")
+            elif self.path == "/auth/me":
+                user = _authed(self.headers)
+                self._send({"user": user, "needs_setup": not _read_users()})
+            elif self.path == "/shelf":
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                self._send({"user": user, "boards": _shelf(user)})
+            elif self.path == "/shelf/new":
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                raw = str(req.get("name", "")).strip().lower()
+                name = "".join(c for c in raw if c.isalnum() or c in "_-")[:32]
+                if not name or name in ("users",):
+                    self._send({"error": "give the board a usable name"})
+                else:
+                    fn = name + ".ocd"
+                    full = os.path.join(_user_dir(user), fn)
+                    if os.path.exists(full):
+                        self._send({"error": f"{fn} already on your shelf"})
+                    else:
+                        with open(full, "w", encoding="utf8") as f:
+                            f.write(STARTER_OCD.format(name=name))
+                        self._send({"ok": True, "boards": _shelf(user)})
+            elif self.path == "/init":
                 self._send(self._build(H.src_text, True))
             elif self.path == "/load":
                 # Open a board without re-placing it: parse + route + DRC only.
@@ -2214,26 +2652,55 @@ class H(http.server.BaseHTTPRequestHandler):
                 b = agent.loads(H.src_text, base=BASE)
                 with _tf.TemporaryDirectory() as td:
                     zfn = b.export("bundle", outdir=td)[0]
-                    raw = open(zfn, "rb").read()
-                self._send({"zip": base64.b64encode(raw).decode(),
+                    zraw = open(zfn, "rb").read()
+                self._send({"zip": base64.b64encode(zraw).decode(),
                             "name": f"{b.name}-fab.zip",
-                            "bytes": len(raw)})
+                            "bytes": len(zraw)})
             elif self.path == "/render":
                 import base64
-                key = str(req.get("key", "svg"))  # svg|sch|png|stl|gltf|…
+                key = str(req.get("key", "svg"))  # svg|sch|png|stl|gltf|xray|…
                 b = agent.loads(H.src_text, base=BASE)
                 b.configure("toml", base=BASE)
                 b.place()
                 b.route_board()
                 out = b.render(key)
                 ext = {"svg": "svg", "sch": "sch.svg", "png": "png",
-                       "stl": "stl", "gltf": "glb"}.get(key, key)
+                       "stl": "stl", "gltf": "glb", "xray": "xray.svg"}.get(key, key)
                 if isinstance(out, bytes):
                     self._send({"data": base64.b64encode(out).decode(),
                                 "bin": True, "name": f"{b.name}.{ext}"})
                 else:
                     self._send({"data": out if isinstance(out, str) else "\n".join(out),
                                 "bin": False, "name": f"{b.name}.{ext}"})
+            elif self.path == "/xray":  # fab scan (base64 PNG) vs design
+                import base64
+                import binascii
+                data = req.get("png", req.get("data", ""))
+                assert isinstance(data, str) and data
+                try:
+                    xraw = base64.b64decode(data, validate=True)
+                except (ValueError, binascii.Error) as e:
+                    self._send({"error": f"bad upload (not base64 PNG): {e}"})
+                    return
+                b = agent.loads(H.src_text, base=BASE)
+                b.configure("toml", base=BASE)
+                b.place()
+                b.route_board()
+                args: dict[str, object] = {}
+                for kk, cv in (("dx", _f), ("dy", _f), ("scale", _f),
+                               ("thr", _i), ("pxmm", _f)):
+                    if req.get(kk) is not None:
+                        args[kk] = cv(req.get(kk))
+                try:
+                    r = b.xray(None, png=xraw, **args)
+                except (ValueError, OSError, KeyError, AssertionError) as e:
+                    self._send({"error": f"{type(e).__name__}: {e}"})
+                    return
+                divs = r.get("divs")
+                assert isinstance(divs, list)
+                self._send({"score": r["score"], "missing": r["missing"],
+                            "extra": r["extra"], "divs": divs[:20],
+                            "overlay": r["overlay"]})
             elif self.path == "/simulate":  # dc | tran on current text
                 what = str(req.get("what", "dc"))
                 b = agent.loads(H.src_text, base=BASE)
@@ -2275,39 +2742,39 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send(_kb_list())
             elif self.path == "/kb/read":
                 from ocdcircuit.kb import KB
-                k = _kb()
-                assert isinstance(k, KB)
+                kb = _kb()
+                assert isinstance(kb, KB)
                 try:
-                    self._send(k.read(str(req.get("doc", "")),
-                                      start=_i(req.get("start"), 1),
-                                      lines=_i(req.get("lines"), 120)))
+                    self._send(kb.read(str(req.get("doc", "")),
+                                       start=_i(req.get("start"), 1),
+                                       lines=_i(req.get("lines"), 120)))
                 except (ValueError, OSError) as e:
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/search":
                 from ocdcircuit.kb import KB
-                k = _kb()
-                assert isinstance(k, KB)
+                kb = _kb()
+                assert isinstance(kb, KB)
                 try:
-                    self._send(k.search(str(req.get("q", "")),
+                    self._send(kb.search(str(req.get("q", "")),
                                         limit=_i(req.get("limit"), 8)))
                 except (ValueError, OSError) as e:
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/ask":
                 from ocdcircuit.kb import KB
-                k = _kb()
-                assert isinstance(k, KB)
+                kb = _kb()
+                assert isinstance(kb, KB)
                 try:
-                    self._send(k.ask(str(req.get("q", "")),
-                                     k=_i(req.get("limit"), 6),
-                                     answer=bool(req.get("answer"))))
+                    self._send(kb.ask(str(req.get("q", "")),
+                                      k=_i(req.get("limit"), 6),
+                                      answer=bool(req.get("answer"))))
                 except (ValueError, OSError) as e:
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/add":
                 from ocdcircuit.kb import KB
-                k = _kb()
-                assert isinstance(k, KB)
+                kb = _kb()
+                assert isinstance(kb, KB)
                 try:
-                    self._send(k.add(str(req.get("src", ""))))
+                    self._send(kb.add(str(req.get("src", ""))))
                 except (ValueError, OSError) as e:
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/fetch":

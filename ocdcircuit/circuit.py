@@ -495,6 +495,12 @@ class Board(Component):
         assert isinstance(out, str)
         return out
 
+    def xray(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """Fab x-ray vs design: xray(png=path|bytes) → score + divergences."""
+        out = self._run("xray", key, **k)
+        assert isinstance(out, dict)
+        return out
+
     def configure(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Project config: board.toml defaults (fab/placer/router/drc…).
         A plugin like everything else; applied picks land in board.proj."""

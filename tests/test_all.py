@@ -459,6 +459,44 @@ _asm = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1\npart C1 C0805 100
 _asm.place(seeds=1, iters=20)
 _asvg = cast(str, _asm.render("assembly"))
 assert _asvg.count("stroke-dasharray") == 1 and "<line" in _asvg, _asvg[:300]
+# x-ray: black stacked-copper reference + fab PNG vs design (score + boxes)
+_xr = cast(str, bj.render("xray"))
+assert _xr.startswith("<svg") and "#05070d" in _xr and "x-ray" in _xr
+from ocdcircuit import xray as _xray
+from ocdcircuit.raster import _png as _xray_png
+# a scan painted straight from the design mask must score ~100
+_xgw, _xgh, _xgm = _xray.expected(bj)
+_xscanpx = bytearray()
+for _v in _xgm:
+    _xscanpx += b"\xff\xff\xff" if _v else b"\x00\x00\x00"
+_xok = bj.xray(png=_xray_png(_xgw, _xgh, _xscanpx))
+assert cast(float, _xok["score"]) >= 99, _xok
+assert isinstance(_xok["divs"], list) and isinstance(_xok["overlay"], str)
+# the stdlib PNG render works end-to-end too (bodies/silk diverge, most agrees)
+_xraw = cast(bytes, bj.render("png"))
+_xproxy = bj.xray(png=_xraw, thr=100)
+assert cast(float, _xproxy["score"]) > 40, _xproxy
+_xmv = agent.loads("board mv 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                   "N :: R1.1 C1.1\nGND :: R1.2 C1.2\nfix R1 at 30 20\n", base=EX)
+_xmv.place(seeds=1, iters=20)
+_xmv.route_board()
+_xbad = _xmv.xray(png=_xraw, thr=100)
+assert cast(float, _xbad["score"]) < cast(float, _xproxy["score"])
+assert len(cast(list[object], _xbad["divs"])) > 0, _xbad
+assert "fill-opacity" in cast(str, _xbad["overlay"])
+try:
+    _xray.decode_png(b"not a png")
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+with tempfile.TemporaryDirectory() as _xd:
+    open(os.path.join(_xd, "scan.png"), "wb").write(_xraw)
+    assert cast(float, bj.xray(png=os.path.join(_xd, "scan.png"))["score"]) > 40
+    try:
+        bj.xray(png=os.path.join(_xd, "missing.png"))
+        raise AssertionError("should have raised")
+    except OSError:
+        pass
 _allr = cast(list[str], bj.render("all", outdir=tempfile.mkdtemp(), keys=["svg", "png"]))
 assert sorted(f.split(".")[-1] for f in _allr) == ["png", "svg"]
 import shutil as _sh2
@@ -1102,7 +1140,7 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 28
+assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 29
 assert len(cast(list[object], _call("footprints", {})["footprints"])) >= 100
 assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
            _call("footprints", {"q": "R0805"})["footprints"]))
@@ -1115,6 +1153,10 @@ assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active":
 with tempfile.TemporaryDirectory() as _md:
     assert len(cast(list[object], _call("export", {"key": "jlc", "outdir": _md})["files"])) >= 10
 assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
+assert len(cast(str, _call("render", {"key": "xray"})["data"])) > 1000
+# MCP xray: `xray` without png is a clean error, not a fence trip
+_xe = _rpc("tools/call", {"name": "xray", "arguments": {"png": "!!!not-base64!!!"}})
+assert "error" in _xe, _xe
 # load_board replaces a published board, and the replace runs the inverse:
 # the previous board is unloaded (retire + O-Remove), not dropped with its
 # fiber and journal intact (in-process, so the old object is reachable here)
@@ -1377,7 +1419,8 @@ _st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
                        {"placer": "diffusion", "router": "lroute"})
 assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "13/15", _st["tidy"]
-assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch"}
+assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch", "inspector"}
+assert "xraygo" in _studio.SLOTS.render("view", None)  # x-ray compare controls
 assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export button
 _spp = _studio.H._build("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n", False, {})
@@ -1429,6 +1472,16 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_diff(_ocd._boot(), [_sp, os.path.join(_np, "newproj.ocd")]) == 0
     # scaffold solves clean out of the box (funnel promise: new → run works)
     assert _ocd.cmd_run(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
+    # ocd xray: the scaffold's own PNG mostly agrees + writes both SVGs
+    _xpngs = sorted(_glob.glob(os.path.join(_np, "out", "*.png")))
+    assert _xpngs, os.listdir(os.path.join(_np, "out"))
+    assert _ocd.cmd_xray(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
+                                        _xpngs[0]]) == 0
+    assert any(f.endswith(".xray-div.svg")
+               for f in os.listdir(os.path.join(_np, "out")))
+    assert _ocd.cmd_xray(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
+                                        os.path.join(_np, "nope.png")]) == 1
+    assert _ocd.main(["ocd", "xray", "--help"]) == 1
     # main() dispatch: shorthand, flags, help, usage errors (README quickstart)
     assert _ocd.main(["ocd", os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.main(["ocd", "run", "--placer", "compact", "--router", "maze",
@@ -2273,7 +2326,7 @@ _pin = (b"\x02\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x04\x3a\x
 import struct as _st3
 _srec = _st3.pack("<H", 28) + b"\x00\x01" + b"|RECORD=1|LibReference=QFN8|"
 _pdata = _srec + _st3.pack("<H", len(_pin)) + b"\x00\x01" + _pin
-_slib = {_s: None for _s in ()}  # placeholder replaced below
+_slib: dict[str, None] = {}  # placeholder replaced below
 # direct walker check via a fake two-record stream
 _j = 0
 _spins: list[tuple[str, str]] = []
@@ -2291,12 +2344,14 @@ while _j + 4 <= len(_pdata):
 assert _spins == [("1", "A0")]
 _fixt2 = "/tmp/altium_real/hardware/1v3/Libraries/LimeMicroAltiumLib_schLib.SchLib"
 if os.path.exists(_fixt2):
+    from typing import cast as _cast2
     _syms = foreign._bin_schlib(open(_fixt2, "rb").read())
     assert len(_syms) >= 100, len(_syms)
-    _sq = dict(_syms)["24FC512"]["pins"]
+    _sq = _cast2(dict[str, object], dict(_syms)["24FC512"]["pins"])
     assert _sq["1"] == ("left", 0, "A0") and _sq["8"] == ("right", 3, "VCC")
     _sb = Board("schlib", 40, 30)
-    assert len(_sb.import_sym("schlib", path=_fixt2)["names"]) >= 100
+    _names = _sb.import_sym("schlib", path=_fixt2)["names"]
+    assert isinstance(_names, list) and len(_names) >= 100
 # eagle pours export as solid polygons (mitox GND on 0,3 → 2 polygons)
 _mit = agent.loads(open(os.path.join(EX, "mitox", "mitox.ocd")).read(),
                   base=os.path.join(EX, "mitox"))

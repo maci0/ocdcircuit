@@ -1,5 +1,5 @@
 """Everything is a plugin: placers, routers, layers, drc, exporters,
-parts libraries, renderers (svg + 3D stl). Stdlib only, one file."""
+parts libraries, renderers (svg + 3D stl + x-ray), x-ray compare. Stdlib only, one file."""
 from __future__ import annotations
 from .util import as_float as _f, as_int as _i
 import re
@@ -1104,6 +1104,47 @@ class Html3dRenderer(Plugin[str]):
         return page(board, to_gltf(board, thick))
 
 
+class XrayRenderer(Plugin[str]):
+    """X-ray reference: every copper layer stacked on black, no mask/bodies.
+    What the fab scan should look like — the baseline `xray compare` diffs."""
+    kind, key = "renderer", "xray"
+    ext = ".xray.svg"
+
+    def run(self, board: Board, *a: object, **k: object) -> str:
+        from . import xray as _xray
+        return _xray.render(board, _f(k.get("scale", 10.0)))
+
+
+class XrayCompare(Plugin[dict[str, object]]):
+    """Fab x-ray vs design: upload the fab's PNG (`png=` path or bytes),
+    get {score 0-100, divs, svg, overlay}. dx/dy/scale re-register a scan
+    that doesn't sit on the grid (real scans never do); thr sets the
+    copper cutoff."""
+    kind, key = "xray", "std"
+
+    def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
+        import os
+        from . import xray as _xray
+        from .util import as_int as _ii
+        raw = k.get("png", k.get("raw"))
+        assert isinstance(raw, (str, bytes)), "xray needs png=<path or PNG bytes>"
+        if (isinstance(raw, str) and len(raw) < 1024
+                and ("/" in raw or "\\" in raw or os.path.isfile(raw))):
+            with open(raw, "rb") as f:  # path → bytes (fixable: missing = OSError)
+                raw = f.read()
+        assert isinstance(raw, bytes), "xray needs png=<path or PNG bytes>"
+        mc = k.get("min_cells")
+        md = k.get("max_divs")
+        assert mc is None or isinstance(mc, int)
+        assert md is None or isinstance(md, int)
+        return _xray.compare(board, raw, _f(k.get("pxmm", 10.0)),
+                             _ii(k.get("thr"), 100),
+                             _f(k.get("dx", 0.0)), _f(k.get("dy", 0.0)),
+                             _f(k.get("scale", 1.0)),
+                             mc if mc is not None else 3,
+                             md if md is not None else 50)
+
+
 class AllRenderer(Plugin[list[str]]):
     """Every mounted renderer → outdir/<name><ext>. A raising renderer
     is skipped with a warning (registry fences it). `keys=[…]` subsets."""
@@ -1674,10 +1715,10 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              SymImporter, SchLibImporter,
              TomlConfig,
              CalcPlugin, SimPlugin, NgspicePlugin, GatesPlugin, LintPlugin, DoctorPlugin,
-             ScorePlugin, DiffPlugin,
+             ScorePlugin, DiffPlugin, XrayCompare,
              SvgRenderer, SchRenderer, AssemblyRenderer, StlRenderer, GltfRenderer,
              PngRenderer, KicadRenderer, BlenderRenderer, PcbdrawRenderer,
-             EasyedaRenderer, Html3dRenderer, AllRenderer)
+             EasyedaRenderer, Html3dRenderer, XrayRenderer, AllRenderer)
 
 
 def mount_defaults(board: Board) -> Registry:

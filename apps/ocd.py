@@ -4,6 +4,7 @@
     ocd run <circuit.ocd>    full pipeline: place → route → DRC → fab
     ocd status <circuit.ocd> refresh STATUS.md (score, DRC, ERC, sim)
     ocd diff <a.ocd> <b.ocd> what changed: parts, nets, size, constraints
+    ocd xray <board.ocd> <fab.png>  fab x-ray vs design: score + divergences
     ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
     ocd lint <circuit.ocd>   static source lint, no place/route
     ocd kb list|search|read|add|fetch|ask  board knowledgebase (`kb/`: notes + datasheets)
@@ -24,6 +25,7 @@ USAGE = """usage:
   ocd run [--fab F] [--placer P] [--router R] [--sim dc|tran] <circuit.ocd>
   ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
+  ocd xray <board.ocd> <fab.png> fab x-ray vs design: score + divergences
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
   ocd kb list|search|read|add|fetch|ask  kb/: notes + datasheets, agent-readable
@@ -337,6 +339,47 @@ def cmd_diff(agent: object, args: list[str]) -> int:
     return 0
 
 
+def cmd_xray(agent: object, args: list[str]) -> int:
+    if len(args) != 2 or args[0] in ("-h", "--help"):
+        print("usage: ocd xray <circuit.ocd> <fab.png> "
+              "(dx/dy/scale/thr via env XRAY=dx,dy,scale,thr)")
+        return 1
+    import os as _os
+    try:
+        b = _load(agent, args[0])
+        _solve(b, None, None)
+        kw: dict[str, object] = {}
+        for i, k in enumerate(str(_os.environ.get("XRAY", "")).split(",")):
+            if k.strip():
+                try:
+                    kw[("dx", "dy", "scale", "thr")[i]] = (
+                        int(k) if i == 3 else float(k))
+                except (ValueError, IndexError):
+                    print(f"ocd: bad XRAY {k.strip()!r} "
+                          f"(want dx,dy,scale,thr numbers)")
+                    return 1
+        r = b.xray(None, png=args[1], **kw)
+    except (OSError, ValueError, KeyError, AssertionError) as e:
+        print(f"ocd: {e}")
+        return 1
+    divs = cast(list[dict[str, object]], r["divs"])
+    missing = cast(int, r["missing"])
+    extra = cast(int, r["extra"])
+    _out().print(f"xray score=[green]{r['score']}[/green] "
+                 f"missing=[red]{missing}[/red] extra=[yellow]{extra}[/yellow]")
+    for d in divs[:10]:
+        _out().print(f"  [red]{d['kind']}[/red] {d['x']} {d['y']} "
+                     f"{d['w']}x{d['h']}mm ({d['cells']} cells)")
+    out = _os.path.join(_os.path.dirname(_os.path.abspath(args[0])), "out")
+    _os.makedirs(out, exist_ok=True)
+    for k2 in ("svg", "overlay"):
+        fn = _os.path.join(
+            out, b.name + (".xray.svg" if k2 == "svg" else ".xray-div.svg"))
+        open(fn, "w").write(cast(str, r[k2]))
+    _out().print(f"xray: {out}/{b.name}.xray.svg + {b.name}.xray-div.svg")
+    return 0
+
+
 def cmd_score(agent: object, args: list[str]) -> int:
     fab, placer, router, _sim, rest = _flags(args)
     if len(rest) != 1 or rest[0] in ("-h", "--help"):
@@ -588,6 +631,8 @@ def main(argv: list[str]) -> int:
         return cmd_status(agent, args[1:])
     if args[0] == "diff":
         return cmd_diff(agent, args[1:])
+    if args[0] == "xray":
+        return cmd_xray(agent, args[1:])
     if args[0] == "score":
         return cmd_score(agent, args[1:])
     if args[0] == "lint":
