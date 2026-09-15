@@ -211,6 +211,34 @@ _ib2._fiber.retire()
 _ib2._fiber._insert()
 assert (len(_ib2.parts), len(_ib2.nets), _ib2.includes,
         _ib2.constraints) == (0, 0, [], []), "include survives unload"
+# the block/instance parser stamps into a scratch board, which is an owner:
+# its parse effects must not outlive their use, so it is unloaded (retire +
+# O-Remove) once the parts are copied into the parent
+import ocdcircuit.circuit as _circuit
+
+_made: list[_circuit.Board] = []
+_real_board = _circuit.Board
+
+
+def _rec(*a: object, **k: object) -> _circuit.Board:
+    b = _real_board(*a, **k)  # type: ignore[arg-type]
+    _made.append(b)
+    return b
+
+
+setattr(_circuit, "Board", _rec)  # the parser imports Board from this module
+try:
+    _ib3 = _agent.loads("board t 20x10 2L\nblock blk\npart R1 R0805 1k\n"
+                        "net N :: R1.1 R1.2\nend\ninstance blk as Z1\n", base="boards")
+finally:
+    setattr(_circuit, "Board", _real_board)
+_scratch = [m for m in _made if m is not _ib3]
+assert _scratch, "the scratch board was not recorded"
+for _m in _scratch:
+    assert _m._fiber.state == Fiber.INACTIVE, _m._fiber.state
+    assert not _m.parts, sorted(_m.parts)
+assert sorted(_ib3.parts) == ["Z1_R1"] and _ib3._fiber.state == Fiber.ACTIVE
+
 # coarse temp constraint is a tracked effect: removal is undoable, a second
 # undo still clears traces (no out-of-band state surgery, paper Alg 1)
 _rb2 = _agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart C1 C0805 100n\n"

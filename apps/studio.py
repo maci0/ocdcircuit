@@ -22,6 +22,7 @@ import http.server
 import json
 import os
 import sys
+from collections.abc import Callable
 from typing import cast
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = ROOT
@@ -34,11 +35,25 @@ from ocdcircuit.core import UiSlots  # noqa: E402
 
 SLOTS = UiSlots()
 # Built-in views (harness-slot shape: shell declares, entries contribute).
-# A UI plugin = SLOTS.register(slot, id, fn) + optional /api route.
-# cordis-boundary: process-lifetime shell singleton, not a fiber contribution —
-# register() returns a disposer, but the shell never unloads, so nothing leaks
-# past an owner that outlives the process. Every control carries a visible
-# word: a glyph alone is not a label.
+# A UI plugin = _slot(slot, id, fn) + optional /api route. register() returns
+# a disposer and this module used to drop it, which made every row permanent
+# import-time state. _UI_DISPOSERS holds them, so unload_ui() is the inverse
+# of this module's UI registration and a host can embed or reset the studio.
+# The registrations below still run at import: this file IS the composition
+# root. Every control carries a visible word: a glyph alone is not a label.
+_UI_DISPOSERS: list[Callable[[], None]] = []
+
+
+def _slot(slot: str, id: str, render: object, order: float = 0.0) -> None:
+    """Contribute into a slot and keep the disposer register() hands back."""
+    _UI_DISPOSERS.append(SLOTS.register(slot, id, render, order=order))
+
+
+def unload_ui() -> None:
+    """Undo every slot contribution, LIFO and once (each disposer is
+    idempotent): the inverse of importing the studio's UI."""
+    while _UI_DISPOSERS:
+        _UI_DISPOSERS.pop()()
 TOOLBAR = (
     '<div class="tbar">'
     '<div class="grp"><span class=lbl>engines</span>'
@@ -79,17 +94,17 @@ TOOLBAR = (
     '<span id=feas class=pill title="routing feasibility per layer count"></span>'
     '<span id=stat role=status aria-live=polite></span></div>'
     '</div>')
-SLOTS.register("toolbar", "solver-selects",
+_slot("toolbar", "solver-selects",
                lambda s: TOOLBAR,
                order=1.0)
-SLOTS.register("view", "gallery",
+_slot("view", "gallery",
                lambda s: '<section id=galwrap style="display:none">'
                          '<header class=panel-head><span class=panel-title>candidates</span>'
                          '<span class=panel-note>click one to adopt it, then drag it on the PCB to nudge and pin</span>'
                          '<span class=panel-note>job file 1F-04 &middot; placer diffusion &middot; 1 seed &times; 400 iters</span></header>'
                          '<div id=gal></div></section>',
                order=4.0)
-SLOTS.register("view", "editor",
+_slot("view", "editor",
                lambda s: '<section id=edwrap>'
                          '<header class=panel-head><span class=panel-title>job file</span>'
                          '<span class=panel-note id=srcnote>board.ocd &middot; saved on every good build</span>'
@@ -100,13 +115,13 @@ SLOTS.register("view", "editor",
                          + SLOTS.render("panel-left", None)
                          + '</div></section>',
                order=0.0)
-SLOTS.register("panel-left", "filetree",
+_slot("panel-left", "filetree",
                lambda s: '<section id=filetree class=side>'
                          '<header class=panel-head><span class=panel-title>project</span>'
                          '<span class=panel-note id=treenote></span></header>'
                          '<div id=tree></div></section>',
                order=0.0)
-SLOTS.register("panel-left", "chat",
+_slot("panel-left", "chat",
                lambda s: '<section id=chat class=side>'
                          '<header class=panel-head><span class=panel-title>agent</span>'
                          '<span class=panel-note id=chatwhere></span>'
@@ -117,14 +132,14 @@ SLOTS.register("panel-left", "chat",
                          '<button id=send class=primary type=submit>send</button></form>'
                          '</section>',
                order=1.0)
-SLOTS.register("view", "vcs",
+_slot("view", "vcs",
                lambda s: '<section id=vcswrap>'
                          '<header class=panel-head><span class=panel-title>revisions</span>'
                          '<span class=panel-note id=vcsnote></span>'
                          '<span class=panel-note>git history of the board directory</span></header>'
                          '<div id=vcs></div></section>',
                order=5.0)
-SLOTS.register("view", "pcb",
+_slot("view", "pcb",
                lambda s: '<section id=pcbwrap>'
                          '<header class=panel-head><span class=panel-title>PCB</span>'
                          '<span class=panel-note>drag a part to pin it &middot; double-click to unpin</span>'
@@ -146,13 +161,13 @@ SLOTS.register("view", "pcb",
                          '<div class=platewrap><canvas id=pcb role=img aria-label="PCB layout"></canvas>'
                          '<div id=drc role=status aria-live=polite></div></div></section>',
                order=1.0)
-SLOTS.register("view", "sch",
+_slot("view", "sch",
                lambda s: '<section id=schwrap>'
                          '<header class=panel-head><span class=panel-title>schematic</span>'
                          '<span class=panel-note>click a pin then a net to rewire &middot; alt-click drops a pin &middot; double-click a label renames it</span></header>'
                          '<canvas id=sch role=img aria-label="schematic"></canvas></section>',
                order=2.0)
-SLOTS.register("view", "inspector",
+_slot("view", "inspector",
                lambda s: '<section id=wrap3d>'
                          '<header class=panel-head><span class=panel-title>3D</span>'
                          '<span class=panel-note>click to spin</span></header>'
@@ -162,7 +177,7 @@ SLOTS.register("view", "inspector",
                          '<div id=tidy></div></section>',
                order=3.0)
 
-SLOTS.register("view", "kb",
+_slot("view", "kb",
                lambda s: '<section id=kbwrap>'
                          '<header class=panel-head><span class=panel-title>knowledgebase</span>'
                          '<span class=panel-note id=kbnote>kb/ beside the board</span>'
@@ -1759,10 +1774,12 @@ def _board_digest() -> str:
 
 
 # --- knowledgebase: kb/ beside the board, shared with the agent over MCP ---
-_kb_board: tuple[int, dict[str, dict[str, str]]] | None = None  # (rev, parts), cached
-_kb_log: list[str] = []      # last fetch results, shown in the panel
 KB_LIST_LIMIT = 200          # rows the panel renders; search covers the rest
-_kb_busy = False             # a fetch thread is running
+# cordis-boundary: the fetch below is an outside-context emission (§6.1) — it
+# downloads vendor PDFs and shells out to the CLI, and a download cannot be
+# un-emitted. Compensate by deleting what `kb/sources.tsv` names (kb add/fetch
+# record every file it wrote there). The daemon thread is a process resource of
+# this shell, like the request loop itself: it exits with the process.
 
 
 def _kb() -> object:
@@ -1771,11 +1788,10 @@ def _kb() -> object:
     (ref/lcsc/mpn) is ~1.5s cheaper than building a Board on a 5k-part design —
     Context journals every part and net — and the panel asks per interaction on
     a single-threaded server. Cached per revision."""
-    global _kb_board
     from ocdcircuit import kb as _kbmod
-    if _kb_board is None or _kb_board[0] != H.rev:
-        _kb_board = (H.rev, _kbmod.parts_map(H.src_text))
-    return _kbmod.KB(BASE, parts=_kb_board[1])
+    if H.kb_parts is None or H.kb_parts[0] != H.rev:
+        H.kb_parts = (H.rev, _kbmod.parts_map(H.src_text))
+    return _kbmod.KB(BASE, parts=H.kb_parts[1])
 
 
 def _kb_list() -> dict[str, object]:
@@ -1785,7 +1801,7 @@ def _kb_list() -> dict[str, object]:
     from ocdcircuit.kb import KB
     assert isinstance(k, KB)
     return {"dir": k.dir, "docs": k.docs(limit=KB_LIST_LIMIT), "total": k.count(),
-            "limit": KB_LIST_LIMIT, "busy": _kb_busy, "log": list(_kb_log)}
+            "limit": KB_LIST_LIMIT, "busy": H.kb_busy, "log": list(H.kb_log)}
 
 
 def _kb_fetch_start() -> dict[str, object]:
@@ -1797,18 +1813,16 @@ def _kb_fetch_start() -> dict[str, object]:
     and CPython's GIL hands that CPU-bound loop the interpreter in 5ms slices —
     measured UI stalls of 0.45-0.64s per request while a worker thread parsed
     it, versus 1.5ms flat with the work in another process."""
-    global _kb_busy, _kb_log
     import subprocess
     import threading
-    if _kb_busy:
-        return {"started": False, "note": "already fetching", "log": list(_kb_log)}
+    if H.kb_busy:
+        return {"started": False, "note": "already fetching", "log": list(H.kb_log)}
     if not os.path.isfile(SRC):
         return {"started": False, "error": f"no such board file: {SRC}"}
-    _kb_busy = True
-    _kb_log = ["fetching datasheets…"]
+    H.kb_busy = True
+    H.kb_log = ["fetching datasheets…"]
 
     def work() -> None:
-        global _kb_busy, _kb_log
         try:
             # cwd/PYTHONPATH point at the checkout, not the board: ROOT is the
             # project the board lives in, which need not be this repo.
@@ -1820,13 +1834,13 @@ def _kb_fetch_start() -> dict[str, object]:
             for line in p.stdout:  # the CLI's lines ARE the progress log
                 line = line.strip()
                 if line:
-                    _kb_log.append(line)
-                    _kb_log[:] = _kb_log[-12:]
+                    H.kb_log.append(line)
+                    H.kb_log[:] = H.kb_log[-12:]
             code = p.wait()
-            _kb_log.append(f"done — exit {code}")
+            H.kb_log.append(f"done — exit {code}")
         except Exception as e:  # noqa: BLE001 — a worker thread must not die silent
-            _kb_log.append(f"error: {e}")
-        _kb_busy = False
+            H.kb_log.append(f"error: {e}")
+        H.kb_busy = False
 
     threading.Thread(target=work, daemon=True).start()
     return {"started": True, "note": "fetching datasheets — the list fills in as they land"}
@@ -1856,6 +1870,12 @@ class H(http.server.BaseHTTPRequestHandler):
     # into a board that has moved on since (and a batch is not replayable).
     props: list[dict[str, object]] = []
     rev: int = 0  # bumps whenever the open board's text changes
+    # kb/ panel: beside the rest of the shell's state, not in module globals
+    # next to it. One owner for the parts cache and the fetch log the worker
+    # thread appends to.
+    kb_parts: tuple[int, dict[str, dict[str, str]]] | None = None  # (rev, parts)
+    kb_log: list[str] = []
+    kb_busy: bool = False
 
     @staticmethod
     def open_file(path: object) -> None:

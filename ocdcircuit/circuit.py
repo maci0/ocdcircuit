@@ -263,6 +263,17 @@ class Board(Component):
         while self._chain and self._chain[-1][0] > depth:
             self._chain.pop()
 
+    def unload(self) -> None:
+        """Take this board out of the runtime: retire the fiber (target ⊥, so
+        dependents drain and its accumulated inverses run LIFO) and then
+        O-Remove it from dom(Fγ). Loading a board is an effect, so this is its
+        inverse — call it when a board is replaced or when a scratch parse is
+        done, instead of dropping the last reference and leaving the effects,
+        the journal and the fiber uid to the garbage collector.
+        The same two steps `tests/test_paper.py` uses to unload a board."""
+        self._fiber.retire()
+        self._fiber._insert()
+
     def _load_journal(self, undo: Undo) -> None:
         """Journal a load-path inverse (agent.log_load): the parse wrote
         outside emit, so record it here at the current stack depth —

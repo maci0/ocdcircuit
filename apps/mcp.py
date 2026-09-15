@@ -27,9 +27,12 @@ BASE = os.getcwd()
 BOARD: Board | None = None
 SRC = "<memory>"
 PROJ: str | None = None  # dir the loaded board came from = where kb/ lives
-# cordis-boundary: single-board process slots (load_board replaces, never
-# unloads). Outside any fiber by design — the MCP transport owns the process
-# lifetime; agents snapshot via get_state for their own undo.
+# The slots below are shell state: the MCP transport owns the process
+# lifetime, so they are not fiber contributions. Replacing the loaded board is
+# tracked again — t_load unloads the previous board (retire + O-Remove) once
+# the new one has parsed, so a load is undone by the next load instead of
+# leaving its fiber and journal to the GC. Agents still snapshot via
+# get_state for their own undo.
 
 
 def _board() -> Board:
@@ -47,10 +50,13 @@ def t_load(a: dict[str, object]) -> dict[str, object]:
         text = open(SRC).read()
         base = os.path.dirname(os.path.abspath(SRC))
     PROJ = os.path.abspath(base)
+    prev = BOARD
     BOARD = agent.loads(text, base=base)
     BOARD.configure("toml", base=base)
     if isinstance(a.get("fab"), str):
         BOARD.fab = str(a["fab"])
+    if prev is not None and prev is not BOARD:
+        prev.unload()  # load is an effect: the next load runs its inverse
     return {"board": BOARD.name, "parts": len(BOARD.parts),
             "nets": len(BOARD.nets), "proj": dict(BOARD.proj)}
 

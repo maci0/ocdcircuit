@@ -592,6 +592,9 @@ class KB:
             cand = f"{stem}-{i}{ext}"
         return os.path.join(d, cand)
 
+    # cordis-boundary: file + network emission (outside-context by §6.1 — a
+    # fetched datasheet cannot be un-emitted). Compensate by deleting the name
+    # this returns; sources.tsv keeps the provenance to find it again.
     def add(self, src: str | None = None, name: str | None = None,
             text: str | None = None) -> dict[str, object]:
         """Bring a doc in: a URL (`https://…/ds.pdf`), a local path, or text

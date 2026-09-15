@@ -1115,6 +1115,18 @@ assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active":
 with tempfile.TemporaryDirectory() as _md:
     assert len(cast(list[object], _call("export", {"key": "jlc", "outdir": _md})["files"])) >= 10
 assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
+# load_board replaces a published board, and the replace runs the inverse:
+# the previous board is unloaded (retire + O-Remove), not dropped with its
+# fiber and journal intact (in-process, so the old object is reachable here)
+from apps import mcp as _mcp
+_mcp.t_load({"path": os.path.join(EX, "blinky_555.ocd")})
+_first = _mcp.BOARD
+assert _first is not None
+_mcp.t_load({"path": os.path.join(EX, "psu.ocd")})
+assert not _first.parts, sorted(_first.parts)[:3]
+assert _first._fiber.state == "INACTIVE", _first._fiber.state
+_mcp.t_load({"path": os.path.join(EX, "blinky_555.ocd")})  # leave it as found
+
 # malformed stdio frames don't kill the server: garbage header bytes,
 # bogus length, and non-object bodies are dropped; server keeps answering
 assert mcp.stdin is not None and mcp.stdout is not None

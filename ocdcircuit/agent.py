@@ -971,6 +971,11 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
             parent._constrain_raw(cc)
     parent.instances.append({"block": block, "prefix": prefix, "join": sorted(joins)})
     parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
+    # The scratch board above was a real owner: its parse installed effects on
+    # its own Context, so unload it once everything is copied into the parent.
+    # Dropping the reference left that undo chain and journal to the GC — the
+    # effects never ran their inverses (paper §5.1.1).
+    child.unload()
 
 
 def ir(board: Board) -> dict[str, object]:

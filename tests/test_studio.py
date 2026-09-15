@@ -150,6 +150,19 @@ def main() -> None:
         fb.terminate()
         _err = fb.stderr.read().decode() if fb.stderr else ""
         assert "bad OCD_PORT" in _err, _err[:300]
+    # UI contributions are disposable: every _slot() keeps the disposer
+    # register() handed back, and unload_ui() runs them LIFO — the previous
+    # code dropped the disposer, which made all ten rows permanent module state
+    if ROOT not in sys.path:  # in-process import: sys.path[0] is tests/
+        sys.path.insert(0, ROOT)
+    from apps import studio as _st_ui
+    assert "kb" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
+    assert len(_st_ui._UI_DISPOSERS) == 10, len(_st_ui._UI_DISPOSERS)
+    _st_ui.unload_ui()
+    assert _st_ui.SLOTS.report("view") == [] and _st_ui.SLOTS.report("toolbar") == []
+    assert _st_ui._UI_DISPOSERS == []
+    print("ui slot dispose ok (10 contributions, LIFO, once)")
+
     port = free_port()
     base = f"http://localhost:{port}"
     env = dict(os.environ, OCD_PORT=str(port))
