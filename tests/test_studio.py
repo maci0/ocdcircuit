@@ -208,11 +208,12 @@ def main() -> None:
     from apps import studio as _st_ui
     assert "kb" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
     assert "inspector" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
-    assert len(_st_ui._UI_DISPOSERS) == 10, len(_st_ui._UI_DISPOSERS)
+    assert "scan" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
+    assert len(_st_ui._UI_DISPOSERS) == 12, len(_st_ui._UI_DISPOSERS)
     _st_ui.unload_ui()
     assert _st_ui.SLOTS.report("view") == [] and _st_ui.SLOTS.report("toolbar") == []
     assert _st_ui._UI_DISPOSERS == []
-    print("ui slot dispose ok (10 contributions, LIFO, once)")
+    print("ui slot dispose ok (12 contributions, LIFO, once)")
 
     port = free_port()
     base = f"http://localhost:{port}"
@@ -250,11 +251,18 @@ def main() -> None:
         login(base)
         _dup = post(base, "/auth/signup",
                     {"user": "second", "password": "testtest12"})
-        assert "already has an account" in str(_dup.get("error")), _dup
+        assert not _dup.get("error"), _dup  # multi-user: own shelf each
         _me = post(base, "/auth/me", {})
         assert _me.get("user") == "tester", _me
+        assert _me.get("display") == "tester", _me  # default display = name
+        _prof = post(base, "/auth/profile", {"display": "Marcel Wysocki"})
+        assert not _prof.get("error"), _prof
+        assert post(base, "/auth/me", {})["display"] == "Marcel Wysocki"
+        _profblank = post(base, "/auth/profile", {"display": "  "})
+        assert "error" in _profblank, _profblank
         _in = get(base, "/").decode()
         assert "id=ed" in _in, _in[:200]
+        assert "id=importfile" in _in and "id=importstat" in _in, "import picker missing"
         # static shell markers (in the HTML) …
         for frag in ("id=viewtabs", "data-v=pcb", "data-v=sch", "data-v=t3d",
                      "data-v=docs", "id=themebtn"):
@@ -269,6 +277,8 @@ def main() -> None:
         print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
         assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh
+        assert isinstance(_sh.get("templates"), list)
+        assert any(t.get("name") == "blinky_555.ocd" for t in _sh["templates"]), _sh
         _nb = post(base, "/shelf/new", {"name": "hello"})
         assert not _nb.get("error"), _nb
         _boards = _nb.get("boards")
@@ -277,9 +287,33 @@ def main() -> None:
                    for b in _boards), _nb
         _nb2 = post(base, "/shelf/new", {"name": "hello"})
         assert "already on your shelf" in str(_nb2.get("error")), _nb2
+        _slug = post(base, "/shelf/new", {"name": "A wifi sensor node!"})
+        assert not _slug.get("error"), _slug  # prose degrades to a slug
+        _tmpl = post(base, "/shelf/from_template", {"name": "blinky_555.ocd"})
+        assert not _tmpl.get("error"), _tmpl  # template opens a copy
+        _bad = post(base, "/shelf/from_template", {"name": "../../etc/passwd"})
+        assert "error" in _bad, _bad
+        import base64 as _b64
+        _imp = post(base, "/fs/import", {"name": "x.exe", "data": _b64.b64encode(b"hi").decode()})
+        assert "error" in _imp and "import wants" in _imp["error"], _imp
+        _trav = post(base, "/fs/import", {"name": "../../x.fp", "data": _b64.b64encode(b"hi").decode()})
+        assert "error" in _trav, _trav  # never writes outside fp/
+        _lp = urllib.request.urlopen(base + "/").read().decode()  # logged out → landing
+        for frag in ("id=newprojbtn", "id=newproj", "id=npsearch",
+                     "id=npgrid", "id=npblank", "npRender", "_npcache"):
+            assert frag in _lp, f"new-project modal missing: {frag}"
+        _w = get(base, "/").decode()  # still authed: workshop
+        assert "id=ed" in _w, _w[:200]
+        # modal lives on the landing page, but its data path is the shelf:
+        # template copy + blank-from-search-text both work while authed
+        _t2 = post(base, "/shelf/from_template", {"name": "psu.ocd"})
+        assert not _t2.get("error"), _t2
+        _np = post(base, "/shelf/new", {"name": "modal blank"})
+        assert any(b.get("name") == "modal-blank.ocd" for b in _np["boards"]), _np
         _lo = post(base, "/auth/logout", {})
         assert _lo.get("ok") is True, _lo
         _JAR.pop(base, None)
+        _lp = urllib.request.urlopen(base + "/").read().decode()  # logged out: landing
         _out = urllib.request.urlopen(base + "/").read().decode()
         assert "Design PCBs with AI" in _out, _out[:200]
         # users persist on disk, so re-signup refuses — log back in instead
@@ -330,6 +364,97 @@ def main() -> None:
         assert isinstance(lint["errors"], list), lint
         print(f"build {dt:.2f}s score={score['total']} ok")
 
+        # realtime collab: two users, one board — sync/push/cursor/op/SSE.
+        # Second signup gets its own shelf (multi-user); both edit the open
+        # board's room: rev-guarded push, stale loser reloads, presence lists
+        # both, structured ops go through the `collab` plugin, and the SSE
+        # stream fans the push out.
+        import http.client as _hc3
+        from urllib.parse import urlparse as _up3
+        _u3 = _up3(base)
+        assert _u3.hostname
+        _c3 = _hc3.HTTPConnection(_u3.hostname, _u3.port, timeout=30)
+        _c3.request("POST", "/auth/signup",
+                    json.dumps({"user": "teammate", "password": "testtest12"}),
+                    {"Content-Type": "application/json"})
+        _r3 = _c3.getresponse()
+        _ck3 = _r3.getheader("Set-Cookie", "")
+        assert "ocd_user=" in _ck3, _ck3
+        _mate = _ck3.split(";")[0].strip()
+        _r3.read()
+        _cs = post(base, "/collab/sync", {})
+        assert "R1" in str(_cs.get("text")), _cs
+        _cs_rev = cast(int, _cs.get("rev"))
+        _cs_text = str(_cs.get("text"))
+        import re as _re2
+        _m0 = _re2.search(r"part R1 R0805 (\S+)", _cs_text)
+        assert _m0, "R1 line missing from room text"
+        _edit = _cs_text.replace("part R1 R0805 " + _m0.group(1),
+                                 "part R1 R0805 9k9", 1)
+        assert _edit != _cs_text, "test edit must differ from room text"
+        _t0 = time.time()
+
+        _cp = post(base, "/collab/push", {"rev": _cs_rev, "text": _edit})
+        _cpdt = time.time() - _t0
+        assert not _cp.get("error"), _cp.get("error")
+        assert "9k9" in str(_cp.get("text")), "push text adopted"
+        # rev rides every build response (applyState); absent = unchanged
+        _cp_rev = cast(int, _cp.get("rev"))
+        assert _cp_rev >= _cs_rev, _cp
+        assert _cpdt < BUILD_BUDGET, f"collab push {_cpdt:.2f}s over budget"
+        assert "9k9" in str(_cp.get("text")), "push text adopted"
+        # rev is room state, not test state: re-read it after every op
+        _sync1 = post(base, "/collab/sync", {}, cookie=_mate)
+        _rev1 = cast(int, _sync1.get("rev"))
+        # stale loser: rev 0 is always behind (room only advances)
+        _sync0 = post(base, "/collab/sync", {}, cookie=_mate)
+        _stale = post(base, "/collab/push", {"rev": 0, "text": text},
+                       cookie=_mate)
+        assert _stale.get("stale") is True, _stale
+        _bad = post(base, "/collab/push", {"rev": _rev1, "text": "garbage ((("})
+        assert "error" in _bad, _bad
+        _sync2 = post(base, "/collab/sync", {}, cookie=_mate)
+        assert cast(int, _sync2.get("rev")) == _rev1, _sync2  # bad push never landed
+        post(base, "/collab/cursor", {"x": 3, "y": 5, "ref": "R1"})
+        _cur = post(base, "/collab/cursor", {"x": 9, "y": 2, "ref": "C1"},
+                     cookie=_mate)
+        _cur_users = cast(list[dict[str, object]], _cur.get("users"))
+        _names = {str(u.get("name")) for u in _cur_users}
+        assert {"tester", "teammate"} <= _names, _cur["users"]
+        _cop = post(base, "/collab/op", {"rev": _rev1,
+            "op": {"ops": [{"op": "move_part", "ref": "R1", "x": 7, "y": 8}]}},
+            cookie=_mate)
+        assert _cop.get("applied") == 1, _cop
+        _ev = urllib.request.Request(base + "/collab/events")
+        _ev.add_header("Cookie", _mate)
+        _seen: list[str] = []
+        _er = urllib.request.urlopen(_ev, timeout=25)
+        _t1 = time.time()
+        _buf = b""
+        _done = False
+        while time.time() - _t1 < 20 and not _done:
+            _chunk = _er.read(1)
+            if not _chunk:
+                break
+            _buf += _chunk
+            while b"\n\n" in _buf:
+                _raw, _buf = _buf.split(b"\n\n", 1)
+                for _ln in _raw.split(b"\n"):
+                    if _ln.startswith(b"data:"):
+                        _seen.append(_ln[5:].decode())
+                        if len(_seen) >= 2:
+                            _done = True
+                            break
+                if _done:
+                    break
+        _er.close()
+        assert any('"hello": "teammate"' in _e for _e in _seen), _seen
+        print(f"collab ok (push {_cpdt * 1000:.0f}ms, 2 users, stale+presence+op+SSE)")
+
+        _ui = urllib.request.urlopen(urllib.request.Request(
+            base + "/", headers={"Cookie": _JAR.get(base, "")})).read().decode()
+        assert "scanwrap" in _ui and "scanfiles" in _ui, "scan panel not served"
+
         for key in ("svg", "sch", "xray"):
             r = post(base, "/render", {"key": key})
             assert not r.get("error"), (key, r.get("error"))
@@ -345,6 +470,23 @@ def main() -> None:
         _xb = post(base, "/xray", {"png": "!!!not-base64!!!"})
         assert "error" in _xb, _xb
         print(f"xray compare ok (score={_xc['score']})")
+        # photo scan: the panel is served, junk is refused, and a real image
+        # goes through the deterministic half (llm=False needs no endpoint).
+        assert "error" in post(base, "/scan", {"photos": []}), "empty not refused"
+        assert "error" in post(base, "/scan",
+                               {"photos": [{"name": "a.png", "data": "!!"}]})
+        try:
+            import numpy  # noqa: F401
+        except ImportError:
+            print("scan ui ok (uploads refused cleanly; no numpy for a real run)")
+        else:
+            _sr = post(base, "/scan",
+                       {"photos": [{"name": "top.png", "data": _own["data"]}],
+                        "mm": 40, "llm": False})
+            assert not _sr.get("error"), _sr
+            assert cast(dict[str, object],
+                        cast(dict[str, object], _sr["sides"])["top"])["used"] == 1, _sr
+            print("scan ui ok (panel + refusals + one photo through the pipeline)")
         # quote route: cheapest-first bare table + JLC assembly, bad fab errors
         _qq = post(base, "/quote", {"qty": 5})
         assert not _qq.get("error"), _qq.get("error")
@@ -536,6 +678,7 @@ def main() -> None:
             page = get(kbase, "/").decode()
             assert "id=kbwrap" in page, "kb panel missing from the page"
             assert "id=kbfetch" in page and "id=kbask" in page, "kb controls missing"
+            assert "id=kbprefsbtn" in page, "prefs button missing from the page"
             assert "id=xraybar" in page, "xray panel missing from the page"
             assert "id=xraygo" in page and "id=xrayfile" in page, "xray controls missing"
             assert "id=quote" in page, "quote panel missing from the page"
@@ -573,7 +716,19 @@ def main() -> None:
                 cast(list[str], post(kbase, "/kb/list", {})["log"])).split())
             assert "skip R1:" in klog, klog     # no datasheet=/lcsc= attr
             assert "FAIL U1:" in klog, klog     # the pinned url cannot resolve
-            print("kb panel ok (list/read/search/ask/add/fetch)")
+            kp = post(kbase, "/kb/prefs", {})
+            assert kp.get("prefs") == [], kp  # no PREFS.md yet
+            kpa = post(kbase, "/kb/prefs/add",
+                       {"when": "placing connectors", "text": "board edge"})
+            assert not kpa.get("error"), kpa
+            kp2 = post(kbase, "/kb/prefs", {})
+            assert len(kp2["prefs"]) == 1 and not kp2["prefs"][0]["approved"], kp2
+            kps = post(kbase, "/kb/prefs/set", {"id": 0, "approved": True})
+            assert not kps.get("error"), kps
+            assert post(kbase, "/kb/prefs", {})["prefs"][0]["approved"] is True
+            kpbad = post(kbase, "/kb/prefs/set", {"id": 9, "approved": True})
+            assert "error" in kpbad, kpbad
+            print("kb panel ok (list/read/search/ask/add/fetch/prefs)")
         finally:
             ksrv.terminate()
     print("STUDIO OK")

@@ -102,6 +102,12 @@ TOOLBAR = (
 _slot("toolbar", "solver-selects",
                lambda s: TOOLBAR,
                order=1.0)
+_slot("toolbar", "collab",
+               lambda s: '<div class="grp"><span class=lbl>live</span>'
+                         '<span id=room role=status aria-live=polite class=pill '
+                         'title="who else is on this board right now">solo</span>'
+                         '<button id=sharebtn title="copy a link to this board">share</button></div>',
+               order=2.0)
 _slot("view", "gallery",
                lambda s: '<section id=galwrap style="display:none">'
                          '<header class=panel-head><span class=panel-title>candidates</span>'
@@ -123,8 +129,9 @@ _slot("view", "editor",
 _slot("panel-left", "filetree",
                lambda s: '<section id=filetree class=side>'
                          '<header class=panel-head><span class=panel-title>project</span>'
-                         '<span class=panel-note id=treenote></span></header>'
-                         '<div id=tree></div></section>',
+                         '<span class=panel-note id=treenote></span>'
+                         '<label id=importlbl title="import a footprint, symbol, or board (kicad, eagle, tscircuit, altium, easyeda)">import<input id=importfile type=file hidden></label></header>'
+                         '<div id=tree></div><div id=importstat role=status aria-live=polite></div></section>',
                order=0.0)
 _slot("panel-left", "chat",
                lambda s: '<section id=chat class=side>'
@@ -194,6 +201,29 @@ _slot("view", "inspector",
                          '<div id=tidy></div></section>',
                order=3.0)
 
+_slot("view", "scan",
+               lambda s: '<section id=scanwrap>'
+                         '<header class=panel-head><span class=panel-title>photo scan</span>'
+                         '<span class=panel-note>photos of a real board &rarr; draft design</span></header>'
+                         '<div id=scanbar>'
+                         '<input id=scanfiles type=file multiple accept="image/*" '
+                         'aria-label="photos of the board, both sides">'
+                         '<label>mm <input id=scanmm size=4 value="" '
+                         'aria-label="board width in mm, if known"></label>'
+                         '<button id=scango type=button class=primary '
+                         'title="stitch, enhance, and reverse-engineer">analyse</button></div>'
+                         '<div id=scanbar2>'
+                         '<input id=scannote type=search aria-label="what this board is" '
+                         'placeholder="what is it? e.g. scope PSU pulled from a dead unit">'
+                         '<input id=scandocs type=file multiple accept=".pdf,.txt,.md" '
+                         'aria-label="manual or datasheet"></div>'
+                         '<div id=scanstat role=status aria-live=polite>'
+                         'name files with &ldquo;top&rdquo; / &ldquo;bottom&rdquo; so the sides are split</div>'
+                         '<div id=scanq></div>'
+                         '<pre id=scanout></pre>'
+                         '</section>',
+               order=5.5)
+
 _slot("view", "kb",
                lambda s: '<section id=kbwrap>'
                          '<header class=panel-head><span class=panel-title>knowledgebase</span>'
@@ -209,7 +239,12 @@ _slot("view", "kb",
                          '<input id=kburl type=search aria-label="datasheet url or file path" '
                          'placeholder="https://…/datasheet.pdf  or  path/to/note.md">'
                          '<button id=kbaddbtn type=button title="copy or download it into kb/">add</button>'
-                         '<button id=kbfetch type=button title="download the datasheet for every datasheet= / lcsc= part">fetch datasheets</button></div>'
+                         '<button id=kbfetch type=button title="download the datasheet for every datasheet= / lcsc= part">fetch datasheets</button>'
+                          '<button id=kbprefsbtn type=button title="preferences the agent follows without being asked">preferences</button></div>'
+                          '<div id=kbprefs style="display:none"><div id=kbprefslist></div>'
+                          '<div id=kbprefsadd><input id=kbwhen aria-label="when this applies" placeholder="when placing connectors">'
+                          '<input id=kbwhat aria-label="what to prefer" placeholder="put them on the board edge">'
+                          '<button id=kbprefsgo type=button title="save as a new preference">remember</button></div></div>'
                          '<div id=kbstat role=status aria-live=polite>click a document to read it</div>'
                          '<div id=kblist></div>'
                          '<pre id=kbview></pre>'
@@ -289,17 +324,47 @@ background:var(--term-ok);color:#06130d;cursor:pointer}
 .form button:hover{filter:brightness(1.07)}
 button.ghost{background:transparent;color:var(--term-text);border-color:var(--term-line)}
 #err{color:var(--term-bad);font:.85rem var(--mono);min-height:1.4em;margin:0}
-#shelf{display:none;gap:.4rem}
+#shelf{display:none;gap:.6rem}
 #shelf.has{display:grid}
-#shelf button{text-align:left;font-family:var(--mono);font-size:.85rem;background:var(--term-2);
-color:var(--term-text);border-color:var(--term-line);padding:.6rem .8rem}
+.scard{text-align:left;background:var(--term-2);color:var(--term-text);
+border:1px solid var(--term-line);border-radius:10px;padding:.7rem .9rem;cursor:pointer}
+.scard:hover{border-color:var(--term-ok)}
+.scard b{display:block;font-size:.95rem}
+.scard span{display:block;font-size:.8rem;color:var(--term-faint)}
+.scard small{font:.75rem var(--mono);color:var(--term-faint)}
 #newboard{display:none;gap:.5rem}
 #newboard.has{display:grid}
 .fine{color:var(--term-faint);font-size:.78rem}
+.tsec{font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint);margin:.6rem 0 0}
+#promptbox{display:flex;gap:.5rem;margin-bottom:.4rem}
+#promptbox input{flex:1}
+#promptbox button{white-space:nowrap}
+/* new-project modal: search + grid + blank CTA over the dimmed shelf.
+Native <dialog>: focus trap, Esc, backdrop — no library, no state. */
+#newproj{border:1px solid var(--term-line);border-radius:14px;background:var(--term);
+color:var(--term-text);padding:1.2rem;max-width:40rem;width:calc(100vw - 3rem)}
+#newproj::backdrop{background:rgba(0,0,0,.6)}
+#newproj h3{margin:0 0 .6rem;font-size:1.1rem}
+#npsearch{width:100%;margin-bottom:.8rem}
+#npgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.6rem;
+max-height:50vh;overflow:auto}
+#npblank{margin-top:.8rem;width:100%}
 .visual{position:relative;min-height:100vh;overflow:hidden;background:#0a0f14}
 .visual canvas{position:absolute;inset:0;width:100%;height:100%}
 .visual figcaption{position:absolute;left:1.5rem;bottom:1.2rem;right:1.5rem;color:#fff;
 font:.85rem var(--mono);opacity:.85}
+/* collab strip: two live cursors on one board, the realtime story in one row */
+.collab{display:flex;gap:1.2rem;justify-content:center;align-items:stretch;flex-wrap:wrap;
+margin:2.6rem auto 0;max-width:62rem;text-align:left}
+.person{flex:1 1 16rem;background:rgba(16,20,24,.92);border:1px solid var(--term-line);
+border-radius:14px;padding:1rem 1.1rem;position:relative}
+.person h3{margin:0 0 .2rem;font-size:.95rem;color:#fff;font-weight:700}
+.person h3 i{display:inline-block;width:.65rem;height:.65rem;border-radius:50%;margin-right:.45rem}
+.person p{margin:.15rem 0 .7rem;font-size:.85rem;color:var(--term-faint)}
+.mini{border:1px solid var(--term-line);border-radius:8px;background:#0a0f14;
+font:.72rem/1.7 var(--mono);color:var(--term-text);padding:.6rem .7rem;white-space:pre}
+.person small{display:block;margin-top:.6rem;font:.75rem var(--mono);color:var(--term-faint)}
+.person small b{color:var(--term-ok);font-weight:600}
 a{color:var(--term-ok)}
 @media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}}
 @media(prefers-reduced-motion:reduce){.hero canvas,.visual canvas{display:none}}
@@ -315,6 +380,20 @@ a{color:var(--term-ok)}
 places parts, routes traces. You stay the lead engineer.</p>
 <button id=herogo type=button>Start designing with AI</button></div>
 <div class=flowline><span><b>1</b> idea</span><span>→</span><span><b>2</b> schematic</span><span>→</span><span><b>3</b> layout</span><span>→</span><span><b>4</b> make</span></div>
+<div class=collab aria-label="two engineers editing one board live">
+<div class=person><h3><i style="background:#5fd894"></i>maya</h3>
+<p>dragging the regulator into place</p>
+<div class=mini>fix U1 at 12.4 18.1
+part C3 C0805 100n
+GND :: U1.1 &lt;--&gt; C3.1</div>
+<small><b>● live</b> · rev 42 · pushing</small></div>
+<div class=person><h3><i style="background:#3a7bd5"></i>leo</h3>
+<p>wiring the sensor net</p>
+<div class=mini>net N_SDA :: U2.5 &lt;--&gt; J1.3
+net N_SCL :: U2.6 &lt;--&gt; J1.4
+route N_SDA on 0</div>
+<small><b>● live</b> · rev 42 · pushing</small></div>
+</div>
 </header>
 <main class=gate><div class=form>
 <div class=brand><svg width=24 height=24 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></div>
@@ -326,6 +405,13 @@ places parts, routes traces. You stay the lead engineer.</p>
 <button id=go type=submit>Create account</button>
 <button id=swap type=button class=ghost>Have an account? Log in</button></form>
 <div id=shelf role=group aria-label="your boards"></div>
+<form id=promptbox><input id=promptq aria-label="describe a board to start" placeholder="What do you want to build today?"><button type=submit>Start</button></form>
+<button id=newprojbtn type=button class=ghost>New project…</button>
+<dialog id=newproj aria-label="new project"><h3>New project</h3>
+<input id=npsearch type=search aria-label="search boards and templates" placeholder="Search boards and templates">
+<div id=npgrid></div>
+<button id=npblank type=button>New blank project</button></dialog>
+<div id=profrow style="display:none"><input id=profin aria-label="display name" maxlength=40 placeholder="Display name"><button id=profgo type=button title="save how your name reads on boards and in rooms">Edit profile</button></div>
 <form id=newboard><label>New board<input id=nbname placeholder=blinky maxlength=32></label>
 <button type=submit>New board</button></form>
 <p class=fine>Local-first: accounts live in this studio only (.ocd-users beside the boards).</p>
@@ -383,20 +469,76 @@ const r=await api(mode==='signup'?'/auth/signup':'/auth/login',{user:u,password:
 if(r.error){$('err').textContent=r.error;return;}
 me=r.user||u;showShelf();};
 async function showShelf(){$('f').style.display='none';
+$('promptbox').style.display='';$('profrow').style.display='';
+const me0=await api('/auth/me',{});
+if(me0&&me0.display){$('me').textContent=me0.display;$('profin').value=me0.display;}
 $('title').textContent='Welcome, '+me;
 $('sub').textContent='Pick a board to open the workshop, or start a new one.';
 const r=await api('/shelf',{});
 const box=$('shelf');box.innerHTML='';box.classList.add('has');
 $('newboard').classList.add('has');
 if(!r.boards.length){box.innerHTML='<span class=fine>no boards yet — name one below</span>';}
-r.boards.forEach(b=>{const btn=document.createElement('button');
-btn.textContent=b.name+' · '+b.mtime;
-btn.onclick=()=>location.href='/?board='+encodeURIComponent(b.name.replace(/\.ocd$/,''));
-box.appendChild(btn);});}
+cardSec(box,'Your boards',r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
+  s:b.blurb||`${b.parts} parts · ${b.nets} nets`,
+  m:`${b.name} · ${b.mtime}`,
+  go:()=>location.href='/?board='+encodeURIComponent(b.name.replace(/\.ocd$/,''))})));
+cardSec(box,'Templates',(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
+  s:t.blurb||'starter board',
+  m:'template — opens a copy on your shelf',
+  go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
+    if(x.error){$('err').textContent=x.error;return;}showShelf();}})));
+_npcache={boards:r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
+  s:b.blurb||`${b.parts} parts · ${b.nets} nets`,
+  m:`${b.name} · ${b.mtime}`,
+  go:()=>location.href='/?board='+encodeURIComponent(b.name.replace(/\.ocd$/,''))})),
+  templates:(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
+  s:t.blurb||'starter board',m:'template — opens a copy on your shelf',
+  go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
+    if(x.error){$('err').textContent=x.error;return;}
+    if($('newproj').open)$('newproj').close();showShelf();}}))};
+}
+function cardSec(box,h,cards){
+  if(!cards.length)return;
+  const sec=document.createElement('div');sec.className='tsec';sec.textContent=h;
+  box.appendChild(sec);
+  cards.forEach(c=>{const b=document.createElement('button');b.className='scard';
+    b.innerHTML='';const t=document.createElement('b');t.textContent=c.t;
+    const s=document.createElement('span');s.textContent=c.s;
+    const m=document.createElement('small');m.textContent=c.m;
+    b.append(t,s,m);b.onclick=c.go;box.appendChild(b);});
+}
+$('promptbox').onsubmit=async e=>{e.preventDefault();
+  const q=$('promptq').value.trim();if(!q)return;
+  const r=await api('/shelf/new',{name:q});
+  if(r.error){$('err').textContent=r.error+' — try a shorter name';return;}
+  showShelf();};
+$('profgo').onclick=async()=>{
+  const r=await api('/auth/profile',{display:$('profin').value});
+  if(r.error){$('err').textContent=r.error;return;}
+  $('me').textContent=r.display;$('err').textContent='saved';};
 $('newboard').onsubmit=async e=>{e.preventDefault();
 const r=await api('/shelf/new',{name:$('nbname').value});
 if(r.error){$('err').textContent=r.error;return;}
 showShelf();};
+// new-project modal: the shelf's own lists, filtered client-side. Reuses
+// cardSec cards; blank reuses /shelf/new with the search text as the name.
+let _npcache={boards:[],templates:[]};
+$('newprojbtn').onclick=()=>{_npcache._last=($('promptq').value||'');
+  $('npsearch').value=_npcache._last;npRender();$('newproj').showModal();};
+$('npsearch').oninput=npRender;
+$('npblank').onclick=async()=>{
+  const q=$('npsearch').value.trim()||'untitled';
+  const r=await api('/shelf/new',{name:q});
+  if(r.error){$('err').textContent=r.error;return;}
+  $('newproj').close();showShelf();};
+function npRender(){
+  const q=$('npsearch').value.trim().toLowerCase();
+  const box=$('npgrid');box.innerHTML='';
+  const hit=c=>(c.t+' '+c.s).toLowerCase().includes(q);
+  cardSec(box,'Your boards',_npcache.boards.filter(hit));
+  cardSec(box,'Templates',_npcache.templates.filter(hit));
+  if(!box.children.length)box.innerHTML='<span class=fine>no matches — try blank below</span>';
+}
 boot();
 </script></body></html>
 """
@@ -502,6 +644,14 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 #galwrap{grid-column:1/4}
 #vcswrap{grid-column:1/4}
 #kbwrap{grid-column:1/4;min-height:16rem}
+#scanbar,#scanbar2{display:flex;gap:8px;align-items:center;padding:10px 14px 0;flex-wrap:wrap}
+#scanbar2 input[type=search]{flex:1;min-width:0}
+#scanstat{padding:8px 14px;font-size:13px}
+#scanq{padding:0 14px}
+.scanqa{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+.scanqa label{flex:1;min-width:220px;font-size:13px}
+.scanqa input{flex:1;min-width:0}
+#scanout{max-height:340px;overflow:auto;white-space:pre-wrap;padding:0 14px}
 #kbbar,#kbadd{display:flex;gap:8px;align-items:center;padding:10px 14px 0}
 #kbbar input,#kbadd input{flex:1;min-width:0}
 #kbstat{padding:8px 14px 0;font:.8rem var(--mono);color:var(--ink-2);min-height:1.3em}
@@ -807,7 +957,14 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
         ctx.fillText(p.value,X(p.x),Y(p.y-p.h/2)+10);}
     }
     if(edHl.has(r)){ctx.strokeStyle=C.signal;ctx.lineWidth=3; // editor text selection → ring
-      ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);ctx.lineWidth=1;}}
+      ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);ctx.lineWidth=1;}
+    // collaborators: whoever has this part selected rings it in their color
+    for(const u of collabUsers){if(u.ref!==r||u.name===collabMe)continue;
+      ctx.strokeStyle=u.color||'#1d5fa8';ctx.lineWidth=2;ctx.setLineDash([4,3]);
+      ctx.strokeRect(X(p.x-p.w/2)-3,Y(p.y+p.h/2)-3,p.w*s+6,p.h*s+6);
+      ctx.setLineDash([]);ctx.fillStyle=u.color||'#1d5fa8';
+      ctx.font='10px ui-monospace,Menlo,monospace';ctx.textAlign='left';
+      ctx.fillText(u.name,X(p.x-p.w/2)-3,Y(p.y+p.h/2)-6);ctx.lineWidth=1;}}
   // instance groups (block stamping): shared dashed outline + tag, one hue per owner
   const groups={};
   for(const r in st.parts){if(!partShown(r,st))continue;
@@ -1010,25 +1167,99 @@ function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
 $('ed').addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(push,400);});
 async function push(){
   const text=$('ed').innerText, seq=++pulseq;
-  const r=await api('/build',{text,src:SRCREL,thash:heldThash,placer:$('placer').value,
-    router:$('router').value,fab:$('fab').value,silk:$('silk').value});
+  const r=await api('/collab/push',{text,rev:collabRev,src:SRCREL,thash:heldThash,
+    placer:$('placer').value,router:$('router').value,
+    fab:$('fab').value,silk:$('silk').value});
   if(seq!==pulseq)return;   // the editor moved on (or another board opened)
+  if(r.stale){ // someone else edited first: adopt their text (undo keeps ours)
+    cancelPush();
+    if(r.text!==undefined)setEditor(r.text);
+    if(r.rev!==undefined)collabRev=+r.rev;
+    statMsg(r.error||'reloaded a collaborator edit (yours is in undo)',true);
+    push();return;
+  }
   if(r.error){statMsg(r.error);S=null;return;}
   statMsg('');applyState(r,false);
 }
+
 let heldThash='', heldTraces=[];
+let collabRev=-1, collabOn=false, collabUsers=[], collabTimer=null, collabMe='';
 function applyState(r,live){
   if(r.thash){ // server skipped the trace list: keep the one we already have
     if(r.thash!==heldThash){heldTraces=r.traces||[];}
     r.traces=(r.traces&&r.traces.length)?r.traces:heldTraces;
     heldThash=r.thash;
   }
+  if(r.rev!==undefined&&r.rev!==null)collabRev=+r.rev; // the room's rev rides every build
   S=r;S.cur=r;markDirty();spinBriefly(); // render live on the state itself (bw/bh/pours/fixed ride along)
   notePlacement(r);
   if(live&&r.frames&&r.frames.length)animate(r.frames,r.traces,()=>{drawDRC(r);});
   else{S.cur.traces=r.traces;$('cost').textContent=`cost ${r.cost}`;drawDRC(r);}
   drawFeas(r);renderLayers(r);renderParts(r);
   if(document.activeElement!==$('ed'))setEditor(r.text);
+}
+// --- realtime collab: one SSE stream per board, rev-guarded pushes --------
+// Same banner pattern as the file-watch: a rev mismatch means someone else
+// edited first, so reload their text (never auto-merge, never clobber).
+function collabPaint(users){
+  collabUsers=users||[];
+  const el=$('room');if(!el)return;
+  const others=collabUsers.filter(u=>u.name!==collabMe);
+  el.textContent=others.length
+    ?`${others.length+1} here: `+collabUsers.map(u=>u.name).join(', ')
+    :((collabUsers.length?'solo · '+collabUsers.map(u=>u.name).join(', '):'solo'));
+  el.className='pill'+(others.length?' ok':'');
+  el.title=collabUsers.map(u=>`${u.name}${u.ref?' on '+u.ref:''}`).join('\n')||'no one else here yet';
+  markDirty();
+}
+let collabSyncSeq=0; // monotonic: a slow sync must not land on a newer room
+async function collabSync(){ // pull the room's text (first connect + on rev bump)
+  const seq=++collabSyncSeq;
+  const r=await api('/collab/sync',{});
+  if(seq!==collabSyncSeq)return; // a newer sync is already in flight
+  if(r.error||r.text===undefined)return;
+  collabMe=r.hello||collabMe;
+  collabPaint(r.users);
+  if(r.rev!==undefined)collabRev=+r.rev;
+  if(r.text!==$('ed').innerText&&document.activeElement!==$('ed')){
+    cancelPush();setEditor(r.text);push(); // parse + render their text
+  }
+}
+let collabES=null; // one stream per board: rehomed on openFile (old room dies)
+function collabStart(){
+  if(collabOn)return;collabOn=true;
+  collabSync();
+  if(collabES){try{collabES.close();}catch(err){}}
+  const es=collabES=new EventSource('/collab/events');
+  es.onmessage=e=>{
+    let m;try{m=JSON.parse(e.data);}catch(err){return;}
+    if(m.hello!==undefined)collabMe=m.hello;
+    if(m.users)collabPaint(m.users);
+    if(m.rev!==undefined&&+m.rev!==collabRev&&(m.by||'')!==collabMe
+       &&(m.by!==undefined||m.rev>collabRev)){ // somebody's push landed
+      collabRev=+m.rev;collabSync();
+    }
+  };
+  es.onerror=()=>{ // the stream drops (sleep, proxy): re-sync, the next rev heals
+    if(collabES!==es)return; // rehomed already — this stream is dead, stay dead
+    try{es.close();}catch(err){}
+    collabES=null;collabOn=false;setTimeout(collabStart,3000);
+  };
+  // presence: cursor + selected ref, every 5s (the server prunes at 15s)
+  clearInterval(collabTimer);
+  collabTimer=setInterval(async()=>{
+    try{
+      const r=await api('/collab/cursor',{x:view.t||0,y:0,
+        ref:((S&&S.cur&&S.cur.hover)||(edHl.size?[...edHl][0]:''))});
+      if(r.users)collabPaint(r.users);
+      if(r.rev!==undefined)collabRev=+r.rev;
+    }catch(err){}
+  },5000);
+  const sh=$('sharebtn');
+  if(sh)sh.onclick=()=>{
+    try{navigator.clipboard.writeText(location.href);}catch(err){}
+    toast('link copied — send it to your collaborator');
+  };
 }
 function drawFeas(r){
   const f=r.feasible||{},el=$('feas');if(!el)return;
@@ -1242,6 +1473,17 @@ function notePlacement(r){
   else if(r.placed===false)statMsg('loaded as saved — solve to re-place',true);
 }
 function setEditor(t){$('ed').innerText=t;}
+// import: file picker in the project panel → base64 to /fs/import →
+// import_fp/import_sym by extension (key sniffed server-side). Same
+// FileReader pattern as the x-ray upload.
+if($('importfile'))$('importfile').onchange=()=>{const f=$('importfile').files[0];if(!f)return;
+  const rd=new FileReader();rd.onload=async()=>{
+    const data=String(rd.result).split(',',1)[1]||'';
+    $('importstat').textContent='importing '+f.name+'…';
+    const r=await api('/fs/import',{name:f.name,data});
+    $('importstat').textContent=r.error||r.note||('imported '+f.name);
+    if(!r.error){loadTree(DIR);if(r.text){setEditor(r.text);push();}}};
+  rd.readAsDataURL(f);$('importfile').value='';};
 function unpinRefs(gone){ // drop fix lines for refs; true when something left
   const lines=$('ed').innerText.split('\n')
     .filter(l=>{const m=l.match(/^fix\s+(\S+)\s+at\s/);return !m||!gone.has(m[1]);});
@@ -1366,6 +1608,47 @@ $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
   $('docout').dataset.done='1';
 });
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
+// photo scan: upload shots of a physical board, get a draft design back
+const scanAsk=[];
+const b64=f=>new Promise(r=>{const d=new FileReader();
+  d.onload=()=>r({name:f.name,data:String(d.result).split(',',1).length>1?String(d.result).slice(String(d.result).indexOf(',')+1):''});
+  d.readAsDataURL(f);});
+if($('scango'))$('scango').onclick=async()=>{
+  const fs=[...($('scanfiles').files||[])];
+  if(!fs.length){$('scanstat').textContent='choose some photos first';return;}
+  $('scanstat').textContent=`stitching ${fs.length} photos — this takes a minute…`;
+  $('scango').disabled=true;$('scanout').textContent='';$('scanq').innerHTML='';
+  try{
+    const photos=await Promise.all(fs.map(b64));
+    const docs=await Promise.all([...($('scandocs').files||[])].map(b64));
+    const body={photos,docs,note:$('scannote').value||'',
+                answers:scanAsk.filter(x=>x.a).map(x=>({q:x.q,a:x.a}))};
+    if($('scanmm').value)body.mm=Number($('scanmm').value);
+    const r=await api('/scan',body);
+    if(r.error){$('scanstat').textContent=r.error;return;}
+    const sides=Object.entries(r.sides||{}).map(([k,v])=>
+      `${k}: ${v.used}/${v.photos} registered, coverage ${v.coverage_mean}`).join(' · ');
+    $('scanstat').textContent=sides||'scan done';
+    $('scanout').textContent=r.analysis||r.draft_error||'(no analysis)';
+    if(r.draft){const b=document.createElement('button');b.type='button';
+      b.className='primary';b.textContent='open this draft in the editor';
+      b.onclick=()=>{$('src').value=r.draft;build();};
+      $('scanq').appendChild(b);}
+    if(r.draft_error){const w=document.createElement('div');
+      w.className='panel-note';w.textContent='draft did not parse: '+r.draft_error;
+      $('scanq').appendChild(w);}
+    (r.questions||[]).forEach(q=>{
+      const row=document.createElement('div');row.className='scanqa';
+      const lab=document.createElement('label');lab.textContent=q;
+      const inp=document.createElement('input');inp.placeholder='your answer — then analyse again';
+      inp.setAttribute('aria-label',q);
+      const rec={q,a:''};scanAsk.push(rec);
+      inp.oninput=()=>{rec.a=inp.value;};
+      row.appendChild(lab);row.appendChild(inp);$('scanq').appendChild(row);});
+  }catch(e){$('scanstat').textContent='scan failed: '+e;}
+  finally{$('scango').disabled=false;}
+};
+
 // x-ray: reference download + fab-scan upload vs the design (score + boxes)
 let xrayRaw='';
 if($('xrayfile'))$('xrayfile').onchange=()=>{const f=$('xrayfile').files[0];if(!f)return;
@@ -1464,12 +1747,18 @@ async function previewFile(path){
 }
 async function openFile(path){
   cancelPush();  // a queued rebuild of the old board must not follow us here
+  collabSyncSeq++; // a sync for the old board must not land on the new one
+  if(collabES){try{collabES.close();}catch(err){}collabES=null;}
+  collabOn=false; // collabStart re-opens the stream on the new board's room
   const r=await api('/fs/open',{path});
   if(r.error){statMsg(r.error);return;}
   statMsg('');$('msgs').innerHTML='';
   heldThash='';heldTraces=[];  // a different board: its traces are not ours
   setQueue([]);  // the server dropped the old board's proposals with it
+  collabRev=(r.rev!==undefined)?+r.rev:-1; // re-home the room to the new board
+  collabPaint([]);
   applyState(r,false);
+  collabStart(); // join the new board's room: sync + fresh SSE stream
   toast('opened '+path);
   const f=await fetch('/fs').then(x=>x.json());
   if(!f.error){DIR=f.base||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';TREE=f.tree||[];
@@ -1661,6 +1950,8 @@ async function boot(){
   $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
   $('fab').innerHTML=r.fabs.map(p=>`<option>${p}</option>`).join('');
   setEditor(r.text);applyState(r,false);
+  if(r.rev!==undefined)collabRev=+r.rev; // the room's rev from the first load
+  collabStart(); // realtime: SSE fan-out + presence from here on
   const f=await fetch('/fs').then(x=>x.json()); // browser state is a GET
   if(f.error){$('treenote').textContent=f.error;return;}
   DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
@@ -1824,6 +2115,36 @@ $('kbfetch').onclick=async()=>{
   $('kbstat').textContent=r.error||r.note||'fetch started';
   kbLoad();
 };
+// preferences: Flux's Knowledge approvals. The file is the store; the
+// buttons flip the `# ok` suffix and the agent reads what is approved.
+$('kbprefsbtn').onclick=async()=>{
+  const box=$('kbprefs'),open=box.style.display!=='none';
+  box.style.display=open?'none':'';
+  if(!open)kbPrefs();
+};
+async function kbPrefs(){
+  const r=await api('/kb/prefs',{});
+  const box=$('kbprefslist');box.innerHTML='';
+  if(r.error){$('kbstat').textContent=r.error;return;}
+  (r.prefs||[]).forEach(p=>{
+    const d=document.createElement('div');d.className='kbrow';
+    const b=document.createElement('span');b.className='kbname';
+    b.textContent=`when ${p.when} :: ${p.text}`;
+    const k=document.createElement('span');k.className='kbkind';
+    k.textContent=p.approved?'approved':'pending';
+    const t=document.createElement('button');t.textContent=p.approved?'reject':'approve';
+    t.title=p.approved?'stop following this':'follow this from now on';
+    t.onclick=async()=>{
+      const x=await api('/kb/prefs/set',{id:p.id,approved:!p.approved});
+      if(x.error)$('kbstat').textContent=x.error;else kbPrefs();};
+    d.append(b,k,t);box.appendChild(d);});
+  if(!(r.prefs||[]).length)box.textContent='no preferences yet — teach one below';
+}
+$('kbprefsgo').onclick=async()=>{
+  const r=await api('/kb/prefs/add',{when:$('kbwhen').value,text:$('kbwhat').value});
+  if(r.error){$('kbstat').textContent=r.error;return;}
+  $('kbwhen').value='';$('kbwhat').value='';kbPrefs();
+};
 $('kbq').addEventListener('keydown',e=>{
   if(e.key==='Enter'){e.preventDefault();kbGo(true,false);}});
 $('kburl').addEventListener('keydown',e=>{
@@ -1986,18 +2307,41 @@ def _users_path() -> str:
     return os.path.join(ROOT, _USERS_FILE)
 
 
-def _read_users() -> dict[str, tuple[str, str]]:
-    """name -> (salt_hex, hash_hex). Missing file = no accounts yet."""
-    out: dict[str, tuple[str, str]] = {}
+def _read_users() -> dict[str, tuple[str, str, str]]:
+    """name -> (salt_hex, hash_hex, display). Missing file = no accounts yet.
+    display is a 4th colon field; old 3-field lines read as display=name."""
+    out: dict[str, tuple[str, str, str]] = {}
     try:
         with open(_users_path()) as f:
             for line in f:
                 parts = line.rstrip("\n").split(":")
-                if len(parts) == 3 and parts[0]:
-                    out[parts[0]] = (parts[1], parts[2])
+                if len(parts) >= 3 and parts[0]:
+                    disp = parts[3] if len(parts) > 3 and parts[3] else parts[0]
+                    out[parts[0]] = (parts[1], parts[2], disp)
     except OSError:
         pass
     return out
+
+
+def _set_display(name: str, display: str) -> None:
+    """Rewrite the user's line with a new display name (validated by caller)."""
+    try:
+        lines = open(_users_path()).read().splitlines()
+    except OSError:
+        raise ValueError("no accounts yet")
+    out = []
+    found = False
+    for ln in lines:
+        parts = ln.split(":")
+        if parts and parts[0] == name and len(parts) >= 3:
+            out.append(":".join([parts[0], parts[1], parts[2], display]))
+            found = True
+        elif ln.strip():
+            out.append(ln)
+    if not found:
+        raise ValueError("no such account")
+    with open(_users_path(), "w", encoding="utf8") as f:
+        f.write("\n".join(out) + "\n")
 
 
 def _write_user(name: str, password: str) -> None:
@@ -2026,7 +2370,7 @@ def _check_user(name: str, password: str) -> bool:
     users = _read_users()
     if name not in users:
         return False
-    salt_hex, want = users[name]
+    salt_hex, want, _disp = users[name]
     try:
         digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex),
                                 n=16384, r=8, p=1)
@@ -2071,21 +2415,71 @@ net GND: R1.1 C1.2
 
 
 def _shelf(name: str) -> list[dict[str, str]]:
-    """The user's boards: name, size, modified."""
+    """The user's boards: name, size, modified, blurb, parts, nets.
+
+    Blurb = first `#` comment in the file (the author's own one-liner);
+    counts come from a text scan (no Board build — Context journals every
+    part and net, ~1.5s on a dense board, and the shelf lists on every
+    login). Missing file facts stay empty, never errors."""
     import time
     d = _user_dir(name)
     rows: list[dict[str, str]] = []
     for fn in sorted(os.listdir(d)):
         if not fn.endswith(".ocd"):
             continue
+        full = os.path.join(d, fn)
         try:
-            st = os.stat(os.path.join(d, fn))
+            st = os.stat(full)
+            blurb, np_, nn = "", "0", "0"
+            with open(full, encoding="utf-8", errors="replace") as f:
+                seen_p: set[str] = set()
+                seen_n: set[str] = set()
+                for i, line in enumerate(f):
+                    if i > 400:
+                        break  # header facts live up top; don't read megabytes
+                    s = line.strip()
+                    if s.startswith("#") and not blurb:
+                        blurb = s.lstrip("# ").strip()[:140]
+                    elif s.startswith("part "):
+                        seen_p.add(s.split(None, 2)[1] if len(s.split()) > 1 else "")
+                        np_ = str(len(seen_p))
+                    elif s.startswith(("net ", "net:", "VCC ", "GND ")) or " :: " in s:
+                        nn = str(int(nn) + 1)
             rows.append({"name": fn, "bytes": str(st.st_size),
                          "mtime": time.strftime("%Y-%m-%d %H:%M",
-                                                time.localtime(st.st_mtime))})
+                                                time.localtime(st.st_mtime)),
+                         "blurb": blurb, "parts": np_, "nets": nn})
         except OSError:
             continue
     return rows
+
+
+def _templates() -> list[dict[str, str]]:
+    """Starter cards from boards/*.ocd (read-only; opening one copies it)."""
+    out: list[dict[str, str]] = []
+    bdir = os.path.join(HERE, "boards")
+    try:
+        names = sorted(os.listdir(bdir))
+    except OSError:
+        return out
+    for fn in names:
+        if not fn.endswith(".ocd"):
+            continue
+        blurb = ""
+        try:
+            with open(os.path.join(bdir, fn), encoding="utf-8",
+                      errors="replace") as f:
+                for i, line in enumerate(f):
+                    if i > 30:
+                        break
+                    s = line.strip()
+                    if s.startswith("#"):
+                        blurb = s.lstrip("# ").strip()[:140]
+                        break
+        except OSError:
+            continue
+        out.append({"name": fn, "blurb": blurb})
+    return out
 
 
 def _rel(path: object) -> str:
@@ -2163,6 +2557,61 @@ def _read(rel: object) -> str:
         return open(full, encoding="utf8").read()
     except UnicodeDecodeError as e:
         raise ValueError(f"{rel}: not utf-8 text") from e
+
+
+# ponytail: extension sniffing caps at text-size uploads (2MB); binaries
+# (step/stp) ride base64 and land in fp/ — importers read from disk.
+IMPORT_EXTS = {".fp", ".kicad_mod", ".lib", ".lbr", ".intlib", ".schdoc",
+               ".edf", ".json", ".brd", ".pcb", ".sym", ".step", ".stp"}
+
+
+def _import_upload(name: str, data: str) -> dict[str, object]:
+    """Base64 file upload → fp/ → import_fp/import_sym by extension.
+
+    Footprints land in fp/ (the board's footprint dir, resolved by _lib);
+    symbols in sym/; boards (.kicad_pcb/.brd/.pcb sniffed as pcb) open in
+    the editor. Returns {note[, text]} — text only when a board was made."""
+    import base64
+    import binascii
+    fn = "".join(c for c in os.path.basename(name) if c.isalnum() or c in "_-.")[:80]
+    ext = os.path.splitext(fn)[1].lower()
+    if not fn or ext not in IMPORT_EXTS:
+        return {"error": f"{name or '(no name)'}: import wants "
+                + ", ".join(sorted(IMPORT_EXTS))}
+    try:
+        raw = base64.b64decode(data)
+    except (ValueError, binascii.Error) as e:
+        return {"error": f"bad upload (not base64): {e}"}
+    if len(raw) > 2_000_000:
+        return {"error": f"{fn}: over 2MB"}
+    sub = "sym" if ext == ".sym" else "fp"
+    dest = os.path.join(BASE, sub)
+    os.makedirs(dest, exist_ok=True)
+    full = os.path.join(dest, fn)
+    if os.path.exists(full):
+        return {"error": f"{fn} already imported"}
+    with open(full, "wb") as f:
+        f.write(raw)
+    try:
+        b = agent.loads(H.src_text, base=BASE)
+        if ext in (".brd", ".pcb") or fn.endswith(".kicad_pcb"):
+            out = b.import_fp(None, path=full)
+            names = [str(k) for k in out if isinstance(out, dict)] or ["board"]
+            return {"note": f"imported {fn}: board {', '.join(names[:3])}",
+                    "text": agent.dumps(b)}
+        elif ext == ".sym":
+            out = b.import_sym(path=full)
+            return {"note": f"imported {fn}: "
+                    + ", ".join(str(k) for k in out)[:200]}
+        out = b.import_fp(None, path=full)
+        return {"note": f"imported {fn}: "
+                + ", ".join(str(k) for k in out)[:200]}
+    except (ValueError, KeyError, AssertionError, OSError) as e:
+        try:
+            os.remove(full)  # a failed import leaves no file behind
+        except OSError:
+            pass
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 def _git(*args: str, timeout: float = 20.0) -> str:
@@ -2442,8 +2891,14 @@ class H(http.server.BaseHTTPRequestHandler):
                      f"{e['name']}{'/' if e['kind'] == 'dir' else ''}"
                      for e in _tree(p or ".")),
                  "fs.read": lambda p, _b: _read(p)}
-        msgs = ([{"role": "system", "content": "Current board:\n" + ctx}]
-                if ctx else []) + H.chat
+        try:
+            from ocdcircuit import kb as _kbmod
+            _kb = _kbmod.KB(BASE, parts=_kbmod.parts_map(H.src_text))
+            _prefs = _kb.prefs_approved()
+        except (ValueError, OSError):
+            _prefs = ""
+        sys = "Current board:\n" + ctx + ("\n\n" + _prefs if _prefs else "")
+        msgs = ([{"role": "system", "content": sys}] if ctx else []) + H.chat
         try:
             out = _llm.run(msgs, tools)
         except _llm.LLMError as e:
@@ -2522,6 +2977,30 @@ class H(http.server.BaseHTTPRequestHandler):
     SHRINK = 0.5  # refuse a rewrite that drops more than half the file
 
     @staticmethod
+    def _room_key(q: dict[str, list[str]] | None = None) -> str:
+        """Room identity = the open board's path relative to ROOT (default),
+        or a ?board= name resolved inside the project (the SSE stream names
+        it; POST bodies carry it too). Paths are re-checked by _abs, so a
+        traversal is a loud error, not a second room."""
+        if q:
+            want = (q.get("board") or [""])[0]
+            if want:
+                full = _abs(want, must_exist=False, near=BASE)
+                return os.path.relpath(full, ROOT)
+        return os.path.relpath(SRC, ROOT)
+
+    @staticmethod
+    def _room_adopt(key: str, text: str, by: str) -> tuple[int, str]:
+        """Server-built text (build/solve/undo/pick) lands in the room — but
+        only for the open board's room: shelf opens just switch SRC, so a
+        stale response for another board must not broadcast into this one."""
+        from ocdcircuit import collab as _collab
+        if key != os.path.relpath(SRC, ROOT):
+            return (_collab.get_room(key, text).rev, "other board")
+        H.src_text = text
+        return (_collab.get_room(key, H.src_text).set_text(text, by), "adopted")
+
+    @staticmethod
     def save() -> None:
         """Persist the .ocd source of truth to disk (edits are real)."""
         text = H.src_text if H.src_text.endswith("\n") else H.src_text + "\n"
@@ -2572,14 +3051,64 @@ class H(http.server.BaseHTTPRequestHandler):
             self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
                         "clean": disk == H.saved_text})
             return
+        if self.path.startswith("/collab/events"):
+            # realtime fan-out: Server-Sent Events (stdlib, no websocket dep).
+            # ?board= names the room (default: the open board); each event is
+            # {rev, by?, users} — the client reloads text on rev change via
+            # /collab/sync. Disconnect runs the leave inverse (no ghost users).
+            from urllib.parse import parse_qs, urlparse
+            user = _authed(self.headers)
+            if user is None:
+                self.send_response(401)
+                self.end_headers()
+                return
+            from ocdcircuit import collab as _collab
+            key = H._room_key(dict(parse_qs(urlparse(self.path).query)))
+            room = _collab.get_room(key, H.src_text)
+            stream, unsub = room.subscribe()
+            leave = room.join(user)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                snap = room.snapshot()
+                assert isinstance(snap, dict)
+                self.wfile.write(
+                    f"data: {json.dumps({'hello': user, **snap})}\n\n".encode())
+                self.wfile.flush()
+                import queue as _qq
+                idle = 0
+                while True:
+                    try:
+                        msg = stream.get(timeout=15.0)
+                        assert isinstance(msg, dict)
+                        self.wfile.write(f"data: {json.dumps(msg)}\n\n".encode())
+                        self.wfile.flush()
+                        idle = 0
+                    except _qq.Empty:
+                        # SSE comment = heartbeat: proxies/LB kill idle streams
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
+                        idle += 1
+                        if idle >= 8 or getattr(self, "_sse_done", False):
+                            break
+            except (BrokenPipeError, ConnectionResetError, ValueError):
+                pass
+            finally:
+                leave()
+                unsub()
+            return
         if self.path.startswith("/fs"):
             # project browser: ?dir= picks the directory (default: the board's
             # own). Paths come back relative to ROOT, so /fs/open can take them.
             try:
                 from urllib.parse import parse_qs, urlparse
-                q = parse_qs(urlparse(self.path).query)
+                qs = parse_qs(urlparse(self.path).query)
                 base = os.path.relpath(BASE, ROOT).replace(os.sep, "/")
-                d = (q.get("dir") or [base])[0] or base
+                first = qs.get("dir") or [base]
+                d = first[0] or base
                 self._send({"root": os.path.relpath(ROOT, os.getcwd()),
                             "src": os.path.relpath(SRC, ROOT).replace(os.sep, "/"),
                             "base": base, "dir": _rel(d),
@@ -2604,8 +3133,8 @@ class H(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         from urllib.parse import parse_qs, urlparse
-        q = parse_qs(urlparse(self.path).query)
-        want = (q.get("board") or [""])[0]
+        qs2 = parse_qs(urlparse(self.path).query)
+        want = (qs2.get("board") or [""])[0]
         if want:
             # shelf boards only: alnum/_/- inside the user's own dir, else the
             # launch board. Server-side: the cookie names the user, the query
@@ -2650,10 +3179,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": "password needs 8+ characters"})
                 elif name in _read_users():
                     self._send({"error": f"{name} exists — log in instead"})
-                elif _read_users():
-                    # single-tenant: first account owns the studio (invites later)
-                    self._send({"error": "this studio already has an account"})
                 else:
+                    # multi-user: every signup gets its own shelf (.users/<name>/);
+                    # the "one studio, one owner" rule died with realtime collab.
                     _write_user(name, password)
                     self._send({"ok": True, "user": name}, cookie=_new_session(name))
             elif self.path == "/auth/login":
@@ -2671,16 +3199,36 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send({"ok": True}, cookie="")
             elif self.path == "/auth/me":
                 user = _authed(self.headers)
-                self._send({"user": user, "needs_setup": not _read_users()})
+                disp = _read_users().get(user, ("", "", user))[2] if user else None
+                self._send({"user": user, "display": disp,
+                            "needs_setup": not _read_users()})
+            elif self.path == "/auth/profile":
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                disp = str(req.get("display", "")).strip()[:40]
+                if not disp:
+                    self._send({"error": "a display name can't be blank"})
+                    return
+                try:
+                    _set_display(user, disp)
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
+                    return
+                self._send({"ok": True, "display": disp})
             elif self.path == "/shelf":
                 user = _authed(self.headers)
                 assert user is not None  # gated above
-                self._send({"user": user, "boards": _shelf(user)})
+                self._send({"user": user, "boards": _shelf(user),
+                            "templates": _templates()})
             elif self.path == "/shelf/new":
                 user = _authed(self.headers)
                 assert user is not None  # gated above
                 raw = str(req.get("name", "")).strip().lower()
-                name = "".join(c for c in raw if c.isalnum() or c in "_-")[:32]
+                # prompt-box prose ("a wifi sensor node!") degrades to a slug
+                slug = "".join(c if c.isalnum() else "-" for c in raw).strip("-")
+                while "--" in slug:
+                    slug = slug.replace("--", "-")
+                name = "".join(c for c in slug if c.isalnum() or c in "_-")[:32]
                 if not name or name in ("users",):
                     self._send({"error": "give the board a usable name"})
                 else:
@@ -2692,8 +3240,115 @@ class H(http.server.BaseHTTPRequestHandler):
                         with open(full, "w", encoding="utf8") as f:
                             f.write(STARTER_OCD.format(name=name))
                         self._send({"ok": True, "boards": _shelf(user)})
+            elif self.path == "/shelf/from_template":
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                raw = str(req.get("name", ""))
+                fn = "".join(c for c in os.path.basename(raw) if c.isalnum() or c in "_-.")[:40]
+                if not fn.endswith(".ocd"):
+                    self._send({"error": "pick a template first"})
+                    return
+                src = os.path.join(HERE, "boards", fn)
+                if not os.path.isfile(src):
+                    self._send({"error": f"{fn}: no such template"})
+                    return
+                dst = os.path.join(_user_dir(user), fn)
+                stem, n = fn[:-4], 1
+                while os.path.exists(dst):
+                    n += 1
+                    dst = os.path.join(_user_dir(user), f"{stem}-{n}.ocd")
+                import shutil
+                shutil.copy2(src, dst)
+                self._send({"ok": True, "boards": _shelf(user)})
             elif self.path == "/init":
                 self._send(self._build(H.src_text, True))
+            elif self.path == "/collab/sync":
+                # realtime pull: rev + text + who changed it + presence.
+                from ocdcircuit import collab as _collab
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                key = H._room_key()
+                room = _collab.get_room(key, H.src_text)
+                snap = room.snapshot()
+                assert isinstance(snap, dict)
+                self._send({"board": key, "text": room.text, **snap})
+            elif self.path == "/collab/push":
+                # realtime edit at a rev: match -> accept + rebuild the room
+                # text (everyone converges); mismatch -> stale + current rev.
+                from ocdcircuit import collab as _collab
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                key = H._room_key()
+                room = _collab.get_room(key, H.src_text)
+                want = req.get("src")
+                if isinstance(want, str) and want and want != key:
+                    self._send({"stale": True, "error": f"board changed to "
+                                f"{key} — edit again"})
+                    return
+                rev = _i(req.get("rev"), -1)
+                text = str(req.get("text", room.text))
+                if not room.claim(rev):
+                    # someone else edited first: their text wins, ours stays
+                    # in the client's keystroke buffer (same banner pattern
+                    # as the file-watch — adopt, never auto-merge).
+                    self._send({"stale": True, "rev": room.rev, "text": room.text,
+                                "error": "someone else edited first — reloaded theirs"})
+                    return
+                try:
+                    st = self._build(text, False, req)
+                except (ValueError, KeyError, AssertionError) as e:
+                    # unparseable push: nothing adopted (the room's claim
+                    # above changed no state — validate, then adopt).
+                    self._send({"error": f"{type(e).__name__}: {e}",
+                                "rev": room.rev, "text": room.text})
+                    return
+                H._room_adopt(key, str(st["text"]), user)
+                H.save_target = SRC
+                H.commit(H.src_text)
+                H.save()
+                st["rev"] = _collab.get_room(key, H.src_text).rev
+                self._send(st)
+            elif self.path == "/collab/cursor":
+                # presence heartbeat: x/y/ref + prune the timed-out, no timer.
+                from ocdcircuit import collab as _collab
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                room = _collab.get_room(H._room_key(), H.src_text)
+                self._send(room.heartbeat(user, _f(req.get("x"), 0.0),
+                                          _f(req.get("y"), 0.0),
+                                          str(req.get("ref", ""))[:16]))
+            elif self.path == "/collab/op":
+                # structured op through the `collab` plugin (undoable edits,
+                # same fence as every dispatch): {rev, op:{ops:[...]}}.
+                from ocdcircuit import collab as _collab
+                user = _authed(self.headers)
+                assert user is not None  # gated above
+                key = H._room_key()
+                room = _collab.get_room(key, H.src_text)
+                rev = _i(req.get("rev"), -1)
+                if rev != room.rev:
+                    self._send({"stale": True, "rev": room.rev,
+                                "text": room.text,
+                                "error": "someone else edited first — reloaded theirs"})
+                    return
+                b = agent.loads(room.text, base=BASE)
+                op = req.get("op", {})
+                assert isinstance(op, dict)
+                try:
+                    res = b.collab(op=op)
+                    text = agent.dumps(b)
+                    st = self._build(text, False, req)
+                except (ValueError, KeyError, AssertionError) as e:
+                    self._send({"error": f"{type(e).__name__}: {e}",
+                                "rev": room.rev, "text": room.text})
+                    return
+                H._room_adopt(key, str(st["text"]), user)
+                H.save_target = SRC
+                H.commit(H.src_text)
+                H.save()
+                st["rev"] = _collab.get_room(key, H.src_text).rev
+                st["applied"] = res.get("applied", 0)
+                self._send(st)
             elif self.path == "/load":
                 # Open a board without re-placing it: parse + route + DRC only.
                 # Placing 5k parts is minutes, and the file already says where
@@ -2723,6 +3378,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 # from SRC at all (a stale tab, a pasted board), do not write it
                 # over the file on disk.
                 H.save()
+                from ocdcircuit import collab as _collab_b
+                st["rev"] = _collab_b.get_room(H._room_key(), H.src_text).set_text(
+                    H.src_text, _authed(self.headers) or "build")
                 self._send(st)
             elif self.path == "/solve":
                 st = self._build(H.src_text, True, req)
@@ -2730,23 +3388,26 @@ class H(http.server.BaseHTTPRequestHandler):
                 H.save_target = SRC
                 H.commit(H.src_text)
                 H.save()
+                from ocdcircuit import collab as _collab_s
+                st["rev"] = _collab_s.get_room(H._room_key(), H.src_text).set_text(
+                    H.src_text, _authed(self.headers) or "solve")
                 self._send(st)
             elif self.path == "/candidates":
                 from ocdcircuit import solver as _solver
                 b = agent.loads(H.src_text, base=BASE)
-                key = req.get("placer")
-                assert key is None or isinstance(key, str)
+                pkey = req.get("placer")
+                assert pkey is None or isinstance(pkey, str)
                 n = _i(req.get("n"), 4)
-                cands = _solver.candidates(b, n=n, key=key,
+                cands = _solver.candidates(b, n=n, key=pkey,
                                            seed=_i(req.get("seed"), 0),
                                            seeds=1, iters=_i(req.get("iters"), 400))
                 # feasibility on the best candidate (unplaced text proves nothing)
                 _solver.restore_candidate(b, cands[0])
-                snap = b.ctx.snapshot()
+                rbsnap = b.ctx.snapshot()
                 try:
                     feas = _solver.feasible(b)
                 finally:
-                    b.ctx.rollback(snap)
+                    b.ctx.rollback(rbsnap)
                 self._send({"candidates": cands, "feasible": feas,
                             "layers": b.layers})
             elif self.path == "/pick":
@@ -2754,10 +3415,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 # (cast is imported at module level; a local import here would
                 # shadow it for every earlier branch in this function)
                 b = agent.loads(H.src_text, base=BASE)
-                key = req.get("placer")
-                assert key is None or isinstance(key, str)
+                pkey2 = req.get("placer")
+                assert pkey2 is None or isinstance(pkey2, str)
                 idx = _i(req.get("index"), 0)
-                cands = _solver.candidates(b, n=_i(req.get("n"), 4), key=key,
+                cands = _solver.candidates(b, n=_i(req.get("n"), 4), key=pkey2,
                                            seed=_i(req.get("seed"), 0),
                                            seeds=1, iters=_i(req.get("iters"), 400))
                 if not 0 <= idx < len(cands):
@@ -2777,6 +3438,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 H.src_text = str(st["text"])
                 H.commit(H.src_text)
                 H.save()
+                from ocdcircuit import collab as _collab_p
+                st["rev"] = _collab_p.get_room(H._room_key(), H.src_text).set_text(
+                    H.src_text, _authed(self.headers) or "pick")
                 self._send(st)
             elif self.path == "/diff_prev":  # current text vs previous undo-commit
                 if len(H.hist) < 2:
@@ -2797,14 +3461,14 @@ class H(http.server.BaseHTTPRequestHandler):
                             "bytes": len(zraw)})
             elif self.path == "/render":
                 import base64
-                key = str(req.get("key", "svg"))  # svg|sch|png|stl|gltf|xray|…
+                rkey = str(req.get("key", "svg"))  # svg|sch|png|stl|gltf|xray|…
                 b = agent.loads(H.src_text, base=BASE)
                 b.configure("toml", base=BASE)
                 b.place()
                 b.route_board()
-                out = b.render(key)
+                out = b.render(rkey)
                 ext = {"svg": "svg", "sch": "sch.svg", "png": "png",
-                       "stl": "stl", "gltf": "glb", "xray": "xray.svg"}.get(key, key)
+                       "stl": "stl", "gltf": "glb", "xray": "xray.svg"}.get(rkey, rkey)
                 if isinstance(out, bytes):
                     self._send({"data": base64.b64encode(out).decode(),
                                 "bin": True, "name": f"{b.name}.{ext}"})
@@ -2877,6 +3541,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.redo.append(H.hist.pop())
                     H.src_text = H.hist[-1]
                     H.save()
+                    from ocdcircuit import collab as _collab_u
+                    _collab_u.get_room(H._room_key(), H.src_text).set_text(
+                        H.src_text, _authed(self.headers) or "undo")
                     self._send(self._build(H.src_text, False))
             elif self.path == "/redo":
                 if not H.redo:
@@ -2885,7 +3552,90 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.src_text = H.redo.pop()
                     H.commit(H.src_text)
                     H.save()
+                    from ocdcircuit import collab as _collab_r
+                    _collab_r.get_room(H._room_key(), H.src_text).set_text(
+                        H.src_text, _authed(self.headers) or "redo")
                     self._send(self._build(H.src_text, False))
+            elif self.path == "/scan":  # photos of a physical board -> draft
+                import base64
+                import binascii
+                import tempfile
+                shots = req.get("photos")
+                if not isinstance(shots, list) or not shots:
+                    self._send({"error": "upload at least one photo"})
+                    return
+                if len(shots) > 40:
+                    self._send({"error": f"{len(shots)} photos is more than "
+                                         "this endpoint takes (max 40)"})
+                    return
+                work = tempfile.mkdtemp(prefix="ocd-scan-")
+                paths: list[str] = []
+                try:
+                    for i, item in enumerate(shots):
+                        if not isinstance(item, dict):
+                            continue
+                        name = str(item.get("name", f"photo{i}"))
+                        # the side hint lives in the filename (pcbscan splits
+                        # on it), so keep the user's name, not a temp id
+                        safe = os.path.basename(name).replace("..", "_") or f"p{i}"
+                        blob = base64.b64decode(str(item.get("data", "")),
+                                                validate=True)
+                        dest = os.path.join(work, f"{i:02d}_{safe}")
+                        with open(dest, "wb") as fh:
+                            fh.write(blob)
+                        paths.append(dest)
+                except (ValueError, binascii.Error) as e:
+                    self._send({"error": f"bad upload (not base64): {e}"})
+                    return
+                docs: list[str] = []
+                for i, d in enumerate(req.get("docs") or []):
+                    if not isinstance(d, dict):
+                        continue
+                    try:
+                        blob = base64.b64decode(str(d.get("data", "")),
+                                                validate=True)
+                    except (ValueError, binascii.Error):
+                        continue
+                    dp = os.path.join(
+                        work, "doc_" + os.path.basename(
+                            str(d.get("name", f"doc{i}"))).replace("..", "_"))
+                    with open(dp, "wb") as fh:
+                        fh.write(blob)
+                    docs.append(dp)
+                answers: dict[str, str] = {}
+                for qa in req.get("answers") or []:
+                    if isinstance(qa, dict) and qa.get("q"):
+                        answers[str(qa["q"])] = str(qa.get("a", ""))
+                from ocdcircuit.circuit import Board as _B
+                try:
+                    r = _B("scan").scan(
+                        photos=paths, outdir=os.path.join(work, "out"),
+                        board_mm=(_f(req.get("mm")) if req.get("mm") else None),
+                        note=str(req.get("note", "")),
+                        docs=docs or None, answers=answers or None,
+                        llm=bool(req.get("llm", True)))
+                except (ValueError, OSError, KeyError, RuntimeError,
+                        AssertionError) as e:
+                    self._send({"error": f"{type(e).__name__}: {e}"})
+                    return
+                draft = ""
+                if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
+                    with open(str(r["draft"])) as fh:
+                        draft = fh.read()
+                report = ""
+                if isinstance(r.get("analysis"), str) and os.path.isfile(str(r["analysis"])):
+                    with open(str(r["analysis"])) as fh:
+                        report = fh.read()
+                sides = cast(dict[str, object], r.get("sides", {}))
+                self._send({
+                    "sides": {k: {kk: vv for kk, vv in
+                                  cast(dict[str, object], v).items()
+                                  if kk != "files"}
+                              for k, v in sides.items()},
+                    "questions": r.get("questions", []),
+                    "draft": draft, "analysis": report,
+                    "draft_error": r.get("draft_error", ""),
+                    "outdir": str(r.get("outdir", ""))})
             elif self.path == "/doctor":  # tooling health, no board needed
                 from ocdcircuit.circuit import Board as _B
                 r = _B("doctor").doctor()
@@ -2931,6 +3681,29 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/fetch":
                 self._send(_kb_fetch_start())
+            elif self.path == "/kb/prefs":
+                from ocdcircuit.kb import KB
+                kb = _kb()
+                assert isinstance(kb, KB)
+                self._send({"prefs": kb.prefs()})
+            elif self.path == "/kb/prefs/add":
+                from ocdcircuit.kb import KB
+                kb = _kb()
+                assert isinstance(kb, KB)
+                try:
+                    self._send(kb.prefs_add(str(req.get("when", "")),
+                                            str(req.get("text", ""))))
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
+            elif self.path == "/kb/prefs/set":
+                from ocdcircuit.kb import KB
+                kb = _kb()
+                assert isinstance(kb, KB)
+                try:
+                    self._send(kb.prefs_set(_i(req.get("id"), -1),
+                                            bool(req.get("approved"))))
+                except (ValueError, OSError) as e:
+                    self._send({"error": f"ValueError: {e}"})
             elif self.path == "/chat":
                 text = str(req.get("text", "")).strip()
                 if not text:
@@ -2973,6 +3746,9 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/fs/read":
                 rel = str(req.get("path", ""))
                 self._send({"path": rel, "text": _read(rel)})
+            elif self.path == "/fs/import":
+                self._send(_import_upload(str(req.get("name", "")),
+                                          str(req.get("data", ""))))
             elif self.path == "/vcs":
                 self._send({"log": _git_log(40, req.get("path")),
                             "status": _git_status()})
@@ -3102,6 +3878,9 @@ class H(http.server.BaseHTTPRequestHandler):
         H._decorate(st, b, st_tidy, feas, placers, routers, silksel, silks,
                     st_score, st_lint)
         H.src_text = str(st["text"])
+        # the room's rev rides every build: the client's push carries it back.
+        from ocdcircuit import collab as _collab_b2
+        st["rev"] = _collab_b2.get_room(H._room_key(), H.src_text).rev
         return st
 
     @staticmethod
@@ -3146,7 +3925,13 @@ def main() -> None:
         print(f"studio: bad OCD_PORT {os.environ.get('OCD_PORT')!r}, using 8077",
               file=sys.stderr)
         port = 8077
-    srv = http.server.HTTPServer(("127.0.0.1", port), H)
+    # Threading: one SSE stream per collaborator blocks its handler for
+    # minutes — on a single-threaded server the second user could never even
+    # log in while the first one's stream was open. Threads share H/rooms
+    # (the GIL + the room lock serialize them); the build path is ~14ms.
+    # ponytail: stdlib ThreadingHTTPServer, no new dep, no refactor.
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv.daemon_threads = True
     print(f"OCD Studio: http://localhost:{port}  ({SRC})")
     srv.serve_forever()
 
