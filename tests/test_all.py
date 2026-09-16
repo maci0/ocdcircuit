@@ -1833,6 +1833,53 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
+# fp loads fuzz: structure-aware mutations of a valid .fp never crash the
+# process; any accepted parse must dumps→loads→dumps identically.
+import random as _fprng
+_fp_base = ("footprint T1 2x1\npad 1 -0.5 0 1 1\npad 2 0.5 0 1 1\n"
+            "hole 3 0 0 0.8\nslot 4 0 1 1.2 0.6\n"
+            "body box 2 1 0.5 at 0 0\nkeepout 0 0 1x1\n")
+_fp_lines = [
+    "pad 9 0 0 0.8 0.8", "hole 8 0.5 0 0.6", "slot 7 0 0 1 0.5",
+    "body cyl 0.5 1", "keepout 0 0 d2", "keepout 1 1 2x1 copper",
+    "footprint T2 3x2 edge", "# comment",
+]
+_fp_alphabet = "abcABC0123_:. \t\"'#()[]{}<>x\x00\n-"
+for _fps in (17, 53):
+    _fpr = _fprng.Random(_fps)
+    for _ in range(80):
+        _lines = _fp_base.splitlines(True)
+        _kind = _fpr.randrange(6)
+        if _kind == 0 and _lines:
+            _lines[_fpr.randrange(len(_lines))] = _fpr.choice(_fp_lines) + "\n"
+        elif _kind == 1:
+            _lines.insert(_fpr.randrange(len(_lines) + 1),
+                          _fpr.choice(_fp_lines) + "\n")
+        elif _kind == 2 and _lines:
+            del _lines[_fpr.randrange(len(_lines))]
+        elif _kind == 3 and _lines:
+            _i = _fpr.randrange(len(_lines))
+            _s = list(_lines[_i])
+            if _s:
+                _s[_fpr.randrange(len(_s))] = _fpr.choice(_fp_alphabet)
+            _lines[_i] = "".join(_s)
+        elif _kind == 4:
+            _n = _fpr.randrange(0, 48)
+            _lines.append("".join(_fpr.choice(_fp_alphabet) for _j in range(_n))
+                          + "\n")
+        else:
+            _lines.append("body box 1 1 1 at 0 0 at 1 1\n")
+        _text = "".join(_lines)
+        if _fpr.random() < 0.15:
+            _text = _text[:_fpr.randrange(len(_text) + 1)]
+        try:
+            _fn, _fmeta = _fp.loads(_text)
+        except (ValueError, KeyError, TypeError, OverflowError,
+                AssertionError, IndexError):
+            continue
+        _fd = _fp.dumps(_fn, _fmeta)
+        assert _fp.dumps(*_fp.loads(_fd)) == _fd, \
+            f"fp loads fuzz round-trip failed (seed {_fps})"
 bu = agent.loads(open(os.path.join(EX, "usb_breakout.ocd")).read(), base=EX)
 assert "J1" in bu.parts and bu.parts["J1"].fp == "USB_C_EDGE_GCT"
 assert "A5" in bu.parts["J1"].pins_of(bu._lib())
@@ -2661,6 +2708,85 @@ try:
     raise AssertionError("deep sexpr should raise ValueError")
 except ValueError as _sxerr:
     assert "nesting" in str(_sxerr), str(_sxerr)
+# altium_ascii fuzz: mutated |RECORD=| soup must not crash; any accepted IR
+# must carry board/parts/nets and survive agent.from_ir (or raise cleanly).
+import random as _alrng
+_al_base = (
+    "|RECORD=Board|VX0=0mm|VY0=0mm|VX1=20mm|VY1=0mm|VX2=20mm|VY2=15mm|VX3=0mm|VY3=15mm|\n"
+    "|RECORD=Net|NAME=GND|\n"
+    "|RECORD=Net|NAME=N|\n"
+    "|RECORD=Component|SOURCEDESIGNATOR=R1|PATTERN=R0805|COMMENT=1k"
+    "|LAYER=TOPLAYER|X=5mm|Y=5mm|ROTATION=0|\n"
+    "|RECORD=Pad|NAME=1|COMPONENT=0|LAYER=TOPLAYER|NET=1|X=4mm|Y=5mm"
+    "|XSIZE=1mm|YSIZE=1mm|SHAPE=RECTANGLE|HOLESIZE=0mm|\n"
+    "|RECORD=Pad|NAME=2|COMPONENT=0|LAYER=TOPLAYER|NET=0|X=6mm|Y=5mm"
+    "|XSIZE=1mm|YSIZE=1mm|SHAPE=RECTANGLE|HOLESIZE=0mm|\n"
+    "|RECORD=Track|LAYER=TOPLAYER|NET=1|X1=4mm|Y1=5mm|X2=6mm|Y2=5mm|WIDTH=0.25mm|\n"
+)
+_al_lines = [
+    "|RECORD=Net|NAME=VCC|",
+    "|RECORD=Component|SOURCEDESIGNATOR=C1|PATTERN=C0805|COMMENT=100n"
+    "|LAYER=BOTTOMLAYER|X=10mm|Y=8mm|ROTATION=90|",
+    "|RECORD=Pad|NAME=1|COMPONENT=0|LAYER=TOPLAYER|NET=0|X=5mm|Y=5mm"
+    "|XSIZE=1mm|YSIZE=1mm|SHAPE=RECTANGLE|HOLESIZE=0.8mm|",
+    "|RECORD=Via|X=5mm|Y=5mm|NET=0|DIAMETER=0.8mm|HOLESIZE=0.4mm|",
+    "|RECORD=Text|LOCATION.X=5mm|LOCATION.Y=5mm|TEXT=HI|",
+    "|RECORD=Region|KIND=1|LAYER=TOPLAYER|NPT=4"
+    "|X0=1mm|Y0=1mm|X1=3mm|Y1=1mm|X2=3mm|Y2=3mm|X3=1mm|Y3=3mm|",
+    "|RECORD=Polygon|NET=0|LAYER=TOPLAYER|HATCHSTYLE=Solid"
+    "|VX0=0mm|VY0=0mm|VX1=10mm|VY1=0mm|VX2=10mm|VY2=10mm|VX3=0mm|VY3=10mm|",
+]
+_al_alphabet = "RECORD=|NAMExyz0123.mm \t\"'#()<>\x00\nABC_"
+for _als in (11, 29):
+    _alr = _alrng.Random(_als)
+    for _ in range(60):
+        _lines = _al_base.splitlines(True)
+        _kind = _alr.randrange(6)
+        if _kind == 0 and _lines:
+            _lines[_alr.randrange(len(_lines))] = _alr.choice(_al_lines) + "\n"
+        elif _kind == 1:
+            _lines.insert(_alr.randrange(len(_lines) + 1),
+                          _alr.choice(_al_lines) + "\n")
+        elif _kind == 2 and _lines:
+            del _lines[_alr.randrange(len(_lines))]
+        elif _kind == 3 and _lines:
+            _i = _alr.randrange(len(_lines))
+            _s = list(_lines[_i])
+            if _s:
+                _s[_alr.randrange(len(_s))] = _alr.choice(_al_alphabet)
+            _lines[_i] = "".join(_s)
+        elif _kind == 4:
+            _n = _alr.randrange(0, 64)
+            _lines.append("".join(_alr.choice(_al_alphabet) for _j in range(_n))
+                          + "\n")
+        else:
+            # force the binary-OLE reject path occasionally
+            _lines.insert(0, "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1junk\n")
+        _text = "".join(_lines)
+        if _alr.random() < 0.15:
+            _text = _text[:_alr.randrange(len(_text) + 1)]
+        try:
+            _air = foreign.altium_ascii(_text)
+        except (ValueError, KeyError, TypeError, OverflowError,
+                AssertionError, IndexError, ZeroDivisionError):
+            continue
+        assert isinstance(_air, dict), f"altium fuzz seed {_als}"
+        assert "board" in _air and "parts" in _air and "nets" in _air, \
+            f"altium fuzz missing IR keys (seed {_als})"
+        _abb = _air.get("board")
+        if not isinstance(_abb, dict):
+            continue
+        _aw, _ah = _abb.get("w"), _abb.get("h")
+        # skip pathological outlines: from_ir is the trust boundary, but
+        # unbounded board sizes are a resource bomb, not a parse bug
+        if not (isinstance(_aw, (int, float)) and isinstance(_ah, (int, float))
+                and 0 < float(_aw) < 1e4 and 0 < float(_ah) < 1e4):
+            continue
+        try:
+            agent.from_ir(_air)
+        except (ValueError, KeyError, TypeError, OverflowError,
+                AssertionError, IndexError):
+            pass
 _kpcb = ('(kicad_pcb (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (1 "In1.Cu" signal)) '
          '(net 0 "") (net 1 "GND") '
          '(footprint "F" (layer "F.Cu") (tedit 0) (at 10 10) '
