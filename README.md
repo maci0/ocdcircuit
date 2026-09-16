@@ -190,9 +190,11 @@ stated as a word in a pill.
   close-up tighter than about a third of the board registers poorly — its
   true match scores 0.03-0.10 at the coarse search level against 0.51-0.66
   at fine resolution, so the pyramid cannot find it. Searching at full
-  resolution instead was measured and is worse (3/18 against 11/18): the
-  coarse pass is what rejects wrong basins. Feature matching, not
-  whole-image correlation, is the real fix if tight close-ups matter.
+  resolution instead costs 4.4x the time for no gain. (It was once measured
+  at 3/18, but that was a refinement bug of mine — the step size was tied to
+  the starting level, so a full-resolution start refined once at the whole
+  10-degree grid step. Fixed, it is merely expensive.) Feature matching,
+  not whole-image correlation, is the real fix if tight close-ups matter.
 
   The 3D half is scored separately, because a handheld shoot simulated by
   warping a flat photo has no parallax by construction and cannot test it.
