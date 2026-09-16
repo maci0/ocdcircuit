@@ -42,8 +42,9 @@ form + shelf behind the CTA. The hero carries the collab strip (live miniature e
 - Focus is always visible (2px signal/green outline).
 - Sessions: HttpOnly + SameSite=Lax cookie; JS never reads the token.
 - Fab tiles are the vendors' own marks, hosted locally
-  (`ocdcircuit/assets/fabs/`, 192×64 PNGs — never hotlinked), served as
-  data URIs by `fab.logo()`. `fab.SOURCES` records each file's origin;
+  (`ocdcircuit/assets/fabs/`, 192×64 PNGs — never hotlinked). The landing
+  strip loads them from `/fab-logo/<key>` (cached, lazy); quote rows still
+  embed `fab.logo()` data URIs. `fab.SOURCES` records each file's origin;
   the strip carries a "logos belong to their owners" note. `fab.MARKS`
   monograms remain the fallback when a tile is missing. Dark-on-
   transparent marks (Sierra, NextPCB) sit on white tiles so they read

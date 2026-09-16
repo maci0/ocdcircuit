@@ -47,8 +47,9 @@ Esc closes.
 - **live presence first:** the header carries the room pill (`2 here: maya,
   leo`) right after the brand — collab is the headline, not a corner.
 - **quote wears logos:** every price row shows its fab's real logo
-  (vendor tile from `ocdcircuit/assets/fabs/`, served by `fab.logo()`
-  as a data URI) next to the name.
+  (vendor tile from `ocdcircuit/assets/fabs/`, embedded by `fab.logo()`
+  as a data URI) next to the name. The public landing strip loads the
+  same tiles from `/fab-logo/<key>` so ~100 KB of PNGs stay off the first HTML.
 - **status pills:** `cost` (wirelength) · `OCD nn/100 (grade)` neatness ·
   routing feasibility per layer count (`1L routable`, `2L unroutable (this
   board)`) — wirelength is a hint, the real verdict is the DRC panel.

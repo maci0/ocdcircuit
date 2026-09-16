@@ -19,6 +19,8 @@ Run: python studio.py [file.ocd]  → http://localhost:8077
 from __future__ import annotations
 from ocdcircuit.util import as_float as _f, as_int as _i
 import contextvars
+import gzip
+import hashlib
 import http.server
 import json
 import os
@@ -27,6 +29,11 @@ import sys
 import time
 from collections.abc import Callable
 from typing import cast
+
+# Compress HTML/JSON only when the body pays for the CPU. Level 4 matches
+# per-request studio pages (slots injected each hit); higher effort barely wins.
+_MIN_GZIP = 512
+_GZIP_LEVEL = 4
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = ROOT
 
@@ -62,15 +69,19 @@ def unload_ui() -> None:
 
 def fab_strip() -> str:
     """Supported-fabs logo strip for the landing page, built from fab.py
-    (tiles + profile urls) — one source of truth, never a stale copy."""
-    from ocdcircuit.fab import PROFILES, logo
+    (tiles + profile urls) — one source of truth, never a stale copy.
+    Logos load from /fab-logo/<key> (lazy) so ~100 KB of PNGs stay off the
+    first HTML response; the hero can paint before the strip asks for them."""
+    from ocdcircuit.fab import PROFILES
     cells = []
     for key in sorted(PROFILES):
         name = str(PROFILES[key].get("name", key))
         url = str(PROFILES[key].get("url", ""))
         cells.append(
-            f'<a class=fabcell href="{url}" title="{name} — capabilities">'
-            f'<img src="{logo(key)}" alt="{name} logo" width=96 height=32>'
+            f'<a class=fabcell href="{url}" title="{name} — capabilities" '
+            f'rel="noopener noreferrer">'
+            f'<img src="/fab-logo/{key}" alt="{name} logo" width=96 height=32 '
+            f'loading=lazy decoding=async>'
             f'</a>')
     return ('<div class=fabstrip aria-label="supported fabs">'
             '<span class=fabkicker>ships to</span>' + "".join(cells)
@@ -557,7 +568,8 @@ for(let i=0;i<8;i++){const px=ox+20+i*(bw-40)/7;
 x.fillRect(px-3,oy-5,6,4);x.fillRect(px-3,oy+bh+1,6,4);}
 if(!matchMedia('(prefers-reduced-motion: reduce)').matches)requestAnimationFrame(frame);}
 frame();}
-paint($('art'));paint($('art2'));
+// paint after first frame so hero text is not blocked by canvas setup
+requestAnimationFrame(()=>{paint($('art'));paint($('art2'));});
 function gate(){document.body.classList.add('gating');
 const f=$('u');if(f&&!f.value)f.focus();}
 $('herogo').onclick=()=>setMode('signup');$('topcta').onclick=()=>setMode('signup');
@@ -2355,7 +2367,8 @@ async function boot(){
   // /load parses the file and routes what is there. It does not re-place:
   // a 5k-part board takes minutes to place, and the file already says where
   // the parts go. `solve` is the explicit ask for a fresh placement.
-  const r=await api('/load',{});
+  // /load and /fs are independent — fetch in parallel (was a waterfall).
+  const [r,f]=await Promise.all([api('/load',{}),fetch('/fs').then(x=>x.json())]);
   $('placer').innerHTML=r.placers.map(p=>`<option>${p}</option>`).join('');
   $('router').innerHTML=r.routers.map(p=>`<option>${p}</option>`).join('');
   $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
@@ -2363,7 +2376,6 @@ async function boot(){
   setEditor(r.text);applyState(r,false);
   if(r.rev!==undefined)collabRev=+r.rev; // the room's rev from the first load
   collabStart(); // realtime: SSE fan-out + presence from here on
-  const f=await fetch('/fs').then(x=>x.json()); // browser state is a GET
   if(f.error){$('treenote').textContent=f.error;return;}
   DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
   $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
@@ -3567,23 +3579,95 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy",
                          "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 
-    def _send(self, obj: object, cookie: str | None = None) -> None:
-        body = json.dumps(obj).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
+    def _accepts_gzip(self) -> bool:
+        raw = (self.headers.get("Accept-Encoding") or "").lower()
+        for part in raw.split(","):
+            token, _, params = part.strip().partition(";")
+            if token.strip() != "gzip":
+                continue
+            q = 1.0
+            for p in params.split(";"):
+                p = p.strip()
+                if p.startswith("q="):
+                    try:
+                        q = float(p[2:])
+                    except ValueError:
+                        q = 0.0
+            return q > 0.0
+        return False
+
+    def _write_bytes(self, status: int, body: bytes, content_type: str,
+                     *, doc: bool = False, cookie: str | None = None) -> None:
+        """Complete response. Documents get an ETag + no-cache revalidation;
+        HTML/JSON bodies gzip when the client asks and the payload pays for it.
+        SSE streams must not use this (buffering would delay the first byte)."""
+        tag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"' if doc else None
+        if doc and tag and self.headers.get("If-None-Match") == tag:
+            self.send_response(304)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Vary", "Accept-Encoding")
+            self._secure_headers()
+            self.end_headers()
+            return
+        out = body
+        enc = False
+        if len(body) >= _MIN_GZIP and self._accepts_gzip():
+            out = gzip.compress(body, compresslevel=_GZIP_LEVEL)
+            enc = True
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(out)))
+        if enc:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+        elif doc:
+            self.send_header("Vary", "Accept-Encoding")
+        if tag:
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
         self._secure_headers()
         if cookie:
-            # HttpOnly + SameSite=Lax: the browser holds it, JS never reads it
             self.send_header("Set-Cookie",
                              f"{_AUTH_COOKIE}={cookie}; Path=/; HttpOnly; SameSite=Lax")
         elif cookie == "":
             self.send_header("Set-Cookie",
                              f"{_AUTH_COOKIE}=; Path=/; Max-Age=0")
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(out)
+
+    def _send(self, obj: object, cookie: str | None = None) -> None:
+        body = json.dumps(obj).encode()
+        self._write_bytes(200, body, "application/json", cookie=cookie)
 
     def do_GET(self) -> None:
+        if self.path.startswith("/fab-logo/"):
+            # Public tiles for the landing strip (and any <img> that wants one).
+            # Served as real image bytes — not data URIs — so the HTML stays small
+            # and browsers can cache the PNGs across visits.
+            key = self.path[len("/fab-logo/"):].split("?", 1)[0]
+            if not re.fullmatch(r"[a-z0-9-]+", key):
+                self.send_response(404)
+                self._secure_headers()
+                self.end_headers()
+                return
+            try:
+                from ocdcircuit.fab import logo_bytes as _logo_bytes
+                raw, ctype = _logo_bytes(key)
+            except KeyError:
+                self.send_response(404)
+                self._secure_headers()
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control",
+                             "public, max-age=604800, immutable")
+            self._secure_headers()
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         if self.path == "/slots":
             # plugin-inventory surface: slot → [ids] (harness inventory shape)
             # left open as a readiness probe (no board or account data).
@@ -3703,12 +3787,7 @@ class H(http.server.BaseHTTPRequestHandler):
             # in a proxy, so `python -m apps.studio` is the whole setup.
             if user is None:
                 body = LOGIN_PAGE.replace("/*__FABS__*/", fab_strip()).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self._secure_headers()
-                self.end_headers()
-                self.wfile.write(body)
+                self._write_bytes(200, body, "text/html; charset=utf-8", doc=True)
                 return
             from urllib.parse import parse_qs, urlparse
             qs2 = parse_qs(urlparse(self.path).query)
@@ -3729,12 +3808,7 @@ class H(http.server.BaseHTTPRequestHandler):
             page = PAGE.replace("/*__TOOLBAR__*/", SLOTS.render("toolbar", None))
             page = page.replace("/*__VIEWS__*/", SLOTS.render("view", None))
             body = page.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self._secure_headers()
-            self.end_headers()
-            self.wfile.write(body)
+            self._write_bytes(200, body, "text/html; charset=utf-8", doc=True)
         finally:
             _REQ_USER.reset(_tok)
 

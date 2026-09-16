@@ -525,12 +525,15 @@ assert fab.get("oshpark")["min_drill"] == 0.508
 assert fab.get("jlc-flex")["layers"] == (1, 2, 4)
 assert fab.get("jlc-flex")["finishes"] == ("ENIG",)
 # every fab has a monogram fallback; logo() serves the vendor tile as a
-# PNG data URI when assets/fabs/ has one, else the inline-SVG monogram
+# PNG data URI when assets/fabs/ has one, else the inline-SVG monogram.
+# logo_bytes() is the same bytes without base64 (studio /fab-logo/ route).
 assert sorted(fab.MARKS) == fab.list_fabs(), (sorted(fab.MARKS), fab.list_fabs())
 _lpng = fab.logo("oshpark")
 assert _lpng.startswith("data:image/png;base64,"), _lpng[:40]
 import base64 as _b64l
 assert _b64l.b64decode(_lpng.split(",", 1)[1])[:8] == b"\x89PNG\r\n\x1a\n"
+_lb, _lt = fab.logo_bytes("oshpark")
+assert _lt == "image/png" and _lb[:8] == b"\x89PNG\r\n\x1a\n"
 try:
     fab.logo("nope")
     assert False, "logo must KeyError like get()"

@@ -135,19 +135,15 @@ SOURCES: dict[str, str] = {
 }
 
 
-def logo(key: str = DEFAULT) -> str:
-    """Fab logo as a data URI: the vendor tile from assets/fabs/ when we
-    have one, else the MARKS monogram rendered inline-SVG. Data URIs keep
-    the strip + quote rows dependency-free (no static route, no CDN).
-    KeyError on unknown fab, like get()."""
-    from urllib.parse import quote as _q
+def logo_bytes(key: str = DEFAULT) -> tuple[bytes, str]:
+    """Raw logo bytes + Content-Type. Vendor PNG from assets/fabs/ when
+    present, else the MARKS monogram as SVG. KeyError on unknown fab."""
     if key not in PROFILES:
         raise KeyError(f"unknown fab {key!r} (have {sorted(PROFILES)})")
     try:
         import importlib.resources as _res
         raw = _res.files("ocdcircuit.assets.fabs").joinpath(f"{key}.png").read_bytes()
-        import base64 as _b64
-        return "data:image/png;base64," + _b64.b64encode(raw).decode()
+        return raw, "image/png"
     except (FileNotFoundError, ModuleNotFoundError, OSError):
         pass
     initials, bg, fg = MARKS[key]
@@ -155,7 +151,19 @@ def logo(key: str = DEFAULT) -> str:
            f'<rect width="48" height="28" rx="6" fill="{bg}"/>'
            f'<text x="24" y="19" font-family="Arial,sans-serif" font-size="12"'
            f' font-weight="bold" text-anchor="middle" fill="{fg}">{initials}</text></svg>')
-    return "data:image/svg+xml," + _q(svg, safe="")
+    return svg.encode(), "image/svg+xml"
+
+
+def logo(key: str = DEFAULT) -> str:
+    """Fab logo as a data URI (quote rows embed inline). Landing strip uses
+    /fab-logo/<key> instead so the first HTML byte is not ~100 KB of tiles.
+    KeyError on unknown fab, like get()."""
+    from urllib.parse import quote as _q
+    import base64 as _b64
+    raw, ctype = logo_bytes(key)
+    if ctype == "image/png":
+        return "data:image/png;base64," + _b64.b64encode(raw).decode()
+    return "data:image/svg+xml," + _q(raw.decode(), safe="")
 
 
 def get(key: str = DEFAULT) -> FabProfile:

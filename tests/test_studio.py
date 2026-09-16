@@ -202,6 +202,41 @@ def main() -> None:
         _gate = urllib.request.urlopen(base + "/").read().decode()
         assert "Your whole team. One board." in _gate, _gate[:200]
         assert "id=herogo" in _gate and "id=ed" not in _gate, _gate[:200]
+        # wire bytes: landing HTML alone (fab logos are /fab-logo/*); gzip cuts
+        # transfer further. ETag + If-None-Match must 304 so a revalidate is
+        # not a full re-send.
+        import gzip as _gz
+        import http.client as _hc_gz
+        from urllib.parse import urlparse as _up_gz
+        _ug = _up_gz(base)
+        assert _ug.hostname
+        _cg = _hc_gz.HTTPConnection(_ug.hostname, _ug.port, timeout=30)
+        _cg.request("GET", "/", headers={"Accept-Encoding": "gzip"})
+        _rg = _cg.getresponse()
+        _gz_body = _rg.read()
+        assert _rg.getheader("Content-Encoding") == "gzip", _rg.getheaders()
+        assert _rg.getheader("Vary") == "Accept-Encoding", _rg.getheaders()
+        _etag = _rg.getheader("ETag")
+        assert _etag and _etag.startswith('"'), _etag
+        assert _rg.getheader("Cache-Control") == "no-cache"
+        _plain = _gz.decompress(_gz_body).decode()
+        assert "Your whole team. One board." in _plain
+        assert 'src="/fab-logo/' in _plain and "data:image" not in _plain, _plain[:400]
+        assert len(_plain) < 40_000, len(_plain)  # was ~120 KB with inlined tiles
+        assert len(_gz_body) < len(_plain) * 0.5, (len(_gz_body), len(_plain))
+        print(f"landing gzip: {len(_plain)} -> {len(_gz_body)} bytes")
+        _cg.request("GET", "/", headers={"If-None-Match": _etag,
+                                         "Accept-Encoding": "gzip"})
+        _r304 = _cg.getresponse()
+        _r304.read()
+        assert _r304.status == 304, (_r304.status, _r304.getheaders())
+        _cg.request("GET", "/fab-logo/oshpark")
+        _rlogo = _cg.getresponse()
+        _logo = _rlogo.read()
+        assert _rlogo.status == 200 and _rlogo.getheader("Content-Type") == "image/png"
+        assert "immutable" in (_rlogo.getheader("Cache-Control") or "")
+        assert _logo[:8] == b"\x89PNG\r\n\x1a\n", _logo[:16]
+        print(f"landing ETag 304 ok; fab-logo/oshpark={len(_logo)} B")
         _refused = post(base, "/build", {"text": "x"})
         assert _refused.get("login") is True, _refused
         _fs_deny = json.loads(urllib.request.urlopen(base + "/fs", timeout=5).read())
