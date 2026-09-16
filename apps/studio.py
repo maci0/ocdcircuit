@@ -26,6 +26,8 @@ import json
 import os
 import re
 import sys
+import tempfile
+import threading
 import time
 from collections.abc import Callable
 from typing import cast
@@ -2779,10 +2781,32 @@ _SESSIONS: dict[str, tuple[str, float]] = {}  # token -> (username, expires_mono
 _SESSIONS_MAX = 64  # in-memory cap; restart clears all
 _AUTH_HITS: dict[str, list[float]] = {}  # client key -> recent attempt times
 _AUTH_HITS_MAX = 1024  # bound spray: one idle key per IP must not grow forever
+# ThreadingHTTPServer: every request is its own thread. Sessions, rate-limit
+# buckets, and H.* board state are shared — one lock each, not the GIL.
+_AUTH_MU = threading.Lock()
 _MAX_BODY = 20_000_000  # POST body cap (base64 photo scans need headroom)
 _GIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{4,64}$")
 _REQ_USER: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "ocd_req_user", default=None)
+
+
+def _atomic_write(path: str, data: str) -> None:
+    """Write-to-temp, fsync, rename so a crash mid-write cannot leave a
+    half-written users file or board source."""
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".ocd-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf8") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _users_path() -> str:
@@ -2804,24 +2828,26 @@ def _auth_rate_ok(key: str, limit: int = 30, window: float = 60.0) -> bool:
     FIFO-evicts other keys, never the caller.
     """
     now = time.monotonic()
-    hits = _AUTH_HITS.setdefault(key, [])
-    hits[:] = [t for t in hits if now - t < window]
-    if len(hits) >= limit:
-        return False
-    hits.append(now)
-    while len(_AUTH_HITS) > _AUTH_HITS_MAX:
-        victim = next(iter(_AUTH_HITS))
-        if victim == key:
-            _AUTH_HITS[victim] = _AUTH_HITS.pop(victim)  # rotate to end
-            if next(iter(_AUTH_HITS)) == key:
-                break
-            continue
-        _AUTH_HITS.pop(victim, None)
-    return True
+    with _AUTH_MU:
+        hits = _AUTH_HITS.setdefault(key, [])
+        hits[:] = [t for t in hits if now - t < window]
+        if len(hits) >= limit:
+            return False
+        hits.append(now)
+        while len(_AUTH_HITS) > _AUTH_HITS_MAX:
+            victim = next(iter(_AUTH_HITS))
+            if victim == key:
+                _AUTH_HITS[victim] = _AUTH_HITS.pop(victim)  # rotate to end
+                if next(iter(_AUTH_HITS)) == key:
+                    break
+                continue
+            _AUTH_HITS.pop(victim, None)
+        return True
 
 
 def _purge_sessions(now: float | None = None) -> None:
-    """Drop expired tokens so they cannot steal slots from live sessions."""
+    """Drop expired tokens so they cannot steal slots from live sessions.
+    Caller must hold `_AUTH_MU`."""
     t = time.monotonic() if now is None else now
     for tok in [k for k, (_n, exp) in _SESSIONS.items() if t > exp]:
         _SESSIONS.pop(tok, None)
@@ -2856,23 +2882,23 @@ def _set_display(name: str, display: str) -> None:
     """Rewrite the user's line with a new display name (validated by caller)."""
     if not _ok_display(display):
         raise ValueError("display name can't contain control chars or ':'")
-    try:
-        lines = open(_users_path()).read().splitlines()
-    except OSError:
-        raise ValueError("no accounts yet")
-    out = []
-    found = False
-    for ln in lines:
-        parts = ln.split(":")
-        if parts and parts[0] == name and len(parts) >= 3:
-            out.append(":".join([parts[0], parts[1], parts[2], display]))
-            found = True
-        elif ln.strip():
-            out.append(ln)
-    if not found:
-        raise ValueError("no such account")
-    with open(_users_path(), "w", encoding="utf8") as f:
-        f.write("\n".join(out) + "\n")
+    with _AUTH_MU:
+        try:
+            lines = open(_users_path()).read().splitlines()
+        except OSError:
+            raise ValueError("no accounts yet")
+        out = []
+        found = False
+        for ln in lines:
+            parts = ln.split(":")
+            if parts and parts[0] == name and len(parts) >= 3:
+                out.append(":".join([parts[0], parts[1], parts[2], display]))
+                found = True
+            elif ln.strip():
+                out.append(ln)
+        if not found:
+            raise ValueError("no such account")
+        _atomic_write(_users_path(), "\n".join(out) + "\n")
 
 
 def _write_user(name: str, password: str) -> None:
@@ -2880,8 +2906,21 @@ def _write_user(name: str, password: str) -> None:
     import secrets
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
-    with open(_users_path(), "a", encoding="utf8") as f:
-        f.write(f"{name}:{salt.hex()}:{digest.hex()}\n")
+    line = f"{name}:{salt.hex()}:{digest.hex()}\n"
+    with _AUTH_MU:
+        path = _users_path()
+        try:
+            cur = open(path, encoding="utf8").read()
+        except OSError:
+            cur = ""
+        # Refuse a duplicate under the same lock that writes — two concurrent
+        # signups for the same name must not both land.
+        for ln in cur.splitlines():
+            if ln.split(":", 1)[0] == name:
+                raise ValueError(f"{name} exists — log in instead")
+        if cur and not cur.endswith("\n"):
+            cur += "\n"
+        _atomic_write(path, cur + line)
     # secrets must never be committed: keep them out of git on first signup
     try:
         gi = os.path.join(ROOT, ".gitignore")
@@ -2914,10 +2953,11 @@ def _new_session(name: str) -> str:
     import secrets
     tok = secrets.token_urlsafe(32)
     now = time.monotonic()
-    _purge_sessions(now)  # expired must not crowd out live logins
-    _SESSIONS[tok] = (name, now + _SESSION_TTL)
-    while len(_SESSIONS) > _SESSIONS_MAX:
-        _SESSIONS.pop(next(iter(_SESSIONS)))
+    with _AUTH_MU:
+        _purge_sessions(now)  # expired must not crowd out live logins
+        _SESSIONS[tok] = (name, now + _SESSION_TTL)
+        while len(_SESSIONS) > _SESSIONS_MAX:
+            _SESSIONS.pop(next(iter(_SESSIONS)))
     return tok
 
 
@@ -2926,16 +2966,17 @@ def _authed(headers: object) -> str | None:
     get = getattr(headers, "get", None)
     cookie = get("Cookie", "") if get else ""
     now = time.monotonic()
-    for chunk in str(cookie).split(";"):
-        k, _, v = chunk.strip().partition("=")
-        tok = v.strip()
-        if k.strip() != _AUTH_COOKIE or tok not in _SESSIONS:
-            continue
-        name, exp = _SESSIONS[tok]
-        if now > exp:
-            _SESSIONS.pop(tok, None)
-            return None
-        return name
+    with _AUTH_MU:
+        for chunk in str(cookie).split(";"):
+            k, _, v = chunk.strip().partition("=")
+            tok = v.strip()
+            if k.strip() != _AUTH_COOKIE or tok not in _SESSIONS:
+                continue
+            name, exp = _SESSIONS[tok]
+            if now > exp:
+                _SESSIONS.pop(tok, None)
+                return None
+            return name
     return None
 
 
@@ -3330,8 +3371,10 @@ def _kb_list() -> dict[str, object]:
     k = _kb()
     from ocdcircuit.kb import KB
     assert isinstance(k, KB)
+    with H._mu:
+        busy, log = H.kb_busy, list(H.kb_log)
     return {"dir": k.dir, "docs": k.docs(limit=KB_LIST_LIMIT), "total": k.count(),
-            "limit": KB_LIST_LIMIT, "busy": H.kb_busy, "log": list(H.kb_log)}
+            "limit": KB_LIST_LIMIT, "busy": busy, "log": log}
 
 
 def _kb_fetch_start() -> dict[str, object]:
@@ -3344,19 +3387,21 @@ def _kb_fetch_start() -> dict[str, object]:
     measured UI stalls of 0.45-0.64s per request while a worker thread parsed
     it, versus 1.5ms flat with the work in another process."""
     import subprocess
-    import threading
-    if H.kb_busy:
-        return {"started": False, "note": "already fetching", "log": list(H.kb_log)}
-    if not os.path.isfile(SRC):
-        return {"started": False, "error": f"no such board file: {SRC}"}
-    H.kb_busy = True
-    H.kb_log = ["fetching datasheets…"]
+    with H._mu:
+        if H.kb_busy:
+            return {"started": False, "note": "already fetching",
+                    "log": list(H.kb_log)}
+        if not os.path.isfile(SRC):
+            return {"started": False, "error": f"no such board file: {SRC}"}
+        H.kb_busy = True
+        H.kb_log = ["fetching datasheets…"]
+        src = SRC
 
     def work() -> None:
         try:
             # cwd/PYTHONPATH point at the checkout, not the board: ROOT is the
             # project the board lives in, which need not be this repo.
-            p = subprocess.Popen([sys.executable, "-m", "apps.ocd", "kb", "fetch", SRC],
+            p = subprocess.Popen([sys.executable, "-m", "apps.ocd", "kb", "fetch", src],
                                  cwd=HERE, env={**os.environ, "PYTHONPATH": HERE},
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, text=True)
@@ -3364,13 +3409,17 @@ def _kb_fetch_start() -> dict[str, object]:
             for line in p.stdout:  # the CLI's lines ARE the progress log
                 line = line.strip()
                 if line:
-                    H.kb_log.append(line)
-                    H.kb_log[:] = H.kb_log[-12:]
+                    with H._mu:
+                        H.kb_log.append(line)
+                        H.kb_log[:] = H.kb_log[-12:]
             code = p.wait()
-            H.kb_log.append(f"done — exit {code}")
+            with H._mu:
+                H.kb_log.append(f"done — exit {code}")
         except Exception as e:  # noqa: BLE001 — a worker thread must not die silent
-            H.kb_log.append(f"error: {e}")
-        H.kb_busy = False
+            with H._mu:
+                H.kb_log.append(f"error: {e}")
+        with H._mu:
+            H.kb_busy = False
 
     threading.Thread(target=work, daemon=True).start()
     return {"started": True, "note": "fetching datasheets — the list fills in as they land"}
@@ -3378,6 +3427,10 @@ def _kb_fetch_start() -> dict[str, object]:
 
 
 class H(http.server.BaseHTTPRequestHandler):
+    # One RLock for board buffer / hist / props / kb log. ThreadingHTTPServer
+    # runs each request on its own thread; compound updates (rev++, hist append,
+    # save) must not interleave. RLock: open_file → commit nests.
+    _mu = threading.RLock()
     src_text: str = ""
     # git-style text history: every good build commits; undo/redo check out.
     # text-level (not Context undo — each build parses fresh). Cap 100.
@@ -3414,20 +3467,21 @@ class H(http.server.BaseHTTPRequestHandler):
         ROOT — the project the browser and the agent may touch — stays put:
         it is the directory the studio was started in, and switching boards
         inside it (including to a sibling project) is the point."""
-        g = globals()
-        full = _abs(path, must_exist=True, near=BASE)
-        if os.path.splitext(full)[1].lower() != ".ocd":
-            raise ValueError(f"{path}: only .ocd boards can be opened")
-        g["SRC"] = full
-        g["BASE"] = os.path.dirname(full)
-        H.src_text = _read(os.path.relpath(full, ROOT))
-        H.save_target = SRC  # this text is this board's
-        H.hist = [H.src_text]
-        H.redo = []
-        H.chat = []
-        H.props = []
-        H.rev += 1  # a different board entirely
-        H.saved_text = ""  # force the next save; /poll compares against it
+        with H._mu:
+            g = globals()
+            full = _abs(path, must_exist=True, near=BASE)
+            if os.path.splitext(full)[1].lower() != ".ocd":
+                raise ValueError(f"{path}: only .ocd boards can be opened")
+            g["SRC"] = full
+            g["BASE"] = os.path.dirname(full)
+            H.src_text = _read(os.path.relpath(full, ROOT))
+            H.save_target = SRC  # this text is this board's
+            H.hist = [H.src_text]
+            H.redo = []
+            H.chat = []
+            H.props = []
+            H.rev += 1  # a different board entirely
+            H.saved_text = ""  # force the next save; /poll compares against it
 
     @staticmethod
     def _apply(path: str, text: str) -> dict[str, object]:
@@ -3543,14 +3597,17 @@ class H(http.server.BaseHTTPRequestHandler):
     def apply_one(pid: str) -> dict[str, object]:
         """Apply one queued proposal by id, refusing one made against an
         older revision of the open board (the text the model read is gone)."""
-        prop = next((p for p in H.props if str(p["id"]) == pid), None)
-        if prop is None:
-            return {"error": f"{pid}: no such proposal (ask again)"}
-        if int(cast(int, prop["rev"])) != H.rev:
-            return {"error": f"{pid}: the board changed since this proposal "
-                             "was made — ask again or apply it by hand"}
-        out = H._apply(str(prop["path"]), str(prop["text"]))
-        H.props = [p for p in H.props if str(p["id"]) != pid]
+        with H._mu:
+            prop = next((p for p in H.props if str(p["id"]) == pid), None)
+            if prop is None:
+                return {"error": f"{pid}: no such proposal (ask again)"}
+            if int(cast(int, prop["rev"])) != H.rev:
+                return {"error": f"{pid}: the board changed since this proposal "
+                                 "was made — ask again or apply it by hand"}
+            path, text = str(prop["path"]), str(prop["text"])
+        out = H._apply(path, text)
+        with H._mu:
+            H.props = [p for p in H.props if str(p["id"]) != pid]
         return out
 
     @staticmethod
@@ -3562,11 +3619,12 @@ class H(http.server.BaseHTTPRequestHandler):
 
     @staticmethod
     def commit(text: str) -> None:
-        if not H.hist or H.hist[-1] != text:
-            H.hist.append(text)
-            H.hist = H.hist[-100:]
-            H.rev += 1  # real text change: proposals against it are stale
-        H.redo.clear()
+        with H._mu:
+            if not H.hist or H.hist[-1] != text:
+                H.hist.append(text)
+                H.hist = H.hist[-100:]
+                H.rev += 1  # real text change: proposals against it are stale
+            H.redo.clear()
 
     # A save must never destroy a board. The studio holds one text buffer but
     # serves any board, and a /build carrying board B once wrote B over board A
@@ -3587,39 +3645,53 @@ class H(http.server.BaseHTTPRequestHandler):
         return os.path.relpath(SRC, ROOT)
 
     @staticmethod
-    def _room_adopt(key: str, text: str, by: str) -> tuple[int, str]:
+    def _room_adopt(key: str, text: str, by: str,
+                    rev: int | None = None) -> tuple[int, str, str]:
         """Server-built text (build/solve/undo/pick) lands in the room — but
         only for the open board's room: shelf opens just switch SRC, so a
-        stale response for another board must not broadcast into this one."""
+        stale response for another board must not broadcast into this one.
+        When `rev` is set, cas_set_text refuses a lost race after validate."""
         from ocdcircuit import collab as _collab
-        if key != os.path.relpath(SRC, ROOT):
-            return (_collab.get_room(key, text).rev, "other board")
-        H.src_text = text
-        return (_collab.get_room(key, H.src_text).set_text(text, by), "adopted")
+        with H._mu:
+            if key != os.path.relpath(SRC, ROOT):
+                snap = _collab.get_room(key, text).snapshot()
+                return (int(cast(int, snap["rev"])), "other board",
+                        str(snap["text"]))
+            if rev is None:
+                H.src_text = text
+                new_rev = _collab.get_room(key, H.src_text).set_text(text, by)
+                return (new_rev, "adopted", text)
+            room = _collab.get_room(key, H.src_text)
+            ok, new_rev, cur = room.cas_set_text(rev, text, by)
+            if not ok:
+                return (new_rev, "stale", cur)
+            H.src_text = text
+            return (new_rev, "adopted", text)
 
     @staticmethod
     def save() -> None:
         """Persist the .ocd source of truth to disk (edits are real)."""
-        text = H.src_text if H.src_text.endswith("\n") else H.src_text + "\n"
-        if H.save_target and os.path.abspath(H.save_target) != os.path.abspath(SRC):
-            print(f"studio: refusing to save to {SRC}: the buffer belongs to "
-                  f"{H.save_target}", file=sys.stderr)
-            return
-        try:
-            old = os.path.getsize(SRC)
-        except OSError:
-            old = 0
-        if old and len(text) < old * H.SHRINK:
-            print(f"studio: refusing to write {len(text)} bytes over {old} bytes "
-                  f"at {SRC} (wrong board?)", file=sys.stderr)
-            return
-        try:
-            with open(SRC, "w") as f:
-                f.write(text)
-            H.saved_text = H.src_text
-            H.save_target = SRC
-        except OSError as e:
-            print(f"studio: save failed: {e}", file=sys.stderr)
+        with H._mu:
+            text = H.src_text if H.src_text.endswith("\n") else H.src_text + "\n"
+            if H.save_target and os.path.abspath(H.save_target) != os.path.abspath(SRC):
+                print(f"studio: refusing to save to {SRC}: the buffer belongs to "
+                      f"{H.save_target}", file=sys.stderr)
+                return
+            path = SRC
+            try:
+                old = os.path.getsize(path)
+            except OSError:
+                old = 0
+            if old and len(text) < old * H.SHRINK:
+                print(f"studio: refusing to write {len(text)} bytes over {old} bytes "
+                      f"at {path} (wrong board?)", file=sys.stderr)
+                return
+            try:
+                _atomic_write(path, text)
+                H.saved_text = H.src_text
+                H.save_target = path
+            except OSError as e:
+                print(f"studio: save failed: {e}", file=sys.stderr)
 
     def _secure_headers(self) -> None:
         """Baseline browser hardening; CSP is frame-ancestors only so the
@@ -3917,7 +3989,11 @@ class H(http.server.BaseHTTPRequestHandler):
                 else:
                     # multi-user: every signup gets its own shelf (.users/<name>/);
                     # the "one studio, one owner" rule died with realtime collab.
-                    _write_user(name, password)
+                    try:
+                        _write_user(name, password)
+                    except ValueError as e:
+                        self._send({"error": str(e)})
+                        return
                     self._send({"ok": True, "user": name}, cookie=_new_session(name))
             elif self.path == "/auth/login":
                 if not _auth_rate_ok(_client_key(self)):
@@ -3930,10 +4006,11 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"ok": True, "user": name}, cookie=_new_session(name))
             elif self.path == "/auth/logout":
                 get = getattr(self.headers, "get", None)
-                for chunk in str(get("Cookie", "") if get else "").split(";"):
-                    k, _, v = chunk.strip().partition("=")
-                    if k.strip() == _AUTH_COOKIE:
-                        _SESSIONS.pop(v.strip(), None)
+                with _AUTH_MU:
+                    for chunk in str(get("Cookie", "") if get else "").split(";"):
+                        k, _, v = chunk.strip().partition("=")
+                        if k.strip() == _AUTH_COOKIE:
+                            _SESSIONS.pop(v.strip(), None)
                 self._send({"ok": True}, cookie="")
             elif self.path == "/auth/me":
                 disp = _read_users().get(user, ("", "", user))[2] if user else None
@@ -4008,9 +4085,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 assert user is not None  # gated above
                 key = H._room_key()
                 room = _collab.get_room(key, H.src_text)
-                snap = room.snapshot()
+                snap = room.snapshot()  # rev+by+text+users under one lock
                 assert isinstance(snap, dict)
-                self._send({"board": key, "text": room.text, **snap})
+                self._send({"board": key, **snap})
             elif self.path == "/collab/push":
                 # realtime edit at a rev: match -> accept + rebuild the room
                 # text (everyone converges); mismatch -> stale + current rev.
@@ -4024,27 +4101,36 @@ class H(http.server.BaseHTTPRequestHandler):
                                 f"{key} — edit again"})
                     return
                 rev = _i(req.get("rev"), -1)
-                text = str(req.get("text", room.text))
+                snap0 = room.snapshot()
+                text = str(req.get("text", snap0["text"]))
+                # Cheap pre-check: skip a doomed build. The real fence is
+                # cas_set_text after validate (two claim-passers cannot both adopt).
                 if not room.claim(rev):
-                    # someone else edited first: their text wins, ours stays
-                    # in the client's keystroke buffer (same banner pattern
-                    # as the file-watch — adopt, never auto-merge).
-                    self._send({"stale": True, "rev": room.rev, "text": room.text,
+                    snap_s = room.snapshot()
+                    self._send({"stale": True, "rev": snap_s["rev"],
+                                "text": snap_s["text"],
                                 "error": "someone else edited first — reloaded theirs"})
                     return
                 try:
                     st = self._build(text, False, req)
                 except (ValueError, KeyError, AssertionError) as e:
-                    # unparseable push: nothing adopted (the room's claim
-                    # above changed no state — validate, then adopt).
+                    # unparseable push: nothing adopted (claim changed no
+                    # state — validate, then cas-adopt).
+                    snap_e = room.snapshot()
                     self._send({"error": f"{type(e).__name__}: {e}",
-                                "rev": room.rev, "text": room.text})
+                                "rev": snap_e["rev"], "text": snap_e["text"]})
                     return
-                H._room_adopt(key, str(st["text"]), user)
-                H.save_target = SRC
-                H.commit(H.src_text)
-                H.save()
-                st["rev"] = _collab.get_room(key, H.src_text).rev
+                new_rev, how, cur = H._room_adopt(
+                    key, str(st["text"]), user, rev=rev)
+                if how == "stale":
+                    self._send({"stale": True, "rev": new_rev, "text": cur,
+                                "error": "someone else edited first — reloaded theirs"})
+                    return
+                with H._mu:
+                    H.save_target = SRC
+                    H.commit(H.src_text)
+                    H.save()
+                st["rev"] = new_rev
                 self._send(st)
             elif self.path == "/collab/cursor":
                 # presence heartbeat: x/y/ref + prune the timed-out, no timer.
@@ -4062,12 +4148,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 key = H._room_key()
                 room = _collab.get_room(key, H.src_text)
                 rev = _i(req.get("rev"), -1)
-                if rev != room.rev:
-                    self._send({"stale": True, "rev": room.rev,
-                                "text": room.text,
+                snap0 = room.snapshot()
+                if rev != int(cast(int, snap0["rev"])):
+                    self._send({"stale": True, "rev": snap0["rev"],
+                                "text": snap0["text"],
                                 "error": "someone else edited first — reloaded theirs"})
                     return
-                b = agent.loads(room.text, base=BASE)
+                b = agent.loads(str(snap0["text"]), base=BASE)
                 op = req.get("op", {})
                 assert isinstance(op, dict)
                 try:
@@ -4075,14 +4162,21 @@ class H(http.server.BaseHTTPRequestHandler):
                     text = agent.dumps(b)
                     st = self._build(text, False, req)
                 except (ValueError, KeyError, AssertionError) as e:
+                    snap_e = room.snapshot()
                     self._send({"error": f"{type(e).__name__}: {e}",
-                                "rev": room.rev, "text": room.text})
+                                "rev": snap_e["rev"], "text": snap_e["text"]})
                     return
-                H._room_adopt(key, str(st["text"]), user)
-                H.save_target = SRC
-                H.commit(H.src_text)
-                H.save()
-                st["rev"] = _collab.get_room(key, H.src_text).rev
+                new_rev, how, cur = H._room_adopt(
+                    key, str(st["text"]), user, rev=rev)
+                if how == "stale":
+                    self._send({"stale": True, "rev": new_rev, "text": cur,
+                                "error": "someone else edited first — reloaded theirs"})
+                    return
+                with H._mu:
+                    H.save_target = SRC
+                    H.commit(H.src_text)
+                    H.save()
+                st["rev"] = new_rev
                 st["applied"] = res.get("applied", 0)
                 self._send(st)
             elif self.path == "/load":
@@ -4093,23 +4187,29 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/reload":
                 # file-watch: adopt external edits (client asks only when
                 # clean, or the user confirmed the banner).
-                H.src_text = H._disk() or H.src_text
-                H.commit(H.src_text)
-                H.saved_text = H.src_text
-                self._send(self._build(H.src_text, True))
+                with H._mu:
+                    H.src_text = H._disk() or H.src_text
+                    H.commit(H.src_text)
+                    H.saved_text = H.src_text
+                    text = H.src_text
+                self._send(self._build(text, True))
             elif self.path == "/build":
-                text = str(req.get("text", H.src_text))
+                with H._mu:
+                    cur = H.src_text
+                    src_rel = os.path.relpath(SRC, ROOT)
+                text = str(req.get("text", cur))
                 want = req.get("src")
-                if isinstance(want, str) and want and want != os.path.relpath(SRC, ROOT):
+                if isinstance(want, str) and want and want != src_rel:
                     # the browser was editing a different board when this
                     # keystroke was captured: drop it, the caller re-reads
                     self._send({"stale": True, "error": f"board changed to "
-                                f"{os.path.relpath(SRC, ROOT)} — edit again"})
+                                f"{src_rel} — edit again"})
                     return
                 st = self._build(text, False, req)
-                H.src_text = str(st["text"])  # only keep good builds
-                H.save_target = SRC
-                H.commit(H.src_text)
+                with H._mu:
+                    H.src_text = str(st["text"])  # only keep good builds
+                    H.save_target = SRC
+                    H.commit(H.src_text)
                 # The client builds the board it has open; if the text was not
                 # from SRC at all (a stale tab, a pasted board), do not write it
                 # over the file on disk.
@@ -4119,14 +4219,18 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.src_text, _authed(self.headers) or "build")
                 self._send(st)
             elif self.path == "/solve":
-                st = self._build(H.src_text, True, req)
-                H.src_text = str(st["text"])
-                H.save_target = SRC
-                H.commit(H.src_text)
-                H.save()
+                with H._mu:
+                    src_text = H.src_text
+                st = self._build(src_text, True, req)
+                with H._mu:
+                    H.src_text = str(st["text"])
+                    H.save_target = SRC
+                    H.commit(H.src_text)
+                    H.save()
+                    adopted = H.src_text
                 from ocdcircuit import collab as _collab_s
-                st["rev"] = _collab_s.get_room(H._room_key(), H.src_text).set_text(
-                    H.src_text, _authed(self.headers) or "solve")
+                st["rev"] = _collab_s.get_room(H._room_key(), adopted).set_text(
+                    adopted, _authed(self.headers) or "solve")
                 self._send(st)
             elif self.path == "/candidates":
                 from ocdcircuit import solver as _solver
@@ -4725,8 +4829,8 @@ def main() -> None:
         port = 8077
     # Threading: one SSE stream per collaborator blocks its handler for
     # minutes — on a single-threaded server the second user could never even
-    # log in while the first one's stream was open. Threads share H/rooms
-    # (the GIL + the room lock serialize them); the build path is ~14ms.
+    # log in while the first one's stream was open. Threads share H/rooms;
+    # H._mu + _AUTH_MU + Room._mu serialize the shared state (the GIL does not).
     # ponytail: stdlib ThreadingHTTPServer, no new dep, no refactor.
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
     srv.daemon_threads = True

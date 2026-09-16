@@ -108,8 +108,9 @@ class CDP:
 
     def call(self, method: str, params: dict[str, object] | None = None,
              timeout: float = 90.0) -> dict[str, object]:
-        self.oid += 1
-        oid = self.oid
+        with self.lock:
+            self.oid += 1
+            oid = self.oid
         data = json.dumps({"id": oid, "method": method, "params": params or {}}).encode()
         mask = b"\xab\xcd\xef\x01"
         n = len(data)

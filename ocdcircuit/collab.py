@@ -58,8 +58,9 @@ class Room:
             self._members[name] = {"name": name, "color": color,
                                    "x": 0.0, "y": 0.0, "ref": "",
                                    "t": time.monotonic()}
-        self._broadcast({"rev": self.rev, "join": name,
-                         "users": self._users()})
+            rev = self.rev
+            users = self._users()
+        self._broadcast({"rev": rev, "join": name, "users": users})
         armed = {"on": True}
 
         def _leave() -> None:
@@ -68,8 +69,10 @@ class Room:
             armed["on"] = False
             with self._mu:
                 self._members.pop(name, None)
-            self._broadcast({"rev": self.rev, "leave": name,
-                             "users": self._users()})
+                rev_now = self.rev
+                users_now = self._users()
+            self._broadcast({"rev": rev_now, "leave": name,
+                             "users": users_now})
 
         return _leave
 
@@ -91,16 +94,16 @@ class Room:
                 del self._members[n]
             users = self._users()
             rev = self.rev
+            color = str(m.get("color"))
         if stale:
             self._broadcast({"rev": rev, "prune": stale, "users": users})
-        return {"rev": rev, "color": str(self._members[name].get("color")),
-                "users": users}
+        return {"rev": rev, "color": color, "users": users}
 
     def claim(self, rev: int) -> bool:
         """Atomic rev check with no state change: True when the caller may
-        build at this rev. The caller adopts via set_text after the build —
-        so an unparseable push never lands in the room (validate, then adopt).
-        One bump per push, not two."""
+        build at this rev. Prefer cas_set_text after the build — claim alone
+        races when two threads both pass then both adopt. Kept for callers
+        that only need a cheap pre-check before expensive work."""
         with self._mu:
             return rev == self.rev
 
@@ -133,6 +136,26 @@ class Room:
         self._broadcast({"rev": rev_now, "by": by, "users": users})
         return rev_now
 
+    def cas_set_text(self, rev: int, text: str, by: str
+                     ) -> tuple[bool, int, str]:
+        """Validate-then-adopt without the claim race: adopt only if `rev`
+        still matches. Returns (ok, current_rev, current_text). Two builders
+        that both passed claim at the same rev: one wins, the other gets
+        stale + the winner's text."""
+        with self._mu:
+            if rev != self.rev:
+                return (False, self.rev, self.text)
+            if text == self.text:
+                return (True, self.rev, self.text)
+            self.text = text
+            self.by = by
+            self.rev += 1
+            rev_now = self.rev
+            users = self._users()
+            cur = self.text
+        self._broadcast({"rev": rev_now, "by": by, "users": users})
+        return (True, rev_now, cur)
+
     def subscribe(self) -> tuple[queue.Queue[dict[str, object]],
                                  Callable[[], None]]:
         """One SSE stream: the queue gets every broadcast; the disposer
@@ -153,8 +176,11 @@ class Room:
         return (q, _unsub)
 
     def snapshot(self) -> dict[str, object]:
+        """Consistent {rev, by, text, users} under one lock — callers must
+        not re-read .text/.rev unlocked beside this (torn across a push)."""
         with self._mu:
-            return {"rev": self.rev, "by": self.by, "users": self._users()}
+            return {"rev": self.rev, "by": self.by, "text": self.text,
+                    "users": self._users()}
 
     def _free_color(self, name: str) -> str:
         """First palette slot nobody holds; past 12 users the hash picks a
@@ -193,15 +219,22 @@ def get_room(key: str, text: str) -> Room:
     """The room for a board file (created once, seeded with its text).
     Empty rooms (no members, no subscribers) are dropped on access: a
     session with nobody in it holds no presence worth keeping, and an
-    unbounded _ROOMS across hundreds of opened boards is a leak."""
+    unbounded _ROOMS across hundreds of opened boards is a leak.
+
+    Emptiness is checked under each room's lock while holding `_MU` (lock
+    order: `_MU` then `room._mu` — Room methods never take `_MU`)."""
     with _MU:
         room = _ROOMS.get(key)
         if room is None:
             room = Room(key, text)
             _ROOMS[key] = room
-        for k in [k for k, r in _ROOMS.items()
-                  if k != key and not r._members and not r._subs]:
-            _ROOMS.pop(k, None)
+        for k, r in list(_ROOMS.items()):
+            if k == key:
+                continue
+            with r._mu:
+                empty = not r._members and not r._subs
+            if empty:
+                _ROOMS.pop(k, None)
         return room
 
 
@@ -245,7 +278,8 @@ if __name__ == "__main__":
     assert not ok2 and rev2 == 1
     # heartbeat prunes the timed-out without a timer thread
     r.heartbeat("alice", x=3.0, y=5.0, ref="R1")
-    r._members["bob"]["t"] = time.monotonic() - HEARTBEAT_TIMEOUT - 1
+    with r._mu:
+        r._members["bob"]["t"] = time.monotonic() - HEARTBEAT_TIMEOUT - 1
     users = cast(list[dict[str, object]], r.heartbeat("alice")["users"])
     assert [str(u["name"]) for u in users] == ["alice"]
     # inverses run once: leave/unsub/drop are idempotent
@@ -259,4 +293,23 @@ if __name__ == "__main__":
     assert r.snapshot()["users"] == []
     drop_room("demo")
     assert get_room("demo", "x").rev == 0  # fresh after unload
+
+    # concurrent cas_set_text: exactly one of N racers at rev 0 adopts
+    r2 = get_room("race", "base\n")
+    wins: list[str] = []
+    barrier = threading.Barrier(8)
+
+    def _race(i: int) -> None:
+        barrier.wait()
+        ok_r, _rev_r, _txt = r2.cas_set_text(0, f"base\n# {i}\n", f"u{i}")
+        if ok_r:
+            wins.append(f"u{i}")
+
+    threads = [threading.Thread(target=_race, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(wins) == 1 and r2.rev == 1, (wins, r2.rev)
+    drop_room("race")
     print("COLLAB OK")
