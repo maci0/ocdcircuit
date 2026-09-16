@@ -233,6 +233,45 @@ def main() -> None:
         _idor_ok = post(base, "/fs/read",
                         {"path": ".users/tester/private-board.ocd"})
         assert "text" in _idor_ok, _idor_ok  # owner (tester jar) can still read
+        # open the private shelf board as tester (process-global SRC switches).
+        # A second authed peer must not /init, /export, /collab/sync, or /poll it.
+        _open_priv = get(base, "/?board=private-board").decode()
+        assert "id=ed" in _open_priv, _open_priv[:200]
+        _peer_init = post(base, "/init", {}, cookie=_ck_second)
+        assert "error" in _peer_init and "shelf" in str(
+            _peer_init["error"]).lower(), _peer_init
+        _peer_sync = post(base, "/collab/sync", {}, cookie=_ck_second)
+        assert "error" in _peer_sync and "shelf" in str(
+            _peer_sync["error"]).lower(), _peer_sync
+        _peer_exp = post(base, "/export", {}, cookie=_ck_second)
+        assert "error" in _peer_exp and "shelf" in str(
+            _peer_exp["error"]).lower(), _peer_exp
+        import http.client as _hc_poll
+        _cpoll = _hc_poll.HTTPConnection(_uid.hostname, _uid.port, timeout=30)
+        _cpoll.request("GET", "/poll", headers={"Cookie": _ck_second})
+        _rpoll = _cpoll.getresponse()
+        _peer_poll = json.loads(_rpoll.read())
+        assert "error" in _peer_poll and "shelf" in str(
+            _peer_poll["error"]).lower(), _peer_poll
+        # owner still reaches the open private board
+        _own_init = post(base, "/init", {})
+        assert "error" not in _own_init, _own_init
+        # peer can still switch SRC onto a shared launch board and work there
+        _peer_open = post(base, "/fs/open", {"path": "blinky_555.ocd"},
+                          cookie=_ck_second)
+        assert "error" not in _peer_open, _peer_open
+        _peer_ok = post(base, "/init", {}, cookie=_ck_second)
+        assert "error" not in _peer_ok, _peer_ok
+        # kb/add must not copy another shelf board via a raw path (open board
+        # is shared now, so this hits _abs — not the open-board guard)
+        _kb_steal = post(base, "/kb/add",
+                         {"src": ".users/tester/private-board.ocd"},
+                         cookie=_ck_second)
+        assert "error" in _kb_steal and "shelf" in str(
+            _kb_steal["error"]).lower(), _kb_steal
+        # restore tester onto the launch board for the rest of the suite
+        _back = post(base, "/fs/open", {"path": "blinky_555.ocd"})
+        assert "error" not in _back, _back
         _in = get(base, "/").decode()
         assert "id=ed" in _in, _in[:200]
         assert "id=importfile" in _in and "id=importstat" in _in, "import picker missing"

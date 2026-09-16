@@ -2830,6 +2830,45 @@ def _user_dir(name: str) -> str:
     return d
 
 
+def _shelf_owner(as_rel: str) -> str | None:
+    """If `as_rel` is under `.users/<name>/…`, return that name; else None."""
+    rel = as_rel.replace("\\", "/")
+    if rel == ".users" or rel.startswith(".users/"):
+        parts = rel.split("/")
+        return parts[1] if len(parts) > 1 and parts[1] else ""
+    return None
+
+
+def _ensure_shelf_rel(as_rel: str, label: str | None = None) -> None:
+    """Raise if `as_rel` (ROOT-relative) is another account's private shelf."""
+    owner = _shelf_owner(as_rel)
+    if owner is None:
+        return
+    who = _REQ_USER.get()
+    if not who or owner != who:
+        raise ValueError(f"{label or as_rel}: outside your shelf")
+
+
+def _ensure_open_board() -> None:
+    """Refuse using the process-global SRC when it sits on another shelf.
+
+    Studio keeps one open board (SRC/BASE) for the process: collab on a
+    launch/template board is shared on purpose, but a `/?board=` shelf open
+    must not let the next authed peer /init, /export, or /collab/* that file.
+    """
+    root = os.path.realpath(ROOT)
+    rp = os.path.realpath(SRC)
+    if rp != root and not rp.startswith(root + os.sep):
+        return
+    as_rel = os.path.relpath(rp, root).replace(os.sep, "/")
+    _ensure_shelf_rel(as_rel)
+
+
+def _shelf_meta_path(path: str) -> bool:
+    """Auth + shelf listing/create: do not require access to the open board."""
+    return path.startswith("/auth/") or path == "/shelf" or path.startswith("/shelf/")
+
+
 STARTER_OCD = """board {name} 40x30
 part R1 R0805 10k
 part C1 C0805 100n
@@ -2934,6 +2973,7 @@ def _abs(path: object, *, must_exist: bool = False, near: str | None = None) -> 
     seen: set[str] = set()
     inside = None
     blocked = False
+    shelf_blocked = False
     for s in seeds:
         base = os.path.realpath(s)
         if base in seen or not os.path.isdir(base):
@@ -2947,14 +2987,20 @@ def _abs(path: object, *, must_exist: bool = False, near: str | None = None) -> 
         as_rel = os.path.relpath(rp, root).replace(os.sep, "/")
         if as_rel == _USERS_FILE or as_rel.startswith(_USERS_FILE + "/"):
             raise ValueError(f"{rel}: outside the project root")
-        if as_rel == ".users" or as_rel.startswith(".users/"):
+        owner = _shelf_owner(as_rel)
+        if owner is not None:
             who = _REQ_USER.get()
-            own = f".users/{who}" if who else ""
-            if not own or not (as_rel == own or as_rel.startswith(own + "/")):
-                raise ValueError(f"{rel}: outside your shelf")
+            if not who or owner != who:
+                # wrong shelf for this seed (often: open board is under
+                # .users/alice/ so bare names tried there first) — keep looking
+                # under START_DIR/ROOT instead of hard-failing the request.
+                shelf_blocked = True
+                continue
         inside = rp
         if not must_exist or os.path.exists(rp):
             return rp
+    if inside is None and shelf_blocked and not blocked:
+        raise ValueError(f"{rel}: outside your shelf")
     if inside is None and blocked:
         raise ValueError(f"{rel}: outside the project root")
     raise ValueError(f"{rel}: no such file")
@@ -3498,6 +3544,11 @@ class H(http.server.BaseHTTPRequestHandler):
                 if user is None:
                     self._send({"error": "log in first", "login": True})
                     return
+                try:
+                    _ensure_open_board()
+                except ValueError as e:
+                    self._send({"error": str(e)})
+                    return
                 import hashlib
                 disk = H._disk()
                 self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
@@ -3515,8 +3566,21 @@ class H(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 from ocdcircuit import collab as _collab
-                key = H._room_key(dict(parse_qs(urlparse(self.path).query)))
-                room = _collab.get_room(key, H.src_text)
+                try:
+                    key = H._room_key(dict(parse_qs(urlparse(self.path).query)))
+                    key_n = key.replace("\\", "/")
+                    _ensure_shelf_rel(key_n)
+                    src_rel = os.path.relpath(SRC, ROOT).replace(os.sep, "/")
+                    # seed only from the open buffer when this IS the open board;
+                    # a ?board= join must not pour another user's buffer into a
+                    # newly created public room.
+                    seed = H.src_text if key_n == src_rel else _read(key_n)
+                except ValueError:
+                    self.send_response(403)
+                    self._secure_headers()
+                    self.end_headers()
+                    return
+                room = _collab.get_room(key, seed)
                 stream, unsub = room.subscribe()
                 leave = room.join(user)
                 try:
@@ -3560,6 +3624,10 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": "log in first", "login": True})
                     return
                 try:
+                    # src/base in the reply name the open board — refuse when that
+                    # board is another user's shelf (tree of a public dir alone
+                    # would still leak the private path).
+                    _ensure_open_board()
                     from urllib.parse import parse_qs, urlparse
                     qs = parse_qs(urlparse(self.path).query)
                     base = os.path.relpath(BASE, ROOT).replace(os.sep, "/")
@@ -3644,6 +3712,16 @@ class H(http.server.BaseHTTPRequestHandler):
             elif user is None:
                 self._send({"error": "log in first", "login": True})
                 return
+            elif not _shelf_meta_path(self.path) and self.path not in (
+                    "/fs/open", "/fs/read"):
+                # fs/open+read take an explicit path through _abs (shelf-checked).
+                # Every other board route uses process-global SRC — guard it so a
+                # peer cannot ride someone else's /?board= shelf open.
+                try:
+                    _ensure_open_board()
+                except ValueError as e:
+                    self._send({"error": str(e)})
+                    return
             if self.path == "/auth/signup":
                 if not _auth_rate_ok(_client_key(self)):
                     self._send({"error": "too many tries — wait a minute"})
@@ -4186,11 +4264,23 @@ class H(http.server.BaseHTTPRequestHandler):
                     if scheme in ("http", "https"):
                         pass  # kb.add enforces https on download
                     elif src:
-                        # local path: only files inside the project root
-                        rp = os.path.realpath(src)
-                        root = os.path.realpath(ROOT)
-                        if rp != root and not rp.startswith(root + os.sep):
-                            raise ValueError(f"{src}: outside the project root")
+                        # local path: absolute stays absolute (realpath + root/
+                        # shelf check); relative goes through _abs. Never feed
+                        # an abs path to _rel — it lstrips "/" and mis-joins.
+                        if os.path.isabs(src):
+                            rp = os.path.realpath(src)
+                            root = os.path.realpath(ROOT)
+                            if rp != root and not rp.startswith(root + os.sep):
+                                raise ValueError(
+                                    f"{src}: outside the project root")
+                            as_rel = os.path.relpath(rp, root).replace(
+                                os.sep, "/")
+                            _ensure_shelf_rel(as_rel, src)
+                            if not os.path.isfile(rp):
+                                raise ValueError(f"{src}: no such file")
+                            src = rp
+                        else:
+                            src = _abs(src, must_exist=True, near=BASE)
                     self._send(kb.add(src))
                 except (ValueError, OSError) as e:
                     self._send({"error": f"ValueError: {e}"})
