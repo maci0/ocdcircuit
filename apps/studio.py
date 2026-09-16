@@ -3354,9 +3354,14 @@ def _board_digest() -> str:
                       for r, p in sorted(b.parts.items()))
     nets = "; ".join(f"{n}: " + " ".join(f"{r}.{pin}" for r, pin in net.pins)
                      for n, net in sorted(b.nets.items()))
+    # a 5k-part board digest can eat the whole context window by itself
+    def _trim(label: str, s: str, n: int = 12_000) -> str:
+        if len(s) <= n:
+            return s
+        return s[:n] + f" … ({label} truncated, {len(s) - n} more chars)"
     return (f"open file: {os.path.relpath(SRC, ROOT)}  "
             f"board {b.name} {b.width:g}x{b.height:g} {b.layers}L\n"
-            f"parts: {parts}\nnets: {nets}")
+            f"parts: {_trim('parts', parts)}\nnets: {_trim('nets', nets)}")
 
 
 # --- knowledgebase: kb/ beside the board, shared with the agent over MCP ---

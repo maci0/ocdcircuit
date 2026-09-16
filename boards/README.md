@@ -40,9 +40,11 @@ recalls the passages that answer it — embeddings (`ocd kb index`, cached in
 `kb/.cache/vec__*.json`, model from `OCD_LLM_EMBED`, default
 `nomic-embed-text` on the `OCD_LLM_BASE` endpoint) with automatic fallback to
 term matching when no model is reachable, so it answers on a bare machine too.
-Add `--answer` (CLI) or `answer: true` (MCP) to have the local model write the
-answer from those passages only. Studio has the same panel: ask/search,
-`add` a URL or path, `fetch datasheets`, click a doc to read it.
+Chat completions send `max_tokens` from `OCD_LLM_MAX_TOKENS` (default 8192;
+set `0` to omit). Add `--answer` (CLI) or `answer: true` (MCP) to have the
+local model write the answer from those passages only. Studio has the same
+panel: ask/search, `add` a URL or path, `fetch datasheets`, click a doc to
+read it.
 
 One rule, no exceptions: `kb/` sits next to the `.ocd`. So `boards/mitox/`
 keeps its own `kb/`, while the loose demos (`boards/blinky_555.ocd`,
