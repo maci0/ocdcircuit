@@ -220,6 +220,7 @@ def _nn_gaps(parts: list[Part]) -> list[float]:
         i1 = min(n, i0 + step)
         d = np.sqrt((xs[i0:i1, None] - xs[None, :]) ** 2
                     + (ys[i0:i1, None] - ys[None, :]) ** 2)
+        d[np.arange(i1 - i0), np.arange(i0, i1)] = np.inf  # self
         out[i0:i1] = d.min(1)
     return [float(v) for v in out]
 

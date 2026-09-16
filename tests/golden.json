@@ -1,28 +1,28 @@
 {
  "blinky_555.ocd/compact/maze/2L": {
-  "hash": "6f0c3733aba26e82",
+  "hash": "07c5f315acef7718",
   "parts": 10,
   "segs": 103
  },
  "blinky_555.ocd/compact/maze/4L": {
-  "hash": "8311e26962c7a1ac",
+  "hash": "ca9a90d5784cb13a",
   "parts": 10,
   "segs": 103
  },
  "blinky_555.ocd/compact/maze/8L": {
-  "hash": "8311e26962c7a1ac",
+  "hash": "ca9a90d5784cb13a",
   "parts": 10,
   "segs": 103
  },
  "blinky_555.ocd/diffusion/lroute/2L": {
-  "hash": "2c4aa24e499c3cea",
+  "hash": "246a3a90a4032ad7",
   "parts": 10,
   "segs": 38
  },
  "blinky_555.ocd/diffusion/maze/1L": {
-  "hash": "b749f8c7b5582611",
+  "hash": "391ffaf41b980c7d",
   "parts": 10,
-  "segs": 110
+  "segs": 85
  },
  "bme690_carrier.ocd/diffusion/maze/2L": {
   "hash": "9fbc132ad4ba6b1f",

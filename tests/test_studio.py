@@ -15,6 +15,7 @@ import tempfile
 import time
 import urllib.request
 import zlib
+from typing import cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -230,8 +231,8 @@ def main() -> None:
         print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
         assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh
-        assert isinstance(_sh.get("templates"), list)
-        assert any(t.get("name") == "blinky_555.ocd" for t in _sh["templates"]), _sh
+        _templates = cast(list[dict[str, object]], _sh.get("templates"))
+        assert any(t.get("name") == "blinky_555.ocd" for t in _templates), _sh
         _nb = post(base, "/shelf/new", {"name": "hello"})
         assert not _nb.get("error"), _nb
         _boards = _nb.get("boards")
@@ -248,7 +249,7 @@ def main() -> None:
         assert "error" in _bad, _bad
         import base64 as _b64
         _imp = post(base, "/fs/import", {"name": "x.exe", "data": _b64.b64encode(b"hi").decode()})
-        assert "error" in _imp and "import wants" in _imp["error"], _imp
+        assert "error" in _imp and "import wants" in str(_imp["error"]), _imp
         _trav = post(base, "/fs/import", {"name": "../../x.fp", "data": _b64.b64encode(b"hi").decode()})
         assert "error" in _trav, _trav  # never writes outside fp/
         _lp = urllib.request.urlopen(base + "/").read().decode()  # logged out → landing
@@ -262,7 +263,8 @@ def main() -> None:
         _t2 = post(base, "/shelf/from_template", {"name": "psu.ocd"})
         assert not _t2.get("error"), _t2
         _np = post(base, "/shelf/new", {"name": "modal blank"})
-        assert any(b.get("name") == "modal-blank.ocd" for b in _np["boards"]), _np
+        _np_boards = cast(list[dict[str, object]], _np["boards"])
+        assert any(b.get("name") == "modal-blank.ocd" for b in _np_boards), _np
         _lo = post(base, "/auth/logout", {})
         assert _lo.get("ok") is True, _lo
         _JAR.pop(base, None)
@@ -308,7 +310,6 @@ def main() -> None:
         dt = time.time() - t
         assert not d.get("error"), d.get("error")
         assert dt < BUILD_BUDGET, f"quick build {dt:.2f}s over {BUILD_BUDGET}s"
-        from typing import cast
         parts = cast(dict[str, object], d["parts"])
         score = cast(dict[str, object], d["score"])
         lint = cast(dict[str, object], d["lint"])
@@ -699,10 +700,13 @@ def main() -> None:
                        {"when": "placing connectors", "text": "board edge"})
             assert not kpa.get("error"), kpa
             kp2 = post(kbase, "/kb/prefs", {})
-            assert len(kp2["prefs"]) == 1 and not kp2["prefs"][0]["approved"], kp2
-            kps = post(kbase, "/kb/prefs/set", {"id": 0, "approved": True})
-            assert not kps.get("error"), kps
-            assert post(kbase, "/kb/prefs", {})["prefs"][0]["approved"] is True
+            _prefs = cast(list[dict[str, object]], kp2.get("prefs"))
+            assert len(_prefs) == 1 and not _prefs[0]["approved"], kp2
+            _kpset = post(kbase, "/kb/prefs/set", {"id": 0, "approved": True})
+            assert not _kpset.get("error"), _kpset
+            _prefs2 = cast(list[dict[str, object]],
+                           post(kbase, "/kb/prefs", {}).get("prefs"))
+            assert _prefs2[0]["approved"] is True
             kpbad = post(kbase, "/kb/prefs/set", {"id": 9, "approved": True})
             assert "error" in kpbad, kpbad
             print("kb panel ok (list/read/search/ask/add/fetch/prefs)")

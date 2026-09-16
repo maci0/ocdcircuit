@@ -2546,13 +2546,13 @@ if os.path.exists(_fixt2):
     # altium .SchLib export round-trips (pins + sides + order, exact)
     import itertools as _it
     _ex = Board("ex", 40, 30)
-    for _n, _s in _it.islice(dict(_syms).items(), 4):
-        _ex.add_symbol(_n, _s)
+    for _xn, _xs in _it.islice(dict(_syms).items(), 4):
+        _ex.add_symbol(_xn, _xs)
     _sf = _ex.export("schlib", outdir=tempfile.mkdtemp())[0]
-    _rt = dict(foreign._bin_schlib(open(_sf, "rb").read()))
-    assert sorted(_rt) == sorted(n for n, _s in _it.islice(dict(_syms).items(), 4))
-    for _n in _rt:
-        assert _rt[_n]["pins"] == dict(_syms)[_n]["pins"], _n
+    _rtlib = dict(foreign._bin_schlib(open(_sf, "rb").read()))
+    assert sorted(_rtlib) == sorted(n for n, _s in _it.islice(dict(_syms).items(), 4))
+    for _xn in _rtlib:
+        assert _rtlib[_xn]["pins"] == dict(_syms)[_xn]["pins"], _xn
 # altium multi-sheet merge: shared netlabels join, N-autos stay sheet-local
 _m1 = Board("m1", 400, 200)
 for _f in ("04_LMS7002M_Misc", "09_Misc"):
@@ -3329,10 +3329,18 @@ _nn_scalar = [min(float(((p.x - q.x) ** 2 + (p.y - q.y) ** 2) ** 0.5)
 assert max(abs(a - b) for a, b in zip(_nn_scalar, _psc._nn_gaps(_nnp))) < 1e-9, \
     "vector nearest-neighbour gaps drifted from the scalar scan"
 
-# _t1_t5: the merged walk must equal the two separate folds
+# _t1_t5: the merged walk must equal INDEPENDENT folds of the same pairs.
+# (Comparing tidy() against _t1_crossings/_t5_headroom alone is circular —
+# they now share _t1_t5, so a bug in it agrees with itself.)
+_ref_n = 0
+_ref_best = float("inf")
+for _A5, _B5, _d5 in _psc._foreign_pairs(_scb):
+    _ref_best = min(_ref_best, _d5)
+    if _d5 < 1e-9 and _psc._cross(_A5, _B5):
+        _ref_n += 1
 _card = _psc.tidy(_scb)
-assert _card["T1_crossings"] == _psc._t1_crossings(_scb), "merged T1 drifted"
-assert _card["T5_headroom"] == _psc._t5_headroom(_scb), "merged T5 drifted"
+assert _card["T1_crossings"] == _ref_n, "merged T1 drifted"
+assert _card["T5_headroom"] == _psc._headroom_of(_scb, _ref_best), "merged T5 drifted"
 
 # _t13_schematic: bisect range-count == the linear scan it replaced
 _lay13 = _psl(_scb)

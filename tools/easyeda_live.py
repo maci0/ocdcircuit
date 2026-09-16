@@ -191,9 +191,10 @@ def _hex16() -> str:
 
 
 def pro_source(board: object, blank: str, ticket0: int = 200) -> str:
-    """Blank Pro source + our copper as LINE records. VIA/PAD/COMPONENT
-    records: same pair shape (learned from LINE; via/pad schemas TODO —
-    draw one via API, diff source, extend here)."""
+    """Blank Pro source + our copper as LINE records. Only LINE (track) and
+    NET/PRIMITIVE records are proven; VIA/PAD/COMPONENT schemas are not
+    (learn one by drawing it through the API and diffing the source, then
+    extend here). Callers must not assume vias survive the push."""
     from ocdcircuit.circuit import Board
     assert isinstance(board, Board)
     t = ticket0
@@ -240,8 +241,11 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
         assert isinstance(proj, str)
         uuid = json.loads(proj).get("projectUuid", json.loads(proj).get("uuid", ""))
         cdp.eval(pre[0] + f"await R.dmt_Project.openProject('{uuid}'){pre[1]}")
-        blank = cdp.eval(pre[0] + "await R.sys_FileManager.getDocumentSource(){pre[1]}")
-        _ = blank  # TODO: createPcb→open→setDocumentSource(pro_source(...))→shot
+        # The individual primitives are proven (see module docstring), but the
+        # full createPcb→openDocument→setDocumentSource(pro_source(...))→shot
+        # chain is NOT: under automation the client dies before the source
+        # lands, and a half-pushed document is worse than an honest failure.
+        # Implemented only when a client build survives the chain end to end.
         raise RuntimeError("pro_source push untested (client kept crashing); "
                            "see module docstring for the proven chain")
     finally:
