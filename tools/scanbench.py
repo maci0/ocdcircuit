@@ -107,6 +107,62 @@ def shoot(P: Any, cache: str, out: str,
     return gt
 
 
+def bench_framing(P: Any, cache: str) -> list[str]:
+    """Registration when the shoot mixes framings, which every real one does.
+
+    The main shoot above varies scale but always frames the whole board. A
+    person photographing a PCB also takes close-ups of one corner, and those
+    need a translation that is a large fraction of a coarse pyramid grid —
+    the case that used to vanish silently from the scan.
+    """
+    import numpy as np
+    rng = np.random.default_rng(23)
+    src = P.fit(P.load(os.path.join(cache, "top.jpg")), 2000)
+    H, W = src.shape[:2]
+    shots, truth = [], []
+    for n in range(12):
+        frac = (float(rng.uniform(0.85, 1.0)) if n < 5 else
+                float(rng.uniform(0.40, 0.60)) if n < 9 else
+                float(rng.uniform(0.22, 0.32)))
+        cw, ch = int(W * frac), int(H * frac)
+        x0 = int(rng.uniform(0, W - cw))
+        y0 = int(rng.uniform(0, H - ch))
+        v = P.resize(src[y0:y0 + ch, x0:x0 + cw], 1100,
+                     int(1100 * ch / cw))
+        rot = float(rng.uniform(-20, 20))
+        vh, vw = v.shape[:2]
+        v = np.nan_to_num(P.warp(v, 1.0, rot, 0, 0, vw, vh), nan=14.0)
+        v = np.clip(v * float(rng.uniform(0.8, 1.2))
+                    + rng.normal(0, 5, v.shape), 0, 255)
+        shots.append(v)
+        truth.append((frac, rot))
+    rg = P.gray(shots[0])
+    rf, r0 = truth[0]
+    tiers: dict[str, list[tuple[bool, float]]] = {
+        "overview": [], "medium": [], "close-up": []}
+    for i in range(1, len(shots)):
+        frac, rot = truth[i]
+        t = P.register(rg, P.gray(shots[i]))
+        dr = (t["rot"] - (r0 - rot)) % 360
+        dr = min(dr, 360 - dr)
+        es = abs(t["scale"] - frac / rf) / (frac / rf)
+        ok = dr < 3 and es < 0.10 and t["peak"] >= 0.30
+        tier = ("overview" if frac > 0.8 else
+                "medium" if frac > 0.35 else "close-up")
+        tiers[tier].append((ok, t["peak"]))
+    out = []
+    for name, got in tiers.items():
+        if not got:
+            continue
+        good = sum(1 for o, _ in got if o)
+        # a miss must be loud: below the gate, so it is dropped not blended
+        quiet = sum(1 for o, pk in got if not o and pk >= 0.30)
+        out.append(f"{name:9s}: {good}/{len(got)} registered"
+                   + (f"  ({quiet} wrong locks passed the drop gate!)"
+                      if quiet else "  (misses all dropped cleanly)"))
+    return out
+
+
 def bench_3d(P: Any) -> list[str]:
     """Score the height field and splat against known component heights.
 
@@ -263,6 +319,10 @@ def main(argv: list[str]) -> int:
     print(f"  gated stitch : mean|err| {e2:5.1f}  structNCC {n2:.3f}  "
           f"({len(keep)}/{len(xf)} frames, coverage {cover.mean():.2f})")
     print(f"  -> error {e1 / max(e2, 1e-6):.1f}x lower than one photo")
+
+    print("== mixed framing (overviews + off-centre close-ups)")
+    for line in bench_framing(P, cache):
+        print("  " + line)
 
     print("== 3D geometry (height field + splat, pinhole render)")
     for line in bench_3d(P):
