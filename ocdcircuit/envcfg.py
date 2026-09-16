@@ -143,8 +143,8 @@ def scan_max_mb(default: float = 24.0) -> float:
 
 
 def source_date_epoch(default: int = 0) -> int:
-    """Unix epoch for fab.zip entry mtimes. Negatives rejected; pre-1980
-    values are clamped by the exporter (ZIP local headers)."""
+    """Unix epoch for fab.zip entry mtimes. Negatives rejected; the exporter
+    clamps to the ZIP DOS-date window (1980-01-01 .. 2107-12-31)."""
     return env_int("SOURCE_DATE_EPOCH", default, lo=0)
 
 

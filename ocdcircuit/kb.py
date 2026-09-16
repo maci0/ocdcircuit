@@ -10,9 +10,9 @@ A board project keeps its documentation in `kb/` beside the `.ocd`:
 
 No index: the directory *is* the index, so nothing goes stale when you drop a
 file in with the file manager. Text is extracted on demand — PDFs via
-`pdftotext`, cached against the source's mtime — and searched with plain
-substring scoring, because exact terms are what part numbers, register names
-and pin tables need, and the caller can read the hit for context.
+`pdftotext`, cached against the source's (mtime_ns, size) — and searched with
+plain substring scoring, because exact terms are what part numbers, register
+names and pin tables need, and the caller can read the hit for context.
 
 `fetch(board)` gets datasheets without guessing: a part's `datasheet=<url>`
 attr wins (a URL you pinned in the `.ocd`), else `lcsc=C1234` is resolved
@@ -468,7 +468,9 @@ class KB:
                 "note": "read the doc at/around a hit line for context"}
 
     def text(self, name: str) -> str:
-        """Doc text. PDFs go through pdftotext and are cached against mtime."""
+        """Doc text. PDFs go through pdftotext and are cached against
+        (mtime_ns, size) — mtime alone misses a replace that restores an
+        older stamp (tar -p, checkout) with different bytes."""
         p = self._path(name)
         ext = os.path.splitext(p)[1].lower()
         if ext == ".pdf":
@@ -483,9 +485,17 @@ class KB:
         if exe is None:
             raise ValueError("pdftotext not on PATH: install poppler-utils to read PDFs")
         cpath = os.path.join(self.cache, name.replace(os.sep, "__") + ".txt")
-        if os.path.isfile(cpath) and os.path.getmtime(cpath) >= os.path.getmtime(p):
-            with open(cpath, encoding="utf-8", errors="replace") as f:
-                return f.read()
+        kpath = cpath + ".key"
+        st = os.stat(p)
+        key = f"{st.st_mtime_ns}:{st.st_size}"
+        if os.path.isfile(cpath) and os.path.isfile(kpath):
+            try:
+                with open(kpath, encoding="ascii") as kf:
+                    if kf.read() == key:
+                        with open(cpath, encoding="utf-8", errors="replace") as f:
+                            return f.read()
+            except OSError:
+                pass
         r = subprocess.run([exe, "-layout", p, "-"], capture_output=True, timeout=120)
         if r.returncode != 0:
             raise ValueError(f"pdftotext failed on {name!r}: "
@@ -494,6 +504,8 @@ class KB:
         os.makedirs(self.cache, exist_ok=True)
         with open(cpath, "w", encoding="utf-8") as f:
             f.write(body)
+        with open(kpath, "w", encoding="ascii") as kf:
+            kf.write(key)
         return body
 
     # ---------- recall (embeddings, with a lexical floor) ----------
@@ -514,13 +526,16 @@ class KB:
         return os.path.join(self.cache, "vec__" + name.replace(os.sep, "__") + ".json")
 
     def _stamp(self, name: str) -> dict[str, object]:
-        p = self._path(name)
-        return {"mtime": os.path.getmtime(p), "size": os.path.getsize(p),
+        """Identity of a doc for vector-cache freshness. `mtime_ns` (not the
+        float `st_mtime`) so a JSON round-trip cannot spuriously miss-match,
+        and size so a same-second rewrite still re-embeds."""
+        st = os.stat(self._path(name))
+        return {"mtime_ns": st.st_mtime_ns, "size": st.st_size,
                 "model": self._embed_name()}
 
     def _load_vectors(self, name: str) -> tuple[array[float], list[tuple[int, int]], int]:
         """(flat float32 vectors, [(start, end)] line ranges, dim) for one doc,
-        or empty when stale/missing (mtime + size + embedder must match: an
+        or empty when stale/missing (mtime_ns + size + embedder must match: an
         edited note or a new model re-embeds). A cache written by an older
         layout reads as stale, so `index()` rebuilds it.
 
@@ -567,7 +582,7 @@ class KB:
 
     def index(self, force: bool = False) -> dict[str, object]:
         """Embed every readable doc's passages into kb/.cache/vec__*.json.
-        Incremental: only docs whose mtime/size/model changed are re-embedded."""
+        Incremental: only docs whose mtime_ns/size/model changed are re-embedded."""
         embed = self._embed_fn()
         made, reused = 0, 0
         failed: list[str] = []

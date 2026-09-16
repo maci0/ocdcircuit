@@ -1090,6 +1090,19 @@ with tempfile.TemporaryDirectory() as d:
     _zi = _zf.ZipFile(_zb).infolist()
     assert [i.filename for i in _zi] == sorted(i.filename for i in _zi)
     assert len({i.date_time for i in _zi}) == 1  # uniform, not host mtimes
+    # ZIP DOS dates top out at 2107: a far-future SOURCE_DATE_EPOCH must clamp,
+    # not raise struct.error from ZipInfo (year packed into 7 bits).
+    _prev_sde = os.environ.get("SOURCE_DATE_EPOCH")
+    os.environ["SOURCE_DATE_EPOCH"] = "5000000000"  # ~year 2128
+    try:
+        _zb_far = b.export("bundle", outdir=tempfile.mkdtemp())[0]
+        _zi_far = _zf.ZipFile(_zb_far).infolist()
+        assert _zi_far and _zi_far[0].date_time[0] == 2107, _zi_far[0].date_time
+    finally:
+        if _prev_sde is None:
+            os.environ.pop("SOURCE_DATE_EPOCH", None)
+        else:
+            os.environ["SOURCE_DATE_EPOCH"] = _prev_sde
     # drill file carries PTH holes (J1=PINHD2), grouped by tool diameter
     drl = open([f for f in files if f.endswith(".TXT")][0]).read()
     assert "M48" in drl and "M30" in drl
@@ -1230,6 +1243,19 @@ with tempfile.TemporaryDirectory() as _kbt:
     if _kbsh.which("pdftotext"):
         assert "VIN 2.7 to 5.5 V max" in _kbs.text("datasheets/ds.pdf")
         assert os.path.exists(os.path.join(_kbs.cache, "datasheets__ds.pdf.txt"))
+        assert os.path.exists(os.path.join(_kbs.cache, "datasheets__ds.pdf.txt.key"))
+        # same-or-older mtime, different bytes: mtime-only caches would keep
+        # the stale extract; size in the key forces a rebuild.
+        _pdf_path = os.path.join(_kbs.dir, "datasheets", "ds.pdf")
+        _old_mtime = os.stat(_pdf_path).st_mtime
+        _mini2 = _mini + b"\n% pad-to-change-size\n"
+        open(_pdf_path, "wb").write(_mini2)
+        os.utime(_pdf_path, (_old_mtime - 10, _old_mtime - 10))
+        _kbs.text("datasheets/ds.pdf")  # rebuild
+        with open(os.path.join(_kbs.cache, "datasheets__ds.pdf.txt.key"),
+                  encoding="ascii") as _kf:
+            _k1, _k2 = _kf.read().split(":")
+            assert int(_k2) == len(_mini2), (_k1, _k2)
         _pdfh = cast(list[dict[str, object]], _kbs.search("V max")["hits"])
         assert _pdfh and str(_pdfh[0]["doc"]).endswith("ds.pdf"), _pdfh
     # fetch: `datasheet=` wins over the lcsc lookup, present files are skipped

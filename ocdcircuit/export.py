@@ -439,12 +439,16 @@ def export_bundle(board: Board, outdir: str = "out") -> list[str]:
     files += export_kicad_sch(board, outdir)
     files += export_eagle(board, outdir)
     zfn = os.path.join(outdir, f"{board.name}-fab.zip")
-    # ZIP local headers reject pre-1980; clamp so SOURCE_DATE_EPOCH=0 still works.
+    # ZIP local headers (DOS date) only cover 1980-01-01 .. 2107-12-31; clamp
+    # so SOURCE_DATE_EPOCH=0 and post-2107 values both still pack cleanly.
     from . import envcfg
-    epoch = max(envcfg.source_date_epoch(), 315532800)
+    _ZIP_EPOCH_MIN = 315532800    # 1980-01-01 00:00:00 UTC
+    _ZIP_EPOCH_MAX = 4354819198   # 2107-12-31 23:59:58 UTC
+    epoch = min(max(envcfg.source_date_epoch(), _ZIP_EPOCH_MIN), _ZIP_EPOCH_MAX)
     stamp = time.gmtime(epoch)
+    # DOS times store even seconds only; floor so ZipInfo matches the header.
     date_time = (stamp.tm_year, stamp.tm_mon, stamp.tm_mday,
-                 stamp.tm_hour, stamp.tm_min, stamp.tm_sec)
+                 stamp.tm_hour, stamp.tm_min, stamp.tm_sec - (stamp.tm_sec % 2))
     # basename-unique: exporters may list overlapping paths across kinds
     by_name = {os.path.basename(f): f for f in files}
     with zipfile.ZipFile(zfn, "w", zipfile.ZIP_DEFLATED) as z:
