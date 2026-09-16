@@ -31,14 +31,17 @@ Process env knobs (`OCD_PORT`, `OCD_LLM_*`, `JLCPCB_*`, …) are listed in
 
 ## CI parity (optional locally)
 
-CI (`.github/workflows/check.yml`) relies on:
+CI (`.github/workflows/check.yml`) runs on **Ubuntu 24.04** only and relies on:
 
 - runner Google Chrome / Chromium — studio screenshot + console-clean gate
 - `poppler-utils` (`pdftotext`) — installed in CI for kb/ datasheet PDF search
 
-Without a browser or `pdftotext`, those halves skip or degrade; `make doctor`
-lists the gap. `make check` still passes on a correct Python +
-`requirements-dev.txt` setup.
+The Python package itself uses `os.path` / tempfile (not hardcoded `/`) so
+the same tree is expected to run wherever Python 3.14 does; contributor
+`make` targets assume a Unix make + shell. Without a browser or
+`pdftotext`, those halves skip or degrade; `make doctor` lists the gap.
+`make check` still passes on a correct Python + `requirements-dev.txt`
+setup.
 
 ## PR checklist
 

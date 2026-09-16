@@ -50,21 +50,23 @@ snap:				# re-pin goldens after intended geometry change
 bench:				# 5420-part stress (~5 min, not in check)
 	$(HERMETIC) python -m benches.discrete6502.bench 1 5
 farm:				# every board loads+solves (breath-ketone density excepted)
-	$(HERMETIC) python -c "import sys, glob; sys.path.insert(0, '.'); \
+	$(HERMETIC) python -c "import sys, glob, os; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent; \
-	[(_b := agent.loads(open(f).read(), base=f.rsplit('/', 1)[0]), \
+	[(_b := agent.loads(open(f).read(), base=os.path.dirname(f)), \
 	_b.place(seeds=2, iters=100), _b.route_board(), \
 	print(f, len(_b.check()['errors']), 'errors')) \
-	for f in sorted(glob.glob('boards/*.ocd') + glob.glob('boards/*/*.ocd')) \
-	if '/out/' not in f]"
+	for f in sorted(glob.glob(os.path.join('boards', '*.ocd')) \
+	              + glob.glob(os.path.join('boards', '*', '*.ocd'))) \
+	if 'out' not in f.split(os.sep) and 'lib' not in f.split(os.sep)]"
 fabsweep:			# every board x every fab (profile discrimination check)
-	$(HERMETIC) python -c "import sys, glob; sys.path.insert(0, '.'); \
+	$(HERMETIC) python -c "import sys, glob, os; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent, fab; \
-	[(_b := agent.loads(open(f).read(), base=f.rsplit('/', 1)[0]), \
+	[(_b := agent.loads(open(f).read(), base=os.path.dirname(f)), \
 	_b.place(seeds=2, iters=100), _b.route_board(), \
-	print(f.split('/')[-1], ' '.join(f'{g}={len(_b.check(\"fab\", fab=g)[\"errors\"])}' \
+	print(os.path.basename(f), ' '.join(f'{g}={len(_b.check(\"fab\", fab=g)[\"errors\"])}' \
 	for g in fab.list_fabs()))) \
-	for f in sorted(glob.glob('boards/*.ocd') + glob.glob('boards/*/*.ocd')) \
-	if '/out/' not in f]"
+	for f in sorted(glob.glob(os.path.join('boards', '*.ocd')) \
+	              + glob.glob(os.path.join('boards', '*', '*.ocd'))) \
+	if 'out' not in f.split(os.sep) and 'lib' not in f.split(os.sep)]"
 clean:
 	rm -rf boards/out boards/*/out *-erc.rpt *-drc.rpt __pycache__ apps/__pycache__ */__pycache__ .mypy_cache

@@ -883,7 +883,8 @@ for pl in ["diffusion", "compact", "thermal"]:
 import glob as _glob
 _farm = sorted(_glob.glob(os.path.join(EX, "*.ocd"))
                + _glob.glob(os.path.join(EX, "*", "*.ocd")))
-_farm = [f for f in _farm if "/out/" not in f and "/lib/" not in f]
+_farm = [f for f in _farm
+         if "out" not in f.split(os.sep) and "lib" not in f.split(os.sep)]
 assert len(_farm) >= 8, _farm
 for _ff2 in _farm:
     _bf2 = agent.loads(open(_ff2).read(), base=os.path.dirname(_ff2))
@@ -2710,7 +2711,7 @@ assert foreign.easyeda_sch({"head": "1~1.7.5", "shape": _offshape})["nets"] == {
 _offrt = foreign.easyeda_sch({"head": "1~1.7.5", "shape": _offshape}, ox=100.0)
 assert {k: cast(dict[str, object], v)["pins"] for k, v in
         cast(dict[str, object], _offrt["nets"]).items()} == {"NET1": [["R1", "1"]]}
-_exd = tempfile.mkdtemp() + "/off.easyeda_sch.json"
+_exd = os.path.join(tempfile.mkdtemp(), "off.easyeda_sch.json")
 open(_exd, "w").write(_json.dumps({"head": "1~1.7.5", "shape": _offshape}))
 _exb0 = Board("exb0", 40, 30)
 assert _exb0.import_fp("easyeda", path=_exd, ox=100.0)["nets"] == 1
@@ -3266,7 +3267,8 @@ import shutil as _shutil_doc
 _real_which = _shutil_doc.which
 def _no_optionals(name: str) -> str | None:
     if name in ("ngspice", "kicad-cli", "pdftotext", "chromium",
-                "chromium-browser", "google-chrome", "google-chrome-stable"):
+                "chromium-browser", "google-chrome", "google-chrome-stable",
+                "chrome", "msedge", "microsoft-edge"):
         return None
     return _real_which(name)
 setattr(_shutil_doc, "which", _no_optionals)

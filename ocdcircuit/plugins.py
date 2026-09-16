@@ -868,6 +868,7 @@ class KicadRenderer(Plugin[bytes]):
     ext = ".ray.png"
 
     def run(self, board: Board, *a: object, **k: object) -> bytes:
+        import os
         import shutil
         import subprocess
         import tempfile
@@ -883,8 +884,8 @@ class KicadRenderer(Plugin[bytes]):
                                MASK_COLORS["green"])
         with tempfile.TemporaryDirectory() as tmp:
             export_kicad(board, tmp)
-            src = f"{tmp}/{board.name}.kicad_pcb"
-            out = f"{tmp}/{board.name}.png"
+            src = os.path.join(tmp, board.name + ".kicad_pcb")
+            out = os.path.join(tmp, board.name + ".png")
             cmd = [exe, "pcb", "render", "--side", side, "--width", str(w),
                    "--height", str(h), "--quality", "high", "--floor",
                    "--perspective", "--background", "opaque",
@@ -903,16 +904,20 @@ class KicadRenderer(Plugin[bytes]):
         import json
         import os
         import subprocess
-        cfg = os.path.expanduser("~/.config/kicad/10.0/3d_viewer.json")
+        from . import envcfg
+        cfg = envcfg.kicad_3d_viewer_cfg()
         try:
-            d = json.load(open(cfg))
+            d = json.load(open(cfg)) if cfg else None
         except (OSError, ValueError):
+            d = None
+        if d is None:
             subprocess.run(cmd, capture_output=True, check=True, timeout=300)
             return
         presets = d.get("layer_presets", [])
         if not presets:
             subprocess.run(cmd, capture_output=True, check=True, timeout=300)
             return
+        assert cfg is not None
         saved = json.dumps(presets[0].get("colors", []))
         try:
             for c in presets[0].get("colors", []):
@@ -939,6 +944,7 @@ class PcbdrawRenderer(Plugin[str]):
     ext = ".fab.svg"
 
     def run(self, board: Board, *a: object, **k: object) -> str:
+        import os
         import shutil
         import subprocess
         import tempfile
@@ -951,8 +957,8 @@ class PcbdrawRenderer(Plugin[str]):
         side = str(k.get("side", "front"))
         with tempfile.TemporaryDirectory() as tmp:
             export_kicad(board, tmp)
-            src = f"{tmp}/{board.name}.kicad_pcb"
-            out = f"{tmp}/{board.name}.svg"
+            src = os.path.join(tmp, board.name + ".kicad_pcb")
+            out = os.path.join(tmp, board.name + ".svg")
             subprocess.run([exe, "plot", "-s", style, "--side", side,
                             "--silent", src, out],
                            capture_output=True, check=True, timeout=300)
@@ -1771,8 +1777,9 @@ def _price_offline(lcsc: str) -> float | None:
     import math
     import os
     import sqlite3
-    db = os.path.expanduser("~/.local/share/kicad-mcp/jlcpcb_parts.db")
-    if not lcsc or not os.path.isfile(db):
+    from . import envcfg
+    db = envcfg.jlc_offline_db()
+    if not lcsc or not db or not os.path.isfile(db):
         return None
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)

@@ -23,7 +23,7 @@ that matters here: ground truth. Real handheld photos have no known
 transform, so a lock could only be eyeballed, never measured. The board
 texture, silkscreen, solder joints and copper are all real.
 
-Usage:  python -m tools.scanbench [outdir]      (default /tmp/scanbench)
+Usage:  python -m tools.scanbench [outdir]      (default: tempfile)
         SCANBENCH_LLM=1 also runs the vision analysis stage.
         SCANBENCH_REPS=n repeats each arm and reports medians (the analysis
         stage is noisy; n=1 cannot separate two arms).
@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import time
 import urllib.request
 from typing import Any
@@ -256,7 +257,8 @@ benchmark that only ever sees synthetic camera motion is lying to itself:
 
 
 def main(argv: list[str]) -> int:
-    root = argv[1] if len(argv) > 1 else "/tmp/scanbench"
+    root = argv[1] if len(argv) > 1 else os.path.join(
+        tempfile.gettempdir(), "scanbench")
     cache, shots = os.path.join(root, "board"), os.path.join(root, "shoot")
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:

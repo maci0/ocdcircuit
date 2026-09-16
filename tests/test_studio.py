@@ -743,8 +743,8 @@ def main() -> None:
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
 
-        chrom = (shutil.which("chromium") or shutil.which("chromium-browser")
-                 or shutil.which("google-chrome") or shutil.which("chrome"))
+        from ocdcircuit.doctor import find_chromium
+        chrom = find_chromium()
         if not chrom:
             print("no chromium: browser half skipped")
             return

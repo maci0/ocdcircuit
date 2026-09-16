@@ -160,8 +160,72 @@ def knoll_src() -> str | None:
     return raw.strip()
 
 
+def _kicad_3d_candidates() -> list[str]:
+    """Likely KiCad 3dmodels trees across Linux / macOS / Windows installs."""
+    cands: list[str] = [
+        "/usr/share/kicad/3dmodels",
+        "/usr/local/share/kicad/3dmodels",
+        os.path.expanduser("~/.local/share/kicad/3dmodels"),
+        "/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels",
+        "/Applications/KiCad.app/Contents/SharedSupport/3dmodels",
+    ]
+    for root_key in ("ProgramFiles", "ProgramFiles(x86)"):
+        root = os.environ.get(root_key)
+        if root:
+            cands.append(os.path.join(root, "KiCad", "share", "kicad", "3dmodels"))
+    return cands
+
+
 def kicad_3d_dir(default: str = "/usr/share/kicad/3dmodels") -> str:
-    return env_str("KICAD10_3DMODEL_DIR", default)
+    """Local STEP library for export probes. Env wins; else first existing
+    candidate; else `default` (Linux FHS — also what .env.example shows)."""
+    override = os.environ.get("KICAD10_3DMODEL_DIR")
+    if override is not None and override.strip() != "":
+        return override.strip()
+    for cand in _kicad_3d_candidates():
+        if os.path.isdir(cand):
+            return cand
+    return default
+
+
+def kicad_3d_viewer_cfg() -> str | None:
+    """Path to an existing KiCad 3d_viewer.json, or None.
+
+    Probes XDG_CONFIG_HOME / ~/.config (Linux), ~/Library/Preferences
+    (macOS), and %APPDATA% (Windows) for common KiCad version dirs."""
+    bases: list[str] = []
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        bases.append(xdg)
+    bases.append(os.path.expanduser("~/.config"))
+    bases.append(os.path.expanduser("~/Library/Preferences"))
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        bases.append(appdata)
+    for base in bases:
+        for ver in ("10.0", "9.0", "8.0", "7.0"):
+            p = os.path.join(base, "kicad", ver, "3d_viewer.json")
+            if os.path.isfile(p):
+                return p
+    return None
+
+
+def jlc_offline_db() -> str | None:
+    """First existing kicad-mcp JLC SQLite path, or None if none present."""
+    cands: list[str] = []
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        cands.append(os.path.join(xdg, "kicad-mcp", "jlcpcb_parts.db"))
+    cands.append(os.path.expanduser("~/.local/share/kicad-mcp/jlcpcb_parts.db"))
+    cands.append(os.path.expanduser(
+        "~/Library/Application Support/kicad-mcp/jlcpcb_parts.db"))
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        cands.append(os.path.join(local, "kicad-mcp", "jlcpcb_parts.db"))
+    for p in cands:
+        if os.path.isfile(p):
+            return p
+    return None
 
 
 def jlc_env_creds() -> tuple[str, str, str]:
@@ -221,7 +285,8 @@ def _selfcheck() -> None:
     import tempfile
     saved = {k: os.environ.pop(k, None) for k in (
         "OCD_LLM_BASE", "OCD_LLM_MAX_TOKENS", "OCD_SCAN_MAX_MB",
-        "SOURCE_DATE_EPOCH", "OCD_PORT", "SCANBENCH_REPS")}
+        "SOURCE_DATE_EPOCH", "OCD_PORT", "SCANBENCH_REPS",
+        "KICAD10_3DMODEL_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")}
     try:
         assert llm_base().startswith("http")
         assert llm_max_tokens() == 8192
@@ -266,6 +331,30 @@ def _selfcheck() -> None:
             os.environ["OCD_ROOT"] = os.path.join(d, "missing")
             assert studio_root(d) == d
             del os.environ["OCD_ROOT"]
+            fake = os.path.join(d, "3dmodels")
+            os.makedirs(fake)
+            os.environ["KICAD10_3DMODEL_DIR"] = fake
+            assert kicad_3d_dir() == fake
+            del os.environ["KICAD10_3DMODEL_DIR"]
+            # probe finds a real tree when present; else documented default
+            got = kicad_3d_dir()
+            assert os.path.isdir(got) or got.endswith("3dmodels"), got
+            cfg_dir = os.path.join(d, "kicad", "9.0")
+            os.makedirs(cfg_dir)
+            cfg = os.path.join(cfg_dir, "3d_viewer.json")
+            open(cfg, "w").write("{}")
+            os.environ["XDG_CONFIG_HOME"] = d
+            assert kicad_3d_viewer_cfg() == cfg
+            del os.environ["XDG_CONFIG_HOME"]
+            db_dir = os.path.join(d, "kicad-mcp")
+            os.makedirs(db_dir)
+            db = os.path.join(db_dir, "jlcpcb_parts.db")
+            open(db, "wb").write(b"")
+            os.environ["XDG_DATA_HOME"] = d
+            assert jlc_offline_db() == db
+            del os.environ["XDG_DATA_HOME"]
+            assert jlc_offline_db() is None or os.path.isfile(
+                jlc_offline_db() or "")
         rows = summary()
         assert all(str(r["name"]).startswith("env:") for r in rows)
         assert any(r["name"] == "env:OCD_LLM_KEY" and r["detail"] in ("set", "unset")

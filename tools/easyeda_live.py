@@ -259,4 +259,6 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
 
 
 if __name__ == "__main__":
-    print(render_board(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "/tmp/ez.png"))
+    _out = (sys.argv[2] if len(sys.argv) > 2
+            else os.path.join(tempfile.gettempdir(), "ez.png"))
+    print(render_board(sys.argv[1], _out))
