@@ -898,10 +898,23 @@ def scan_side(paths: list[str], outdir: str, side: str,
     for i in range(len(names)):
         if i in keep:
             continue
-        # No guessing at the cause: when a match fails, the recovered scale
-        # is itself meaningless, and a close-up's focus measure is low for
-        # honest reasons (fewer edges in frame), so neither can diagnose the
-        # failure. Report the score and the one fix that is known to work.
+        # Diagnose the PHOTO, not the failed match: the recovered transform
+        # is meaningless when nothing locked on, so it cannot explain itself.
+        # But per-photo properties are measurable before registration and two
+        # of them are decisive on real photos. A saturated frame (mean luma
+        # near white, e.g. a blown-out marketing shot at 247) has no gradient
+        # structure to correlate at all; a near-black one is usually the same
+        # story from the other end. Both are worth naming because the fix is
+        # different from the framing case — re-shoot, do not re-frame.
+        g = gray(imgs[i])
+        mu = float(np.mean(g))
+        if mu > 225 or mu < 12:
+            why[names[i]] = (
+                f"photo is {'washed out' if mu > 225 else 'nearly black'} "
+                f"(mean luma {mu:.0f}): no usable structure to match on, "
+                f"(score {xforms[i]['peak']:.2f}). Re-shoot with normal "
+                "exposure; this frame carries nothing to register.")
+            continue
         why[names[i]] = (
             f"no confident match (score {xforms[i]['peak']:.2f}). Most often "
             "the frame is much tighter than the others: whole-image matching "
@@ -1608,6 +1621,17 @@ def demo() -> None:
     assert set(_dw) == set(cast(list[str], _ds["dropped"])), (_dw, _ds["dropped"])
     for _msg in _dw.values():
         assert "score" in _msg and "close-up" in _msg, _msg
+    # exposure diagnosis: a frame with nothing to match on must be named
+    # as exposed, not as mis-framed (measured on a real washed-out photo at
+    # mean luma 247, bandpass std 0.32 — degenerate NCC input).
+    _dd = _tfd.mkdtemp()
+    write_png(os.path.join(_dd, "ok.png"),
+              np.clip(rng.normal(120, 45, (260, 340, 3)), 0, 255))
+    write_png(os.path.join(_dd, "white.png"), np.full((260, 340, 3), 250.0))
+    _de = scan_side([os.path.join(_dd, f) for f in ("ok.png", "white.png")],
+                    _dd, "top", 40.0)
+    assert _de["dropped"] == ["white.png"], _de["dropped"]
+    assert "washed out" in cast(dict[str, str], _de["dropped_why"])["white.png"]
 
     assert _side_paths(["a_top.jpg", "b_bottom.jpg", "c.jpg"]) == {
         "top": ["a_top.jpg", "c.jpg"], "bottom": ["b_bottom.jpg"]}

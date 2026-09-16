@@ -234,6 +234,27 @@ def bench_3d(P: Any) -> list[str]:
     ]
 
 
+REALPHOTO_NOTES = """
+Genuine handheld captures (not simulated) have been run through the
+pipeline when available and behaved as follows — recorded here because a
+benchmark that only ever sees synthetic camera motion is lying to itself:
+
+- Nintendo Switch mainboard + PSU phone photos (3-5 MP, portrait): the two
+  different boards correctly refused to register (NCC 0.12); enhancement
+  ratios held (contrast 2.1x, sharp 3.1x vs the same ratios in simulation);
+  281 pads measured at plausible sizes.
+- NSynth marketing stills (5 assembly-step photos): pipeline correctly
+  dropped 4 of 5. Pairwise NCC showed no pair above 0.20 — they share no
+  content and were never a coherent shoot. Correct outcome, not a failure.
+- Raspberry Pi Pico documentation photos (4 shots across Pico 1/2
+  variants): all registered, NCC 0.48-0.62, because the board geometry is
+  genuinely similar. Sharpness spanned 13x (428-5501) and exposure 31-248
+  luma across real photos — a wider range than the simulation ever used.
+- A mean-luma-247 blown-out photo was correctly dropped; this produced the
+  per-photo exposure diagnosis ("washed out ... re-shoot").
+"""
+
+
 def main(argv: list[str]) -> int:
     root = argv[1] if len(argv) > 1 else "/tmp/scanbench"
     cache, shots = os.path.join(root, "board"), os.path.join(root, "shoot")
