@@ -95,39 +95,41 @@ bottom line.
 Your largest example is 20 parts (`boards/pico_tmc2209/`); "not at this
 scale" meant that. I benchmarked synthetic boards to find the real ceilings:
 
-| n | place (seeds=1, iters=50) | DRC (no traces) | DRC (routed) | dense-net overlaps |
-|---|---|---|---|---|
-| 20 | 0.02 s | ~0 | — | 0 |
-| 100 | 0.25 s | 0.01 s | — | 0 |
-| 300 | 1.9 s | 0.05 s | 0.24 s | 7 |
-| 1000 | 18.8 s | 0.47 s | 2.1 s | 396 |
+| n | place (seeds=1, iters=50) | DRC (no traces) | DRC (routed) | dense-net overlaps | sparse overlaps |
+|---|---|---|---|---|---|
+| 20 | 0.03 s | 0.00 s | 0.00 s | 0 | 0 |
+| 100 | 0.04 s | 0.00 s | 0.00 s | 6 | 0 |
+| 300 | 0.30 s | 0.00 s | 0.01 s | 152 | 0 |
+| 1000 | 2.76 s | 0.01 s | 0.04 s | 1335 | 8 |
 
-Methodology footnote (audit-driven): synthetic R0805 boards, sparse-chain nets
-for timing columns, dense 4-random-parts-per-net (seed 7) for the overlap
-column; routed-DRC via lroute; machine-specific absolutes (±25% on re-run —
-only the ~quadratic ratios are machine-independent); overlap column's 300-row
-"7" coincides with the sparse-chain value and is suspect (see audit). The
-`benches/discrete6502/` bench supersedes this table for serious work
-(synthetic table has no generator script; single seed; 4 sizes; overlap
-column's "7" still suspect).
+Generator: `python -m benches.nn_ga_scale` (reproducible). Methodology:
+synthetic R0805 boards, side = 20·n^0.4 mm (n=50 ≈ 96×96, matches the old
+maze note); sparse-chain nets for timing + sparse-overlap columns; dense =
+n nets × 4-random-parts (seed 7); place forced `diffusion` seeds=1 iters=50
+seed=0 (auto-select would pick multilevel at n≥1000); routed-DRC via lroute.
+Absolutes are machine-specific — ratios and the sparse-vs-dense gap are the
+claim. Prior unpublished "7" at n=300 was a mis-paste of the sparse column
+(generator now prints both). `benches/discrete6502/` still supersedes this
+table for serious headroom work.
 
-Default settings multiply place by ~30× (seeds=4, iters=400): ~10 min at
-n=1000. Scaling is ~quadratic (9.9× time for 3.3× parts) — the O(n²) pairwise
-repulsion, exactly as the `ponytail:` comment warns. Maze router: 1.26 s at
-n=50 on 100×100 mm (grid cells grow with board area, not just parts).
+Default settings multiply place by ~30× (seeds=4, iters=400). Place scaling
+here is sub-quadratic on current code (numpy near-groups; ~10× time for
+10× parts 100→1000) — the `ponytail:` O(n²) warning still names the
+algorithm, not the wall-clock after indexing.
 
-Two separate failures: **speed** (quadratic placer, grid-size router, O(n²)
-DRC) and **quality** (396 overlaps at n=1000 on dense nets while sparse chains
-stay clean — diffusion can't resolve contention it was never designed for).
+Two separate failures: **speed** (still grows with n; maze grid with board
+area) and **quality** (1335 dense overlaps at n=1000 while sparse stays
+near-clean — diffusion can't resolve contention it was never designed for).
 
 What flips at that scale, in order:
 1. **Spatial hashing / bin-density repulsion** replaces O(n²) pairwise loop
    (OpenROAD does RUDY-style congested-tile inflation;
    [docs](https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html)).
    Biggest speed win, still zero-dep.
-2. **VPSC-style legalizer + min-conflicts/LNS repair** (`constraint-methods.md`
-   §§3–4) stop being optional and become the quality backbone — the benchmarks
-   above show overlap count exploding while sparse boards stay clean.
+2. **VPSC-style legalizer + LNS** (`constraint-methods.md` §§3–4) — min-
+   conflicts repair already ships (`solver._repair`); VPSC legalizer + LNS
+   become the remaining quality backbone when dense overlaps explode
+   (1335 at n=1000 above) while sparse boards stay clean.
 3. **WireMask-EA becomes interesting**: WireMask-BBO with plain (1+1)-EA beat
    MaskPlace RL and DREAMPlace on 5–6/7 ISPD2005 chips (hundreds of macros)
    — [full text](https://ar5iv.labs.arxiv.org/html/2306.16844). Key trick is
@@ -153,10 +155,11 @@ surface mount components" —
 [Evil Mad Scientist](https://www.evilmadscientist.com/2016/6502/).
 Extrapolating the measured table:
 
-- **Placer**: ~5 min for the toy run (seeds=1, iters=50), **~2.5 h at default
-  settings** — and quality is the real wall, not time: dense nets already show
-  396 overlaps at n=1000. Diffusion alone will not produce a legal 4000-part
-  board, however long you anneal.
+- **Placer**: ~3 s for the toy run (seeds=1, iters=50 on the synthetic
+  generator), still hours-class at default settings on 4000 parts — and
+  quality is the real wall, not time: dense nets already show 1335 overlaps
+  at n=1000. Diffusion alone will not produce a legal 4000-part board,
+  however long you anneal.
 - **Maze router**: on a 290.7×322.0 mm 6-layer discrete6502-class board at
   0.25 mm grid ≈ 1163×1289×6 ≈ **9.0 M states per A\* search**, per pin
   pair, thousands of pairs (2-layer toy math ~3.0 M undercounts ~3×). Not

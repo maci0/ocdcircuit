@@ -10,6 +10,7 @@ RFC: options were decided; do not treat this as a pending design review.
   `d` / `near` ref; ADR-0004) · `edge {margin}`
 - `layer {net,layer}` · `width {net,width}` · `power {nets[]}` (wider traces)
 - `match {nets[]}` · `diff {p,n,gap}` (placer cost + DRC skew; ADR-0002)
+- `pour {net,layer}` (negative Gerber plane + KiCad zone; routers skip)
 
 Canonical grammar / dumps forms: `docs/OCD.md`. This list is the agent dict
 shape; do not duplicate prose there.

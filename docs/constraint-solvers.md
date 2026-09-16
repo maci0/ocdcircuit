@@ -10,13 +10,16 @@ supports the current architecture: released diffusion finds zero-error layouts
 at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
 (`docs/research/dense-demo-experiment.md`; live golden-WL stress is
 `benches/discrete6502/`). Exact methods (CP-SAT, ILP/MILP) buy optimality
-proofs but cost a dependency plus a linearized/disjunctive formulation —
-scope decision is still unquantified (no AddNoOverlap2D pilot even at
-10 parts). The cheapest remaining upgrades, in order: (1) negotiated-
-congestion history hardening in the maze router (gated 2-round rip-up
-retry + per-cell HIST already shipped — remaining gain is history
-weighting/tuning across iterations); (2) a greedy legalization/overlap-
-removal pass after diffusion; (3) cooling-schedule tuning. Skip: ILP
+proofs / prove-infeasible answers but cost a dependency plus a linearized
+formulation — scoped by `benches/exact_overlap_pilot.py` (stdlib
+backtracking proxy for AddNoOverlap2D): loose feasibility is trivial at
+n≤20; undersized prove-no times out at n=20 (>3 s, 9M nodes); chain-WL-capped
+exact search times out at n=12. Keep them optional-verifier only; do not take
+an OR-Tools dep for day-to-day place. The cheapest remaining upgrades, in
+order: (1) negotiated-congestion history hardening in the maze router (gated
+2-round rip-up retry + per-cell HIST already shipped — remaining gain is
+history weighting/tuning across iterations); (2) a VPSC-style legalization
+pass after diffusion+_repair; (3) cooling-schedule tuning. Skip: ILP
 dependency, ePlace/RePlAce reimplementation, ML placers, push-and-shove.
 
 ## Background
@@ -63,9 +66,13 @@ cost + DRC warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   Typical-size numbers NOT verified — flagged, do not quote.
 - Relevance: CP-SAT fits when placement needs global feasibility proofs or
   disjunctive non-overlap + match/diff symmetry jointly optimized. Overkill
-  while constraints stay local (fixed/keepout/edge) and greedy + repair works.
-  Lazy rule: hand-rolled backtracking/greedy first; CP-SAT only if search stalls
-  or "prove infeasible / optimality gap" is required. Never start with raw CNF.
+  for day-to-day place while constraints stay local (fixed/keepout/edge) and
+  greedy + `_repair` works — measured: exact WL-capped search already times
+  out at n=12 (`benches/exact_overlap_pilot.py`), while diffusion places
+  n=20 dense zero-error in ~3 s. Lazy rule: hand-rolled backtracking/greedy
+  first; CP-SAT only if search stalls or "prove infeasible / optimality gap"
+  is required (prove-no itself times out at n=20 undersized without a real
+  propagator). Never start with raw CNF.
 
 ### 2. ILP/MILP + simulated annealing / metaheuristics
 
@@ -197,17 +204,21 @@ cost + DRC warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
 ## Architecture evidence (measurement vs analogy)
 
 Quantitative leg: dense pico_tmc2209 diffusion 0.67–0.71× golden WL,
-zero-error in ~3 s (`docs/research/dense-demo-experiment.md`). Remaining
-legs in this brief (FR/graph-drawing analogy, Song & Ermon annealed-
-Langevin abstract, Quilter marketing) are supporting context, not the
-architecture proof. "Overkill while greedy+repair works" holds only while
-legalizer/exact-verifier pilots stay unmeasured — see Open Q1 and
-`constraint-methods.md` exact-backends skip caveat.
+zero-error in ~3 s (`docs/research/dense-demo-experiment.md`). Exact-methods
+leg: `benches/exact_overlap_pilot.py` — feasibility cheap, prove-no and
+WL-capped exact search time out by n=12–20, so CP-SAT stays optional-verifier
+under the zero-dep axiom. Remaining legs in this brief (FR/graph-drawing
+analogy, Song & Ermon annealed-Langevin abstract, Quilter marketing) are
+supporting context, not the architecture proof.
 
 ## Open questions
 
-1. At what part count / density does multi-start diffusion measurably lose to
-   CP-SAT on a linearized model? Needs a benchmark, not literature.
+1. ~~At what part count / density does multi-start diffusion measurably lose to
+   CP-SAT on a linearized model?~~ ANSWERED (`benches/exact_overlap_pilot.py`):
+   exact feasibility is cheap at n≤20; WL-capped exact search times out at
+   n=12; undersized prove-no times out at n=20. Diffusion+_repair wins the
+   day-to-day regime; exact backends stay prove-infeasible / gap tools only
+   (and still need a real propagator before n=20 prove-no is practical).
 2. ~~Does a second rip-up pass close the airwire-fallback gap on dense demo
    boards (pico: ~197 maze warnings w/ fallbacks vs 26 lroute clearance
    warnings)?~~ ANSWERED (round 77): yes — gated 2nd round took pico 79→4
@@ -217,8 +228,10 @@ legalizer/exact-verifier pilots stay unmeasured — see Open Q1 and
    the failed set. Remaining: history-weight tuning, not a 3rd pass.
 3. Length-matching currently penalizes *pad-distance* estimates pre-route; when
    should `_match_cost` switch to routed length, and are meanders ever needed?
-4. Exact CP-SAT scale numbers, DPLL/CDCL primary methods, solver benchmark
-   figures — left unverified (abstracts/docs only).
+4. Exact CP-SAT scale numbers from OR-Tools itself, DPLL/CDCL primary methods,
+   solver benchmark figures — left unverified (abstracts/docs only; no
+   ortools dep to re-measure against). Stdlib proxy above substitutes for the
+   build decision.
 
 ## Verification notes
 

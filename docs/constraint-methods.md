@@ -11,18 +11,21 @@ analog). NN/GA verdict: `nn-ga.md`. Tidy-layout metrics: `tidy-metrics.md`.
 
 Five families, cheapest first for a zero-dependency Python tool at tens of
 parts: (1) **VPSC-style 1D separation passes** as the overlap legalizer (~50
-lines, Graphviz/Dunnart-proven); (2) **min-conflicts repair + LNS
-ruin-recreate** as the placer upgrades (~20–40 lines); (3) ~~**rectilinear
-MST/Steiner net decomposition**~~ — SHIPPED (`maze._mst_pairs` trunk
-routing); remaining open is a measured WL/via delta vs chained pin-to-pin;
-(4) **skyline/BLF packing** for compact mode + greedy compaction; (5)
-**symmetry/matching placer terms** extending match/diff. Exact backends
-(`diffn`/`AddNoOverlap2D`, Z3) stay an *optional verifier* ("prove it doesn't
-fit"), never the default — that skip is API-surface judgment only (no
-AddNoOverlap2D pilot on tens-of-parts boards yet; CP-SAT's best regime is
-unmeasured here). Skip: full floorplan-SA encodings, Cassowary port,
-GA/ACO/PSO, BayesOpt, ADMM/ALM until stiffness bites, escape routing until
-dense BGA.
+lines, Graphviz/Dunnart-proven); (2) ~~**min-conflicts repair**~~ — SHIPPED
+(`solver._repair`, 88 lines: most-overlapped part, 12 local moves × 8 rounds);
+remaining: LNS ruin-recreate; (3) ~~**rectilinear MST/Steiner net
+decomposition**~~ — SHIPPED (`maze._mst_pairs` trunk routing); measured
+deltas in ADR-0002 (blinky 109→98 segs, mitox 1536→987); (4) **skyline/BLF
+packing** for compact mode + greedy compaction; (5) **symmetry/matching
+placer terms** extending match/diff. Exact backends (`diffn`/`AddNoOverlap2D`,
+Z3) stay an *optional verifier* ("prove it doesn't fit"), never the default —
+scoped by measurement in `benches/exact_overlap_pilot.py` (stdlib backtracking
+proxy for AddNoOverlap2D): loose feasibility is trivial at n≤20; undersized
+prove-no is instant at n≤15 but times out (>3 s, 9M nodes) at n=20; adding a
+chain-WL cap times out at n=12 on a tight cap. Exact methods earn a dependency
+only for prove-infeasible / optimality-gap questions, not day-to-day place.
+Skip: full floorplan-SA encodings, Cassowary port, GA/ACO/PSO, BayesOpt,
+ADMM/ALM until stiffness bites, escape routing until dense BGA.
 
 ## 1. Exact combinatorial backends for layout
 
@@ -142,8 +145,9 @@ dense BGA.
   [AAAI-1990 record](https://mlanthology.org/aaai/1990/minton1990aaai-solving/)
   (metadata only; year/pages flagged). Adjacent repair lineage verified via
   OpenAlex (Zweben et al. iterative repair). Map: greedy place → loop "pick
-  most-overlapped part, try N local moves, keep best". **~20 lines; cheapest
-  placer upgrade.**
+  most-overlapped part, try N local moves, keep best". **SHIPPED** as
+  `solver._repair` (88 lines, 12 moves × 8 rounds, inside the undoable
+  effect) — was estimated "~20 lines" pre-implementation.
 - **LNS / destroy-and-repair**: ruin a subset (worst part + net-neighbors),
   re-optimize the hole while freezing the rest — preserves backbone, searches
   an exponentially large implicit neighborhood. Verified descendants: Pisinger
@@ -210,24 +214,31 @@ dense BGA.
 
 ## Adoption ranking (all five angles merged)
 
-1. VPSC-style 1D separation legalizer (~50 lines, §3).
-2. Min-conflicts repair loop (~20 lines, §4), then LNS ruin-recreate.
+1. VPSC-style 1D separation legalizer (~50 lines, §3) — still the next build.
+2. ~~Min-conflicts repair loop~~ — SHIPPED (`solver._repair`, 88 lines);
+   next in this family: LNS ruin-recreate.
 3. ~~Rectilinear-MST/Steiner decomposition~~ — SHIPPED (`_mst_pairs` trunk
-   routing in `maze.py`); remaining: measured wirelength/via delta (Open Q2).
+   routing in `maze.py`); measured segs: blinky 109→98, mitox 1536→987
+   (ADR-0002).
 4. Per-iteration clamp/projection one-liners (§3) + cooling tuning (prior brief).
 5. Skyline/BLF for compact mode + greedy compaction (§2).
 6. Symmetry/matching placer terms; Sugiyama-lite schematic (§5).
-7. Later/conditional: CP-SAT/`diffn` verifier, ALM, NSGA-II, escape routing.
+7. Later/conditional: CP-SAT/`diffn` verifier (see exact_overlap_pilot —
+   only for prove-infeasible / gap), ALM, NSGA-II, escape routing.
 8. Skip: B\*-tree/SA machinery, Cassowary, GA, ACO/PSO, BayesOpt, ADMM.
 
 ## Open questions
 
-1. Does VPSC-1D + min-conflicts close the overlap gap on dense demos
-   (`boards/pico_tmc2209/`) without touching diffusion?
-2. MST-decomposition vs chained pin-to-pin: measured wirelength/via delta on
-   multi-pin demo nets?
-3. At what density does the exact-verifier (`AddNoOverlap2D`) earn its
-   dependency? Needs a benchmark, not literature.
+1. Does VPSC-1D close the residual overlap gap on dense demos / synthetic
+   n=1000 (1335 dense overlaps after diffusion+_repair) without touching
+   diffusion further?
+2. ~~MST-decomposition vs chained pin-to-pin: measured wirelength/via delta~~
+   ANSWERED (ADR-0002): blinky 109→98 segs, mitox 1536→987.
+3. ~~At what density does the exact-verifier (`AddNoOverlap2D`) earn its
+   dependency?~~ ANSWERED (`benches/exact_overlap_pilot.py`): feasibility
+   alone is cheap at n≤20; prove-infeasible times out at n=20 undersized
+   (>3 s); WL-capped exact search times out at n=12. Keep exact backends
+   optional-verifier only — do not take an OR-Tools dep for day-to-day place.
 4. Unverified items carried forward: per-solver `diffn` support, CP-SAT
    propagator internals, Hanan/Hwang/Sugiyama/Hungarian citation details,
    Hwang 3/2 ratio, ACO-PCB record, PSO-placement record.

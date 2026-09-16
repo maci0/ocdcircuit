@@ -49,7 +49,15 @@ because fallback count (not warnings) is now the measurable gap.
 
 ## Baseline job status
 
-`bench.py` background run (bash-341) was started pre-fix with stale defaults;
-its output (baseline_r2.txt) is superseded — rerun
-`python -m benches.discrete6502.bench` (defaults seeds=1 iters=5, prints
-golden WL + floor; see `SOURCES.md` r4/r5 baseline) for the headroom number.
+`bench.py` defaults match the published SOURCES baseline (seeds=1 iters=5,
+golden WL + floor). Current headroom lives in
+`benches/discrete6502/SOURCES.md` (r4/r5: ratio **1.28**, above_floor
+**2364**). Re-pin with `python -m benches.discrete6502.bench` after
+solver/WL-model changes.
+
+## Exact-methods scope (round-3 close)
+
+`benches/exact_overlap_pilot.py` bounds the CP-SAT skip: loose feasibility
+cheap at n≤20; WL-capped exact search times out at n=12; undersized prove-no
+times out at n=20. Day-to-day place stays diffusion+_repair; exact backends
+remain optional verifiers under the zero-dep axiom.
