@@ -69,13 +69,20 @@ def _tokenize(s: str) -> list[str]:
     return toks
 
 
-def _parse(toks: list[str], pos: int = 0) -> tuple[list[object], int]:
+# Real .kicad_mod / .kicad_pcb files nest ~6 deep; cap far above that so
+# adversarial `(((()…)))` cannot blow the CPython stack (RecursionError).
+_SEXPR_MAX_DEPTH = 64
+
+
+def _parse(toks: list[str], pos: int = 0, depth: int = 0) -> tuple[list[object], int]:
+    if depth > _SEXPR_MAX_DEPTH:
+        raise ValueError(f"s-expression nesting exceeds {_SEXPR_MAX_DEPTH}")
     out: list[object] = []
     assert toks[pos] == "("
     pos += 1
     while pos < len(toks) and toks[pos] != ")":
         if toks[pos] == "(":
-            node, pos = _parse(toks, pos)
+            node, pos = _parse(toks, pos, depth + 1)
             out.append(node)
         else:
             out.append(toks[pos])

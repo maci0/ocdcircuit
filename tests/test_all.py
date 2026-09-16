@@ -239,6 +239,56 @@ for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6
     assert agent.parse_constraint(_line) is not None, _line
     assert agent.dumps(agent.loads(_rt, base=EX)) == _rt, _line
 
+# loads fuzz: structure-aware mutations of a valid board never crash the
+# process; any accepted parse must dumps→loads→dumps identically. Skip
+# use/fp/sym so the harness stays hermetic (no filesystem side effects).
+import random as _lfrng
+_lf_base = ("board lf 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+            "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")
+_lf_lines = [
+    "keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6",
+    "pour GND on 0", "keepout 20 15 6x6", "silk 2", "power N GND",
+    "class hv width=0.8", "sim vcc N 5", "meta title hello",
+    "part R9 R0805 4k7", "net X: R1.1 R1.2", "nc R1.1",
+    "route-grid 0.2", "cutout 20 15 6x6", "hole 20 15 1.2",
+]
+_lf_alphabet = "abcABC0123_:. \t\"'#()[]{}<>\x00\n"
+for _lfs in (42, 99):
+    _lfr = _lfrng.Random(_lfs)
+    for _ in range(80):
+        _lines = _lf_base.splitlines(True)
+        _kind = _lfr.randrange(6)
+        if _kind == 0 and _lines:
+            _lines[_lfr.randrange(len(_lines))] = _lfr.choice(_lf_lines) + "\n"
+        elif _kind == 1:
+            _lines.insert(_lfr.randrange(len(_lines) + 1),
+                          _lfr.choice(_lf_lines) + "\n")
+        elif _kind == 2 and _lines:
+            del _lines[_lfr.randrange(len(_lines))]
+        elif _kind == 3 and _lines:
+            _i = _lfr.randrange(len(_lines))
+            _s = list(_lines[_i])
+            if _s:
+                _s[_lfr.randrange(len(_s))] = _lfr.choice(_lf_alphabet)
+            _lines[_i] = "".join(_s)
+        elif _kind == 4:
+            _n = _lfr.randrange(0, 48)
+            _lines.append("".join(_lfr.choice(_lf_alphabet) for _j in range(_n))
+                          + "\n")
+        else:
+            _lines.append("block B\npart Rb R0805 1k\nend\n")
+        _text = "".join(_lines)
+        if _lfr.random() < 0.15:
+            _text = _text[:_lfr.randrange(len(_text) + 1)]
+        try:
+            _lb = agent.loads(_text, base=EX)
+        except (ParseError, ValueError, KeyError, TypeError, OverflowError,
+                AssertionError, OSError):
+            continue
+        _ld = agent.dumps(_lb)
+        assert agent.dumps(agent.loads(_ld, base=EX)) == _ld, \
+            f"loads fuzz round-trip failed (seed {_lfs})"
+
 # hot-swap: mount alt plugin, use(), undo → back to default
 class AltPlacer(Plugin[float]):
     kind, key = "placer", "alt"
@@ -2523,6 +2573,34 @@ assert ({"t": "cutout", "x": 2.0, "y": 2.0, "w": 2.0, "h": 2.0}
 # kicad_pcb: real-world s-expr hazards (complex bench boards hit all four)
 assert cast(list[object], foreign.sexpr('(kicad_pcb (descr "a; b") (net 1 "GND"))')[1])[1] == '"a; b"'
 assert cast(list[object], foreign.sexpr(r'(kicad_pcb (property "D" "30u\" gold"))')[1])[2] == r'"30u\" gold"'
+# sexpr fuzz: random paren/token soup must not RecursionError; ValueError
+# (or a successful tree) only. Depth cap is the crash→error boundary.
+import random as _sxrng
+for _sxs in (7, 13):
+    _sxr = _sxrng.Random(_sxs)
+    for _ in range(60):
+        _parts: list[str] = []
+        _budget = _sxr.randrange(0, 120)
+        for _j in range(_budget):
+            _parts.append(_sxr.choice(["(", ")", " ", "a", "1", ".", '"x"',
+                                       ";", "pad", "\n", "\t"]))
+        _sx = "".join(_parts)
+        # also force deep nesting past the cap (must raise, not crash)
+        if _sxr.random() < 0.2:
+            _d = _sxr.randrange(foreign._SEXPR_MAX_DEPTH + 1,
+                                foreign._SEXPR_MAX_DEPTH + 40)
+            _sx = "(" * _d + "x" + ")" * _d
+        try:
+            _tree = foreign.sexpr(_sx)
+        except ValueError:
+            continue
+        assert isinstance(_tree, list), f"sexpr fuzz seed {_sxs}"
+try:
+    foreign.sexpr("(" * (foreign._SEXPR_MAX_DEPTH + 2)
+                  + "x" + ")" * (foreign._SEXPR_MAX_DEPTH + 2))
+    raise AssertionError("deep sexpr should raise ValueError")
+except ValueError as _sxerr:
+    assert "nesting" in str(_sxerr), str(_sxerr)
 _kpcb = ('(kicad_pcb (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (1 "In1.Cu" signal)) '
          '(net 0 "") (net 1 "GND") '
          '(footprint "F" (layer "F.Cu") (tedit 0) (at 10 10) '
