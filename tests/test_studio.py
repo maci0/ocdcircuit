@@ -188,6 +188,10 @@ def main() -> None:
         assert "id=herogo" in _gate and "id=ed" not in _gate, _gate[:200]
         _refused = post(base, "/build", {"text": "x"})
         assert _refused.get("login") is True, _refused
+        _fs_deny = json.loads(urllib.request.urlopen(base + "/fs", timeout=5).read())
+        assert _fs_deny.get("login") is True, _fs_deny
+        _poll_deny = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        assert _poll_deny.get("login") is True, _poll_deny
         _bad = post(base, "/auth/login",
                     {"user": "tester", "password": "wrongwrong"})
         assert "error" in _bad, _bad
@@ -203,6 +207,32 @@ def main() -> None:
         assert post(base, "/auth/me", {})["display"] == "Marcel Wysocki"
         _profblank = post(base, "/auth/profile", {"display": "  "})
         assert "error" in _profblank, _profblank
+        _profinject = post(base, "/auth/profile",
+                           {"display": "x\nevil:deadbeef:deadbeef"})
+        assert "error" in _profinject, _profinject
+        _profcolon = post(base, "/auth/profile", {"display": "has:colon"})
+        assert "error" in _profcolon, _profcolon
+        # shelf isolation: second user cannot /fs/read the first user's board
+        _mine = post(base, "/shelf/new", {"name": "private-board"})
+        assert not _mine.get("error"), _mine
+        import http.client as _hc_id
+        from urllib.parse import urlparse as _up_id
+        _uid = _up_id(base)
+        assert _uid.hostname
+        _cid = _hc_id.HTTPConnection(_uid.hostname, _uid.port, timeout=30)
+        _cid.request("POST", "/auth/login",
+                     json.dumps({"user": "second", "password": "testtest12"}),
+                     {"Content-Type": "application/json"})
+        _rid = _cid.getresponse()
+        _ck_second = _rid.getheader("Set-Cookie", "").split(";")[0].strip()
+        _rid.read()
+        _steal = post(base, "/fs/read",
+                      {"path": ".users/tester/private-board.ocd"},
+                      cookie=_ck_second)
+        assert "error" in _steal and "shelf" in str(_steal["error"]).lower(), _steal
+        _idor_ok = post(base, "/fs/read",
+                        {"path": ".users/tester/private-board.ocd"})
+        assert "text" in _idor_ok, _idor_ok  # owner (tester jar) can still read
         _in = get(base, "/").decode()
         assert "id=ed" in _in, _in[:200]
         assert "id=importfile" in _in and "id=importstat" in _in, "import picker missing"
@@ -294,15 +324,15 @@ def main() -> None:
         # NOTE: SRC is the troot copy (OCD_ROOT), so poll + edit touch the
         # copy; the repo BOARD stays pristine.
         tboard = os.path.join(troot, "blinky_555.ocd")
-        _p0 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        _p0 = json.loads(get(base, "/poll"))
         assert _p0["clean"] is True, _p0
         with open(tboard, "a") as _f:
             _f.write("# external edit\n")
-        _p1 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        _p1 = json.loads(get(base, "/poll"))
         assert _p1["clean"] is False, _p1
         _r = post(base, "/reload", {})
         assert "error" not in _r, _r
-        _p2 = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())
+        _p2 = json.loads(get(base, "/poll"))
         assert _p2["clean"] is True, _p2
         t = time.time()
         d = post(base, "/build", {"text": text, "placer": "diffusion",

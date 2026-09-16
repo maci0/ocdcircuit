@@ -18,10 +18,13 @@ Run: python studio.py [file.ocd]  → http://localhost:8077
 """
 from __future__ import annotations
 from ocdcircuit.util import as_float as _f, as_int as _i
+import contextvars
 import http.server
 import json
 import os
+import re
 import sys
+import time
 from collections.abc import Callable
 from typing import cast
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -2672,17 +2675,51 @@ if not os.path.isdir(ROOT):  # a bad OCD_ROOT must not take the studio down
 
 # --- accounts: local users with salted passwords, cookie sessions -----------
 # stdlib only (hashlib scrypt + secrets): no new deps. Users live one per line
-# in <ROOT>/.ocd-users (name:salt_hex:hash_hex). Sessions are bearer tokens in
-# memory — a restart re-asks the login. This studio is single-tenant by
-# design: the first signup owns it; later signups are refused (add invites
-# when multi-user matters).
+# in <ROOT>/.ocd-users (name:salt_hex:hash_hex[:display]). Sessions are bearer
+# tokens in memory with a TTL — a restart also clears them. Each signup gets
+# its own shelf under .users/<name>/; paths under another user's shelf are
+# refused (see _abs).
 _AUTH_COOKIE = "ocd_user"
 _USERS_FILE = ".ocd-users"
-_SESSIONS: dict[str, str] = {}  # token -> username
+_SESSION_TTL = 86400.0  # 24h wall-clock from login
+_SESSIONS: dict[str, tuple[str, float]] = {}  # token -> (username, expires_mono)
+_AUTH_HITS: dict[str, list[float]] = {}  # client key -> recent attempt times
+_MAX_BODY = 20_000_000  # POST body cap (base64 photo scans need headroom)
+_GIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{4,64}$")
+_REQ_USER: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "ocd_req_user", default=None)
 
 
 def _users_path() -> str:
     return os.path.join(ROOT, _USERS_FILE)
+
+
+def _client_key(handler: object) -> str:
+    """Rate-limit key: peer host when available, else a shared bucket."""
+    addr = getattr(handler, "client_address", None)
+    if isinstance(addr, tuple) and addr:
+        return str(addr[0])
+    return "local"
+
+
+def _auth_rate_ok(key: str, limit: int = 30, window: float = 60.0) -> bool:
+    """Sliding-window gate for login/signup (brute-force / spray)."""
+    now = time.monotonic()
+    hits = _AUTH_HITS.setdefault(key, [])
+    hits[:] = [t for t in hits if now - t < window]
+    if len(hits) >= limit:
+        return False
+    hits.append(now)
+    return True
+
+
+def _ok_display(disp: str) -> bool:
+    """Display names must not break the colon-separated users file."""
+    if not disp or len(disp) > 40:
+        return False
+    if any(ord(c) < 32 for c in disp) or ":" in disp:
+        return False
+    return True
 
 
 def _read_users() -> dict[str, tuple[str, str, str]]:
@@ -2703,6 +2740,8 @@ def _read_users() -> dict[str, tuple[str, str, str]]:
 
 def _set_display(name: str, display: str) -> None:
     """Rewrite the user's line with a new display name (validated by caller)."""
+    if not _ok_display(display):
+        raise ValueError("display name can't contain control chars or ':'")
     try:
         lines = open(_users_path()).read().splitlines()
     except OSError:
@@ -2760,20 +2799,27 @@ def _check_user(name: str, password: str) -> bool:
 def _new_session(name: str) -> str:
     import secrets
     tok = secrets.token_urlsafe(32)
-    _SESSIONS[tok] = name
+    _SESSIONS[tok] = (name, time.monotonic() + _SESSION_TTL)
     while len(_SESSIONS) > 64:  # ponytail: cap sessions in memory; restart clears all anyway
         _SESSIONS.pop(next(iter(_SESSIONS)))
     return tok
 
 
 def _authed(headers: object) -> str | None:
-    """Username for a valid session cookie, else None."""
+    """Username for a valid, unexpired session cookie, else None."""
     get = getattr(headers, "get", None)
     cookie = get("Cookie", "") if get else ""
+    now = time.monotonic()
     for chunk in str(cookie).split(";"):
         k, _, v = chunk.strip().partition("=")
-        if k.strip() == _AUTH_COOKIE and v.strip() in _SESSIONS:
-            return _SESSIONS[v.strip()]
+        tok = v.strip()
+        if k.strip() != _AUTH_COOKIE or tok not in _SESSIONS:
+            continue
+        name, exp = _SESSIONS[tok]
+        if now > exp:
+            _SESSIONS.pop(tok, None)
+            return None
+        return name
     return None
 
 
@@ -2875,7 +2921,9 @@ def _abs(path: object, *, must_exist: bool = False, near: str | None = None) -> 
     first (a sibling fetch), then at the project ROOT. Every candidate is
     realpath'd and must land inside ROOT, so a symlink out of the project is
     refused rather than followed. The ordering matters: with the root first,
-    `blinky_555.ocd` cannot be reached from a board opened in a subdirectory."""
+    `blinky_555.ocd` cannot be reached from a board opened in a subdirectory.
+    Paths under `.users/` are private to that account; `.ocd-users` is never
+    readable via this resolver."""
     rel = _rel(path)
     root = os.path.realpath(ROOT)
     # board's directory, then the directory the studio started in, then ROOT.
@@ -2895,6 +2943,15 @@ def _abs(path: object, *, must_exist: bool = False, near: str | None = None) -> 
         if rp != root and not rp.startswith(root + os.sep):
             blocked = True  # a traversal: say so, do not call it "missing"
             continue
+        # account file + other users' shelves are never a valid client target
+        as_rel = os.path.relpath(rp, root).replace(os.sep, "/")
+        if as_rel == _USERS_FILE or as_rel.startswith(_USERS_FILE + "/"):
+            raise ValueError(f"{rel}: outside the project root")
+        if as_rel == ".users" or as_rel.startswith(".users/"):
+            who = _REQ_USER.get()
+            own = f".users/{who}" if who else ""
+            if not own or not (as_rel == own or as_rel.startswith(own + "/")):
+                raise ValueError(f"{rel}: outside your shelf")
         inside = rp
         if not must_exist or os.path.exists(rp):
             return rp
@@ -3402,11 +3459,21 @@ class H(http.server.BaseHTTPRequestHandler):
         except OSError as e:
             print(f"studio: save failed: {e}", file=sys.stderr)
 
+    def _secure_headers(self) -> None:
+        """Baseline browser hardening; CSP is frame-ancestors only so the
+        inline-script studio keeps working."""
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy",
+                         "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
     def _send(self, obj: object, cookie: str | None = None) -> None:
         body = json.dumps(obj).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self._secure_headers()
         if cookie:
             # HttpOnly + SameSite=Lax: the browser holds it, JS never reads it
             self.send_header("Set-Cookie",
@@ -3420,133 +3487,167 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/slots":
             # plugin-inventory surface: slot → [ids] (harness inventory shape)
+            # left open as a readiness probe (no board or account data).
             inv = {s: SLOTS.report(s) for s in UiSlots.slots}
             self._send(inv)
             return
-        if self.path == "/poll":
-            import hashlib
-            disk = H._disk()
-            self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
-                        "clean": disk == H.saved_text})
-            return
-        if self.path.startswith("/collab/events"):
-            # realtime fan-out: Server-Sent Events (stdlib, no websocket dep).
-            # ?board= names the room (default: the open board); each event is
-            # {rev, by?, users} — the client reloads text on rev change via
-            # /collab/sync. Disconnect runs the leave inverse (no ghost users).
-            from urllib.parse import parse_qs, urlparse
-            user = _authed(self.headers)
-            if user is None:
-                self.send_response(401)
+        user = _authed(self.headers)
+        _tok = _REQ_USER.set(user)
+        try:
+            if self.path == "/poll":
+                if user is None:
+                    self._send({"error": "log in first", "login": True})
+                    return
+                import hashlib
+                disk = H._disk()
+                self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
+                            "clean": disk == H.saved_text})
+                return
+            if self.path.startswith("/collab/events"):
+                # realtime fan-out: Server-Sent Events (stdlib, no websocket dep).
+                # ?board= names the room (default: the open board); each event is
+                # {rev, by?, users} — the client reloads text on rev change via
+                # /collab/sync. Disconnect runs the leave inverse (no ghost users).
+                from urllib.parse import parse_qs, urlparse
+                if user is None:
+                    self.send_response(401)
+                    self._secure_headers()
+                    self.end_headers()
+                    return
+                from ocdcircuit import collab as _collab
+                key = H._room_key(dict(parse_qs(urlparse(self.path).query)))
+                room = _collab.get_room(key, H.src_text)
+                stream, unsub = room.subscribe()
+                leave = room.join(user)
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "keep-alive")
+                    self._secure_headers()
+                    self.end_headers()
+                    snap = room.snapshot()
+                    assert isinstance(snap, dict)
+                    self.wfile.write(
+                        f"data: {json.dumps({'hello': user, **snap})}\n\n".encode())
+                    self.wfile.flush()
+                    import queue as _qq
+                    idle = 0
+                    while True:
+                        try:
+                            msg = stream.get(timeout=15.0)
+                            assert isinstance(msg, dict)
+                            self.wfile.write(f"data: {json.dumps(msg)}\n\n".encode())
+                            self.wfile.flush()
+                            idle = 0
+                        except _qq.Empty:
+                            # SSE comment = heartbeat: proxies/LB kill idle streams
+                            self.wfile.write(b": ping\n\n")
+                            self.wfile.flush()
+                            idle += 1
+                            if idle >= 8 or getattr(self, "_sse_done", False):
+                                break
+                except (BrokenPipeError, ConnectionResetError, ValueError):
+                    pass
+                finally:
+                    leave()
+                    unsub()
+                return
+            if self.path.startswith("/fs"):
+                # project browser: ?dir= picks the directory (default: the board's
+                # own). Paths come back relative to ROOT, so /fs/open can take them.
+                if user is None:
+                    self._send({"error": "log in first", "login": True})
+                    return
+                try:
+                    from urllib.parse import parse_qs, urlparse
+                    qs = parse_qs(urlparse(self.path).query)
+                    base = os.path.relpath(BASE, ROOT).replace(os.sep, "/")
+                    first = qs.get("dir") or [base]
+                    d = first[0] or base
+                    self._send({"root": os.path.relpath(ROOT, os.getcwd()),
+                                "src": os.path.relpath(SRC, ROOT).replace(os.sep, "/"),
+                                "base": base, "dir": _rel(d),
+                                "tree": _tree(d), "vcs": _git_status()})
+                except ValueError as e:
+                    self._send({"error": str(e)})
+                return
+            if self.path != "/" and not self.path.startswith("/?"):
+                self.send_response(204)  # favicon etc: silent, no console 404
+                self._secure_headers()
                 self.end_headers()
                 return
-            from ocdcircuit import collab as _collab
-            key = H._room_key(dict(parse_qs(urlparse(self.path).query)))
-            room = _collab.get_room(key, H.src_text)
-            stream, unsub = room.subscribe()
-            leave = room.join(user)
-            try:
+            # members' workshop: no session cookie → the login screen. /auth/*
+            # stays open (it is how you get the cookie). The gate lives here, not
+            # in a proxy, so `python -m apps.studio` is the whole setup.
+            if user is None:
+                body = LOGIN_PAGE.replace("/*__FABS__*/", fab_strip()).encode()
                 self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "keep-alive")
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self._secure_headers()
                 self.end_headers()
-                snap = room.snapshot()
-                assert isinstance(snap, dict)
-                self.wfile.write(
-                    f"data: {json.dumps({'hello': user, **snap})}\n\n".encode())
-                self.wfile.flush()
-                import queue as _qq
-                idle = 0
-                while True:
-                    try:
-                        msg = stream.get(timeout=15.0)
-                        assert isinstance(msg, dict)
-                        self.wfile.write(f"data: {json.dumps(msg)}\n\n".encode())
-                        self.wfile.flush()
-                        idle = 0
-                    except _qq.Empty:
-                        # SSE comment = heartbeat: proxies/LB kill idle streams
-                        self.wfile.write(b": ping\n\n")
-                        self.wfile.flush()
-                        idle += 1
-                        if idle >= 8 or getattr(self, "_sse_done", False):
-                            break
-            except (BrokenPipeError, ConnectionResetError, ValueError):
-                pass
-            finally:
-                leave()
-                unsub()
-            return
-        if self.path.startswith("/fs"):
-            # project browser: ?dir= picks the directory (default: the board's
-            # own). Paths come back relative to ROOT, so /fs/open can take them.
-            try:
-                from urllib.parse import parse_qs, urlparse
-                qs = parse_qs(urlparse(self.path).query)
-                base = os.path.relpath(BASE, ROOT).replace(os.sep, "/")
-                first = qs.get("dir") or [base]
-                d = first[0] or base
-                self._send({"root": os.path.relpath(ROOT, os.getcwd()),
-                            "src": os.path.relpath(SRC, ROOT).replace(os.sep, "/"),
-                            "base": base, "dir": _rel(d),
-                            "tree": _tree(d), "vcs": _git_status()})
-            except ValueError as e:
-                self._send({"error": str(e)})
-            return
-        if self.path != "/" and not self.path.startswith("/?"):
-            self.send_response(204)  # favicon etc: silent, no console 404
-            self.end_headers()
-            return
-        # members' workshop: no session cookie → the login screen. /auth/*
-        # stays open (it is how you get the cookie). The gate lives here, not
-        # in a proxy, so `python -m apps.studio` is the whole setup.
-        user = _authed(self.headers)
-        if user is None:
-            body = LOGIN_PAGE.replace("/*__FABS__*/", fab_strip()).encode()
+                self.wfile.write(body)
+                return
+            from urllib.parse import parse_qs, urlparse
+            qs2 = parse_qs(urlparse(self.path).query)
+            want = (qs2.get("board") or [""])[0]
+            if want:
+                # shelf boards only: alnum/_/- inside the user's own dir, else the
+                # launch board. Server-side: the cookie names the user, the query
+                # names only the file.
+                clean = "".join(c for c in want if c.isalnum() or c in "_-")[:32]
+                cand = os.path.join(_user_dir(user), (clean or "_") + ".ocd")
+                if os.path.isfile(cand):
+                    g = globals()
+                    g["SRC"], g["BASE"] = cand, os.path.dirname(cand)
+                    H.src_text = _read(os.path.relpath(cand, ROOT))
+                    H.save_target = cand
+                    H.hist, H.redo, H.chat, H.props = [H.src_text], [], [], []
+                    H.saved_text = ""
+            page = PAGE.replace("/*__TOOLBAR__*/", SLOTS.render("toolbar", None))
+            page = page.replace("/*__VIEWS__*/", SLOTS.render("view", None))
+            body = page.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self._secure_headers()
             self.end_headers()
             self.wfile.write(body)
-            return
-        from urllib.parse import parse_qs, urlparse
-        qs2 = parse_qs(urlparse(self.path).query)
-        want = (qs2.get("board") or [""])[0]
-        if want:
-            # shelf boards only: alnum/_/- inside the user's own dir, else the
-            # launch board. Server-side: the cookie names the user, the query
-            # names only the file.
-            clean = "".join(c for c in want if c.isalnum() or c in "_-")[:32]
-            cand = os.path.join(_user_dir(user), (clean or "_") + ".ocd")
-            if os.path.isfile(cand):
-                g = globals()
-                g["SRC"], g["BASE"] = cand, os.path.dirname(cand)
-                H.src_text = _read(os.path.relpath(cand, ROOT))
-                H.save_target = cand
-                H.hist, H.redo, H.chat, H.props = [H.src_text], [], [], []
-                H.saved_text = ""
-        page = PAGE.replace("/*__TOOLBAR__*/", SLOTS.render("toolbar", None))
-        page = page.replace("/*__VIEWS__*/", SLOTS.render("view", None))
-        body = page.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        finally:
+            _REQ_USER.reset(_tok)
 
     def do_POST(self) -> None:
-        n = int(self.headers.get("Content-Length", 0))
-        req = json.loads(self.rfile.read(n) or b"{}")
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            self._send({"error": "bad Content-Length"})
+            return
+        if n < 0 or n > _MAX_BODY:
+            self._send({"error": "body too large"})
+            return
+        try:
+            req = json.loads(self.rfile.read(n) or b"{}")
+        except json.JSONDecodeError:
+            self._send({"error": "body must be JSON"})
+            return
+        if not isinstance(req, dict):
+            self._send({"error": "body must be a JSON object"})
+            return
         print(f"REQ {self.path} src={os.path.relpath(SRC, ROOT)} "
               f"want={req.get('src')!r}", flush=True, file=sys.stderr)
+        user = _authed(self.headers)
+        _tok = _REQ_USER.set(user)
         try:
             if self.path.startswith("/auth/"):
                 pass  # the gate is the page; these routes ARE the keyhole
-            elif _authed(self.headers) is None:
+            elif user is None:
                 self._send({"error": "log in first", "login": True})
                 return
             if self.path == "/auth/signup":
+                if not _auth_rate_ok(_client_key(self)):
+                    self._send({"error": "too many tries — wait a minute"})
+                    return
                 name = str(req.get("user", "")).strip()
                 password = str(req.get("password", ""))
                 if not name or not password:
@@ -3563,6 +3664,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     _write_user(name, password)
                     self._send({"ok": True, "user": name}, cookie=_new_session(name))
             elif self.path == "/auth/login":
+                if not _auth_rate_ok(_client_key(self)):
+                    self._send({"error": "too many tries — wait a minute"})
+                    return
                 name, password = str(req.get("user", "")).strip(), str(req.get("password", ""))
                 if not _check_user(name, password):
                     self._send({"error": "wrong name or password"})
@@ -3576,16 +3680,17 @@ class H(http.server.BaseHTTPRequestHandler):
                         _SESSIONS.pop(v.strip(), None)
                 self._send({"ok": True}, cookie="")
             elif self.path == "/auth/me":
-                user = _authed(self.headers)
                 disp = _read_users().get(user, ("", "", user))[2] if user else None
                 self._send({"user": user, "display": disp,
                             "needs_setup": not _read_users()})
             elif self.path == "/auth/profile":
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 disp = str(req.get("display", "")).strip()[:40]
                 if not disp:
                     self._send({"error": "a display name can't be blank"})
+                    return
+                if not _ok_display(disp):
+                    self._send({"error": "display name can't contain control chars or ':'"})
                     return
                 try:
                     _set_display(user, disp)
@@ -3594,12 +3699,10 @@ class H(http.server.BaseHTTPRequestHandler):
                     return
                 self._send({"ok": True, "display": disp})
             elif self.path == "/shelf":
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 self._send({"user": user, "boards": _shelf(user),
                             "templates": _templates()})
             elif self.path == "/shelf/new":
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 raw = str(req.get("name", "")).strip().lower()
                 # prompt-box prose ("a wifi sensor node!") degrades to a slug
@@ -3619,7 +3722,6 @@ class H(http.server.BaseHTTPRequestHandler):
                             f.write(STARTER_OCD.format(name=name))
                         self._send({"ok": True, "boards": _shelf(user)})
             elif self.path == "/shelf/from_template":
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 raw = str(req.get("name", ""))
                 fn = "".join(c for c in os.path.basename(raw) if c.isalnum() or c in "_-.")[:40]
@@ -3643,7 +3745,6 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/collab/sync":
                 # realtime pull: rev + text + who changed it + presence.
                 from ocdcircuit import collab as _collab
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 key = H._room_key()
                 room = _collab.get_room(key, H.src_text)
@@ -3654,7 +3755,6 @@ class H(http.server.BaseHTTPRequestHandler):
                 # realtime edit at a rev: match -> accept + rebuild the room
                 # text (everyone converges); mismatch -> stale + current rev.
                 from ocdcircuit import collab as _collab
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 key = H._room_key()
                 room = _collab.get_room(key, H.src_text)
@@ -3689,7 +3789,6 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/collab/cursor":
                 # presence heartbeat: x/y/ref + prune the timed-out, no timer.
                 from ocdcircuit import collab as _collab
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 room = _collab.get_room(H._room_key(), H.src_text)
                 self._send(room.heartbeat(user, _f(req.get("x"), 0.0),
@@ -3699,7 +3798,6 @@ class H(http.server.BaseHTTPRequestHandler):
                 # structured op through the `collab` plugin (undoable edits,
                 # same fence as every dispatch): {rev, op:{ops:[...]}}.
                 from ocdcircuit import collab as _collab
-                user = _authed(self.headers)
                 assert user is not None  # gated above
                 key = H._room_key()
                 room = _collab.get_room(key, H.src_text)
@@ -4079,10 +4177,21 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/add":
                 from ocdcircuit.kb import KB
+                from urllib.parse import urlparse as _uparse
                 kb = _kb()
                 assert isinstance(kb, KB)
                 try:
-                    self._send(kb.add(str(req.get("src", ""))))
+                    src = str(req.get("src", ""))
+                    scheme = _uparse(src).scheme.lower()
+                    if scheme in ("http", "https"):
+                        pass  # kb.add enforces https on download
+                    elif src:
+                        # local path: only files inside the project root
+                        rp = os.path.realpath(src)
+                        root = os.path.realpath(ROOT)
+                        if rp != root and not rp.startswith(root + os.sep):
+                            raise ValueError(f"{src}: outside the project root")
+                    self._send(kb.add(src))
                 except (ValueError, OSError) as e:
                     self._send({"error": f"ValueError: {e}"})
             elif self.path == "/kb/fetch":
@@ -4161,6 +4270,9 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/vcs/diff":
                 h = str(req.get("hash", ""))
                 if h:
+                    if not _GIT_HASH_RE.match(h):
+                        self._send({"error": "hash must be a hex git object id"})
+                        return
                     self._send({"diff": _git("show", "--stat", "--patch",
                                              "--no-color", h)[:20000]})
                 else:
@@ -4169,6 +4281,9 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/vcs/commit":
                 rel = _rel(os.path.relpath(SRC, ROOT))
                 msg = str(req.get("message", "")).strip() or "studio: update " + rel
+                if "\n" in msg or "\r" in msg or msg.startswith("-"):
+                    self._send({"error": "commit message must be one safe line"})
+                    return
                 _git("add", "--", rel)
                 out = _git("commit", "-m", msg)
                 self._send({"ok": True, "commit": out.strip().splitlines()[-1][:200],
@@ -4178,6 +4293,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
         except Exception as e:  # never 500 the UI thread: report, keep serving
             self._send({"error": f"{type(e).__name__}: {e}"})
+        finally:
+            _REQ_USER.reset(_tok)
 
     @staticmethod
     def _build(text: str, animate: bool, req: dict[str, object] | None = None) -> dict[str, object]:
