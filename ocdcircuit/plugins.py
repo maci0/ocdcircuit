@@ -1429,7 +1429,8 @@ class EagleBoardImporter(Plugin[dict[str, object]]):
 
 class EasyedaImporter(Plugin[dict[str, object]]):
     """Board importer: EasyEDA Std JSON — schematic (docType 1), PCB
-    (docType 3), or footprint (docType 4), sniffed by head."""
+    (docType 3), or footprint (docType 4), sniffed by head. Schematic
+    pin dots take ox/oy (sheet px) when stored origin-relative."""
     kind, key = "importer", "easyeda"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
@@ -1441,7 +1442,8 @@ class EasyedaImporter(Plugin[dict[str, object]]):
             doc = json.load(f)
         assert isinstance(doc, dict)
         if str(doc.get("head", "")).split("~")[0] == "1":
-            return _board_ir_into(board, easyeda_sch(doc))
+            return _board_ir_into(board, easyeda_sch(
+                doc, _f(k.get("ox", 0.0)), _f(k.get("oy", 0.0))))
         out = easyeda_doc(doc)
         if isinstance(out, list):  # footprint doc → fp import
             for name, meta in out:

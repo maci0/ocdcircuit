@@ -2592,6 +2592,20 @@ assert {n: sorted(p for p in _ert.nets[n].pins) for n in _ert.nets} == \
 _esb = Board("esb", 40, 30)
 _esr = _esb.import_fp("easyeda", path=_esf)
 assert _esr["parts"] == len(_ebb.parts) and _esr["nets"] == len(_ebb.nets)
+# easyeda .sch pin-dot offsets: origin-relative pins miss, ox/oy reattach
+_offshape = ["W~190 200 290 200~#008800~2~0~none~gw1",
+             "N~190~200~0~#FF0000~NET1~gn1~start~192~200~Arial~",
+             "LIB~100~100~package`R0805`name`R1`~~0~g1#@$"
+             "P~show~0~1~90~200~180~gp1^^90~200^^M 90 200 h -10~#800"
+             "^^0~80~200~0~A~end~~^^0~70~196~0~1~start~~"]
+assert foreign.easyeda_sch({"head": "1~1.7.5", "shape": _offshape})["nets"] == {}
+_offrt = foreign.easyeda_sch({"head": "1~1.7.5", "shape": _offshape}, ox=100.0)
+assert {k: cast(dict[str, object], v)["pins"] for k, v in
+        cast(dict[str, object], _offrt["nets"]).items()} == {"NET1": [["R1", "1"]]}
+_exd = tempfile.mkdtemp() + "/off.easyeda_sch.json"
+open(_exd, "w").write(_json.dumps({"head": "1~1.7.5", "shape": _offshape}))
+_exb0 = Board("exb0", 40, 30)
+assert _exb0.import_fp("easyeda", path=_exd, ox=100.0)["nets"] == 1
 # lcsc/mpn ride as hidden properties (KiCad→JLC backup path)
 _kl = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcsc=C1 mpn=M1\n"
                   "part C1 C0805 100n\nN :: R1.1 C1.2\n", base=EX)

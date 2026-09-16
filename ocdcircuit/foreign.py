@@ -835,13 +835,14 @@ def easyeda_doc(doc: dict[str, object]) -> object:
     return ir
 
 
-def _ez_sch_pins(raw: str) -> list[tuple[str, float, float]]:
+def _ez_sch_pins(raw: str, ox: float = 0.0, oy: float = 0.0) -> list[tuple[str, float, float]]:
     """Pin (number, dot) list from a raw schematic LIB record. Each P child
     splits by ^^ into config, pin-dot, pin-path, name, number — the number
     text is field 4 of segment 4 (`1~655~29~0~1~start~~11pt`). Config x,y
     are absolute sheet px (like W wires and N labels): the official cap
     example puts its LIB at 220,140 with pins at 200,120 and 210,120 —
-    beside the body, not 200px away."""
+    beside the body, not 200px away. ox/oy shifts pin dots for sheets
+    whose pins are stored origin-relative."""
     pins: list[tuple[str, float, float]] = []
     for child in raw.split("#@$")[1:]:
         if not child.startswith("P~"):
@@ -851,7 +852,7 @@ def _ez_sch_pins(raw: str) -> list[tuple[str, float, float]]:
         if len(cfg) < 6:
             continue
         try:
-            dot = (float(cfg[4]), float(cfg[5]))
+            dot = (float(cfg[4]) + ox, float(cfg[5]) + oy)
         except ValueError:
             continue
         num = ""
@@ -863,12 +864,13 @@ def _ez_sch_pins(raw: str) -> list[tuple[str, float, float]]:
     return pins
 
 
-def easyeda_sch(doc: dict[str, object]) -> dict[str, object]:
+def easyeda_sch(doc: dict[str, object], ox: float = 0.0, oy: float = 0.0) -> dict[str, object]:
     """EasyEDA Std schematic (docType 1) → board IR: LIB symbol instances
     (package/name params) + W wires joined by shared endpoints + N
     netlabels / F netflags naming their wire group. Symbol pins attach by
     pin-dot proximity (10px). Units are sheet px — positions rescale onto a
-    40x30 board. Mirrors kicad_sch_netlist's contract."""
+    40x30 board. ox/oy shifts pin dots for sheets whose pins are stored
+    origin-relative. Mirrors kicad_sch_netlist's contract."""
     shape = doc.get("shape", [])
     assert isinstance(shape, list)
     lines: list[list[str]] = []
@@ -895,7 +897,7 @@ def easyeda_sch(doc: dict[str, object]) -> dict[str, object]:
         syms.append({"ref": meta.get("name", f"U{len(syms) + 1}"),
                      "fp": meta.get("package", "unknown"),
                      "value": meta.get("name", ""), "x": lx, "y": ly,
-                     "pins": _ez_sch_pins(s)})
+                     "pins": _ez_sch_pins(s, ox, oy)})
     for f in lines:
         tag = f[0] if f else ""
         if tag == "LIB" and len(f) >= 4:
