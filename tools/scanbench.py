@@ -420,7 +420,7 @@ def main(argv: list[str]) -> int:
             same arm, same inputs, scored 3 and 15 traced connections on two
             consecutive runs), so one number per arm cannot support a claim.
             """
-            t0 = time.time()
+            t0 = time.perf_counter()
             got = [g for g in (once(tag, i if reps > 1 else 0, **dict(kw))
                                for i in range(reps)) if g]
             if not got:
@@ -434,7 +434,7 @@ def main(argv: list[str]) -> int:
             if reps > 1:
                 spread = ("  [refs " + "/".join(str(g[0]) for g in got)
                           + ", traced " + "/".join(str(g[2]) for g in got) + "]")
-            print(f"  {tag:10s} {time.time() - t0:5.0f}s  "
+            print(f"  {tag:10s} {time.perf_counter() - t0:5.0f}s  "
                   f"refs {med(0):4.1f}/{len(refs)}  parts {med(1):4.1f}/{len(gtc)}"
                   f"  traced {med(2):4.1f}  size-err {med(4):4.1f}mm"
                   f"  drc {med(5):4.1f}"

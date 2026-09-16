@@ -121,8 +121,9 @@ class CDP:
         else:
             hdr = bytes([0x81, 0x80 | 127]) + struct.pack(">Q", n)
         self.s.sendall(hdr + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
-        t0 = time.time()
-        while time.time() - t0 < timeout:
+        # monotonic: NTP/manual steps must not shorten or stretch the wait
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
             with self.lock:
                 for i, m in enumerate(self.events):
                     if m.get("id") == oid:
@@ -178,8 +179,9 @@ def launch_client(port: int = 9223) -> tuple[subprocess.Popen[bytes], str]:
 
 
 def wait_ready(port: int = 9223, timeout: float = 120.0) -> str:
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    # monotonic: a backward wall-clock step would otherwise loop forever
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
         try:
             return page_ws(port)
         except (OSError, ValueError, KeyError, StopIteration):

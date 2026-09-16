@@ -2778,7 +2778,7 @@ if not os.path.isdir(ROOT):  # a bad OCD_ROOT must not take the studio down
 # refused (see _abs).
 _AUTH_COOKIE = "ocd_user"
 _USERS_FILE = ".ocd-users"
-_SESSION_TTL = 86400.0  # 24h wall-clock from login
+_SESSION_TTL = 86400.0  # 24h elapsed (monotonic) from login
 _SESSIONS: dict[str, tuple[str, float]] = {}  # token -> (username, expires_mono)
 _SESSIONS_MAX = 64  # in-memory cap; restart clears all
 _AUTH_HITS: dict[str, list[float]] = {}  # client key -> recent attempt times
@@ -3079,8 +3079,10 @@ def _shelf(name: str) -> list[dict[str, str]]:
                     elif s.startswith(("net ", "net:", "VCC ", "GND ")) or " :: " in s:
                         nn = str(int(nn) + 1)
             rows.append({"name": fn, "bytes": str(st.st_size),
-                         "mtime": time.strftime("%Y-%m-%d %H:%M",
-                                                time.localtime(st.st_mtime)),
+                         # UTC instant: host TZ (or make's TZ=UTC) must not
+                         # shift the shelf label by hours across machines.
+                         "mtime": time.strftime("%Y-%m-%d %H:%M UTC",
+                                                time.gmtime(st.st_mtime)),
                          "blurb": blurb, "parts": np_, "nets": nn})
         except OSError:
             continue
@@ -3766,7 +3768,8 @@ class H(http.server.BaseHTTPRequestHandler):
         self._secure_headers()
         if cookie:
             self.send_header("Set-Cookie",
-                             f"{_AUTH_COOKIE}={cookie}; Path=/; HttpOnly; SameSite=Lax")
+                             f"{_AUTH_COOKIE}={cookie}; Path=/; HttpOnly; "
+                             f"SameSite=Lax; Max-Age={int(_SESSION_TTL)}")
         elif cookie == "":
             self.send_header("Set-Cookie",
                              f"{_AUTH_COOKIE}=; Path=/; Max-Age=0")

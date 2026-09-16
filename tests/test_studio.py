@@ -94,6 +94,7 @@ def login(base: str) -> str:
     res = json.loads(r.read())
     assert not res.get("error"), res
     assert "ocd_user=" in setck, setck
+    assert "Max-Age=86400" in setck, setck  # cookie dies with server session TTL
     _JAR[base] = setck.split(";")[0].strip()
     return _JAR[base]
 
@@ -368,6 +369,10 @@ def main() -> None:
         assert isinstance(_boards, list)
         assert any(isinstance(b, dict) and b.get("name") == "hello.ocd"
                    for b in _boards), _nb
+        _hello = next(b for b in _boards
+                      if isinstance(b, dict) and b.get("name") == "hello.ocd")
+        # shelf mtime is a UTC wall stamp — not host-local (TZ-dependent)
+        assert str(_hello.get("mtime", "")).endswith(" UTC"), _hello
         _nb2 = post(base, "/shelf/new", {"name": "hello"})
         assert "already on your shelf" in str(_nb2.get("error")), _nb2
         _slug = post(base, "/shelf/new", {"name": "A wifi sensor node!"})
@@ -441,10 +446,10 @@ def main() -> None:
         assert "error" not in _r, _r
         _p2 = json.loads(get(base, "/poll"))
         assert _p2["clean"] is True, _p2
-        t = time.time()
+        t = time.monotonic()
         d = post(base, "/build", {"text": text, "placer": "diffusion",
                                  "router": "maze"})
-        dt = time.time() - t
+        dt = time.monotonic() - t
         assert not d.get("error"), d.get("error")
         assert dt < BUILD_BUDGET, f"quick build {dt:.2f}s over {BUILD_BUDGET}s"
         parts = cast(dict[str, object], d["parts"])
@@ -483,10 +488,10 @@ def main() -> None:
         _edit = _cs_text.replace("part R1 R0805 " + _m0.group(1),
                                  "part R1 R0805 9k9", 1)
         assert _edit != _cs_text, "test edit must differ from room text"
-        _t0 = time.time()
+        _t0 = time.monotonic()
 
         _cp = post(base, "/collab/push", {"rev": _cs_rev, "text": _edit})
-        _cpdt = time.time() - _t0
+        _cpdt = time.monotonic() - _t0
         assert not _cp.get("error"), _cp.get("error")
         assert "9k9" in str(_cp.get("text")), "push text adopted"
         # rev rides every build response (applyState); absent = unchanged
@@ -538,10 +543,10 @@ def main() -> None:
         _ev.add_header("Cookie", _mate)
         _seen: list[str] = []
         _er = urllib.request.urlopen(_ev, timeout=25)
-        _t1 = time.time()
+        _t1 = time.monotonic()
         _buf = b""
         _done = False
-        while time.time() - _t1 < 20 and not _done:
+        while time.monotonic() - _t1 < 20 and not _done:
             _chunk = _er.read(1)
             if not _chunk:
                 break
