@@ -1628,6 +1628,7 @@ class PcbScanPlugin(Plugin[dict[str, object]]):
             cast("list[str] | dict[str, list[str]]", photos),
             outdir or f"{board.name}-scan",
             board_mm=(_f(mm, 0.0) or None), note=note,
+            zoom=_i(k.get("zoom"), 2), maxdim=_i(k.get("maxdim"), 1600),
             docs=cast("list[str] | None", docs),
             answers=cast("dict[str, str] | None", answers),
             llm_analysis=bool(k.get("llm", True)))
