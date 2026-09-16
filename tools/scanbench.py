@@ -223,7 +223,8 @@ def main(argv: list[str]) -> int:
 
         reps = int(os.environ.get("SCANBENCH_REPS", "1"))
 
-        def once(tag: str, n: int, **kw: Any) -> tuple[int, int, int, int] | None:
+        def once(tag: str, n: int,
+                 **kw: Any) -> tuple[int, int, int, int, int] | None:
             out = os.path.join(root, f"scan-{tag}" + (f"-{n}" if n else ""))
             shots_in = cast_paths(kw.pop("photos", None)) or photos
             try:
@@ -238,7 +239,17 @@ def main(argv: list[str]) -> int:
             traced = sum(1 for ln in rep.splitlines()
                          if "<-->" in ln and "guess" not in ln.lower())
             ok = 1 if r.get("draft_parts") else 0
-            return len(found), len(vals), traced, ok
+            # board size error in mm: the real L130 is ~100 mm across, and
+            # this is the axis measured pad geometry actually moves.
+            dim = 99
+            if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
+                import re as _re
+                m = _re.search(r"board\s+\S+\s+([\d.]+)x([\d.]+)",
+                               open(str(r["draft"])).read())
+                if m:
+                    dim = int(max(abs(float(m.group(1)) - 100.0),
+                                  abs(float(m.group(2)) - 100.0)))
+            return len(found), len(vals), traced, ok, dim
 
         def score(tag: str, **kw: Any) -> None:
             """Recall of the schematic's reference designators, the parts it
@@ -265,7 +276,7 @@ def main(argv: list[str]) -> int:
                           + ", traced " + "/".join(str(g[2]) for g in got) + "]")
             print(f"  {tag:10s} {time.time() - t0:5.0f}s  "
                   f"refs {med(0):4.1f}/{len(refs)}  parts {med(1):4.1f}/{len(gtc)}"
-                  f"  traced {med(2):4.1f}"
+                  f"  traced {med(2):4.1f}  size-err {med(4):4.1f}mm"
                   f"  drafts-parse {int(sum(g[3] for g in got))}/{len(got)}"
                   f"{spread}")
 
