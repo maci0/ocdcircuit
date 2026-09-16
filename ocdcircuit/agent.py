@@ -150,7 +150,18 @@ def _opt_float(v: object) -> float | None:
     return out
 
 
-def parse_constraint(text: str) -> Constraint | None:
+def _copper_layer(token: str, layers: int) -> int:
+    """Map top/bottom/N → copper index. `bottom` is the last copper layer."""
+    assert layers >= 1
+    t = token.lower()
+    if t == "top":
+        return 0
+    if t == "bottom":
+        return layers - 1
+    return int(token)
+
+
+def parse_constraint(text: str, *, layers: int = 2) -> Constraint | None:
     # Collapse runs of whitespace: every pattern below is written with single
     # spaces, so "route 5V  on 1" (or a tab) silently parsed as nothing and
     # surfaced as "unknown statement" three lines later. Normalising once
@@ -168,8 +179,8 @@ def parse_constraint(text: str) -> Constraint | None:
         return {"t": "edge", "margin": float(m.group(1))}
     m = re.match(r"route (\w+) on (top|bottom|\d+)$", t, re.I)
     if m:
-        layer = {"top": 0, "bottom": 1}[m.group(2).lower()] if m.group(2).lower() in ("top", "bottom") else int(m.group(2))
-        return {"t": "layer", "net": m.group(1), "layer": layer}
+        return {"t": "layer", "net": m.group(1),
+                "layer": _copper_layer(m.group(2), layers)}
     m = re.match(r"trace (\w+) ([\d.]+)$", t, re.I)
     if m:
         return {"t": "width", "net": m.group(1), "width": float(m.group(2))}
@@ -207,8 +218,8 @@ def parse_constraint(text: str) -> Constraint | None:
         return {"t": "nc", "pins": m.group(1).split()}
     m = re.match(r"pour (\w+) on (top|bottom|\d+)$", t, re.I)
     if m:
-        layer = {"top": 0, "bottom": 1}[m.group(2).lower()] if m.group(2).lower() in ("top", "bottom") else int(m.group(2))
-        return {"t": "pour", "net": m.group(1), "layer": layer}
+        return {"t": "pour", "net": m.group(1),
+                "layer": _copper_layer(m.group(2), layers)}
     m = re.match(r"keepout ([\d.\-]+) ([\d.\-]+) (?:([\d.]+)x([\d.]+)|d([\d.]+))(?: on ([\w,]+))?$", t, re.I)
     if m:
         kd: Constraint = {"t": "keepout", "x": float(m.group(1)), "y": float(m.group(2)),
@@ -690,7 +701,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
         elif kw == "net" or "::" in line:
             _exec_net(b, line, err)
         else:
-            c = parse_constraint(line)
+            c = parse_constraint(line, layers=b.layers)
             if c is None:
                 raise err("unknown statement")
             if c["t"] == "board":
@@ -749,6 +760,13 @@ def _validate(b: Board) -> None:
 AUTO_JOIN = ("VCC", "GND", "VDD", "VSS", "5V", "3V3")
 
 
+def _remap_net(n: str, pre: str, joins: set[str], join: str | None) -> str:
+    """Prefix a child net unless it is explicitly joined or an AUTO_JOIN rail."""
+    if (joins and n in joins) or (join is None and n in AUTO_JOIN):
+        return n
+    return pre + n
+
+
 def _include(parent: Board, path: str, prefix: str | None, join: str | None,
              base: str, stack: tuple[str, ...], err: ErrFn) -> None:
     """Merge a child .ocd into parent. Child board/layers/fix ignored;
@@ -783,16 +801,11 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
         parent.block_src[bname] = path
     for n, net in child.nets.items():
         # explicit `join` wins; power-style nets auto-join; rest prefixed
-        target = (n if (joins and n in joins) or (join is None and n in AUTO_JOIN)
-                  else pre + n)
+        target = _remap_net(n, pre, joins, join)
         for ref, pin in net.pins:
             parent.connect(target, pre + ref, pin)
         if net.attrs:
             parent.nets[target].attrs.update(dict(net.attrs))
-        if net.layer is not None:
-            parent._constrain_raw({"t": "layer", "net": target, "layer": net.layer})
-        if net.width != 0.3:
-            parent._constrain_raw({"t": "width", "net": target, "width": net.width})
     for c in child.constraints:
         t = c.get("t")
         if t == "fixed":
@@ -802,19 +815,18 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
                               "w": _f(c.get("w", 2.0)), "owner": pre})
         elif t == "power":
             nets = cast(list[str], c["nets"])
-            merged = [n if (joins and n in joins) or (join is None and n in AUTO_JOIN)
-                      else pre + n for n in nets]
+            merged = [_remap_net(n, pre, joins, join) for n in nets]
             if not any(x.get("t") == "power"
                        and sorted(cast(list[str], x["nets"])) == sorted(merged)
                        for x in parent.constraints):
                 parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
-        elif t == "pour":
-            target = (str(c["net"]) if (joins and str(c["net"]) in joins)
-                      or (join is None and str(c["net"]) in AUTO_JOIN)
-                      else pre + str(c["net"]))
-            parent._constrain_raw({"t": "pour", "net": target,
-                              "layer": int(cast(int, c.get("layer", 0))),
-                              "owner": pre})
+        elif t in ("layer", "width", "pour"):
+            # same remap as _instance — layer/width live on constraints, not
+            # net.layer/net.width (those are solver scratch after assign_layers)
+            cc = dict(c)
+            cc["net"] = _remap_net(str(c["net"]), pre, joins, join)
+            cc["owner"] = pre
+            parent._constrain_raw(cc)
     parent.includes.append({"path": path, "prefix": prefix or child.name,
                             "join": sorted(joins)})
     if child.parts:
@@ -881,13 +893,17 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
     nattrs: dict[str, str] = {}
     for a in attrs:
         if a[0] in "Ll" and a[1:].isdigit():
+            # raw: out-of-range layers are lint errors + assign_layers clamps;
+            # fail-fast here would break 1L dumps that still carry L1.
             b._constrain_raw({"t": "layer", "net": name, "layer": int(a[1:])})
         elif a.startswith("pour="):
             # declarative pour: `GND pour=0 :: ...` ≡ `pour GND on 0`
-            _pv = a.partition("=")[2].lower()
-            _pl = {"top": 0, "bottom": b.layers - 1}.get(_pv, _pv)
-            assert str(_pl).isdigit(), f"{ctx}bad pour layer {a!r}"
-            b._constrain_raw({"t": "pour", "net": name, "layer": int(_pl)})
+            _pv = a.partition("=")[2]
+            try:
+                _pl = _copper_layer(_pv, b.layers)
+            except ValueError:
+                raise err(f"{ctx}bad pour layer {a!r}")
+            b._constrain_raw({"t": "pour", "net": name, "layer": _pl})
         elif "=" in a:
             k, _, v = a.partition("=")
             if not k or not v:
@@ -944,6 +960,7 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
     # defaults for it was 1.5s of a 2.8s load on a 1726-instance board
     # (101k plugin mounts, each notifying the whole fiber tree).
     child = _Board("__block__", dispatch=False)
+    child.layers = parent.layers  # top/bottom resolve against the real stackup
     child.custom_fp.update(parent.custom_fp)  # blocks may use parent's `fp` files
     for raw in parent.blocks[block].lines:
         line = _strip_comment(raw)
@@ -955,7 +972,7 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
         elif kw == "net" or "::" in line:
             _exec_net(child, line, err, ctx=f"in block {block}: ")
         else:
-            c = parse_constraint(line)
+            c = parse_constraint(line, layers=parent.layers)
             if c is None:
                 raise err(f"in block {block}: unknown statement: {line!r}")
             child._constrain_raw(c)
@@ -971,15 +988,11 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
         parent.add_part(new, p.fp, p.value, attrs=dict(p.attrs) or None)
         parent.parts[new].owner = pre
     for n, net in child.nets.items():
-        target = (n if (joins and n in joins) or (join is None and n in AUTO_JOIN)
-                  else pre + n)
+        target = _remap_net(n, pre, joins, join)
         for ref, pin in net.pins:
             parent.connect(target, pre + ref, pin)
         if net.attrs:
             parent.nets[target].attrs.update(dict(net.attrs))
-
-    def _remap(n: str) -> str:
-        return n if (joins and n in joins) or (join is None and n in AUTO_JOIN) else pre + n
 
     for c in child.constraints:
         t = c.get("t")
@@ -993,11 +1006,11 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
                               "w": _f(c.get("w", 2.0)), "owner": pre})
         elif t == "power":
             nets = cast(list[str], c["nets"])
-            merged = [_remap(x) for x in nets]
+            merged = [_remap_net(x, pre, joins, join) for x in nets]
             parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
         elif t in ("layer", "width", "pour"):
             cc = dict(c)
-            cc["net"] = _remap(str(c["net"]))
+            cc["net"] = _remap_net(str(c["net"]), pre, joins, join)
             cc["owner"] = pre
             parent._constrain_raw(cc)
     parent.instances.append({"block": block, "prefix": prefix, "join": sorted(joins)})

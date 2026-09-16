@@ -6,7 +6,6 @@ snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
 from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Optional
 import json
 import math
 import subprocess
@@ -1012,7 +1011,7 @@ class Module(Component):
     def __init__(self, name: str) -> None:
         super().__init__(name)
         self._refs: list[str] = []
-        self._board: Optional[Board] = None
+        self._board: Board | None = None
         self._fiber: object | None = None
 
     def add(self, board: Board, ref: str, fp: str, value: str = "",

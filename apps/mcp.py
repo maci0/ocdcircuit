@@ -97,7 +97,8 @@ def t_state_set(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_parse(a: dict[str, object]) -> dict[str, object]:
-    c = agent.parse_constraint(str(a["text"]))
+    b = _board()
+    c = agent.parse_constraint(str(a["text"]), layers=b.layers)
     return {"constraint": c}
 
 

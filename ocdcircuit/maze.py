@@ -107,7 +107,7 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
                     continue
                 st = step
                 if (nx2, ny2) in soft and (nx2, ny2, l2) not in own:
-                    st += 15.0
+                    st += SOFT
                 ng = g + st + (via if l2 != ll else 0.0)
                 key = (nx2, ny2, l2)
                 if hist and key not in own:
@@ -117,9 +117,6 @@ def _astar(start: tuple[int, int, int], goal: tuple[int, int],
                     prev[key] = node
                     heapq.heappush(openh, (ng + h(nx2, ny2), ng, key, dd))
     return None
-
-
-from .circuit import Net, Seg
 
 
 def _net_span(board: Board, net: Net) -> float:

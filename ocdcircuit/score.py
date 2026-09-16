@@ -468,9 +468,11 @@ def score(board: Board) -> dict[str, object]:
                     abs(a.y - b.y) < (ah + bh) / 2):
                 bad += 1
     subs["spacing"] = round(max(0, 100 - 25 * bad), 1)
+    from .fab import get as _fab_get
+    edge = float(cast(float, _fab_get(board.fab).get("edge", 0.3)))
     out = sum(1 for p in parts
-              if not (p.wh()[0] / 2 + 0.3 <= p.x <= board.width - p.wh()[0] / 2 - 0.3
-                      and p.wh()[1] / 2 + 0.3 <= p.y <= board.height - p.wh()[1] / 2 - 0.3))
+              if not (p.wh()[0] / 2 + edge <= p.x <= board.width - p.wh()[0] / 2 - edge
+                      and p.wh()[1] / 2 + edge <= p.y <= board.height - p.wh()[1] / 2 - edge))
     subs["edge"] = round(max(0, 100 - 25 * out), 1)
     fill = sum(p.wh()[0] * p.wh()[1] for p in parts) / max(1, board.width * board.height)
     subs["compact"] = round(100 * min(fill / 0.15, (0.9 - fill) / 0.3) if fill < 0.9 else 0, 1)

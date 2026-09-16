@@ -25,6 +25,12 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 
+# Rails with no placement signal (centroid ≈ board center). Used by multilevel
+# clustering and rigid diffusion — keep the sets identical so power nets do not
+# glue instances in one path and get skipped in the other.
+BIG_RAILS = frozenset({"vcc", "vss", "GND", "VCC", "VDD", "VSS", "5V", "3V3"})
+
+
 def _fixed(board: Board) -> dict[str, XY]:
     out: dict[str, XY] = {}
     for c in board.constraints:
@@ -967,7 +973,7 @@ def _coarsen(board: Board, groups: dict[str, list[str]],
                if r in board.parts and board.parts[r].owner}
         own.discard(None)
         owners_set = cast(set[str], own)
-        if 1 < len(owners_set) <= 6 and net.name not in ("vcc", "vss", "GND"):
+        if 1 < len(owners_set) <= 6 and net.name not in BIG_RAILS:
             for a in owners_set:
                 adj[a].update(o for o in owners_set if o != a)
     seen: set[str] = set()
@@ -1044,9 +1050,8 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
     pads = _pad_cache(board)
     # giant rails carry no placement signal (centroid ≈ board center) —
     # skip them instead of rebuilding thousand-pin ext lists per member
-    BIG = {"vcc", "vss", "GND", "VCC", "VDD", "VSS"}
     small_nets = {n for n, net in board.nets.items()
-                  if n not in BIG and len(net.pins) <= 32}
+                  if n not in BIG_RAILS and len(net.pins) <= 32}
     mem = {r: [n for n in ns if n in small_nets]
            for r, ns in mem.items()}
 
@@ -1298,29 +1303,29 @@ def assign_layers(board: Board) -> None:
     if board.layers == 1:
         for net in board.nets.values():
             net.layer = 0
-        return
-    order = sorted(board.nets.values(), key=lambda n: -len(n.pins))
-    boxes: dict[int, list[BBox]] = {ll: [] for ll in range(board.layers)}
-    for net in order:
-        pts = [board.pad_pos(r, q) for r, q in net.pins if r in board.parts]
-        if not pts:
-            continue
-        bx: BBox = (min(q[0] for q in pts), min(q[1] for q in pts),
-                    max(q[0] for q in pts), max(q[1] for q in pts))
-        if net.layer is None:
-            def hits(ll: int) -> int:
-                return sum(1 for bb in boxes[ll] if not (
-                    bx[2] < bb[0] or bx[0] > bb[2] or bx[3] < bb[1] or bx[1] > bb[3]))
-            net.layer = min(boxes, key=hits)
-        elif not 0 <= net.layer < board.layers:
-            # `route N on 9` on a 2-layer board: lint reports it as an error
-            # and that is where the user is told, but the router must not
-            # die on it (it did, with a bare `KeyError: 9` from this dict).
-            # Clamp into the stackup and route the net somewhere real.
-            net.layer = max(0, min(board.layers - 1, net.layer))
-        boxes[net.layer].append(bx)
-    if "GND" in board.nets and board.nets["GND"].layer is None:
-        board.nets["GND"].layer = board.layers - 1
+    else:
+        order = sorted(board.nets.values(), key=lambda n: -len(n.pins))
+        boxes: dict[int, list[BBox]] = {ll: [] for ll in range(board.layers)}
+        for net in order:
+            pts = [board.pad_pos(r, q) for r, q in net.pins if r in board.parts]
+            if not pts:
+                continue
+            bx: BBox = (min(q[0] for q in pts), min(q[1] for q in pts),
+                        max(q[0] for q in pts), max(q[1] for q in pts))
+            if net.layer is None:
+                def hits(ll: int) -> int:
+                    return sum(1 for bb in boxes[ll] if not (
+                        bx[2] < bb[0] or bx[0] > bb[2] or bx[3] < bb[1] or bx[1] > bb[3]))
+                net.layer = min(boxes, key=hits)
+            elif not 0 <= net.layer < board.layers:
+                # `route N on 9` on a 2-layer board: lint reports it as an error
+                # and that is where the user is told, but the router must not
+                # die on it (it did, with a bare `KeyError: 9` from this dict).
+                # Clamp into the stackup and route the net somewhere real.
+                net.layer = max(0, min(board.layers - 1, net.layer))
+            boxes[net.layer].append(bx)
+        if "GND" in board.nets and board.nets["GND"].layer is None:
+            board.nets["GND"].layer = board.layers - 1
     if any((net.layer, net.width) != snap[n]
            for n, net in board.nets.items() if n in snap):
         def _undo() -> None:
