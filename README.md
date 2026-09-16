@@ -183,6 +183,15 @@ stated as a word in a pill.
   that into a .ply with the board extent exact. Depth is relative — set
   `--tall MM` to the tallest part to scale it.
 
+  A draft is a **starting point, not a fabricable board**, and the manifest
+  now says so instead of only checking that it parses: it reports how many
+  parts are actually wired, and what DRC says after a real place and route.
+  Measured on real drafts, every one loaded and every one then failed DRC
+  with overlapping parts — because photographs cannot show nets, most parts
+  arrive unconnected, the placer has no wirelength force on them, and they
+  stay where the model guessed. Wire the floating parts from the datasheet
+  and the placer can separate them.
+
   Netlist tracing stays the weak axis, and pad measurement does not rescue
   it (4 vs 3 traced connections, spreads fully overlapping). On a finished
   board the traces run *under* soldermask: thresholding copper yields ~5400
