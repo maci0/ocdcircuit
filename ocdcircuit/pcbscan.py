@@ -835,6 +835,26 @@ def scan_side(paths: list[str], outdir: str, side: str,
     # a double-exposed blur that no amount of enhancement recovers.
     keep = [i for i, t in enumerate(xforms) if t["peak"] >= 0.30]
     dropped = [names[i] for i in range(len(names)) if i not in keep]
+    # Say WHY, because "dropped top_08.png" tells a photographer nothing.
+    # The usual cause is a tight close-up: whole-image correlation needs the
+    # frames to show roughly the same thing, and a photo of one corner at 3x
+    # shares too little with an overview to lock on. Measured: close-ups
+    # framing under ~0.35 of the board register 0/4, and every one of those
+    # misses scores below the gate rather than corrupting the stitch.
+    why: dict[str, str] = {}
+    for i in range(len(names)):
+        if i in keep:
+            continue
+        # No guessing at the cause: when a match fails, the recovered scale
+        # is itself meaningless, and a close-up's focus measure is low for
+        # honest reasons (fewer edges in frame), so neither can diagnose the
+        # failure. Report the score and the one fix that is known to work.
+        why[names[i]] = (
+            f"no confident match (score {xforms[i]['peak']:.2f}). Most often "
+            "the frame is much tighter than the others: whole-image matching "
+            "needs overlapping landmarks, and close-ups under about a third "
+            "of the board register poorly. Add mid-range shots bridging each "
+            "close-up to an overview, or check it is the same side.")
     imgs = [imgs[i] for i in keep]
     xforms = [xforms[i] for i in keep]
 
@@ -861,7 +881,7 @@ def scan_side(paths: list[str], outdir: str, side: str,
     return {
         "pads": len(found), "pad_summary": pad_summary(found, side),
         "side": side, "photos": len(paths), "used": len(imgs),
-        "dropped": dropped, "reference": names[0],
+        "dropped": dropped, "dropped_why": why, "reference": names[0],
         "canvas": [int(out_w), int(out_h)], "mm_per_px": round(mm_px, 5),
         "coverage_mean": round(float(np.mean(cover)), 3),
         "relief": round(float(np.mean(hm)), 4),
@@ -1521,6 +1541,20 @@ def demo() -> None:
     body = ply.split(b"end_header\n", 1)[1]
     assert len(body) == n * 17 * 4, "ply body does not match its header"
     assert n == len(range(0, h, 8)) * len(range(0, w, 8))
+
+    # a dropped frame must come with a reason a photographer can act on
+    import tempfile as _tfd
+    _drop_dir = _tfd.mkdtemp()
+    write_png(os.path.join(_drop_dir, "top_a.png"),
+              np.clip(rng.normal(120, 50, (260, 260, 3)), 0, 255))
+    write_png(os.path.join(_drop_dir, "top_b.png"),   # unrelated content
+              np.clip(rng.normal(60, 20, (260, 260, 3)), 0, 255))
+    _ds = scan_side([os.path.join(_drop_dir, f) for f in
+                     ("top_a.png", "top_b.png")], _drop_dir, "top", 40.0)
+    _dw = cast(dict[str, str], _ds["dropped_why"])
+    assert set(_dw) == set(cast(list[str], _ds["dropped"])), (_dw, _ds["dropped"])
+    for _msg in _dw.values():
+        assert "score" in _msg and "close-up" in _msg, _msg
 
     assert _side_paths(["a_top.jpg", "b_bottom.jpg", "c.jpg"]) == {
         "top": ["a_top.jpg", "c.jpg"], "bottom": ["b_bottom.jpg"]}

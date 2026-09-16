@@ -746,6 +746,11 @@ def cmd_scan(agent: object, args: list[str]) -> int:
                 ("relief", str(s["relief"])),
                 ("dropped", ", ".join(cast(list[str], s["dropped"])) or "none"),
                 ("files", str(len(cast(dict[str, str], s["files"]))))])
+    for side, s in sorted(cast(dict[str, dict[str, object]],
+                               r.get("sides", {})).items()):
+        for name, reason in sorted(cast(dict[str, str],
+                                        s.get("dropped_why", {})).items()):
+            _out().print(f"  dropped {side}/{name}: {reason}")
     _out().print(f"scan: artifacts in {outdir}/ (manifest.json)")
     if "analysis" in r:
         _out().print(f"scan: analysis {r['analysis']}")
