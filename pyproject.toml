@@ -8,8 +8,18 @@ readme = "README.md"
 # Interpreter pin (single source for CI + local): see .python-version.
 # Ruff/mypy versions are pinned in requirements-dev.txt.
 
+[project.optional-dependencies]
+# Opportunistic runtime extras (code degrades without them — see doctor.py).
+# Install: python -m pip install '.[optional]'
+optional = [
+    "numpy==2.5.3",
+    "rich==15.0.0",
+    "pillow==12.3.0",
+]
+
 [build-system]
-requires = ["setuptools>=61"]
+# Pin exact: floating setuptools>=N can pull a breaking backend mid-CI.
+requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

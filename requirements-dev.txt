@@ -6,8 +6,13 @@
 #   python -m pip install -U ruff && ruff check && edit the pin here.
 mypy==2.3.1
 ruff==0.16.7
+# mypy's declared runtime deps — pin so CI cannot float past known-good.
+ast-serialize==0.11.2
+librt==0.15.0
+mypy_extensions==1.1.0
+pathspec==1.1.1
+typing_extensions==4.16.0
 
-# Optional runtime extras, deliberately NOT pinned (the code imports them
-# opportunistically and degrades without them — see ocdcircuit/doctor.py):
-#   rich   15.0.0   pretty CLI tables (plain-text fallback otherwise)
-#   numpy  2.5.3    SIMD placer hot loops + kb vector ranking (scalar fallback)
+# Optional runtime extras: pinned under [project.optional-dependencies]
+# in pyproject.toml (numpy, rich, pillow). Install with:
+#   python -m pip install '.[optional]'

@@ -532,8 +532,8 @@ _lpng = fab.logo("oshpark")
 assert _lpng.startswith("data:image/png;base64,"), _lpng[:40]
 import base64 as _b64l
 assert _b64l.b64decode(_lpng.split(",", 1)[1])[:8] == b"\x89PNG\r\n\x1a\n"
-_lb, _lt = fab.logo_bytes("oshpark")
-assert _lt == "image/png" and _lb[:8] == b"\x89PNG\r\n\x1a\n"
+_logo_b, _logo_t = fab.logo_bytes("oshpark")
+assert _logo_t == "image/png" and _logo_b[:8] == b"\x89PNG\r\n\x1a\n"
 try:
     fab.logo("nope")
     assert False, "logo must KeyError like get()"
@@ -3211,6 +3211,7 @@ assert any(str(c.get("name")) == "plugin:diff"
            and c.get("ok") for c in _doc_checks)
 assert "kicad-cli" in _doc_names and "chromium" in _doc_names
 assert "pdftotext" in _doc_names
+assert "pillow" in _doc_names and "numpy" in _doc_names and "rich" in _doc_names
 import shutil as _shutil_doc
 _real_which = _shutil_doc.which
 def _no_optionals(name: str) -> str | None:

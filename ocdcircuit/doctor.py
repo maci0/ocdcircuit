@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 # Host tools / packages the code imports opportunistically. Missing → feature
 # falls back; required gate is Python + plugin registry only.
 _OPTIONAL = frozenset({
-    "numpy", "rich", "ngspice", "kicad-cli", "pdftotext", "chromium",
+    "numpy", "rich", "pillow", "ngspice", "kicad-cli", "pdftotext", "chromium",
 })
 
 
@@ -33,6 +33,11 @@ def doctor(board: Board | None = None) -> dict[str, object]:
         add("numpy", True, str(numpy.__version__))
     except ImportError:
         add("numpy", False, "missing (SIMD placer falls back to scalar)")
+    try:
+        import PIL
+        add("pillow", True, str(getattr(PIL, "__version__", "ok")))
+    except ImportError:
+        add("pillow", False, "missing (pcbscan JPEG/HEIC fall back to PNG-only)")
     ng = shutil.which("ngspice")
     add("ngspice", ng is not None,
         ng or "missing (simulate:ngspice unavailable, mna still works)")
