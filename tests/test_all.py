@@ -610,6 +610,15 @@ assert [r["fab"] for r in _qrows][:2] == ["jlc", "allpcb"], _qrows[:3]
 _jasm = cast(dict[str, object], [r for r in _qrows if r["fab"] == "jlc"][0]["asm"])
 assert _jasm["parts_per_board"] == 0.03 and _jasm["sources"] == {"manual": 2}, _jasm
 assert _jasm["unpriced"] == [], _jasm
+# cents reconcile: fees + parts*qty == total under decimal (price=0.014
+# used to leave the half-up total a cent below fees+parts*qty)
+_qcent = agent.loads("board qc 40x30 2L\npart R1 R0805 10k price=0.014\n"
+                     "part C1 C0805 100n price=0.014\n"
+                     "N :: R1.1 C1.1\nGND :: R1.2 C1.2\n", base=EX)
+_acent = _qq.assembled(_qcent, qty=5)
+from decimal import Decimal as _Dec
+assert (_Dec(str(_acent["fees"])) + _Dec(str(_acent["parts_per_board"])) * 5
+        == _Dec(str(_acent["total"]))), _acent
 _qbare = _qq.compare(_qb, qty=5, with_parts=False)
 assert all("asm_total" not in r for r in cast(list[dict[str, object]], _qbare["rows"]))
 _qosh = cast(list[dict[str, object]],
@@ -1925,6 +1934,21 @@ for _vinf in ("inf", "-inf", "1e999", "1e999k"):
         raise AssertionError(f"should have raised: {_vinf!r}")
     except ValueError as e:
         assert "non-finite" in str(e), str(e)
+# tran: t_end≤0 used to ZeroDivision on C/dt — clean ValueError instead
+_stb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                   "N :: R1.1 C1.1\nGND :: R1.2 C1.2\nsim vcc N 5\n", base=EX)
+from ocdcircuit import sim as _sim
+for _te in (0, -1.0, float("nan")):
+    try:
+        _sim.tran(_stb, t_end=_te, steps=10)
+        raise AssertionError(f"should have raised: t_end={_te!r}")
+    except ValueError as e:
+        assert "t_end" in str(e), e
+try:
+    _sim.tran(_stb, t_end=0.01, steps=0)
+    raise AssertionError("should have raised: steps=0")
+except ValueError as e:
+    assert "steps" in str(e), e
 # KiCad footprint aliases land on stdlib (bare + Lib: prefix); unknown stays loud
 from ocdcircuit.parts import resolve_fp, KICAD_ALIASES, FOOTPRINTS
 assert resolve_fp("Resistor_SMD:R_0603_1608Metric") == "R0603"
@@ -2517,6 +2541,10 @@ assert {(p.ref, round(p.x, 3), round(p.y, 3)) for p in _alrt.parts.values()} == 
 assert all(len(_alrt.parts[r].pins_of(_alrt._lib())) == 2 for r in ("R1", "R2"))
 assert len(cast(list[object], foreign.altium_ascii(
     open(_alf).read()).get("_imported_traces", []))) == len(_ebb.traces)
+# Altium length units: "inch" must not silently parse as 0 mm
+assert abs(foreign._alen("1inch") - 25.4) < 1e-9
+assert abs(foreign._alen("1in") - 25.4) < 1e-9
+assert abs(foreign._alen("250mil") - 6.35) < 1e-9
 # importer:altium sniffs both ASCII export and P-CAD .pcb; binary rejected
 _ali = Board("ali", 40, 30)
 _ar = _ali.import_fp("altium", path=_alf)

@@ -24,7 +24,10 @@ STAMP = "2026-09"  # when the model numbers were fit — re-verify before orderi
 
 # Money: binary floats hold the published schedule constants and live unit
 # prices, but every total/per-board that leaves this module is rounded in
-# decimal cents (half-up) so `parts_per_board * qty + fees` reconciles.
+# decimal cents (half-up). Assembly totals are built from already-rounded
+# fees + parts_per_board so Decimal(str(fees))+Decimal(str(parts))*qty
+# equals Decimal(str(total)) — float `==` still drifts (16.31+0.15 is not
+# exactly 16.46 in IEEE754).
 _CENTS = Decimal("0.01")
 
 
@@ -32,8 +35,12 @@ def _D(x: float | int | str | Decimal) -> Decimal:
     return x if isinstance(x, Decimal) else Decimal(str(x))
 
 
+def _cent(d: Decimal) -> Decimal:
+    return d.quantize(_CENTS, rounding=ROUND_HALF_UP)
+
+
 def _usd(d: Decimal) -> float:
-    return float(d.quantize(_CENTS, rounding=ROUND_HALF_UP))
+    return float(_cent(d))
 
 # Bare-PCB model per fab: total USD for `qty` boards of `area` cm², `layers`.
 # JLC/PCBWay/NextPCB/ALLPCB: Chinese proto flat-rate + area slope; PCBWay's
@@ -135,14 +142,14 @@ def bare(board: Board, fab: str, qty: int = 5) -> dict[str, object]:
         # per-in² pricing, 4L doubles, qty snaps to 3-packs
         total = area / _D("6.4516") * (_D(5) if layers <= 2 else _D(10))
         packs = math.ceil(qty / 3)
-        order = total * packs
+        order = _cent(total * packs)
         boards = packs * 3
         return {"total": _usd(order),
                 "per_board": _usd(order / boards),
                 "boards": boards, "note": "3-packs, free US ship, no assembly"}
     n = max(qty, minq)
-    total = (_D(base) + _D(slope) * area
-             + _D(step) * max(0, (layers - 2) // 2))
+    total = _cent(_D(base) + _D(slope) * area
+                  + _D(step) * max(0, (layers - 2) // 2))
     if fab in ("sierra", "advanced", "eurocircuits", "aisler"):
         note = "US/EU proto shop: setup-heavy, no assembly model"
     elif fab == "jlc-flex":
@@ -175,10 +182,15 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
             parts_total += _D(v)
     ext = sum(1 for r in rows if not str(r.get("lcsc", "")).startswith("C"))
     ext_fee = _D(ext) * _D(JLC_EXTENDED_FEE) if rows else Decimal(0)
-    fee_total = fees + ext_fee
-    total = fee_total + parts_total * qty
-    return {"fees": _usd(fee_total), "parts_per_board": _usd(parts_total),
-            "total": _usd(total), "per_board": _usd(total / qty),
+    # Round fee and per-board parts to cents first, then form the order
+    # total — independent rounding of the raw sum left fees+parts*qty a
+    # cent off (price=0.014×2 @ qty 5 → fees 16.31 + 0.03×5 = 16.46 but
+    # total rounded from 16.45).
+    fees_d = _cent(fees + ext_fee)
+    parts_d = _cent(parts_total)
+    total_d = fees_d + parts_d * qty
+    return {"fees": _usd(fees_d), "parts_per_board": _usd(parts_d),
+            "total": _usd(total_d), "per_board": _usd(total_d / qty),
             "joints": joints, "parts": len(rows), "unpriced": unpriced,
             "sources": sources, "extended_parts": ext,
             "note": "JLC Economic PCBA single-side; parts from live JLC or price= attr"}
@@ -211,8 +223,8 @@ def compare(board: Board, qty: int = 5, fabs: list[str] | None = None,
                                   "boards": b["boards"], "note": b["note"],
                                    "logo": _fab.logo(f)}
         if f == "jlc" and asm is not None:
-            atotal = _D(cast(float, asm["total"]))
-            asm_total = _D(cast(float, b["total"])) + atotal
+            # bare + asm totals are already cent-rounded floats
+            asm_total = _D(cast(float, b["total"])) + _D(cast(float, asm["total"]))
             row["asm_total"] = _usd(asm_total)
             row["asm_per_board"] = _usd(asm_total / qty)
             row["asm"] = asm

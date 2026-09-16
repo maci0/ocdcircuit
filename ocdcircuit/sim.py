@@ -212,11 +212,15 @@ def tran(board: Board, t_end: float | None = None,
         t_end_v = t_end
     if steps is not None:
         steps_v = steps
+    if not math.isfinite(t_end_v) or t_end_v <= 0:
+        raise ValueError(f"t_end must be positive (got {t_end_v!r})")
+    if steps_v < 1:
+        raise ValueError(f"steps must be ≥1 (got {steps_v!r})")
     idx = _net_index(board)
     if not idx:
         return {}
     passives, sources = _elements(board)
-    dt = t_end_v / max(1, steps_v)
+    dt = t_end_v / steps_v
     # Backward Euler companions: Geq = C/dt in parallel with a current
     # source Geq*vc_prev flowing b→a. First-order, stable, plenty for
     # sizing checks (use small dt for stiff circuits).

@@ -231,6 +231,10 @@ def run(board: Board, what: str = "dc", **k: object) -> dict[str, object]:
             t_end = _num(k["t_end"])
         if k.get("steps") is not None:
             steps = _int(k["steps"])
+        if not math.isfinite(t_end) or t_end <= 0:
+            raise ValueError(f"t_end must be positive (got {t_end!r})")
+        if steps < 1:
+            raise ValueError(f"steps must be ≥1 (got {steps!r})")
         with tempfile.TemporaryDirectory() as d:
             dat = os.path.join(d, "out.txt")
             cmds = [f"tran {t_end / steps:g} {t_end:g}",

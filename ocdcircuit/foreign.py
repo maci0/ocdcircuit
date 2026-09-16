@@ -1510,7 +1510,9 @@ def kicad_sch_netlist(text: str) -> dict[str, object]:
 def _alen(v: str) -> float:
     """Altium length field → mm (10mm / 250mil / 10000nm / 2.54cm / 25.4in)."""
     v = v.strip().lower()
-    for suf, mul in (("mm", 1.0), ("mil", 0.0254), ("nm", 1e-6),
+    # Longer suffixes first: "1inch" must not fall through to float()→0.0
+    # (endswith "in" is false for "inch", so the bare parse used to fail).
+    for suf, mul in (("inch", 25.4), ("mm", 1.0), ("mil", 0.0254), ("nm", 1e-6),
                      ("cm", 10.0), ("in", 25.4)):
         if v.endswith(suf):
             try:
