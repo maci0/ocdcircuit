@@ -248,10 +248,12 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     seen: set[str] = set()
     for w in warnings:
         ws = str(w)
-        if ws not in seen:
-            seen.add(ws)
-        if len(seen) <= 5:
-            _out().print(f"  [yellow]~ {ws}[/yellow]")
+        if ws in seen:
+            continue
+        seen.add(ws)
+        if len(seen) > 5:
+            break
+        _out().print(f"  [yellow]~ {ws}[/yellow]")
     _out().print("[green]✓ DRC clean[/green]")
     return 0
 

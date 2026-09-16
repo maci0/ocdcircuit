@@ -37,12 +37,20 @@ class ParseError(ValueError):
 
 
 def _q(v: object) -> str:
-    """Attr value for dumps: quote iff it carries whitespace/quotes so
-    the line still reloads (shlex.split on parse)."""
+    """Attr value for dumps: quote iff it carries whitespace/quotes/`#`
+    so the line still reloads (shlex.split on parse; `#` is comment)."""
     s = str(v)
-    if any(ch.isspace() or ch in "\"'" for ch in s):
+    if any(ch.isspace() or ch in "\"'#" for ch in s):
         return '"' + s.replace('"', '\\"') + '"'
     return s
+
+
+def _qv(v: str) -> str:
+    """Part value for dumps: quote iff `#` or quotes would break round-trip.
+    Bare spaces stay unquoted (`part R1 R0805 10k 0805` is canonical)."""
+    if any(ch in v for ch in "#\"'"):
+        return '"' + v.replace('"', '\\"') + '"'
+    return v
 
 
 def _split(tail: str) -> list[str]:
@@ -334,7 +342,8 @@ def parse_constraint(text: str, *, layers: int = 2) -> Constraint | None:
         if m.group(3) is not None:
             ac["npts"] = int(m.group(3))
         return ac
-    m = re.match(r"board ([\d.]+) ?x ([\d.]+)$", t, re.I)
+    # Docs: `board 40x30` (no spaces). Also accept `board 40 x 30`.
+    m = re.match(r"board ([\d.]+)\s*x\s*([\d.]+)$", t, re.I)
     if m:
         return {"t": "board", "w": float(m.group(1)), "h": float(m.group(2))}
     return None
@@ -350,7 +359,7 @@ def dumps(board: Board) -> str:
     L = list(board.comments)  # `#` lines first, exactly as they were read
     L.append(f"board {board.name} {board.width:g}x{board.height:g} {board.layers}L")
     for k in sorted(board.meta):
-        L.append(f"meta {k} {board.meta[k]}")
+        L.append(f"meta {k} {_qv(board.meta[k])}")
     for bname in sorted(board.blocks):
         if bname in board.block_src:
             continue  # imported via `use` — comes back on reload
@@ -372,7 +381,7 @@ def dumps(board: Board) -> str:
         # unpinned parts the API merely positioned).
         attrs = "".join(f" {k}={_q(v)}" for k, v in sorted(p.attrs.items())
                         if k not in ("x", "y"))
-        L.append(f"part {p.ref} {p.fp}{(' ' + p.value) if p.value else ''}{attrs}")
+        L.append(f"part {p.ref} {p.fp}{(' ' + _qv(p.value)) if p.value else ''}{attrs}")
     # fp/sym lines go directly after the board header: they must exist before
     # parts use them, and the parser wants the header first (comments head the
     # file, so index 1 is no longer "after the header" once comments exist).
@@ -627,7 +636,10 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
         if raw.lstrip().startswith("#"):
             # a comment inside a block body belongs to the block, which keeps
             # its own lines — do not lift it to the file header
-            if not (b is not None and b._block_open is not None):
+            if b is not None and b._block_open is not None:
+                assert b._block_lines is not None
+                b._block_lines.append(raw.strip())  # dumps re-indents
+            else:
                 comments.append(raw.rstrip())
             continue
         line = _strip_comment(raw)
@@ -719,7 +731,17 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             toks = line.split(None, 2)
             if len(toks) != 3 or not toks[1]:
                 raise err("want: meta KEY value...")
-            b.meta[toks[1]] = toks[2]
+            raw_val = toks[2]
+            if raw_val[:1] in "\"'":
+                try:
+                    got = _split(raw_val)
+                except ValueError:
+                    raise err("bad quoting in meta value")
+                if len(got) != 1:
+                    raise err("meta value must be one token when quoted")
+                b.meta[toks[1]] = got[0]
+            else:
+                b.meta[toks[1]] = raw_val
         elif kw == "net" or "::" in line:
             _exec_net(b, line, err)
         else:

@@ -50,8 +50,9 @@ def level_of(board: Board) -> int:
 
 
 def labels(board: Board, level: int | None = None) -> Silk:
-    """All coordinates in board mm, y-up. SVG caller flips y."""
-    lv = DEFAULT if level is None else level
+    """All coordinates in board mm, y-up. SVG caller flips y.
+    ``level=None`` follows the board's ``silk <n>`` constraint (else DEFAULT)."""
+    lv = level_of(board) if level is None else level
     assert lv in LEVELS, f"silk level {lv} not in {LEVELS}"
     texts: list[Text] = []
     dots: list[Dot] = []
