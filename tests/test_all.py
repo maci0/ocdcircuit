@@ -1823,6 +1823,84 @@ _ezrt2 = cast(dict[str, object], foreign.easyeda_doc(_json.loads(open(_ezfn).rea
 _ezparts2 = {p["ref"]: p for p in cast(list[dict[str, object]], _ezrt2["parts"])}
 assert _ezparts2["R1"].get("attrs") == {"dnp": "1"}, _ezparts2["R1"]
 assert _ezparts2["R2"].get("attrs") == {}
+# easyeda full-shape import: TRACK/VIA/ARC/pours/outline/HOLE/TEXT/inner
+_ezfull: dict[str, object] = {"head": "3~1.7.5", "title": "full", "shape": [
+    "LIB~100~100~package`R0805`name`R1`~~gR1~1#@$"
+    "PAD~RECT~90~100~9~5~1~N~1~~0~gR11#@$"
+    "PAD~RECT~110~100~9~5~1~N~2~~0~gR12",
+    "LIB~200~100~package`R0805`name`R2`~~gR2~1#@$"
+    "PAD~RECT~190~100~9~5~1~N~1~~0~gR21#@$"
+    "PAD~RECT~210~100~9~5~1~GND~2~~0~gR22",
+    "TRACK~1~1~N~90 100 190 100~gt1",
+    "TRACK~1~21~N~90 100 190 100~gt2",
+    "VIA~150~150~3.2~N~0.8~gv1",
+    "ARC~1~1~N~M100,100 A20,20 0 0 1 140,100~~ga1",
+    "COPPERAREA~2px~1~GND~0 0 400 0 400 300 0 300~1~solid~gc1~spoke~none~[]",
+    "SOLIDREGION~1~~50 50 100 50 100 100 50 100~cutout~gs1",
+    "BOARDOUTLINE~0 0 400 0 400 300 0 300~gb1",
+    "HOLE~200~150~4~gh1",
+    "TEXT~L~100~200~0.8~0~none~3~~8~hi~~gt1",
+    "TEXT~P~0~0~0.7~0~~3~~4.5~R1~~gx",  # prefix art stays out of texts
+    "FOO~1~2~3~gf1",
+]}
+_ezfullir = cast(dict[str, object], foreign.easyeda_doc(_ezfull))
+_ezfullnets = cast(dict[str, dict[str, object]], _ezfullir["nets"])
+assert sorted(_ezfullnets) == ["GND", "N"], _ezfullnets.keys()
+assert cast(dict[str, object], cast(list[object], _ezfullir["_imported_traces"])[0])["layer"] == 0
+assert any(t["layer"] == 2 for t in
+           cast(list[dict[str, object]], _ezfullir["_imported_traces"]))
+assert any(t.get("via") and abs(cast(float, t["drill"]) - 0.4064) < 1e-9
+           for t in cast(list[dict[str, object]], _ezfullir["_imported_traces"]))
+assert len(cast(list[object], _ezfullir["_imported_traces"])) > 30  # ARC chords
+_ezfullcons = cast(list[dict[str, object]], _ezfullir["constraints"])
+assert {"t": "pour", "net": "GND", "layer": 0} in _ezfullcons
+assert any(c["t"] == "cutout" for c in _ezfullcons)
+assert any(c["t"] == "hole" and abs(cast(float, c["d"]) - 2.032) < 1e-9
+           for c in _ezfullcons)
+assert cast(list[dict[str, object]], _ezfullir["_imported_texts"]) == [
+    {"x": 25.4, "y": 50.8, "text": "hi"}]
+assert cast(list[str], _ezfullir["_skipped"]) == ["FOO"]
+assert cast(dict[str, object], _ezfullir["board"])["layers"] == 3
+assert _ezfullir.get("_outline") is not None
+# easyeda export round-trips pours/outline/hole/texts/rotation/drill
+_exb = agent.loads("board t 30x20\npart R1 R0805 1k rot=90\npart R2 R0805 1k\n"
+                   "net N: R1.2 R2.1\nGND pour=0 :: R1.1 R2.2\n", base=EX)
+_exb.place()
+_exb.route_board()
+_exb.constrain({"t": "hole", "x": 5.0, "y": 5.0, "d": 3.0})
+_exb.comments.append("rev A")
+_exdoc = _json.loads(open(_exb.export("easyeda", outdir=tempfile.mkdtemp())[0]).read())
+_extags = [s.split("~")[0] for s in _exdoc["shape"]]
+for _want in ("COPPERAREA", "BOARDOUTLINE", "HOLE"):
+    assert _want in _extags, _extags
+assert any("`rotation`90" in s for s in _exdoc["shape"] if s.startswith("LIB"))
+_exrt = cast(dict[str, object], foreign.easyeda_doc(_exdoc))
+assert {p["ref"]: p.get("attrs", {}) for p in
+        cast(list[dict[str, object]], _exrt["parts"])} == \
+    {"R1": {"rot": "90"}, "R2": {}}
+assert {n: sorted(tuple(pin) for pin in
+                  cast(list[list[str]], cast(dict[str, object], v)["pins"]))
+        for n, v in cast(dict[str, object], _exrt["nets"]).items()} == \
+    {"GND": [("R1", "1"), ("R2", "2")], "N": [("R1", "2"), ("R2", "1")]}
+assert any(c["t"] == "pour" and c["net"] == "GND" for c in
+           cast(list[dict[str, object]], _exrt["constraints"]))
+assert any(t["text"] == "rev A" for t in
+           cast(list[dict[str, object]], _exrt.get("_imported_texts", [])))
+# eagle .sch import: parts under schematic, nets by pinref
+_esch = ('<eagle version="9.6.2"><drawing><schematic>'
+         '<sheets><sheet>'
+         '<parts><part name="R1" library="L" deviceset="R" device="" value="1k"/>'
+         '<part name="R2" library="L" deviceset="R" device="" value="1k"/></parts>'
+         '<nets><net name="N" class="0"><segment>'
+         '<pinref part="R1" pin="2"/><pinref part="R2" pin="1"/>'
+         '</segment></net></nets></sheet></sheets></schematic></drawing></eagle>')
+_eschir = foreign.eagle_sch(_esch)
+assert [(cast(dict[str, object], p)["ref"], cast(dict[str, object], p)["fp"])
+        for p in cast(list[object], _eschir["parts"])] == [("R1", "R"), ("R2", "R")]
+assert {n: sorted(tuple(pin) for pin in
+                  cast(list[list[str]], cast(dict[str, object], v)["pins"]))
+        for n, v in cast(dict[str, object], _eschir["nets"]).items()} == \
+    {"N": [("R1", "2"), ("R2", "1")]}
 # tsx porter pure fns (no upstream project needed): fp map + tsx parts
 from tools import tscircuit as _tsc
 assert _tsc.map_fp("0805", "resistor") == "R0805"

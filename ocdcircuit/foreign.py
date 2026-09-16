@@ -388,6 +388,53 @@ def eagle_brd(text: str) -> dict[str, object]:
             "_imported_fp": fps}
 
 
+def eagle_sch(text: str) -> dict[str, object]:
+    """Eagle .sch XML → IR dict: parts (<parts>) + nets (<net> pinrefs).
+    Each <net> block is one net; symbol pin counts size the rebuilt
+    footprints. Mirrors kicad_sch_netlist's contract."""
+    import xml.etree.ElementTree as ET
+    from typing import cast as _casteagle
+    root = ET.fromstring(text)
+    drawing = root.find("drawing")
+    assert drawing is not None, "not an Eagle .sch (no <drawing>)"
+    sch = drawing.find("schematic")
+    assert sch is not None, "not an Eagle .sch (no <schematic>)"
+    parts: list[dict[str, object]] = []
+    nets: dict[str, dict[str, object]] = {}
+    fps: dict[str, Footprint] = {}
+    for sheet in sch.iter("sheet"):
+        at: dict[str, tuple[float, float]] = {}
+        for i in sheet.iter("instance"):
+            at[_at(i, "part")] = (_fl(i, "x"), _fl(i, "y"))
+        for net in sheet.iter("net"):
+            nn = _at(net, "name") or f"N{len(nets) + 1}"
+            entry = nets.setdefault(nn, {"pins": [], "layer": None, "width": 0.3})
+            pins_l = entry["pins"]
+            assert isinstance(pins_l, list)
+            for pr in net.iter("pinref"):
+                pins_l.append([_at(pr, "part", "?"), _at(pr, "pin", "?")])
+    for p in sch.iter("part"):
+        ref = _at(p, "name") or f"U{len(parts) + 1}"
+        dev = _at(p, "deviceset") or _at(p, "device", "unknown")
+        val = _at(p, "value") or dev
+        x, y = at.get(ref, (0.0, 0.0))
+        npins = max(2, sum(1 for e in nets.values()
+                           for r, _q in _casteagle(list[list[str]], e["pins"])
+                           if r == ref))
+        fps.setdefault(dev, {"w": max(2.0, npins * 1.27 / 2 + 2.0), "h": 5.0,
+                             "pads": {str(i + 1): (0.0, 0.0, 1.0, 1.0)
+                                      for i in range(npins)},
+                             "holes": {}, "bodies": []})
+        parts.append({"ref": ref, "fp": dev, "value": val, "x": x, "y": y})
+    have = {str(p["ref"]) for p in parts}
+    nets = {n: v for n, v in nets.items()
+            if _casteagle(list[list[str]], v["pins"]) and
+            all(pin[0] in have for pin in _casteagle(list[list[str]], v["pins"]))}
+    return {"board": {"name": "imported", "w": 40.0, "h": 30.0, "layers": 2},
+            "parts": parts, "nets": nets, "constraints": [],
+            "_imported_fp": fps}
+
+
 def tscircuit_json(doc: object) -> list[tuple[str, Footprint]]:
     """tscircuit Circuit-JSON / snippet soup: [{type:'pcb_smtpad'...}] or
     {footprints:[...]}. Best-effort pad extraction."""
@@ -449,9 +496,134 @@ def tscircuit_json(doc: object) -> list[tuple[str, Footprint]]:
     return out
 
 
+def _ez_layer(lid: int) -> int | None:
+    """EasyEDA Std layer id → our copper layer (0=top, 1=bottom, 2+=inner).
+    Per the official layer table + easyeda2kicad's mapping: 1=Top, 2=Bottom,
+    11=Multi (copper on all — import as top, export re-floods), 21-24=Inner1-4
+    (index shifts with layer count, unknown counts → 0). Silk/mask/paste/
+    outline/document land on None (not copper)."""
+    if lid == 1:
+        return 0
+    if lid == 2:
+        return 1
+    if lid == 11:
+        return 0
+    if 21 <= lid <= 24:
+        return lid - 19  # Inner1→2, Inner2→3… (clamped by _board_ir_into)
+    return None
+
+
+def _ez_shape(f: list[str], tag: str, nets: dict[str, dict[str, object]],
+              traces: list[dict[str, object]], texts: list[dict[str, object]],
+              pours: list[tuple[str, int]], outline: list[tuple[float, float]],
+              mholes: list[tuple[float, float, float]],
+              cutouts: list[tuple[float, float, float, float]],
+              skipped: list[str]) -> int:
+    mm = 0.254
+    try:
+        if tag == "TRACK" and len(f) >= 6:
+            wdt = max(0.01, float(f[1]) * mm)
+            lay = _ez_layer(int(float(f[2])))
+            net = f[3]
+            xy = [float(v) for v in f[4].split()]
+            for k in range(0, len(xy) - 3, 2):
+                traces.append({"net": net, "x1": xy[k] * mm, "y1": xy[k + 1] * mm,
+                               "x2": xy[k + 2] * mm, "y2": xy[k + 3] * mm,
+                               "layer": lay if lay is not None else 0,
+                               "width": wdt,
+                               **({} if net and lay is not None else {"_skip": True})})
+            return (lay + 1) if lay is not None else 2
+        if tag == "VIA" and len(f) >= 6:
+            net = f[4] if len(f) > 4 else ""
+            traces.append({"net": net, "x": float(f[1]) * mm, "y": float(f[2]) * mm,
+                           "drill": max(0.05, float(f[5]) * mm * 2 if len(f) > 5 and f[5] else 0.4),
+                           "via": True, **({} if net else {"_skip": True})})
+            return 2
+        if tag == "ARC" and len(f) >= 6:
+            # SVG arc path (M x,y A rx,ry xrot large,sweep x,y), chorded 1/5°
+            # like the Altium importer; degenerate → single skipped segment
+            import math as _marc, re as _rearc
+            wdt = max(0.01, float(f[1]) * mm)
+            lay = _ez_layer(int(float(f[2])))
+            net = f[3]
+            m = _rearc.search(r"M([\d.\-]+),([\d.\-]+)\s+A([\d.\-]+),([\d.\-]+)"
+                              r"\s+\d[\d.\-]*\s+\d\s+\d\s+([\d.\-]+),([\d.\-]+)", f[4])
+            if m is not None and lay is not None:
+                x1, y1, rx, ry, x2, y2 = (float(m.group(i)) * mm for i in range(1, 7))
+                r = (rx + ry) / 2
+                dx, dy = (x2 - x1) / 2, (y2 - y1) / 2
+                dd = min(_marc.hypot(dx, dy), r)  # float dust on semicircles
+                if r > 0 and dd > 0:
+                    h = _marc.sqrt(max(r * r - dd * dd, 0.0))
+                    cx, cy = (x1 + x2) / 2 - h * dy / dd, (y1 + y2) / 2 + h * dx / dd
+                    a1 = _marc.atan2(y1 - cy, x1 - cx)
+                    a2 = _marc.atan2(y2 - cy, x2 - cx)
+                    sweep = (a2 - a1) % (2 * _marc.pi) or 2 * _marc.pi
+                    nseg = max(1, int(_marc.degrees(sweep) / 5) + 1)
+                    angs = [a1 + sweep * k / nseg for k in range(nseg + 1)]
+                    cpts = [(cx + r * _marc.cos(a), cy + r * _marc.sin(a)) for a in angs]
+                    for k in range(nseg):
+                        traces.append({"net": net, "x1": cpts[k][0], "y1": cpts[k][1],
+                                       "x2": cpts[k + 1][0], "y2": cpts[k + 1][1],
+                                       "layer": lay, "width": wdt,
+                                       **({} if net else {"_skip": True})})
+                    return lay + 1
+            traces.append({"net": net, "x1": 0.0, "y1": 0.0, "x2": 0.0, "y2": 0.0,
+                           "layer": 0, "width": wdt, "_skip": True})
+            return 2
+        if tag == "COPPERAREA" and len(f) >= 7:
+            lay = _ez_layer(int(float(f[2])))
+            net = f[3]
+            if net and lay is not None and f[6].lower() == "solid":
+                pours.append((net, lay))
+                return lay + 1
+            return 2
+        if tag == "SOLIDREGION" and len(f) >= 5:
+            lay = _ez_layer(int(float(f[1])))
+            net = f[2]
+            if f[4].lower() == "cutout" or (not net and lay is None):
+                xy = [float(v) * mm for v in f[3].split()]
+                if len(xy) >= 6:
+                    xs, ys = xy[::2], xy[1::2]
+                    cutouts.append(((min(xs) + max(xs)) / 2,
+                                    (min(ys) + max(ys)) / 2,
+                                    max(max(xs) - min(xs), 0.1),
+                                    max(max(ys) - min(ys), 0.1)))
+            elif net and lay is not None:
+                pours.append((net, lay))
+                return lay + 1
+            return 2
+        if tag == "BOARDOUTLINE" and len(f) >= 2:
+            xy = [float(v) * mm for v in f[1].split()]
+            outline.extend([(xy[k], xy[k + 1]) for k in range(0, len(xy) - 1, 2)])
+            return 2
+        if tag == "HOLE" and len(f) >= 4:
+            mholes.append((float(f[1]) * mm, float(f[2]) * mm, float(f[3]) * mm * 2))
+            return 2
+        if tag == "TEXT" and len(f) >= 11:
+            tstr = f[10].strip()
+            # type P = footprint prefix (refdes art inside LIB children),
+            # not a board comment — only L labels land in texts
+            if tstr and (f[1] if len(f) > 1 else "") != "P":
+                texts.append({"x": float(f[2]) * mm, "y": float(f[3]) * mm,
+                              "text": tstr})
+            return 2
+        if tag in ("CIRCLE", "RECT"):
+            return 2  # silk art, no IR equivalent — parsed, not skipped
+    except (ValueError, IndexError):
+        pass
+    return 2
+
+
 def easyeda_doc(doc: dict[str, object]) -> object:
     """EasyEDA Std JSON → footprints (docType 4) or board IR (docType 3).
-    Shape strings are `~`-delimited; PCB units are 10-mil (×0.254 = mm)."""
+    Shape strings are `~`-delimited; PCB units are 10-mil (×0.254 = mm).
+    Import covers TRACK (multi-point → segments), VIA (drill kept), ARC
+    (chorded), COPPERAREA/SOLIDREGION (→ pour constraints, geometry refills
+    at export), BOARDOUTLINE (→ board size + outline), HOLE (mounting
+    holes), TEXT (→ silk comments); LIB parts rotate pads + record rotation
+    in `rot`; PAD rotation reads the rotation field; slot PADs → slots;
+    unknown shapes record `_skipped` instead of vanishing."""
     shape = doc.get("shape", [])
     assert isinstance(shape, list)
     head = str(doc.get("head", ""))
@@ -513,30 +685,46 @@ def easyeda_doc(doc: dict[str, object]) -> object:
     # PAD lines following a LIB belong to it (children were joined with #@$)
     cur: tuple[str, str, float, float,
                dict[str, tuple[float, float, float, float]],
-               dict[str, tuple[float, float, float]]] | None = None
+               dict[str, tuple[float, float, float]],
+               dict[str, tuple[float, float, float, float]]] | None = None
+    traces: list[dict[str, object]] = []
+    texts: list[dict[str, object]] = []
+    pours: list[tuple[str, int]] = []
+    outline: list[tuple[float, float]] = []
+    mholes: list[tuple[float, float, float]] = []
+    cutouts: list[tuple[float, float, float, float]] = []
+    skipped: list[str] = []
+    max_layer = 2
 
     def _flush() -> None:
         if cur is None:
             return
-        _, pkg, _, _, pads, holes = cur
+        _, pkg, _, _, pads, holes, slots = cur
         if pkg not in fps:
-            xs = [v[0] for v in list(pads.values()) + list(holes.values())]
-            ys = [v[1] for v in list(pads.values()) + list(holes.values())]
+            xs = [v[0] for v in list(pads.values()) + list(holes.values())
+                  + list(slots.values())]
+            ys = [v[1] for v in list(pads.values()) + list(holes.values())
+                  + list(slots.values())]
             fw = max(2.0, (max(xs) - min(xs) + 2.0)) if xs else 2.0
             fh = max(2.0, (max(ys) - min(ys) + 2.0)) if ys else 2.0
             fps[pkg] = {"w": fw, "h": fh, "pads": dict(pads),
-                        "holes": dict(holes), "bodies": []}
+                        "holes": dict(holes), "slots": dict(slots),
+                        "bodies": []}
         else:
             fp = fps[pkg]
             assert isinstance(fp, dict)
             fp_pads = fp.setdefault("pads", {})
             fp_holes = fp.setdefault("holes", {})
-            assert isinstance(fp_pads, dict) and isinstance(fp_holes, dict)
+            fp_slots = fp.setdefault("slots", {})
+            assert isinstance(fp_pads, dict) and isinstance(fp_holes, dict) \
+                and isinstance(fp_slots, dict)
             fp_pads.update(pads)
             fp_holes.update(holes)
+            fp_slots.update(slots)
 
     for f in lines:
-        if f[0] == "LIB" and len(f) >= 4:
+        tag = f[0] if f else ""
+        if tag == "LIB" and len(f) >= 4:
             _flush()
             try:
                 lx, ly = float(f[1]), float(f[2])
@@ -548,39 +736,103 @@ def easyeda_doc(doc: dict[str, object]) -> object:
             meta = dict(zip(kv[::2], kv[1::2])) if len(kv) >= 2 else {}
             ref = meta.get("name", f"U{len(parts) + 1}")
             pkg = meta.get("package", ref)
-            cur = (ref, pkg, lx, ly, {}, {})
+            import math as _mrot
+            try:
+                rot = int(float(params.split("`rotation`")[1].split("`")[0])) \
+                    if "`rotation`" in params else 0
+            except (ValueError, IndexError):
+                rot = 0
+            cur = (ref, pkg, lx, ly, {}, {}, {})
+            cur_ang = _mrot.radians(rot)
             # DNP: EasyEDA Std has no native field; the community
             # convention is a Fitted=Y/N parameter (forum). Honor it.
             pattrs: dict[str, str] = {}
             if str(meta.get("Fitted", "Y")).upper() == "N":
                 pattrs["dnp"] = "1"
+            if rot:
+                pattrs["rot"] = str(rot % 360)
             parts.append({"ref": ref, "fp": pkg, "value": meta.get("name", pkg),
                           "x": lx * mm, "y": ly * mm, "attrs": pattrs})
             minx, miny = min(minx, lx * mm), min(miny, ly * mm)
             maxx, maxy = max(maxx, lx * mm), max(maxy, ly * mm)
             continue
-        if cur is None or f[0] != "PAD" or len(f) < 11:
+        if tag != "PAD" or cur is None or len(f) < 11:
+            if tag and tag != "LIB":
+                if tag in ("TRACK", "VIA", "ARC", "COPPERAREA", "SOLIDREGION",
+                           "BOARDOUTLINE", "HOLE", "TEXT", "CIRCLE", "RECT"):
+                    max_layer = max(max_layer, _ez_shape(
+                        f, tag, nets, traces, texts, pours, outline,
+                        mholes, cutouts, skipped))
+                elif tag not in skipped:
+                    skipped.append(tag)
             continue  # TRACK copper re-routes; nets come from PAD assigns
-        ref, _, lx, ly, pads, holes = cur
+        ref, _, lx, ly, pads, holes, slots = cur
         try:
             px, py, pw, ph = float(f[2]), float(f[3]), float(f[4]), float(f[5])
-            num = f[8] or str(len(pads) + len(holes) + 1)
+            num = f[8] or str(len(pads) + len(holes) + len(slots) + 1)
             hole = float(f[9]) if len(f) > 9 and f[9] else 0.0
         except ValueError:
             continue
-        if hole > 0 or (len(f) > 6 and f[6] == "11"):
+        # rotation sits before the gid: real files carry a points field
+        # (rotation at 11), our exporter omits it (rotation at 10)
+        prot = 0.0
+        for cand in (f[11] if len(f) > 11 else "", f[10] if len(f) > 10 else ""):
+            try:
+                prot = float(cand)
+                break
+            except ValueError:
+                continue
+        # PAD rotation spins the pad in place (own center); LIB rotation
+        # orbits it around the part origin. Both compose, order irrelevant.
+        for cx, cy, ang in ((px, py, _mrot.radians(prot)), (lx, ly, cur_ang)):
+            if ang:
+                ca, sa = _mrot.cos(ang), _mrot.sin(ang)
+                px, py = (cx + (px - cx) * ca - (py - cy) * sa,
+                          cy + (px - cx) * sa + (py - cy) * ca)
+        shape = f[1] if len(f) > 1 else ""
+        slot_len = float(f[13]) if len(f) > 13 and f[13] else 0.0
+        if shape == "POLYGON" and slot_len > 0:
+            slots[num] = (px * mm - lx * mm, py * mm - ly * mm,
+                          max(pw, slot_len) * mm, max(ph, slot_len) * mm)
+        elif hole > 0 or (len(f) > 6 and f[6] == "11"):
             holes[num] = (px * mm - lx * mm, py * mm - ly * mm,
                           max(hole * 2, 0.8) * mm)
         else:
             pads[num] = (px * mm - lx * mm, py * mm - ly * mm, pw * mm, ph * mm)
         _pin(f[7] if len(f) > 7 else "", ref, num)
     _flush()
-    wdt = max(10.0, maxx - minx + 5.0) if parts else 40.0
-    hgt = max(10.0, maxy - miny + 5.0) if parts else 30.0
-    return {"board": {"name": str(doc.get("title", "imported")),
-                      "w": wdt, "h": hgt, "layers": 2},
-            "parts": parts, "nets": nets, "constraints": [],
-            "_imported_fp": fps}
+    if len(outline) >= 3:
+        xs = [p[0] for p in outline]
+        ys = [p[1] for p in outline]
+        wdt = max(10.0, max(xs) - min(xs))
+        hgt = max(10.0, max(ys) - min(ys))
+    else:
+        wdt = max(10.0, maxx - minx + 5.0) if parts else 40.0
+        hgt = max(10.0, maxy - miny + 5.0) if parts else 30.0
+    from typing import cast as _castez
+    have = {str(p["ref"]) for p in parts}
+    for n, v in nets.items():
+        v["pins"] = [pin for pin in _castez(list[list[str]], v["pins"])
+                     if pin[0] in have]
+    nets = {n: v for n, v in nets.items() if v["pins"]}
+    cons: list[dict[str, object]] = [{"t": "pour", "net": n, "layer": ll}
+                                     for n, ll in dict(pours).items()]
+    cons += [{"t": "cutout", "x": cx, "y": cy, "w": w, "h": h}
+             for cx, cy, w, h in cutouts]
+    cons += [{"t": "hole", "x": x, "y": y, "d": d} for x, y, d in mholes]
+    ir: dict[str, object] = {"board": {"name": str(doc.get("title", "imported")),
+                                       "w": wdt, "h": hgt,
+                                       "layers": min(max_layer, 10)},
+                             "parts": parts, "nets": nets,
+                             "constraints": cons, "_imported_fp": fps,
+                             "_imported_traces": [t for t in traces
+                                                  if not t.pop("_skip", False)],
+                             "_skipped": skipped}
+    if texts:
+        ir["_imported_texts"] = texts
+    if len(outline) >= 3:
+        ir["_outline"] = outline
+    return ir
 
 
 def _sch_pin(p: bytes) -> tuple[str | None, str | None]:

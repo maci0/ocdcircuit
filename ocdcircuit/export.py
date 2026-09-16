@@ -345,8 +345,10 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
 
 
 def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
-    """EasyEDA Std PCB JSON (docType 3): LIB footprints (PAD children) +
-    TRACK/VIA shapes, 10-mil units. Opens in EasyEDA/JLCEDA import."""
+    """EasyEDA Std PCB JSON (docType 3): LIB footprints (PAD children,
+    rotation + Fitted=N) + TRACK/VIA (inner layers 21+, real drill) +
+    COPPERAREA pours, BOARDOUTLINE, HOLEs, TEXT silk. 10-mil units.
+    Opens in EasyEDA/JLCEDA import; mirrors foreign.easyeda_doc."""
     import json
     from .parts import hole_drill, pad_size, pads_of
     os.makedirs(outdir, exist_ok=True)
@@ -370,20 +372,48 @@ def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
         # parameter (importer honors it back — round-trips losslessly).
         # Format continues the key`value`key`value` chain (trailing `).
         fitted = "Fitted`N`" if p.attrs.get("dnp") else ""
+        rot = int(p.attrs.get("rot", 0) or 0) % 360
+        rotp = f"`rotation`{rot}" if rot else ""
         shape.append(f"LIB~{p.x * mm:.1f}~{p.y * mm:.1f}~package`{p.fp}`name`{p.ref}`"
-                     f"{fitted}~~g{p.ref}~1"
+                     f"{fitted}{rotp}~~g{p.ref}~1"
                      + "".join("#@$" + k for k in kids))
+
+    def _ezlay(ll: int) -> int:
+        return 1 if ll == 0 else 2 if ll == 1 else ll + 19  # 2→21…
+
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
-        pts = f"{t.x1 * mm:.1f} {t.y1 * mm:.1f} {t.x2 * mm:.1f} {t.y2 * mm:.1f}"
         if t.via:
-            shape.append(f"VIA~{t.x1 * mm:.1f}~{t.y1 * mm:.1f}~3.2~{t.net}~0.8~gvia")
+            dr = getattr(t, "drill", 0.4)
+            shape.append(f"VIA~{t.x1 * mm:.1f}~{t.y1 * mm:.1f}~{(dr + 0.4) / 0.254:.1f}"
+                         f"~{t.net}~{dr / 2 / 0.254:.1f}~gvia")
         else:
-            shape.append(f"TRACK~{t.width / 0.254:.1f}~{t.layer + 1}~{t.net}~{pts}~gt{t.layer}")
+            pts = f"{t.x1 * mm:.1f} {t.y1 * mm:.1f} {t.x2 * mm:.1f} {t.y2 * mm:.1f}"
+            shape.append(f"TRACK~{t.width / 0.254:.1f}~{_ezlay(t.layer)}~{t.net}~{pts}~gt{t.layer}")
+    from .drc import pour_layers as _ezpours
+    for pname, lls in sorted(_ezpours(board).items()):
+        for ll in lls:
+            w, h = board.width * mm, board.height * mm
+            shape.append(f"COPPERAREA~2px~{_ezlay(ll)}~{pname}~0 0 {w:.1f} 0 {w:.1f} {h:.1f} 0 {h:.1f}"
+                         f"~1~solid~gpour{ll}~spoke~none~[]")
+    W, H = board.width * mm, board.height * mm
+    shape.append(f"BOARDOUTLINE~0 0 {W:.1f} 0 {W:.1f} {H:.1f} 0 {H:.1f}~goutline")
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "hole":
+            shape.append(f"HOLE~{float(cast(float, c['x'])) * mm:.1f}"
+                         f"~{float(cast(float, c['y'])) * mm:.1f}"
+                         f"~{float(cast(float, c.get('d', 3.0))) / 2 / 0.254:.1f}~ghole")
+    for i, cmt in enumerate(board.comments):
+        txt = str(cmt).split("@")[0].strip().replace("~", " ") or str(cmt).strip()
+        shape.append(f"TEXT~L~{board.width * mm / 2:.1f}~{(board.height + 2 + i * 2) * mm:.1f}"
+                     f"~0.8~0~none~3~~8~{txt}~~gtxt{i}")
+    layers = ["1~TopLayer~#FF0000~true~true~true",
+              "2~BottomLayer~#0000FF~true~false~true",
+              "10~BoardOutline~#FF00FF~true~false~true"]
+    for ll in range(2, min(board.layers, 6)):
+        layers.append(f"{ll + 19}~Inner{ll - 1}~#808000~true~false~true")
     doc = {"head": "3~1.7.5", "canvas": "CA~2400~2400~#000000~yes~#FFFFFF~10~1200~1200~line~1~mil~1~45~visible~0.5~400~300",
            "shape": shape, "title": board.meta.get("title", board.name),
-           "dataStr": {"layers": ["1~TopLayer~#FF0000~true~true~true",
-                                  "2~BottomLayer~#0000FF~true~false~true",
-                                  "10~BoardOutline~#FF00FF~true~false~true"]}}
+           "dataStr": {"layers": layers}}
     fn = os.path.join(outdir, f"{board.name}.easyeda.json")
     open(fn, "w").write(json.dumps(doc))
     return [fn]
