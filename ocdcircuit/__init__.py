@@ -1,8 +1,9 @@
 """ocdcircuit — circuits as code, agents first-class, every edit reversible.
 
-Language: plain Python (Board API) or JSON (agent.ir / from_json — same
-schema). Everything else (placer/router/layers/drc/exporter/parts/renderer)
-is a hot-swappable Plugin resolved through the board's Registry.
+Language: .ocd text (agent.loads/dumps), plain Python (Board API), or JSON
+IR (agent.ir / from_json — same schema). Everything else (placer/router/
+layers/drc/exporter/parts/renderer) is a hot-swappable Plugin resolved
+through the board's Registry.
 """
 from .core import Context, Component, Loader, Plugin, Registry
 from .circuit import Board, Module, Part, Net

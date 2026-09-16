@@ -184,7 +184,7 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
   An agent can experiment recklessly — rollback is free. Flux's
   "reviewable and reversible" is a feature; ours is the architecture.
 - **Solvers run local, unmetered.** 5 placers × 4 routers × 3 silk levels,
-  hot-swapped per board (`ocdcircuit/plugins.py`, 40+ plugins), multi-seed
+  hot-swapped per board (`ocdcircuit/plugins.py`, 70+ plugins), multi-seed
   candidates with filmstrip picking in studio. Iterate 200× — cost is $0
   and a warm CPU.
 - **Sim + calc without tab-switching.** `simulate:mna` (DC + transient,

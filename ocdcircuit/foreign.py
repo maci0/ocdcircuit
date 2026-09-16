@@ -7,7 +7,8 @@ Rect/circle/oval SMD pads, PTH holes, courtyard → w/h, 3D model refs
 kept as texture hints.
 
 Usage: `fp path/to/part.kicad_mod` in .ocd — same as .fp files.
-Also: Board.import_foreign(path) for whole-board netlist import (.kicad_pcb).
+Also: Board.import_fp("pcb", path=…) for whole-board netlist import
+(.kicad_pcb); Board.import_sym for schematic symbols.
 
 Altium notes: binary decode covers param streams (Board/Nets/Components/
 Rules) + Tracks/Arcs/Vias/Pads/Fills primitives + Polygons6 pours +

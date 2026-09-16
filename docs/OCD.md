@@ -109,7 +109,7 @@ route-grid 0.2               # maze cell size (default 0.25); finer closes
                              # dense boards, coarser routes faster
 route-penalty bend 3 via 20  # maze cost knobs (defaults 1.5/8.0);
                              # higher bend = straighter, higher via = fewer layers
-silk 2                       # silk detail 0=refs 1=+values 2=+outlines 3=+nets
+silk 2                       # 0=refs 1=+values 2=+pin-1+outlines 3=+nets
 ```
 
 `pour NET on L` floods layer L with NET copper (negative Gerber plot +
@@ -128,7 +128,7 @@ sim isrc N 0.01              # current source into net (A)
 sim r R1 10k                 # value override (r/c/l/d/q + part REF + value)
 sim tran 0.01 1000           # transient: t_end steps
 sim probe N_OUT              # record net (default: all)
-sim op N_OUT V 0 5           # operating-point sweep (net, source, lo hi)
+sim op U1 LM358 3 2 8 4 1    # ngspice opamp: REF MODEL pin… (simulate:ngspice)
 sim ac 10 100000 20          # AC sweep f0 f1 npts (ngspice dec sweep)
 sim lib models.lib           # extra SPICE include for simulate:ngspice
 sim expect VO == 5 tol 0.1   # assertion: VO==5 ±0.1 (red in studio/MCP/CLI)
@@ -146,7 +146,7 @@ DFF/JK; inputs in pin order, output = highest pin), then
 ```ocd
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
-block driver               # reusable unit: local refs, stamped per instance
+block driver ports A B     # reusable unit; optional ports (join must be subset)
   part U QFN28             #   allowed inside: part/net/constraints only —
 end                        #   board/use/fp/instance/nested blocks rejected
 instance driver as Z1      # stamp with PREFIX_; repeat as needed
@@ -175,9 +175,9 @@ Footprint shadowing of stdlib is an error (rename it).
 ## Rules
 
 - One board per file; a second `board NAME …` header is an error.
-- `dumps()` output is canonical: constraints come after nets; layer/width
-  constraints set by `net` attrs print as `route`/`trace` lines;
-  `x=/y=` parts print no `fix` line.
+- `dumps()` is canonical: constraints after nets; layer/width fold onto
+  the net line as `Ln`/`wn` (conflicting dupes stay as `route`/`trace`);
+  `x=/y=` on parts dump as `fix REF at x y` (never as part attrs).
 - A fact that parses but violates design rules builds, then exits 2.
 
 Duplicate sources resolve last-wins, uniformly: a later `fix R1 at …`

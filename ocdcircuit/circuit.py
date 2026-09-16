@@ -1,7 +1,7 @@
 """Board / Module / Part / Net — all mutations flow through Context.
 
-Circuits are written in plain Python (this API) or in JSON (agent.ir
-snapshot — same schema, see agent.from_ir). No custom parser (YAGNI).
+Circuits are written as .ocd text (agent.loads/dumps), plain Python
+(this API), or JSON IR (agent.ir / from_json — same schema).
 """
 from __future__ import annotations
 from collections.abc import Callable
@@ -469,7 +469,11 @@ class Board(Component):
         return out
 
     def recommend(self, key: str | None = None, **k: object) -> dict[str, object]:
-        """Add/cut recommendations. Report-only; ops are apply_patch-ready."""
+        """Dispatch `recommend` if a plugin is mounted.
+
+        Prefer `ocdcircuit.recommend.recommend(board)` — no default plugin
+        is mounted; this method exists for symmetry with other kinds.
+        """
         out = self._run("recommend", key, **k)
         assert isinstance(out, dict)
         return out

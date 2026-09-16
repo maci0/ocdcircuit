@@ -52,7 +52,7 @@ fix PSU_J1 at 3 15           # dragged in studio? lands here, kept forever
 keep U1 near C1 3            # related parts stay together. everything has its place
 route GND on 1               # ground goes on the bottom. obviously
 power VCC GND                # power traces are 0.5mm. obviously
-silk 2                       # refs + values + outlines. level 3 labels nets too
+silk 2                       # refs+values+pin-1+outlines; level 3 labels nets too
 ```
 
 `board.toml` next to the `.ocd` sets project defaults (CLI flags win):

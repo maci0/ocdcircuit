@@ -3,11 +3,12 @@
 Protocol: Content-Length-framed JSON-RPC over stdio (MCP stdio transport).
 Methods: initialize, tools/list, tools/call, ping. Notifications ignored.
 
-Tools: load_board, get_state, apply_patch, set_state, undo,
-parse_constraint, place, candidates, apply_candidate, feasible, route,
-check, score, diff, lint, doctor, export, render, xray, quote, import_footprint,
-calc, simulate, use_plugin, list_plugins, solve, kb (board knowledgebase:
-list/search/read the kb/ notes + datasheets, add a path/url/text, fetch).
+Tools: load_board, get_state, apply_patch, set_state, undo, parse_constraint,
+place, candidates, apply_candidate, feasible, route, check, score, diff,
+lint, doctor, export, render, xray, quote, footprints, fabs, context,
+import_footprint, calc, simulate, use_plugin, list_plugins, solve, kb
+(board knowledgebase: list/search/read the kb/ notes + datasheets, add a
+path/url/text, fetch).
 State: one board in memory; load_board replaces it (old one undoable? no —
 load is a fresh Board; agents snapshot via get_state if needed).
 Every mutation flows through Context, so undo reverts the last effect.

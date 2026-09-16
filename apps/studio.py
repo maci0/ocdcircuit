@@ -4511,8 +4511,8 @@ class H(http.server.BaseHTTPRequestHandler):
         st["silk"] = silksel
         st["score"] = score if score is not None else b.score()
         st["lint"] = lint if lint is not None else b.lint()
-        # recommend() is a module function over parts/nets (report-only);
-        # it was being called as a Board method, which does not exist.
+        # recommend() is the module API (report-only). Board.recommend
+        # exists but has no mounted plugin — studio must call the module.
         st["recommend"] = recommend(b)
 
     def log_message(self, *a: object) -> None:

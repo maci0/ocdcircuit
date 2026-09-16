@@ -66,17 +66,12 @@ in the Coupon Center, one per order, expiring. Cash commission instead =
 the separate [Brand Advocate program](https://jlcpcb.com/help/article/jlcpcb-brand-advocates)
 (sponsorships, application-based).
 
-To point the studio's "order at JLC" button at your link, set it once —
-env `JLC_REFERRAL_URL` or a `board.toml` key `referral_url` (any string;
-validated as http[s] at use, never dumped into exports):
+Referral links are not wired in-tree yet (`board.toml` only accepts
+`fab`/`placer`/`router`/`drc`/`mask`/`style`). Use your own JLC referral
+URL outside ocdcircuit until a config key is added.
 
-```toml
-referral_url = "https://jlcpcb.com/XXXX"
-```
-
-Rules that cost you the link + the API key if broken: no JLC trademark on
-your own pages, no `jlc` in your URLs, no logo in ads, no misleading claims.
-Keep ocdcircuit branding as-is; the link rides only on the order button.
+Rules that cost a referral link if broken: no JLC trademark on your own
+pages, no `jlc` in your URLs, no logo in ads, no misleading claims.
 
 Sources: [JLCPCB capabilities](https://jlcpcb.com/capabilities/Capabilities),
 [PCBWay capabilities](https://www.pcbway.com/capabilities.html),

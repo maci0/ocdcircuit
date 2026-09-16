@@ -16,15 +16,17 @@ apps/mcp.py ───┘         │                        │                 
 
 - **Board** (`circuit.py`): model (parts/nets/traces/constraints/meta) +
   one dispatch method per plugin kind (`place/route_board/check/export/
-  render/silk/import_fp/calc/simulate/lint/score/doctor/diff`). Never calls
+  render/silk/import_fp/import_sym/calc/simulate/lint/score/doctor/diff/
+  collab/xray/scan/quote/price/configure`). Never calls
   engines directly. `_run()` funnels all dispatch: a crashing plugin is
   marked failed, the previous entry keeps serving, explicit `use()` re-arms.
   Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`/`TimeoutExpired`)
-  bypass the fence — retry works without re-arm.
+  bypass the fence — retry works without re-arm. Recommendations are
+  `ocdcircuit.recommend.recommend(board)` (module API), not a mounted plugin.
 - **Registry** (`core.py`): `items[(kind,key)]`, one `active` per kind,
   `failed` map. `UiSlots` beside it: named UI slots (`toolbar/panel-left/
   panel-right/view/status`), plugins register render fns, crash abdicates.
-- **Plugins** (`plugins.py`): 40+ classes, `kind`+`key`, `run(board, **k)`.
+- **Plugins** (`plugins.py`): 70+ classes, `kind`+`key`, `run(board, **k)`.
   Engine imports live inside `run()` so `import ocdcircuit` stays light.
   Mounted per-Board by `mount_defaults` (swappable per board, undoable).
 - **Engines**: `solver` (diffusion place + min-conflicts repair), `maze`
@@ -37,7 +39,7 @@ apps/mcp.py ───┘         │                        │                 
   `llm.embed` with a term-match floor — CLI, MCP and studio read the same
   directory, so there is no index to invalidate beyond `kb/.cache/`).
 - **Apps** (`apps/`): `ocd` (CLI), `studio` (webui, slot-composed page),
-  `mcp` (28-tool agent server). `tools/` holds one-shot porters
+  `mcp` (30-tool agent server). `tools/` holds one-shot porters
   (tscircuit/atopile/mitox); `boards/` one dir per board; `benches/`
   discrete6502 stress; `tests/` suite + geometry goldens.
 

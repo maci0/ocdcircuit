@@ -10,6 +10,10 @@ BOARD=boards/psu.ocd make run       # another board
 OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
 ```
 
+First visit: create a local Studio account (`.ocd-users` beside the boards),
+then open a board from the shelf (or the launch file). Collab still needs
+that session cookie.
+
 ## The loop
 
 1. **Edit** `.ocd` (left) → 400ms debounce → quick rebuild
@@ -71,9 +75,12 @@ parser accepts (`<-->`-joined, attrs preserved).
 ## Endpoints (same shapes as MCP tools)
 
 `/init /build /solve /candidates /pick /render /export /diff_prev`
-`/simulate /doctor /undo /redo` (POST JSON) · `/kb/list /kb/read /kb/search
-/kb/ask /kb/add /kb/fetch` (the board's knowledgebase; `/kb/fetch` runs in a
-worker thread and reports through `/kb/list`) · `/slots` (plugin inventory).
+`/simulate /doctor /undo /redo` (POST JSON) · `/quote /xray /scan` ·
+`/kb/list /kb/read /kb/search /kb/ask /kb/add /kb/fetch` (the board's
+knowledgebase; `/kb/fetch` runs in a worker thread and reports through
+`/kb/list`) · `/kb/prefs*` · `/slots` (plugin inventory) ·
+`/auth/signup|/login|/logout|/me` · `/shelf*` · `/chat*` ·
+`/fs/open|/read|/import` · `/vcs*` · `/poll /load /reload`.
 `/collab/sync /collab/push /collab/cursor /collab/op` (POST JSON) +
 `/collab/events` (SSE): realtime multiplayer, one room per board —
 rev-guarded pushes (stale loser reloads), presence pills + PCB rings,
