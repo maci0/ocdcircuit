@@ -1183,6 +1183,30 @@ with tempfile.TemporaryDirectory() as _kbt:
         assert str(cast(list[dict[str, object]], _f1["skipped"])[0]["why"]).startswith("no datasheet")
         _f2 = _kbs.fetch(_kbb)
         assert _f2["saved"] == [] and len(cast(list[object], _f2["skipped"])) == 2, _f2
+        # same URL twice in one fetch: one download, second part skipped
+        _urls.clear()
+        _share = tempfile.mkdtemp()
+        _bshare = agent.loads(
+            "board q 10x10 2L\n"
+            "part U1 SOIC8 A datasheet=https://share.test/a.pdf\n"
+            "part U2 SOIC8 B datasheet=https://share.test/a.pdf\n"
+            "net N: U1.1 U2.1\n", base=_share)
+        _kshare = _kbmod.KB(_share, board=_bshare)
+        _fs = _kshare.fetch(_bshare)
+        assert len(cast(list[object], _fs["saved"])) == 1, _fs
+        assert len(cast(list[object], _fs["skipped"])) == 1, _fs
+        assert _urls == ["https://share.test/a.pdf"], _urls
+        assert len(open(_kshare.sources).read().strip().splitlines()) == 1
+        # re-add same URL: no second file, no second sources row
+        _again = _kshare.add("https://share.test/a.pdf")
+        assert _again["added"] == cast(list[dict[str, object]], _fs["saved"])[0]["name"]
+        assert _urls == ["https://share.test/a.pdf"], _urls  # add did not re-download
+        assert len(open(_kshare.sources).read().strip().splitlines()) == 1
+        _kbsh.rmtree(_share)
+        # prefs_add is idempotent on the same when+text
+        _p1 = _kbs.prefs_add("placing", "keep analog left")
+        _p2 = _kbs.prefs_add("placing", "keep analog left")
+        assert _p1["id"] == _p2["id"] == 0 and len(_kbs.prefs()) == 1
         # a bare lcsc= part resolves through the lookup; it also maps back to C9
         _k2dir = tempfile.mkdtemp()
         _b2 = agent.loads("board q 10x10 2L\npart C9 C0805 1u lcsc=C19702\n"

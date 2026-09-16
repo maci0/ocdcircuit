@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import urllib.request
 from itertools import islice
@@ -160,7 +161,10 @@ def _clean(name: str, fallback: str = "download") -> str:
 
 def _download(url: str, dest: str, timeout: float = 60.0) -> int:
     """Fetch url → dest. Refuses non-https, oversized, and .pdf URLs that
-    aren't PDFs (a login page saved as a datasheet is worse than nothing)."""
+    aren't PDFs (a login page saved as a datasheet is worse than nothing).
+
+    Write is atomic (temp + replace): a crash mid-transfer cannot leave a
+    truncated dest that a retry would treat as a finished datasheet."""
     if urlparse(url).scheme != "https":
         raise ValueError(f"refusing non-https url {url!r}")
     req = urllib.request.Request(url, headers=UA)
@@ -170,9 +174,21 @@ def _download(url: str, dest: str, timeout: float = 60.0) -> int:
         raise ValueError(f"{url}: larger than {MAX_BYTES // 1024 // 1024}MB")
     if dest.lower().endswith(".pdf") and not data.startswith(b"%PDF"):
         raise ValueError(f"{url}: not a PDF (got {data[:24]!r})")
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with open(dest, "wb") as f:
-        f.write(data)
+    d = os.path.dirname(dest) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".kb-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return len(data)
 
 
@@ -250,6 +266,26 @@ class KB:
                     if len(bits) >= 2:
                         out[bits[0]] = bits[1]
         return out
+
+    def _source_for_url(self, url: str,
+                        origins: dict[str, str] | None = None) -> str | None:
+        """Relative kb path already logged for this url. Prefers a live file;
+        falls back to a stale path so a crashed download can reuse the slot
+        instead of appending another sources.tsv line."""
+        hit_missing: str | None = None
+        for name, u in (origins if origins is not None else self._origins()).items():
+            if u != url:
+                continue
+            if os.path.isfile(os.path.join(self.dir, name)):
+                return name
+            hit_missing = name
+        return hit_missing
+
+    def _record_source(self, name: str, url: str) -> None:
+        """Append one provenance line. Caller updates any in-memory map."""
+        os.makedirs(self.dir, exist_ok=True)
+        with open(self.sources, "a", encoding="utf-8") as f:
+            f.write(f"{name}\t{url}\t{int(time.time())}\n")
 
     def _part_index(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
         """(lcsc -> refs, token -> refs), built once per call. docs() asks per
@@ -367,19 +403,23 @@ class KB:
         raise ValueError(f"no preference #{id}")
 
     def prefs_add(self, when: str, text: str) -> dict[str, object]:
-        """Append one rule (unapproved until approved)."""
+        """Append one rule (unapproved until approved). Same when+text is a
+        no-op so a double-click / retry does not stack identical rules."""
         when, text = when.strip(), text.strip()
         if not when or not text or "\n" in when + text:
             raise ValueError("a rule needs a when and a what, one line each")
-        p = os.path.join(self.dir, PREFS_FILE)
-        os.makedirs(self.dir, exist_ok=True)
-        if not os.path.isfile(p):
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(PREFS_HEAD)
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(f"when {when} :: {text}\n")
         ps = self.prefs()
-        return {"ok": True, "id": len(ps) - 1}
+        for i, rule in enumerate(ps):
+            if str(rule["when"]) == when and str(rule["text"]) == text:
+                return {"ok": True, "id": i}
+        path = os.path.join(self.dir, PREFS_FILE)
+        os.makedirs(self.dir, exist_ok=True)
+        if not os.path.isfile(path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(PREFS_HEAD)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"when {when} :: {text}\n")
+        return {"ok": True, "id": len(ps)}
 
     def read(self, name: str, start: int = 1, lines: int = 200) -> dict[str, object]:
         """A window of a doc's text — page a datasheet instead of dumping 5k lines."""
@@ -692,7 +732,10 @@ class KB:
     def add(self, src: str | None = None, name: str | None = None,
             text: str | None = None) -> dict[str, object]:
         """Bring a doc in: a URL (`https://…/ds.pdf`), a local path, or text
-        straight from the caller. URL/paths keep a sources.tsv line."""
+        straight from the caller. URL/paths keep a sources.tsv line.
+
+        Re-adding the same URL returns the existing file — a retry must not
+        mint `name-2.pdf` and another sources.tsv row."""
         if text is not None:
             dest = self._target(name or "note.md")
             os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -703,14 +746,22 @@ class KB:
             raise ValueError("add needs a path, a url, or text")
         u = urlparse(src)
         if u.scheme in ("http", "https"):
+            origins = self._origins()
+            prior = self._source_for_url(src, origins)
+            if prior is not None and os.path.isfile(os.path.join(self.dir, prior)):
+                full = os.path.join(self.dir, prior)
+                return {"added": prior, "bytes": os.path.getsize(full), "url": src}
             nm = name or os.path.basename(u.path) or "download"
             if not os.path.splitext(nm)[1]:
                 nm += ".html" if u.scheme == "https" else ".txt"
-            dest = self._target(nm)
+            # Stale sources row (file gone): reuse the path. Else mint a free name.
+            dest = (os.path.join(self.dir, prior) if prior is not None
+                    else self._target(nm))
             size = _download(src, dest)
-            with open(self.sources, "a", encoding="utf-8") as f:
-                f.write(f"{os.path.relpath(dest, self.dir)}\t{src}\t{int(time.time())}\n")
-            return {"added": os.path.relpath(dest, self.dir), "bytes": size, "url": src}
+            rel = os.path.relpath(dest, self.dir)
+            if prior is None:
+                self._record_source(rel, src)
+            return {"added": rel, "bytes": size, "url": src}
         if not os.path.isfile(src):
             raise ValueError(f"no such file {src!r} (or pass an http(s) url)")
         dest = self._target(name or src)
@@ -741,25 +792,38 @@ class KB:
             if url is None and not lcsc:
                 skipped.append({"part": ref, "why": "no datasheet= or lcsc= attr"})
                 continue
-            if url is not None and url in origins.values():
-                skipped.append({"part": ref, "why": f"already have {url}"})
-                continue
-            if url is None and any(os.path.basename(f).startswith(lcsc + "_")
-                                   or os.path.basename(f) == lcsc + ".pdf" for f in have):
+            if url is not None:
+                prior = self._source_for_url(url, origins)
+                if prior is not None and os.path.isfile(os.path.join(self.dir, prior)):
+                    skipped.append({"part": ref, "why": f"already have {url}"})
+                    continue
+            elif any(os.path.basename(f).startswith(lcsc + "_")
+                     or os.path.basename(f) == lcsc + ".pdf" for f in have):
                 skipped.append({"part": ref, "why": f"already have a datasheet for {lcsc}"})
                 continue
             label = _clean(str(p.attrs.get("mpn", "")) or p.value or ref, "part")
             try:
                 if url is None:
                     url = lcsc_pdf(lcsc, timeout=timeout)
-                dest = self._target(f"{lcsc or ref}_{label}.pdf")
+                    # lcsc lookup can collide with a prior datasheet= fetch of
+                    # the same bytes: skip if that URL is already on disk.
+                    prior = self._source_for_url(url, origins)
+                    if prior is not None and os.path.isfile(
+                            os.path.join(self.dir, prior)):
+                        skipped.append({"part": ref, "why": f"already have {url}"})
+                        continue
+                else:
+                    prior = self._source_for_url(url, origins)
+                dest = (os.path.join(self.dir, prior) if prior is not None
+                        else self._target(f"{lcsc or ref}_{label}.pdf"))
                 size = _download(url, dest, timeout=timeout)
             except (ValueError, OSError, KeyError) as e:
                 failed.append({"part": ref, "lcsc": lcsc, "error": str(e)[:200]})
                 continue
             name = os.path.relpath(dest, self.dir)
-            with open(self.sources, "a", encoding="utf-8") as f:
-                f.write(f"{name}\t{url}\t{int(time.time())}\n")
+            if prior is None:
+                self._record_source(name, url)
+            origins[name] = url  # same URL on a later part must not re-download
             have.append(name)
             saved.append({"part": ref, "name": name, "bytes": size, "url": url})
         return {"saved": saved, "skipped": skipped, "failed": failed,
