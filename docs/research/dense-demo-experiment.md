@@ -39,14 +39,17 @@ because fallback count (not warnings) is now the measurable gap.
 1. "Greedy+repair works" → diffusion works *for placement* at n=20 dense
    (zero-error, beats golden WL). Repair/legalizer still unmeasured (nothing
    to repair — diffusion was already clean).
-2. "2nd rip-up pass = biggest gain" → restated measurably: close the
-   airwire-fallback gap on pico (currently ~197 maze warnings w/ fallbacks
-   vs 26 lroute clearance warnings). Experiment: 2nd pass → count fallbacks.
+2. ~~"2nd rip-up pass = biggest gain"~~ → ANSWERED: gated 2-round rip-up
+   shipped (`maze.py`); pico jumpers 79→4 (then route-grid 0.2 → 0).
+   Remaining gain is history-weight tuning, not a 3rd pass. Original bound
+   was airwire-fallback count on pico (~197 maze warnings w/ fallbacks vs
+   26 lroute clearance).
 3. "Maze = fewer DRC warnings" → FALSE on dense boards (197 vs 26). Maze wins
    only where it completes; completion rate, not warning count, is the metric.
 
 ## Baseline job status
 
 `bench.py` background run (bash-341) was started pre-fix with stale defaults;
-its output (baseline_r2.txt) is superseded — rerun `python -m benches.monster6502.bench` (now
-defaults seeds=1 iters=5, prints golden WL + floor) for the headroom number.
+its output (baseline_r2.txt) is superseded — rerun
+`python -m benches.discrete6502.bench` (defaults seeds=1 iters=5, prints
+golden WL + floor; see `SOURCES.md` r4/r5 baseline) for the headroom number.

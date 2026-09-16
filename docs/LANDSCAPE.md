@@ -59,3 +59,18 @@ check pipeline (tscircuit).
 - Quilter scope: no RF-dominant/HV/HDI promises — honest envelope instead.
 - Flux pricing/ACUs, multiplayer, enterprise SSO — not our problem yet.
 - Cloud autorouter, push-to-URL sharing — local-first beats accounts.
+
+## Envelope (what we do / don't claim)
+
+Corpus-wide honesty map — tracked here so briefs don't silently overclaim:
+
+| Domain | Status in tree |
+|--------|----------------|
+| Thermal | placer `thermal` knob only (big bodies → edges); no FEA |
+| SI/PI | DRC skew reports only; no impedance/PDN solver |
+| Cost / stock | attrs + optional quote; no live distributor default |
+| Panelization | zero code (panel elements still "Remaining" above) |
+| Interactive route | no push-shove story (KiCad PNS is the reference, not a port) |
+| Exact layout proof | CP-SAT/`AddNoOverlap2D` optional verifier — unpiloted |
+| Whole-board sim | block-by-block + model-less policy; never one "simulate PCB" button |
+

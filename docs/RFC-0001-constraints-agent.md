@@ -15,5 +15,5 @@ Each op runs through `Context` → fully undoable; returns applied count.
 this is the deterministic fallback.
 
 ## Open (v1): ~~length-matching/diff-pair constraints, keepout-by-net-class~~
-   SHIPPED (`match`/`diff` placer cost + DRC skew; `keepout` maze walls +
-   DRC). Remaining: keepout-by-net-class.
+   SHIPPED (`match`/`diff` placer cost + DRC skew; `keepout` maze soft
+   preferential + DRC). Remaining: keepout-by-net-class.

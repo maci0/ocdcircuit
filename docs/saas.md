@@ -2,11 +2,11 @@
 
 Position (opinion, not measurement — no controlled Copilot bake-off exists;
 proof path: §8.2 Copilot-over-MCP config): Flux is expensive and the Copilot
-output disappoints. Our verified
-workflow — DeepSeek/Claude + tscircuit + ocdcircuit — already beats it on
-price (free/local), iteration (unmetered), and agent-operability
-(git-diffable `.ocd` + MCP). This doc maps Flux, prices the field, and shows
-where we win and what to build.
+disappoints in hands-on use. Our verified workflow — DeepSeek/Claude +
+tscircuit + ocdcircuit — wins on price (free/local), iteration (unmetered),
+and agent-operability (git-diffable `.ocd` + MCP). "Already beats Flux" here
+means that price/iteration/agent triad, not a controlled quality bake-off.
+This doc maps Flux, prices the field, and shows where we win and what to build.
 
 Pricing numbers are mid/late-2026 public pages, not gospel — re-check before
 quoting. EDA sources:
@@ -52,9 +52,11 @@ impedance, Gerber viewer.
    so a 5-editor team iterating hard can double its bill in overage alone.
    ([Quilter's model guide](https://www.quilter.ai/blog/generative-pcb-design-tool-pricing-in-2026-a-guide-to-saas-credits-and-subscriptions#1#1)
    calls this out as the industry's core budgeting headache).
-3. **Copilot quality doesn't justify the price.** Hands-on verdict: useless
-   output at premium price. Market confirms the churn risk — the whole
-   "free Flux alternative" category (ProtoFlow's top SEO page is literally
+3. **Copilot quality vs price (Position, not bake-off).** Hands-on opinion:
+   output quality does not justify the meter. No controlled side-by-side
+   exists — proof path is §8.2 (Copilot-over-MCP). Market confirms churn
+   risk — the whole "free Flux alternative" category (ProtoFlow's top SEO
+   page is literally
    [Flux.ai Alternative](https://www.protoflow.ai/compare/flux-ai-alternative))
    exists because engineers bounce off exactly these three walls: metered
    AI, per-seat pricing, gated export.
@@ -114,7 +116,7 @@ priced or positioned against that spectrum.
 | Player | What it is | Price / access | Verdict for us |
 |--------|------------|----------------|----------------|
 | [Quilter](https://www.quilter.ai/blog/series-b?trk=public_post_comment-text#1) | L3 autonomous place+route, physics/RL, own CAD kernel. $25M Series B Oct 2025 (Index, Benchmark; earlier $10M Feb 2024). Speedrun (vendor-run, no independent replication): NXP i.MX8 Mini, 8L HDI, 843 parts/5,141 pins, 27h runtime, 98% completion, booted Linux, no respins | Quote-only per-project by unrouted pin count; no public $. Free tier trains on your metadata (see §3) | Downstream router, needs a schematic in — complementary. Cloud vs our local/unmetered is the fight |
-| [DeepPCB](https://deeppcb.ai/pricing/) (InstaDeep) | L3 RL cloud router | Pay-as-you-go: $30/1hr, $280/10hr, $800/30hr; 30-min trial (1 board, ≤4L, 150 airwires, 100 comps) | Same slot as Quilter, burst-friendly. Benchmark against our maze router |
+| [DeepPCB](https://deeppcb.ai/pricing/) (InstaDeep) | L3 RL cloud router. Vendor USB-hub demo (vendor-run, unverified): published as marketing evidence only | Pay-as-you-go: $30/1hr, $280/10hr, $800/30hr; 30-min trial (1 board, ≤4L, 150 airwires, 100 comps) | Same slot as Quilter, burst-friendly. Benchmark against our maze router |
 | [ProtoFlow](https://www.protoflow.ai/compare/flux-ai-alternative) | Free desktop AI capture (prompt → part-backed schem → KiCad + ProtoRoute autoroute), LCSC/DigiKey/Mouser, DRC/ERC | Free, no seats/meter/export gate | Closest philosophy; capture + basic route. Validates our model — differentiate on local solvers |
 | [CELUS](https://www.celus.io/) | AI platform: specs → schematics + PCB layout + BOM ("~90% faster"), Renesas Winning Combos, distributor integration (AGS). €25M Series A Jul 2022 (Earlybird; ~$27.4M total). Founded 2018 Munich | No public pricing (/pricing 404s); signup + sales | Capture+layout but enterprise-motion. Verify ECAD export list before claiming overlap |
 | [Circuit Mind](https://www.circuitmind.io/product) (ACE) | Arch/block-diagram → candidate schematics + BOM + verification, cost/size/power sliders, live availability. Customers incl. BAE, Legrand, NI, LANL case study. London | Demo-gated, zero public numbers | Capture only (no layout claim on product page). Skip |
@@ -193,9 +195,11 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
   AtlasPCB's fab-side note applies to us too: manufacturers accept
   AI-generated Gerbers but flag aggressive minimum-feature use, copper
   imbalance, missing notes — our fab profiles + DFM honesty are the answer.
-- **Gaps, stated plainly:** no AC-sweep/Bode UI, no 340k model library, no
-  live pricing/stock, no ODB++/IPC-2581/STEP, no multiplayer, no datasheet→
-  footprint. §8 orders them by revenue impact.
+- **Gaps, stated plainly:** no AC-sweep/Bode *UI* (ngspice `sim ac` exists
+  headless), no 340k model library, no live pricing/stock, no ODB++/IPC-2581/
+  STEP, no multiplayer, no datasheet→footprint, no panelization, no SI/PI
+  beyond skew reports, no interactive push-shove. §8 orders them by revenue
+  impact.
 
 ## 7. Options
 

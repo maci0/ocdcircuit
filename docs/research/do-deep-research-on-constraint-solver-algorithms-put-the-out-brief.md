@@ -8,14 +8,16 @@ VPSC, local-search/population methods, Steiner/schematic/analog).
 For ocdcircuit's scale (tens of parts, zero-dependency Python), measurement
 supports the current architecture: released diffusion finds zero-error layouts
 at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
-(`outputs/dense-demo-experiment.md`). Exact
-methods (CP-SAT, ILP/MILP) buy optimality proofs but cost a dependency plus a
-linearized/disjunctive formulation the true objective doesn't need yet. The
-cheapest upgrades, in order: (1) second rip-up & reroute pass in
-the maze router (ordering + one bounded retry already exist — maze falls back
-to airwires on contested dense nets while lroute stays instant); (2) a greedy legalization/overlap-removal pass after diffusion;
-(3) cooling-schedule tuning. Skip: ILP dependency, ePlace/RePlAce
-reimplementation, ML placers, push-and-shove.
+(`docs/research/dense-demo-experiment.md`; live golden-WL stress is
+`benches/discrete6502/`). Exact methods (CP-SAT, ILP/MILP) buy optimality
+proofs but cost a dependency plus a linearized/disjunctive formulation —
+scope decision is still unquantified (no AddNoOverlap2D pilot even at
+10 parts). The cheapest remaining upgrades, in order: (1) negotiated-
+congestion history hardening in the maze router (gated 2-round rip-up
+retry + per-cell HIST already shipped — remaining gain is history
+weighting/tuning across iterations); (2) a greedy legalization/overlap-
+removal pass after diffusion; (3) cooling-schedule tuning. Skip: ILP
+dependency, ePlace/RePlAce reimplementation, ML placers, push-and-shove.
 
 ## Background
 
@@ -25,11 +27,12 @@ net-centroid spring forces plus pairwise radial/box repulsion with decaying
 temperature/noise; multi-seed best-of (Quilter-style candidates). Layer
 assignment = greedy bbox-overlap minimization. Routing = ordered L-routes plus
 an A* maze router (0.25 mm grid, bend + via penalties, soft courtyard terrain,
-own-net copper reuse, small-nets-first ordering + one bounded rip-up retry +
-jumper fallback). Constraints: `fixed`/`near` (+`near-group`)/`keepout`/
+own-net copper reuse, big-nets-first ordering + gated 2-round rip-up retry
+with per-cell history + jumper fallback; MST trunk legs via `_mst_pairs`).
+Constraints: `fixed`/`near` (+`near-group`)/`keepout`/
 `edge`/`layer`/`width`/`power`/`match`/`diff` (`docs/OCD.md`,
-`docs/RFC-0001-constraints-agent.md`; `keepout` = maze hard walls + DRC
-warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
+`docs/RFC-0001-constraints-agent.md`; `keepout` = maze soft preferential
+cost + DRC warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
 + 1e5 edge + near/match/diff penalties.
 
 ## Key findings (by theme)
@@ -166,10 +169,9 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   [shove](https://docs.kicad.org/doxygen/classPNS_1_1SHOVE.html),
   [diff-pair](https://docs.kicad.org/doxygen/pns__diff__pair__placer_8cpp_source.html)).
 - Relevance: current A* + bend/via + soft terrain already covers the basics.
-  Upgrades in order: (a) second rip-up & reroute pass (ordering + one bounded
-  retry already exist in `maze.py`; biggest remaining completion gain is a 2nd
-  pass); (b) negotiated-congestion-lite
-  (per-cell history + present-usage adder across iterations); (c) skip Hadlock
+  Upgrades in order: (a) negotiated-congestion-lite — shipped: 2-round
+  rip-up retry + per-cell history/HIST adder across iterations
+  (`maze.py`; blinky-1L 112→110 segs, breath_ketone 565→552, DRC-clean); (b) skip Hadlock
   re-tuning while the heuristic is admissible. Length meanders only if
   skew-driven routing is required; else keep reporting skew via DRC warnings.
 
@@ -180,8 +182,9 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   ([Bonn thesis PDF](https://bonndoc.ulb.uni-bonn.de/xmlui/bitstream/handle/20.500.11811/4667/2299.pdf?sequence=1&isAllowed=y)).
 - Mapping: fixed = skip integration (hard clamp, already done via `_fixed`);
   near/group = extra spring (already done); edge = penalty (1e5) + repulsive
-  push + hard clamp; keepout = maze hard walls + DRC warnings (no placer
-  term). Penalty trade-off (textbook, NOT fetch-verified — flagged): too weak →
+  push + hard clamp; keepout = maze soft preferential (+15/cell) + DRC
+  warnings (no placer term; hard walls would force jumpers). Penalty trade-off
+  (textbook, NOT fetch-verified — flagged): too weak →
   violations survive; too strong → stiff/oscillatory without smaller steps or
   weight ramps. Standard compromise: penalties for exploration + hard
   projection/legalization at the end.
@@ -191,13 +194,27 @@ warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   (fixed pinned, in-bounds clamp). Avoid: full analytical legalizer,
   branch-and-bound, ML/learned placer — disproportionate at this scale.
 
+## Architecture evidence (measurement vs analogy)
+
+Quantitative leg: dense pico_tmc2209 diffusion 0.67–0.71× golden WL,
+zero-error in ~3 s (`docs/research/dense-demo-experiment.md`). Remaining
+legs in this brief (FR/graph-drawing analogy, Song & Ermon annealed-
+Langevin abstract, Quilter marketing) are supporting context, not the
+architecture proof. "Overkill while greedy+repair works" holds only while
+legalizer/exact-verifier pilots stay unmeasured — see Open Q1 and
+`constraint-methods.md` exact-backends skip caveat.
+
 ## Open questions
 
 1. At what part count / density does multi-start diffusion measurably lose to
    CP-SAT on a linearized model? Needs a benchmark, not literature.
-2. Does a second rip-up pass close the airwire-fallback gap on dense demo
+2. ~~Does a second rip-up pass close the airwire-fallback gap on dense demo
    boards (pico: ~197 maze warnings w/ fallbacks vs 26 lroute clearance
-   warnings)? Count fallbacks, not warnings.
+   warnings)?~~ ANSWERED (round 77): yes — gated 2nd round took pico 79→4
+   jumpers (route-grid 0.2 closed the last 4; pico now 0/0/0). Gate matters:
+   unconditional round 2 churns good routes into jumpers (measured 27 vs
+   4 on identical input); round 2 runs only when round 1 strictly shrank
+   the failed set. Remaining: history-weight tuning, not a 3rd pass.
 3. Length-matching currently penalizes *pad-distance* estimates pre-route; when
    should `_match_cost` switch to routed length, and are meanders ever needed?
 4. Exact CP-SAT scale numbers, DPLL/CDCL primary methods, solver benchmark

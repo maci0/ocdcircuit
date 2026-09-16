@@ -1,5 +1,16 @@
 # Parts libraries — research brief (ocdcircuit relevance)
 
+## Disposition (round 200–201)
+- (1) Alias table: SHIPPED — `KICAD_ALIASES` + `resolve_fp()` in
+  `ocdcircuit/parts.py`, wired into `Board.add_part` (all surfaces).
+- (2) Pin-map table: MINIMAL AD HOC, full table DEFERRED — `sim op REF
+  MODEL PINS...` carries positional pins; `spice.py` hardcodes SOT23 BJT
+  roles (1=B 2=E 3=C). No footprint→SPICE-order table yet; no `spicepin=`
+  attr (name free). MNA still maps by net.
+- (3) `alternates=` attr: SHIPPED (BOM 5th column via `export.py`).
+- (4) Courtyard audit: DEFERRED to an automated pass (unchanged).
+- (5) Live distributor APIs: never by default (unchanged policy).
+
 ## Summary
 
 ocdcircuit already covers the import side well (101 stdlib footprints,
@@ -11,14 +22,14 @@ redistributed collections must stay CC-BY-SA with attribution);
 `R0603` via a static dict, reusing the monster bench's mapping); **attrs,
 not APIs** for orderable parts (`lcsc=`/`mpn=` validated locally, live lookup
 only on explicit user action — with tscircuit's jlcsearch as the scriptable
-exception); and the single missing link for simulation is
-a **pin-map table** (footprint pin → SPICE node order, copied from tscircuit's
-`spicePinMapping`). Ranked cheapest-first: (1) KiCad↔ocd alias table (one
-static dict); (2) pin-map attr for the simulators brief; (3) IPC-7351
-silkscreen rules (already drafted in tidy brief, now second-sourced);
-(4) scripted courtyard audit of the 101 stdlib footprints vs IPC Level N
-(defer to an automated pass); (5) live distributor APIs — never by default
-(except jlcsearch, no-auth JSON).
+exception); simulation pin order is covered ad hoc today (`sim op`
+positional pins + SOT23 hardcode) with a full **pin-map table** still
+deferred (tscircuit's `spicePinMapping` remains the model). Ranked
+cheapest-first status: (1) KiCad↔ocd alias table — SHIPPED; (2) full
+pin-map table — DEFERRED; (3) IPC-7351 silkscreen rules (tidy brief,
+second-sourced); (4) scripted courtyard audit of the 101 stdlib
+footprints vs IPC Level N — DEFERRED; (5) live distributor APIs — never
+by default (except jlcsearch, no-auth JSON).
 Symbols: native `.sym` format + 9 stdlib symbols (`ocdcircuit/symbol.py`),
 `sym=` per-part override, footprint→symbol default map; SchRenderer draws
 bodies + pin stubs. 3D bodies stay
@@ -183,12 +194,11 @@ interop (methods brief), MPN→SPICE registry (simulators brief OQ).
   `sym=` per-part override with footprint→symbol default map, SchRenderer
   draws bodies + pin stubs + labels. KiCad `.kicad_sym` import deferred (no
   consumer pressure yet); studio canvas reuse comes free via `sch_layout`.
-- **SPICE pin-mapping is the missing link** (for the simulators brief):
-  `.SUBCKT` node order is positional and rarely equals footprint pin numbers.
-  tscircuit solves it with explicit `spicePinMapping` + exactly-one-port
-  validation ([docs](https://docs.tscircuit.com/elements/spicemodel)); KiCad
-  users hit the same wall (alternate-node-sequence reassignment). ocd should
-  copy this: a pin-map table attr, not heuristics. TI (TLV9052/OPA4383 pages)
+- **SPICE pin-mapping: minimal path shipped, table deferred**:
+  `sim op REF MODEL PINS...` carries positional pins per part; `spice.py`
+  hardcodes SOT23 BJT pin roles. No `spicepin=` attr (name stays free until
+  a board needs default per-footprint orders). tscircuit's `spicePinMapping`
+  remains the model for a full table. TI (TLV9052/OPA4383 pages)
   and ADI/LTspice model hosting confirmed this round; Nexperia/onsemi URLs
   NOT re-verified — flagged. **No open MPN→SPICE-URL registry found**
   (JitPCB open-components-database adjacent, SPICE coverage unverified).
@@ -243,8 +253,9 @@ for Y" boolean, so ocdcircuit models verdicts instead of computing them.
   either.
 - **Data model for ocd (ranked, judgment)**: (i) `alternates` attr on the
   part — `part U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN,TLC555CP` —
-  BOM exporter emits it as an extra column; ERC/placer/sim ignore (same
-  footprint+value by construction); footprint equality checked at load,
+  SHIPPED (BOM exporter emits the unioned Alternates column; OCD.md
+  documents the attr); ERC/placer/sim ignore (same footprint+value by
+  construction); footprint equality checked at load,
   **pinout compatibility stays a human attestation**. Covers ~90% of real
   need (stock-outs) in ~10 lines. (ii) Passive equivalence needs no syntax:
   BOM already groups by (value, footprint) — "any 10k 0603" is procurement

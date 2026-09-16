@@ -442,7 +442,11 @@ def tidy(board: Board) -> dict[str, object]:
 
 
 def score(board: Board) -> dict[str, object]:
-    """0-100 aggregate for CLI badges. Prefer tidy() components."""
+    """0-100 aggregate for CLI badges only. Prefer tidy() components.
+
+    Never compare totals/grades across boards (None-coverage differs);
+    never feed this into placer cost(). Display-only.
+    """
     t = tidy(board)
     subs: dict[str, float] = {}
     from typing import cast

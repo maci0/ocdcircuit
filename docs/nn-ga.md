@@ -107,7 +107,9 @@ for timing columns, dense 4-random-parts-per-net (seed 7) for the overlap
 column; routed-DRC via lroute; machine-specific absolutes (±25% on re-run —
 only the ~quadratic ratios are machine-independent); overlap column's 300-row
 "7" coincides with the sparse-chain value and is suspect (see audit). The
-`benches/monster6502/` bench supersedes this table for serious work.
+`benches/discrete6502/` bench supersedes this table for serious work
+(synthetic table has no generator script; single seed; 4 sizes; overlap
+column's "7" still suspect).
 
 Default settings multiply place by ~30× (seeds=4, iters=400): ~10 min at
 n=1000. Scaling is ~quadratic (9.9× time for 3.3× parts) — the O(n²) pairwise
@@ -155,9 +157,12 @@ Extrapolating the measured table:
   settings** — and quality is the real wall, not time: dense nets already show
   396 overlaps at n=1000. Diffusion alone will not produce a legal 4000-part
   board, however long you anneal.
-- **Maze router**: 1221×1525×2 ≈ **3.7 M states per A\* search**, per pin pair,
-  thousands of pairs. Not slow — infeasible. The fixed 0.25 mm grid is the
-  `ponytail:` ceiling firing (`maze.py`: "coarser when boards grow").
+- **Maze router**: on a 290.7×322.0 mm 6-layer discrete6502-class board at
+  0.25 mm grid ≈ 1163×1289×6 ≈ **9.0 M states per A\* search**, per pin
+  pair, thousands of pairs (2-layer toy math ~3.0 M undercounts ~3×). Not
+  slow — infeasible flat. The fixed 0.25 mm grid is the `ponytail:` ceiling
+  firing (`maze.py`: "coarser when boards grow"). MOnSter physical size
+  (305×381 mm) is larger still; use discrete6502 numbers for this repo.
 - **DRC**: ~34 s routed (O(n²) trace-pair checks) — annoying but survivable;
   fix last.
 

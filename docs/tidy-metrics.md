@@ -163,11 +163,12 @@ for the implementation.
 
 ## Draft `tidy(board)` scorecard
 
-Status: ✅ = derivable from existing state (~0 lines); 🔧 = ~10 lines;
-🏗️ = needs geometry engine. Targets are judgment (flagged J) except
+Status: ✅ = implemented in `ocdcircuit/score.py` `tidy()`; 🔧 = partial /
+caveat; 🏗️ = needs more geometry. Targets are judgment (flagged J) except
 literature-backed (L) and fab-verified (F).
 
-Conventions (normative for any implementation — review round 1):
+Conventions (normative — `tidy()` is the report surface; `score()` is a
+CLI badge only):
 - Every metric returns 0..1 (higher = tidier) or is marked RAW (physical
   units, not aggregated). Counts never enter a weighted sum directly.
 - Undefined inputs return `None` (not 0): unrouted/empty boards for trace
@@ -178,27 +179,33 @@ Conventions (normative for any implementation — review round 1):
   "(L)" labels are proposal-by-analogy, not literature — PCB crossings are
   DRC shorts the maze already avoids; comprehension cost ≠ violation cost.
 - The weight vector below is **illustrative, not normative**: no count→0..1
-  normalization is defined, sub-weights are undefined (T7/T8/T9 would
-  triple-count regularity), and cross-board scalar ranking is forbidden.
-  Publish components; aggregate only within one board with stated weights.
+  normalization is defined; T7/T8/T9 + T2/T4 + T1/T4 double-count (admitted —
+  OK for report-only; must decorrelate before any `cost()` promotion);
+  T13 jogs hardwired 0 (rails straight by construction); T6 gap-σ missing;
+  T1 lacks per-cm normalization; T8 uses single-part mean (not `<2→None`);
+  T4 via monkey-patch caveat real; T14 font-box crude; tile size 5 mm and
+  copper-length-proxy are unflagged constants in code.
+- `score()` → {0–100, grade A–F} duplicates a subset of placement subs for
+  CLI badges. **Never compare badges across boards**; never fold `score()`
+  into placer `cost()`. Prefer `tidy()` components.
 
 | # | Metric | Formula (0..1 unless RAW) | Target | Cost |
 |---|---|---|---|---|
-| T1 | Same-layer crossings | RAW count + per routed cm; `None` if unrouted | 0 (proposal, was L) | 🔧 |
-| T2 | Bends per mm | RAW Σ direction-changes / Σ length; `None` if unrouted (beware zero-length via segs) | min (proposal, was L) | 🔧 |
+| T1 | Same-layer crossings | RAW count; `None` if unrouted (per-cm norm missing) | 0 (proposal, was L) | ✅ |
+| T2 | Bends per mm | RAW Σ direction-changes / Σ length; `None` if unrouted (beware zero-length via segs) | min (proposal, was L) | ✅ |
 | T3 | Orthogonality fraction | axis-aligned length / total; `None` if no traces (regression-tripwire only — routers emit Manhattan by construction) | 1.0 (J) | ✅ |
-| T4 | Via count / layer changes | RAW per net + board total (maze routes only — L-router emits no vias; `getattr(s,'via',False)`) | min (J) | 🔧 |
-| T5 | Clearance headroom | min(actual/min); `None` if no traces. No net-class entity exists (single global `min_space`) — per-net-class split is future work | ≥1.2 (J, underived — do not gate on it) | 🔧 |
-| T6 | Length skew + gap σ | skew RAW mm via `_net_length` (pad estimate when unrouted — label which); gap-σ needs new code + defined population | spec-dep (fab-blog table, not interface spec) | 🔧 |
-| T7 | Placement alignment | shared-x/y fraction @ ε — ε **uncalibrated** (0.1 mm is a placeholder; continuous placer has no alignment term, so →1 is unreachable today); `None` if <2 parts | →1 (J) | 🔧 |
-| T8 | Grid-snap residual | mean dist to actual grid multiple (pin to the board's `route-grid` constraint, not literal 0.25) | 0 (J) | 🔧 |
-| T9 | Spacing uniformity | 1 − CV of neighbor gaps; `None` if <2 parts or mean gap 0 (conflicts with T7 by design — aligned groups score low here) | →1 (J) | 🔧 |
-| T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | 🔧 |
-| T11 | Copper tile variance | RAW tile σ + layer Δ over 5mm tiles (trace length; None if unrouted) | Δ≤20% (F) | ✅ |
+| T4 | Via count / layer changes | RAW per net + board total (maze routes only — L-router emits no vias; `getattr(s,'via',False)`) | min (J) | ✅ |
+| T5 | Clearance headroom | min(actual/min); `None` if no traces. No net-class entity exists (single global `min_space`) — per-net-class split is future work | ≥1.2 (J, underived — do not gate on it) | ✅ |
+| T6 | Length skew + gap σ | skew RAW mm via `_net_length` (pad estimate when unrouted — label which); gap-σ **not implemented** | spec-dep (fab-blog table, not interface spec) | 🔧 |
+| T7 | Placement alignment | shared-x/y fraction @ ε — ε **uncalibrated** (0.1 mm is a placeholder; continuous placer has no alignment term, so →1 is unreachable today); `None` if <2 parts | →1 (J) | ✅ |
+| T8 | Grid-snap residual | mean dist to actual grid multiple (pin to the board's `route-grid` constraint, not literal 0.25); single-part boards still score | 0 (J) | ✅ |
+| T9 | Spacing uniformity | 1 − CV of neighbor gaps; `None` if <2 parts or mean gap 0 (conflicts with T7 by design — aligned groups score low here) | →1 (J) | ✅ |
+| T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | ✅ |
+| T11 | Copper tile variance | RAW tile σ + layer Δ over 5mm tiles (trace-length proxy; None if unrouted) | Δ≤20% (F) | ✅ |
 | T12 | Acid-trap scan | RAW # acute <90° wedges at trace joins (0 under Manhattan-only routing — tripwire for leaked non-Manhattan geometry); `None` if unrouted | 0 (F) | ✅ |
-| T13 | Schematic crossings/jogs | RAW drop-line × rail crossings + jogs in `sch_layout` geometry | min (L — the one valid Purchase transfer) | ✅ |
-| T14 | Silk overlap | RAW text–text + text–copper count (needs assumed font metrics — `Text` has no glyph extents); **scored, never veto-gated** until precision is measured | 0 (F) | 🔧 |
-| T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field; deterministic offsets → ~100% until placer changes — non-discriminative) | →1 (J) | 🔧 |
+| T13 | Schematic crossings/jogs | RAW drop-line × rail crossings; jogs hardwired 0 | min (L — the one valid Purchase transfer) | ✅ |
+| T14 | Silk overlap | RAW text–text + text–copper count (crude font-box — `Text` has no glyph extents); **scored, never veto-gated** | 0 (F) | ✅ |
+| T15 | Silk consistency | modal-offset % (sizes ≤ levels unmeasurable — no size field; deterministic offsets → ~100% until placer changes — non-discriminative) | →1 (J) | ✅ |
 
 Illustrative weights (do not implement literally): traces 0.35 (T1–T4),
 placement 0.25 (T7–T10), DFM 0.25 (T5–T6, T11–T12), readability 0.15

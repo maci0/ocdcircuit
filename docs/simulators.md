@@ -13,8 +13,10 @@ with real silicon needs an external simulator. Integration status
 2. **Subprocess runner** — SHIPPED (`ngspice -b` + `wrdata` ASCII parse,
    graceful not-found path) + result back-annotation into board nets.
 3. **`.SUBCKT` include path** — SHIPPED (`sim lib` + `sim op REF MODEL
-   PINS...` positional X-line; `spicepin=` attr) + behavioral B-sources.
-4. **Tiny built-in gate sim** — SHIPPED (`ocdcircuit/gates.py`, 181 lines,
+   PINS...` positional X-line; no `spicepin=` attr — pin order is per-op
+   constraint args; BJT SOT23 roles hardcoded in `spice.py`) + behavioral
+   B-sources.
+4. **Tiny built-in gate sim** — SHIPPED (`ocdcircuit/gates.py`, 195 lines,
    unit-delay event-driven; `simulate:gates`; `sim clk`; `logic=` attr).
 5. **XSPICE code models via ngspice** — NEXT (no second simulator; bridge
    model names still to confirm in the manual). Everything else (shared-lib
@@ -110,12 +112,13 @@ models in stdlib. Remaining: XSPICE bridges, shared-lib fast path.
 
 ### 3. Digital: tiny gate sim first, XSPICE second, Verilator if HDL appears
 
-- **Tiny built-in gate sim: YES, ~50–100 lines stdlib.** Event-driven
-  worklist (time, node, value); pop earliest, evaluate fanout, schedule
-  changes at t+delay; unit-delay defuses combinational loops; fixpoint cap
-  (~100 iterations) catches oscillation. Covers 74xx glue (NAND/NOR/INV/DFF
-  on the existing Net/pin graph) with stimulus from `sim`-style constraints.
-  Limits: no timing closure, no metastability. No shell-out needed.
+- **Tiny built-in gate sim: YES — SHIPPED at 195 lines** (`ocdcircuit/gates.py`,
+  was estimated ~50–100). Event-driven worklist (time, node, value); pop
+  earliest, evaluate fanout, schedule changes at t+delay; unit-delay defuses
+  combinational loops; fixpoint cap (~100 iterations) catches oscillation.
+  Covers 74xx glue (NAND/NOR/INV/DFF on the existing Net/pin graph) with
+  stimulus from `sim clk` / `logic=` attrs. Limits: no timing closure, no
+  metastability. No shell-out needed.
 - **XSPICE digital inside ngspice is the mixed-signal answer with no second
   simulator**: >60 code models incl. gates, latches, flip-flops, shift
   registers, ADC/DAC bridges, 12-state digital node type, embedded

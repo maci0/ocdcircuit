@@ -3,10 +3,10 @@
 ## Decision
 Placement = Langevin diffusion (net-spring drift + repulsion + decaying
 noise, multi-seed best-of) on
-`wirelength + overlap×BIG + edge penalties` (+ keepout as maze walls/DRC,
-not a placer term); layer assignment = greedy
-bbox-overlap minimization; routing = ordered L-routes, A* maze default.
-Zero dependencies.
+`wirelength + overlap×BIG + edge penalties` (+ keepout as maze soft
+preferential cost + DRC warnings, not a placer term); layer assignment =
+greedy bbox-overlap minimization; routing = ordered L-routes, A* maze
+default (MST trunk legs + gated 2-round rip-up). Zero dependencies.
 
 ## Why
 Boards here are tens of parts: an ILP solver dependency buys nothing v0.

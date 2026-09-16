@@ -12,12 +12,15 @@ analog). NN/GA verdict: `nn-ga.md`. Tidy-layout metrics: `tidy-metrics.md`.
 Five families, cheapest first for a zero-dependency Python tool at tens of
 parts: (1) **VPSC-style 1D separation passes** as the overlap legalizer (~50
 lines, Graphviz/Dunnart-proven); (2) **min-conflicts repair + LNS
-ruin-recreate** as the placer upgrades (~20–40 lines); (3) **rectilinear
-MST/Steiner net decomposition** before maze routing (~50 lines); (4)
-**skyline/BLF packing** for compact mode + greedy compaction; (5)
+ruin-recreate** as the placer upgrades (~20–40 lines); (3) ~~**rectilinear
+MST/Steiner net decomposition**~~ — SHIPPED (`maze._mst_pairs` trunk
+routing); remaining open is a measured WL/via delta vs chained pin-to-pin;
+(4) **skyline/BLF packing** for compact mode + greedy compaction; (5)
 **symmetry/matching placer terms** extending match/diff. Exact backends
 (`diffn`/`AddNoOverlap2D`, Z3) stay an *optional verifier* ("prove it doesn't
-fit"), never the default. Skip: full floorplan-SA encodings, Cassowary port,
+fit"), never the default — that skip is API-surface judgment only (no
+AddNoOverlap2D pilot on tens-of-parts boards yet; CP-SAT's best regime is
+unmeasured here). Skip: full floorplan-SA encodings, Cassowary port,
 GA/ACO/PSO, BayesOpt, ADMM/ALM until stiffness bites, escape routing until
 dense BGA.
 
@@ -209,7 +212,8 @@ dense BGA.
 
 1. VPSC-style 1D separation legalizer (~50 lines, §3).
 2. Min-conflicts repair loop (~20 lines, §4), then LNS ruin-recreate.
-3. Rectilinear-MST/Steiner net decomposition before maze (~50 lines, §5).
+3. ~~Rectilinear-MST/Steiner decomposition~~ — SHIPPED (`_mst_pairs` trunk
+   routing in `maze.py`); remaining: measured wirelength/via delta (Open Q2).
 4. Per-iteration clamp/projection one-liners (§3) + cooling tuning (prior brief).
 5. Skyline/BLF for compact mode + greedy compaction (§2).
 6. Symmetry/matching placer terms; Sugiyama-lite schematic (§5).
@@ -219,7 +223,7 @@ dense BGA.
 ## Open questions
 
 1. Does VPSC-1D + min-conflicts close the overlap gap on dense demos
-   (`examples/pico_tmc2209/`) without touching diffusion?
+   (`boards/pico_tmc2209/`) without touching diffusion?
 2. MST-decomposition vs chained pin-to-pin: measured wirelength/via delta on
    multi-pin demo nets?
 3. At what density does the exact-verifier (`AddNoOverlap2D`) earn its

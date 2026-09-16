@@ -1,13 +1,13 @@
 # MOnSter-class benchmark: discrete6502 netlist in .ocd form
 
-## Source (NOT committed — download to reproduce)
+## Source (raw JSON committed; regenerate with convert.py)
 
 - Repo: https://github.com/epatel/discrete6502 (CC **BY-NC-SA 4.0** —
   benchmark use is fine; do not ship derived board files commercially)
 - Logic ground truth: visual6502 reverse-engineered netlist
 - Inspired by the MOnSter 6502 (concept only — independently designed):
   https://www.evilmadscientist.com/2016/6502/ (12×15", 4000+ parts)
-- Raw files: `gen/netlist.json` (components + nets), `gen/layout.json`
+- Raw files: `netlist.json` (components + nets), `layout.json`
   (true mm positions); `layout_params.json` (board 290.7×322.0)
 - This repo's earlier claim "291x322 6L" for the monster board stands
   corrected: discrete6502 is 290.7×322.0mm, 6-layer.
@@ -34,6 +34,10 @@
   150 back-side decoupling caps unplaced (placer decides)
 - `fix` = placement ground truth: ocd only honors `fix` inside `place()`,
   so the harness must apply positions post-load before scoring (see bench.py)
+- **WL-model caveat**: star-model wirelength is dominated by power nets
+  (vcc 1350 / vss 2502 pins). Ratio numbers are mostly power-span, not
+  signal routing quality — no per-net-class split yet. Bench defaults
+  (seeds=1, iters=5) ≠ shipped studio defaults (seeds=4, iters=400).
 
 ## Known limitations (do not "fix" — they define the bench)
 
@@ -41,23 +45,23 @@
    FETs at identical x/y. ocd placement is 2D single-side → ~957 residual
    `overlap` errors at golden positions. Placement scoring must use
    wirelength/benchmark metrics, not DRC-zero.
-2. **Baseline** (flat diffusion, seeds=1 iters=5, fixed harness —
-   pinned at HEAD `ceab5c7`, 2026-09-14; re-pin on solver changes):
-   320.9 s, cost 3647492514 (deterministic — same cost across runs;
-   wall-clock varies by machine), placed WL 1492514 vs golden 1075333
-   (ratio 1.39 — flat diffusion *loses* to die-true hierarchy),
-   mean displacement 151.90 mm (similarity, secondary),
-   overlaps 2548 vs golden floor 957 (above_floor 1591). The headroom
-   to beat: close the WL ratio toward 1.0 and the 1591 avoidable overlaps.
-   Later runs (r4/r5) moved with WL-model + repair changes — superseded,
-   see `baseline_r3.txt` history, not quoted here.
-3. **Multilevel** (`placer:multilevel`, seeds=1 iters=2, same harness,
-   same pin as above): 10.6 s, WL ratio 1.64, overlaps 682 vs floor 957.
-   Fewer overlaps + worse WL = different tradeoff (leaves die-true stacking),
-   not dominance — read both numbers, not one.
+2. **Current published baseline** (flat diffusion, seeds=1 iters=5 —
+   `BASE_SEEDS`/`BASE_ITERS` in `bench.py`; numbers from `baseline_r3.txt`
+   r4/r5 block; re-pin on solver/WL-model changes):
+   531–536 s, cost 4939572307 (deterministic — same cost across r4/r5;
+   wall-clock varies by machine), placed WL 1394358 vs golden 1087471
+   (ratio **1.28**), mean displacement 88.91 mm (similarity, secondary),
+   overlaps 3321 vs golden floor 957 (**above_floor 2364**). Headroom:
+   close the WL ratio toward 1.0 and the 2364 avoidable overlaps.
+   Historical r3 (pre WL-model/repair drift): ratio 1.39, above_floor 1591,
+   cost 3647492514 — superseded; do not quote as current headroom.
+3. **Multilevel** (`placer:multilevel`, seeds=1 iters=2, same harness):
+   10.6 s, WL ratio 1.64, overlaps 682 vs floor 957. Beating the stacking
+   floor on overlaps while trailing on WL is a **different tradeoff**
+   (leaves die-true stacking), not a win — read both numbers, not one.
 4. **Rotations ignored** (layout.json has rot 0/90/180 + B-side parts);
    ocd parts are axis-aligned.
-4. Single-pin TP nets and DNP ballast excluded from strictness.
+5. Single-pin TP nets and DNP ballast excluded from strictness.
 
 ## License note
 

@@ -3,8 +3,11 @@
 ## Disposition (round 200–201)
 - (1) Alias table: SHIPPED — `KICAD_ALIASES` + `resolve_fp()` in
   `ocdcircuit/parts.py`, wired into `Board.add_part` (all surfaces).
-- (2) Pin-map table: SKIPPED — MNA/ngspice map by net, not pin order;
-  no consumer needs it.
+- (2) Pin-map table: MINIMAL AD HOC, full table DEFERRED — `sim op REF
+  MODEL PINS...` carries positional pins; `spice.py` hardcodes SOT23 BJT
+  roles (1=B 2=E 3=C). No footprint→SPICE-order table yet; no `spicepin=`
+  attr (name free). MNA still maps by net.
+- (3) `alternates=` attr: SHIPPED (BOM 5th column via `export.py`).
 - (4) Courtyard audit: DEFERRED to an automated pass (unchanged).
 - (5) Live distributor APIs: never by default (unchanged policy).
 
@@ -19,14 +22,14 @@ redistributed collections must stay CC-BY-SA with attribution);
 `R0603` via a static dict, reusing the monster bench's mapping); **attrs,
 not APIs** for orderable parts (`lcsc=`/`mpn=` validated locally, live lookup
 only on explicit user action — with tscircuit's jlcsearch as the scriptable
-exception); and the single missing link for simulation is
-a **pin-map table** (footprint pin → SPICE node order, copied from tscircuit's
-`spicePinMapping`). Ranked cheapest-first: (1) KiCad↔ocd alias table (one
-static dict); (2) pin-map attr for the simulators brief; (3) IPC-7351
-silkscreen rules (already drafted in tidy brief, now second-sourced);
-(4) scripted courtyard audit of the 101 stdlib footprints vs IPC Level N
-(defer to an automated pass); (5) live distributor APIs — never by default
-(except jlcsearch, no-auth JSON).
+exception); simulation pin order is covered ad hoc today (`sim op`
+positional pins + SOT23 hardcode) with a full **pin-map table** still
+deferred (tscircuit's `spicePinMapping` remains the model). Ranked
+cheapest-first status: (1) KiCad↔ocd alias table — SHIPPED; (2) full
+pin-map table — DEFERRED; (3) IPC-7351 silkscreen rules (tidy brief,
+second-sourced); (4) scripted courtyard audit of the 101 stdlib
+footprints vs IPC Level N — DEFERRED; (5) live distributor APIs — never
+by default (except jlcsearch, no-auth JSON).
 Symbols: native `.sym` format + 9 stdlib symbols (`ocdcircuit/symbol.py`),
 `sym=` per-part override, footprint→symbol default map; SchRenderer draws
 bodies + pin stubs. 3D bodies stay
@@ -191,12 +194,11 @@ interop (methods brief), MPN→SPICE registry (simulators brief OQ).
   `sym=` per-part override with footprint→symbol default map, SchRenderer
   draws bodies + pin stubs + labels. KiCad `.kicad_sym` import deferred (no
   consumer pressure yet); studio canvas reuse comes free via `sch_layout`.
-- **SPICE pin-mapping: minimal path shipped, table deferred** (review round 1):
-  `sim op REF MODEL PINS...` carries positional pins per part today; the
-  `spicepin=` attr name was reserved in OCD.md but unconsumed — dropped
-  from the docs (round 162) until a board needs default pin orders; the
-  name stays free. tscircuit's `spicePinMapping` remains the model for a
-  full table. TI (TLV9052/OPA4383 pages)
+- **SPICE pin-mapping: minimal path shipped, table deferred**:
+  `sim op REF MODEL PINS...` carries positional pins per part; `spice.py`
+  hardcodes SOT23 BJT pin roles. No `spicepin=` attr (name stays free until
+  a board needs default per-footprint orders). tscircuit's `spicePinMapping`
+  remains the model for a full table. TI (TLV9052/OPA4383 pages)
   and ADI/LTspice model hosting confirmed this round; Nexperia/onsemi URLs
   NOT re-verified — flagged. **No open MPN→SPICE-URL registry found**
   (JitPCB open-components-database adjacent, SPICE coverage unverified).
