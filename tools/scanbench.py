@@ -287,6 +287,13 @@ def main(argv: list[str]) -> int:
                            if f.endswith(".png"))
         score("zoomed", note="Ethernet thin client.", docs=[manual],
               zoom=2, maxdim=2400, photos=hi_photos)
+        # does the measured pad geometry change the board dimensions and
+        # footprints the model commits to? scored by how close the drafted
+        # board size lands to the real 100 mm and whether drafts still load.
+        # isolate the measured-geometry contribution: same photos, same
+        # context, pad measurements withheld from the prompt.
+        score("no-pads", note="Ethernet thin client.", docs=[manual],
+              zoom=2, maxdim=2400, photos=hi_photos, pads=False)
     print("\nbenchmark done")
     return 0
 

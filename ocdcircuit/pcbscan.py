@@ -1110,7 +1110,8 @@ ZOOM = ("contrast", "copper")   # the views worth sending at native pixels
 def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
             note: str = "", docs: list[str] | None = None,
             answers: dict[str, str] | None = None,
-            zoom: int = 2, timeout: float = 600.0) -> str:
+            zoom: int = 2, pads: bool = True,
+            timeout: float = 600.0) -> str:
     """Hand the scan to a vision model and get the reverse-engineering
     report plus a reconstructed .ocd back. Needs a vision-capable model at
     OCD_LLM_BASE/OCD_LLM_MODEL.
@@ -1163,9 +1164,9 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
             f"scan payload is {total:.0f} MB, over the {budget:.0f} MB "
             "budget even without zoom tiles — lower maxdim on the scan, or "
             "raise OCD_SCAN_MAX_MB if your endpoint accepts more")
-    measured = [str(s["pad_summary"]) for s in
+    measured = [str(sd["pad_summary"]) for sd in
                 (sides.get(k) for k in SIDES)
-                if isinstance(s, dict) and s.get("pad_summary")]
+                if pads and isinstance(sd, dict) and sd.get("pad_summary")]
     geom = ("\n\nMeasured pad geometry (from the copper mask, not guessed — "
             "use these millimetres instead of estimating from the images; "
             "they are exposed metal only, so they do not tell you what "
@@ -1220,7 +1221,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
             *, board_mm: float | None = None, note: str = "",
             docs: list[str] | None = None,
             answers: dict[str, str] | None = None,
-            maxdim: int = MAXDIM, zoom: int = 2,
+            maxdim: int = MAXDIM, zoom: int = 2, pads: bool = True,
             llm_analysis: bool = True) -> dict[str, object]:
     """Photos in, scan artifacts + analysis + a draft .ocd out.
 
@@ -1236,7 +1237,8 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     man = scan(photos, outdir, board_mm, maxdim)
     if not llm_analysis:
         return man
-    report = analyse(man, note=note, docs=docs, answers=answers, zoom=zoom)
+    report = analyse(man, note=note, docs=docs, answers=answers,
+                     zoom=zoom, pads=pads)
     rp = os.path.join(outdir, "analysis.md")
     with open(rp, "w") as f:
         f.write(report)
