@@ -158,6 +158,22 @@ def main() -> None:
     assert _st_ui._UI_DISPOSERS == []
     print("ui slot dispose ok (12 contributions, LIFO, once)")
 
+    # session/auth caches: expired tokens must not crowd out live sessions,
+    # and the rate-limit map must stay bounded under IP spray.
+    _st_ui._SESSIONS.clear()
+    _st_ui._AUTH_HITS.clear()
+    for i in range(_st_ui._SESSIONS_MAX):
+        _st_ui._SESSIONS[f"exp{i}"] = (f"u{i}", time.monotonic() - 1)
+    _live = _st_ui._new_session("alice")
+    assert _live in _st_ui._SESSIONS
+    assert all(not t.startswith("exp") for t in _st_ui._SESSIONS), _st_ui._SESSIONS
+    for i in range(_st_ui._AUTH_HITS_MAX + 50):
+        assert _st_ui._auth_rate_ok(f"spray{i}")
+    assert len(_st_ui._AUTH_HITS) <= _st_ui._AUTH_HITS_MAX
+    _st_ui._SESSIONS.clear()
+    _st_ui._AUTH_HITS.clear()
+    print("session/auth cache bounds ok")
+
     port = free_port()
     base = f"http://localhost:{port}"
     # auth writes .ocd-users + .users/ beside ROOT: point the server at a

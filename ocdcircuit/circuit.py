@@ -77,6 +77,64 @@ class _AttrDict(dict[str, str]):
             self[k] = v
 
 
+class _CustomFpDict(dict[str, dict[str, object]]):
+    """Board.custom_fp with lib-cache invalidation.
+
+    Solver/agent paths call `.update()` outside `add_footprint`; without this,
+    a warm `_lib_cache` keeps serving footprints that were replaced or added
+    under the same board. Every mutating method drops the merged-lib cache.
+    """
+
+    def __init__(self, owner: Board,
+                 src: dict[str, dict[str, object]] | None = None) -> None:
+        super().__init__(src or {})
+        self._owner = owner
+
+    def _drop(self) -> None:
+        self._owner._lib_cache = None
+
+    def __setitem__(self, key: str, value: dict[str, object]) -> None:
+        super().__setitem__(key, value)
+        self._drop()
+
+    def __delitem__(self, key: str) -> None:
+        super().__delitem__(key)
+        self._drop()
+
+    def clear(self) -> None:
+        super().clear()
+        self._drop()
+
+    def pop(self, key: str,  # type: ignore[override]
+            default: dict[str, object] | None = None) -> dict[str, object] | None:
+        if key in self:
+            out = super().pop(key)
+            self._drop()
+            return out
+        return default
+
+    def popitem(self) -> tuple[str, dict[str, object]]:
+        out = super().popitem()
+        self._drop()
+        return out
+
+    def setdefault(self, key: str,
+                   default: dict[str, object] | None = None
+                   ) -> dict[str, object]:
+        out = super().setdefault(key, {} if default is None else default)
+        self._drop()
+        return out
+
+    def update(self,  # type: ignore[override]
+               other: dict[str, dict[str, object]] | None = None,
+               **kw: dict[str, object]) -> None:
+        if other:
+            for k, v in other.items():
+                self[k] = v
+        for k, v in kw.items():
+            self[k] = v
+
+
 @dataclass(eq=False, kw_only=True)  # eq=False: identity semantics, as before
 class Part:
     """One placed part. Keyword-only on purpose: the constructor used to take
@@ -213,7 +271,7 @@ class Board(Component):
         self.traces: list[Seg] = []
         self.constraints: list[Constraint] = []
         self.includes: list[dict[str, object]] = []  # {path, prefix, join}
-        self.custom_fp: dict[str, dict[str, object]] = {}  # from `fp` lines
+        self.custom_fp: dict[str, dict[str, object]] = _CustomFpDict(self)  # from `fp` lines
         self.fp_src: dict[str, str] = {}  # fp name -> source path
         self.custom_sym: dict[str, dict[str, object]] = {}  # from `sym` lines
         self.sym_src: dict[str, str] = {}  # sym name -> source path

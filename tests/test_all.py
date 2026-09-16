@@ -720,6 +720,12 @@ _kb.add_footprint("K2X", {"w": 2.0, "h": 2.0, "pads": {}, "keepouts": []})
 assert _kb._lib() is not _lib0 and "K2X" in _kb._lib()
 _kb.ctx.undo()  # undo the K2X registration
 assert "K2X" not in _kb._lib()
+# direct custom_fp.update (solver/agent path) must also drop the merged cache
+_lib1 = _kb._lib()
+_kb.custom_fp.update({"KDIRECT": {"w": 3.0, "h": 3.0, "pads": {}, "keepouts": []}})
+assert _kb._lib() is not _lib1 and "KDIRECT" in _kb._lib()
+_kb.custom_fp.pop("KDIRECT", None)
+assert "KDIRECT" not in _kb._lib()
 # add_footprint validates shape up front (not KeyError 'w' at add_part)
 _badfps: list[dict[str, object]] = [
     {}, {"w": 1}, {"w": "x", "h": 2}, {"w": float("nan"), "h": 1}]

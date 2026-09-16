@@ -2683,7 +2683,9 @@ _AUTH_COOKIE = "ocd_user"
 _USERS_FILE = ".ocd-users"
 _SESSION_TTL = 86400.0  # 24h wall-clock from login
 _SESSIONS: dict[str, tuple[str, float]] = {}  # token -> (username, expires_mono)
+_SESSIONS_MAX = 64  # in-memory cap; restart clears all
 _AUTH_HITS: dict[str, list[float]] = {}  # client key -> recent attempt times
+_AUTH_HITS_MAX = 1024  # bound spray: one idle key per IP must not grow forever
 _MAX_BODY = 20_000_000  # POST body cap (base64 photo scans need headroom)
 _GIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{4,64}$")
 _REQ_USER: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -2703,14 +2705,33 @@ def _client_key(handler: object) -> str:
 
 
 def _auth_rate_ok(key: str, limit: int = 30, window: float = 60.0) -> bool:
-    """Sliding-window gate for login/signup (brute-force / spray)."""
+    """Sliding-window gate for login/signup (brute-force / spray).
+
+    The map is capped so a many-IP spray cannot grow `_AUTH_HITS` forever;
+    FIFO-evicts other keys, never the caller.
+    """
     now = time.monotonic()
     hits = _AUTH_HITS.setdefault(key, [])
     hits[:] = [t for t in hits if now - t < window]
     if len(hits) >= limit:
         return False
     hits.append(now)
+    while len(_AUTH_HITS) > _AUTH_HITS_MAX:
+        victim = next(iter(_AUTH_HITS))
+        if victim == key:
+            _AUTH_HITS[victim] = _AUTH_HITS.pop(victim)  # rotate to end
+            if next(iter(_AUTH_HITS)) == key:
+                break
+            continue
+        _AUTH_HITS.pop(victim, None)
     return True
+
+
+def _purge_sessions(now: float | None = None) -> None:
+    """Drop expired tokens so they cannot steal slots from live sessions."""
+    t = time.monotonic() if now is None else now
+    for tok in [k for k, (_n, exp) in _SESSIONS.items() if t > exp]:
+        _SESSIONS.pop(tok, None)
 
 
 def _ok_display(disp: str) -> bool:
@@ -2799,8 +2820,10 @@ def _check_user(name: str, password: str) -> bool:
 def _new_session(name: str) -> str:
     import secrets
     tok = secrets.token_urlsafe(32)
-    _SESSIONS[tok] = (name, time.monotonic() + _SESSION_TTL)
-    while len(_SESSIONS) > 64:  # ponytail: cap sessions in memory; restart clears all anyway
+    now = time.monotonic()
+    _purge_sessions(now)  # expired must not crowd out live logins
+    _SESSIONS[tok] = (name, now + _SESSION_TTL)
+    while len(_SESSIONS) > _SESSIONS_MAX:
         _SESSIONS.pop(next(iter(_SESSIONS)))
     return tok
 
