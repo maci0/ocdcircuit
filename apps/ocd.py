@@ -642,7 +642,8 @@ def cmd_scan(agent: object, args: list[str]) -> int:
     if not args or args[0] in ("-h", "--help"):
         print("usage: ocd scan [--out DIR] [--mm WIDTH] [--no-llm] "
               "[--note TEXT] [--doc FILE] [--answer 'Q=A'] "
-              "[--zoom N] [--maxdim PX] <photo|dir|glob>...\n"
+              "[--zoom N] [--maxdim PX] [--tall MM] "
+              "<photo|dir|glob>...\n"
               "  filenames containing 'bot'/'back' are read as the bottom "
               "side, everything else as top\n"
               "  --doc    a manual or datasheet (.pdf/.txt/.md) to read "
@@ -652,10 +653,12 @@ def cmd_scan(agent: object, args: list[str]) -> int:
               "  --zoom   tile grid for detail views (2 = 2x2 native-res "
               "crops per side, 1 = off)\n"
               "  --maxdim stitch canvas px (1600 default; 2400 resolves "
-              "finer traces, ~2x the memory)")
+              "finer traces, ~2x the memory)\n"
+              "  --tall   height in mm of the tallest part, scales the 3D "
+              "splat (parallax gives relative depth only)")
         return 1
     outdir, mm, use_llm, note = "scan", None, True, ""
-    zoom, maxdim = 2, 1600
+    zoom, maxdim, tall = 2, 1600, 5.0
     docs: list[str] = []
     answers: dict[str, str] = {}
     paths: list[str] = []
@@ -673,6 +676,13 @@ def cmd_scan(agent: object, args: list[str]) -> int:
             i += 2
         elif a == "--note" and i + 1 < len(args):
             note, i = args[i + 1], i + 2
+        elif a == "--tall" and i + 1 < len(args):
+            try:
+                tall = float(args[i + 1])
+            except ValueError:
+                print(f"ocd: --tall wants a number, got {args[i + 1]!r}")
+                return 1
+            i += 2
         elif a in ("--zoom", "--maxdim") and i + 1 < len(args):
             try:
                 v = int(args[i + 1])
@@ -723,7 +733,7 @@ def cmd_scan(agent: object, args: list[str]) -> int:
         r = _B("scan").scan(photos=files, outdir=outdir, board_mm=mm,
                             note=note, docs=docs or None,
                             answers=answers or None, zoom=zoom,
-                            maxdim=maxdim, llm=use_llm)
+                            maxdim=maxdim, tall_mm=tall, llm=use_llm)
     except (OSError, ValueError, KeyError, RuntimeError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1

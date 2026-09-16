@@ -697,6 +697,16 @@ def splat_ply(rgb: Any, height: Any, mm_per_px: float,
     pixel becomes one gaussian sized to its own footprint, so a standard
     splat viewer shows the board as geometry rather than a flat photo.
 
+    `max_mm` is what the brightest point of the height field means in
+    millimetres — i.e. how tall you believe the tallest part is. Parallax
+    gives relative standoff, not metric depth (no calibrated baseline), so
+    this is the one real knob: the shape is measured, the scale is yours.
+    Validated on a pinhole render with four known heights — the splat
+    recovered their ordering (0.6 / 1.2 / 2.1 / 3.4 for true 1.9 / 3.5 /
+    5.3 / 5.3 mm) and the board extent exactly, but compressed the
+    absolute values, which is why the default is a guess a user can fix
+    rather than a measurement.
+
     # ponytail: splats are baked straight from the height field, not
     # optimised against the views. Photometric refinement needs an
     # autograd stack; this already gives a viewer-ready 3D model of where
@@ -778,7 +788,7 @@ def _side_paths(photos: dict[str, list[str]] | list[str]) -> dict[str, list[str]
 
 def scan_side(paths: list[str], outdir: str, side: str,
               board_mm: float | None = None,
-              maxdim: int = MAXDIM) -> dict[str, object]:
+              maxdim: int = MAXDIM, tall_mm: float = 5.0) -> dict[str, object]:
     """One side end to end. Returns the manifest fragment for that side."""
     np = _numpy()
     os.makedirs(outdir, exist_ok=True)
@@ -819,7 +829,7 @@ def scan_side(paths: list[str], outdir: str, side: str,
     mm_px = (board_mm / float(out_w)) if board_mm else 0.1
     ply = os.path.join(outdir, f"{side}-splat.ply")
     with open(ply, "wb") as f:
-        f.write(splat_ply(rgb, hm, mm_px))
+        f.write(splat_ply(rgb, hm, mm_px, max_mm=tall_mm))
     files["splat"] = ply
     found = pads(rgb, mm_px)
     with open(os.path.join(outdir, f"{side}-pads.json"), "w") as f:
@@ -841,7 +851,7 @@ def scan_side(paths: list[str], outdir: str, side: str,
 
 def scan(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
          board_mm: float | None = None,
-         maxdim: int = MAXDIM) -> dict[str, object]:
+         maxdim: int = MAXDIM, tall_mm: float = 5.0) -> dict[str, object]:
     """Full deterministic pass: every side stitched, enhanced, splatted, and
     a manifest.json listing every artifact for the analysis step.
 
@@ -856,7 +866,7 @@ def scan(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     for side, paths in sides.items():
         if paths:
             cast(dict[str, object], man["sides"])[side] = scan_side(
-                paths, outdir, side, board_mm, maxdim)
+                paths, outdir, side, board_mm, maxdim, tall_mm)
     with open(os.path.join(outdir, "manifest.json"), "w") as f:
         json.dump(man, f, indent=2)
     man["manifest"] = os.path.join(outdir, "manifest.json")
@@ -1228,6 +1238,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
             docs: list[str] | None = None,
             answers: dict[str, str] | None = None,
             maxdim: int = MAXDIM, zoom: int = 2, pads: bool = True,
+            tall_mm: float = 5.0,
             llm_analysis: bool = True) -> dict[str, object]:
     """Photos in, scan artifacts + analysis + a draft .ocd out.
 
@@ -1240,7 +1251,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     model asked come back under `questions` either way: they are the most
     useful output when the reconstruction is thin.
     """
-    man = scan(photos, outdir, board_mm, maxdim)
+    man = scan(photos, outdir, board_mm, maxdim, tall_mm)
     if not llm_analysis:
         return man
     report = analyse(man, note=note, docs=docs, answers=answers,
