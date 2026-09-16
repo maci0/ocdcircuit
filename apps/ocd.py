@@ -755,6 +755,24 @@ def cmd_scan(agent: object, args: list[str]) -> int:
                      f"{r.get('draft_nets', '?')} nets)")
     if "draft_error" in r:
         _out().print(f"scan: no usable draft ({r['draft_error']})")
+    if "draft_wired" in r:
+        floating = cast(list[str], r.get("draft_floating", []))
+        drc = r.get("draft_drc_errors", 0)
+        _out().print(
+            f"scan: draft buildability — {r['draft_wired']}/"
+            f"{r.get('draft_parts', '?')} parts wired, "
+            f"{drc} DRC error(s) after place+route")
+        for line in cast(list[str], r.get("draft_drc", []))[:4]:
+            _out().print(f"  ! {line}")
+        if floating:
+            _out().print(
+                f"  {len(floating)} parts have no nets ("
+                + ", ".join(floating[:6])
+                + (", …" if len(floating) > 6 else "") + ")")
+            _out().print("  photos cannot show nets: wire these from the "
+                         "datasheet, then the placer can separate them")
+    if "draft_solve_error" in r:
+        _out().print(f"scan: draft did not solve ({r['draft_solve_error']})")
     asked = cast(list[str], r.get("questions", []))
     if asked:
         _out().print("\nscan: the model asked — answer with "

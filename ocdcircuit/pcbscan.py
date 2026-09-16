@@ -1279,7 +1279,44 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
         man["draft_nets"] = len(b.nets)
     except (ValueError, KeyError, AssertionError, OSError) as e:
         man["draft_error"] = f"draft does not parse: {e}"
+        return man
+    man.update(buildable(b))
     return man
+
+
+def buildable(board: object) -> dict[str, object]:
+    """Can this draft actually be built, or does it only parse?
+
+    "Parses" is a low bar and it was the only one being checked. Measured on
+    real drafts: every one loaded and every one then failed DRC with part
+    overlaps. The cause is structural, not a bug — photographs cannot show
+    nets, so most parts arrive with no connections, the placer has no
+    wirelength force on them, and they stay wherever the model guessed.
+
+    So this reports the truth instead of hiding it: how many parts are
+    wired at all, and what DRC says after a real place and route. A draft
+    is a measured starting point for a human, not a fabricable board, and
+    the manifest should say so.
+    """
+    from .circuit import Board
+    assert isinstance(board, Board)
+    wired = {pin[0] if isinstance(pin, (tuple, list)) else getattr(pin, "ref", "")
+             for net in board.nets.values() for pin in getattr(net, "pins", [])}
+    wired.discard("")
+    out: dict[str, object] = {
+        "draft_wired": len(wired),
+        "draft_floating": sorted(set(board.parts) - wired),
+    }
+    try:
+        board.place(seeds=1, iters=80)
+        out["draft_segments"] = board.route_board()
+        rep = board.check()
+        errs = cast(list[object], rep.get("errors", []))
+        out["draft_drc_errors"] = len(errs)
+        out["draft_drc"] = [str(e) for e in errs[:6]]
+    except (ValueError, KeyError, AssertionError, OSError, RuntimeError) as e:
+        out["draft_solve_error"] = f"{type(e).__name__}: {e}"
+    return out
 
 
 def demo() -> None:
@@ -1567,6 +1604,24 @@ def demo() -> None:
                 0.1) == [], "bare soldermask reported pads"
     # spacing is reported raw; the planted grid is 2.0 mm apart
     assert 1.5 < _median_gap(_pads) < 2.5, _median_gap(_pads)
+
+    # buildability: a draft that parses is not a design. The check must
+    # separate a wired, solvable board from a pile of unconnected parts,
+    # because photographs cannot show nets and that is the usual outcome.
+    from . import agent as _ag
+    _good = _ag.loads("board t 40x30 2L\n"
+                      "part R1 R0805 10k x=10 y=10\n"
+                      "part R2 R0805 10k x=25 y=20\n"
+                      "net N1 :: R1.1 <--> R2.1\n")
+    _bg = buildable(_good)
+    assert _bg["draft_wired"] == 2 and _bg["draft_floating"] == [], _bg
+    assert _bg.get("draft_drc_errors") == 0, _bg
+    _loose = _ag.loads("board t 40x30 2L\n"
+                       "part R1 R0805 10k x=10 y=10\n"
+                       "part U1 SOIC8 chip x=10 y=10\n")
+    _bl = buildable(_loose)
+    assert _bl["draft_wired"] == 0, _bl
+    assert sorted(cast(list[str], _bl["draft_floating"])) == ["R1", "U1"], _bl
 
     # the prompt must name real footprints, read from the live library
     menu = footprint_menu()
