@@ -1613,6 +1613,10 @@ class TomlConfig(Plugin[dict[str, object]]):
                 cfg = tomllib.load(f)
         except FileNotFoundError:
             return {}
+        except tomllib.TOMLDecodeError as e:
+            raise ValueError(f"{fn}: invalid TOML: {e}") from e
+        except OSError as e:
+            raise ValueError(f"{fn}: cannot read: {e}") from e
         for key in cfg:
             if key not in self.KEYS:
                 raise ValueError(f"{fn}: unknown key {key!r} (have {list(self.KEYS)})")

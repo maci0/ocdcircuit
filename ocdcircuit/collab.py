@@ -204,11 +204,19 @@ class Room:
     def _broadcast(self, msg: dict[str, object]) -> None:
         with self._mu:
             subs = list(self._subs)
+        dropped = 0
         for q in subs:
             try:
                 q.put_nowait(msg)
             except queue.Full:
-                pass
+                dropped += 1
+        if dropped:
+            # a full subscriber queue means a slow client missed this rev —
+            # they must catch up via /collab/sync; surface it for the operator
+            import sys
+            print(f"collab: dropped fan-out to {dropped}/{len(subs)} "
+                  f"subscriber(s) (queue full) for room {self.key!r}",
+                  file=sys.stderr)
 
 
 _ROOMS: dict[str, Room] = {}

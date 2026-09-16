@@ -76,6 +76,7 @@ def cfg() -> dict[str, str]:
 def models(timeout: float = 10.0) -> list[str]:
     """Ids the endpoint serves — named in the error when the configured model
     is not one of them (a 404 that lists nothing is a wasted round trip)."""
+    import sys
     try:
         c = cfg()
     except envcfg.EnvError:
@@ -86,7 +87,15 @@ def models(timeout: float = 10.0) -> list[str]:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             doc = json.loads(r.read())
         return [str(m["id"]) for m in doc["data"]]
-    except Exception:
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError,
+            TypeError) as e:
+        # empty list still means "no hint" for chat()'s 404 path; log so an
+        # operator does not read that as "the server serves zero models".
+        print(f"llm: models() failed against {c['base']}: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return []
+    except Exception as e:  # noqa: BLE001 — never break chat()'s 404 hint path
+        print(f"llm: models() unexpected {type(e).__name__}: {e}", file=sys.stderr)
         return []
 
 

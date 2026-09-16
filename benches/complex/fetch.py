@@ -38,7 +38,25 @@ def main() -> None:
             print(f"{name}: cached ({os.path.getsize(dest) // 1024}KB)")
             continue
         print(f"{name}: downloading {url} ...")
-        urllib.request.urlretrieve(url, dest)
+        # urlretrieve has no timeout — a hung mirror would stall the bench forever.
+        # Write via temp+replace so a timeout cannot leave a truncated dest that
+        # the next run would treat as a finished cache.
+        req = urllib.request.Request(url)
+        tmp = dest + ".part"
+        try:
+            with urllib.request.urlopen(req, timeout=180) as r, open(tmp, "wb") as f:
+                while True:
+                    chunk = r.read(1 << 20)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+            os.replace(tmp, dest)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         print(f"{name}: saved {os.path.getsize(dest) // 1024}KB")
 
 

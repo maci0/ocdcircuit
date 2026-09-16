@@ -615,6 +615,7 @@ class UiSlots:
 
     def render(self, slot: str, state: object) -> str:
         """All live entries in order; a raising entry abdicates to the next."""
+        import sys
         out: list[str] = []
         for cell in list(self.cells.get(slot, [])):
             if (slot, str(cell["id"])) in self.crashed:
@@ -623,8 +624,13 @@ class UiSlots:
                 r = cell["render"]
                 assert callable(r)
                 out.append(str(r(state)))
-            except Exception:
-                self.crashed.add((slot, str(cell["id"])))
+            except Exception as e:
+                cid = str(cell["id"])
+                self.crashed.add((slot, cid))
+                # operator-visible: abdication without a cause made blank
+                # toolbars undiagnosable (registry.fail records a why; so do we)
+                print(f"uislots: {slot}:{cid} abdicated: {type(e).__name__}: {e}",
+                      file=sys.stderr)
         return "".join(out)
 
     def report(self, slot: str) -> list[str]:

@@ -3428,6 +3428,7 @@ def _kb_fetch_start() -> dict[str, object]:
         src = SRC
 
     def work() -> None:
+        p: subprocess.Popen[str] | None = None
         try:
             # cwd/PYTHONPATH point at the checkout, not the board: ROOT is the
             # project the board lives in, which need not be this repo.
@@ -3448,8 +3449,16 @@ def _kb_fetch_start() -> dict[str, object]:
         except Exception as e:  # noqa: BLE001 — a worker thread must not die silent
             with H._mu:
                 H.kb_log.append(f"error: {e}")
-        with H._mu:
-            H.kb_busy = False
+        finally:
+            if p is not None and p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+                    p.wait()
+            with H._mu:
+                H.kb_busy = False
 
     threading.Thread(target=work, daemon=True).start()
     return {"started": True, "note": "fetching datasheets — the list fills in as they land"}
@@ -3535,8 +3544,11 @@ class H(http.server.BaseHTTPRequestHandler):
         st = H._build(text, False)  # raises on a parse error: nothing written
         H.src_text = str(st["text"])
         H.commit(H.src_text)  # bumps the revision: earlier proposals go stale
-        H.save()
-        return {"path": rel, "state": st}
+        out: dict[str, object] = {"path": rel, "state": st}
+        err = H.save()
+        if err:
+            out["save_error"] = err
+        return out
 
     @staticmethod
     def _stage(files: dict[str, str]) -> tuple[list[dict[str, object]], list[str]]:
@@ -3641,12 +3653,17 @@ class H(http.server.BaseHTTPRequestHandler):
         return out
 
     @staticmethod
-    def _disk() -> str:
+    def _disk() -> str | None:
+        """Board text on disk, or None when the file cannot be read (missing
+        or I/O error). Callers must not treat None as empty content — that
+        made /poll report a false external edit and /reload a no-op."""
         try:
             from ocdcircuit.util import read_text
             return read_text(SRC)
-        except OSError:
-            return ""
+        except OSError as e:
+            print(f"studio: cannot read {_path_for_log(SRC)}: {e}",
+                  file=sys.stderr)
+            return None
 
     @staticmethod
     def commit(text: str) -> None:
@@ -3700,30 +3717,37 @@ class H(http.server.BaseHTTPRequestHandler):
             return (new_rev, "adopted", text)
 
     @staticmethod
-    def save() -> None:
-        """Persist the .ocd source of truth to disk (edits are real)."""
+    def save() -> str | None:
+        """Persist the .ocd source of truth to disk (edits are real).
+        Returns None on success, or a short reason when the write was refused
+        or failed — callers must surface that so a successful build is not
+        mistaken for a durable save."""
         with H._mu:
             text = H.src_text if H.src_text.endswith("\n") else H.src_text + "\n"
             if H.save_target and os.path.abspath(H.save_target) != os.path.abspath(SRC):
-                print(f"studio: refusing to save to {_path_for_log(SRC)}: "
-                      f"the buffer belongs to {_path_for_log(H.save_target)}",
-                      file=sys.stderr)
-                return
+                msg = (f"refusing to save to {_path_for_log(SRC)}: "
+                       f"the buffer belongs to {_path_for_log(H.save_target)}")
+                print(f"studio: {msg}", file=sys.stderr)
+                return msg
             path = SRC
             try:
                 old = os.path.getsize(path)
             except OSError:
                 old = 0
             if old and len(text) < old * H.SHRINK:
-                print(f"studio: refusing to write {len(text)} bytes over {old} bytes "
-                      f"at {_path_for_log(path)} (wrong board?)", file=sys.stderr)
-                return
+                msg = (f"refusing to write {len(text)} bytes over {old} bytes "
+                       f"at {_path_for_log(path)} (wrong board?)")
+                print(f"studio: {msg}", file=sys.stderr)
+                return msg
             try:
                 _atomic_write(path, text)
                 H.saved_text = H.src_text
                 H.save_target = path
             except OSError as e:
-                print(f"studio: save failed: {_path_for_log(e)}", file=sys.stderr)
+                msg = f"save failed: {_path_for_log(path)}: {e}"
+                print(f"studio: {msg}", file=sys.stderr)
+                return msg
+            return None
 
     def _secure_headers(self) -> None:
         """Baseline browser hardening; CSP is frame-ancestors only so the
@@ -3844,6 +3868,10 @@ class H(http.server.BaseHTTPRequestHandler):
                     return
                 import hashlib
                 disk = H._disk()
+                if disk is None:
+                    self._send({"error": f"cannot read open board on disk",
+                                "hash": "", "clean": False})
+                    return
                 self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
                             "clean": disk == H.saved_text})
                 return
@@ -4167,8 +4195,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 with H._mu:
                     H.save_target = SRC
                     H.commit(H.src_text)
-                    H.save()
+                    serr = H.save()
                 st["rev"] = new_rev
+                if serr:
+                    st["save_error"] = serr
                 self._send(st)
             elif self.path == "/collab/cursor":
                 # presence heartbeat: x/y/ref + prune the timed-out, no timer.
@@ -4213,9 +4243,11 @@ class H(http.server.BaseHTTPRequestHandler):
                 with H._mu:
                     H.save_target = SRC
                     H.commit(H.src_text)
-                    H.save()
+                    serr = H.save()
                 st["rev"] = new_rev
                 st["applied"] = res.get("applied", 0)
+                if serr:
+                    st["save_error"] = serr
                 self._send(st)
             elif self.path == "/load":
                 # Open a board without re-placing it: parse + route + DRC only.
@@ -4226,10 +4258,18 @@ class H(http.server.BaseHTTPRequestHandler):
                 # file-watch: adopt external edits (client asks only when
                 # clean, or the user confirmed the banner).
                 with H._mu:
-                    H.src_text = H._disk() or H.src_text
-                    H.commit(H.src_text)
-                    H.saved_text = H.src_text
-                    text = H.src_text
+                    disk = H._disk()
+                    if disk is None:
+                        text = None
+                    else:
+                        H.src_text = disk
+                        H.commit(H.src_text)
+                        H.saved_text = H.src_text
+                        text = H.src_text
+                if text is None:
+                    self._send({"error": "cannot read board on disk — "
+                                "reload aborted, buffer unchanged"})
+                    return
                 self._send(self._build(text, True))
             elif self.path == "/build":
                 with H._mu:
@@ -4251,10 +4291,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 # The client builds the board it has open; if the text was not
                 # from SRC at all (a stale tab, a pasted board), do not write it
                 # over the file on disk.
-                H.save()
+                serr = H.save()
                 from ocdcircuit import collab as _collab_b
                 st["rev"] = _collab_b.get_room(H._room_key(), H.src_text).set_text(
                     H.src_text, _authed(self.headers) or "build")
+                if serr:
+                    st["save_error"] = serr
                 self._send(st)
             elif self.path == "/solve":
                 with H._mu:
@@ -4264,11 +4306,13 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.src_text = str(st["text"])
                     H.save_target = SRC
                     H.commit(H.src_text)
-                    H.save()
+                    serr = H.save()
                     adopted = H.src_text
                 from ocdcircuit import collab as _collab_s
                 st["rev"] = _collab_s.get_room(H._room_key(), adopted).set_text(
                     adopted, _authed(self.headers) or "solve")
+                if serr:
+                    st["save_error"] = serr
                 self._send(st)
             elif self.path == "/candidates":
                 from ocdcircuit import solver as _solver
@@ -4322,10 +4366,12 @@ class H(http.server.BaseHTTPRequestHandler):
                             req.get("silk", "full"), b.plugins().list("silk"))
                 H.src_text = str(st["text"])
                 H.commit(H.src_text)
-                H.save()
+                serr = H.save()
                 from ocdcircuit import collab as _collab_p
                 st["rev"] = _collab_p.get_room(H._room_key(), H.src_text).set_text(
                     H.src_text, _authed(self.headers) or "pick")
+                if serr:
+                    st["save_error"] = serr
                 self._send(st)
             elif self.path == "/diff_prev":  # current text vs previous undo-commit
                 if len(H.hist) < 2:
@@ -4429,22 +4475,28 @@ class H(http.server.BaseHTTPRequestHandler):
                 else:
                     H.redo.append(H.hist.pop())
                     H.src_text = H.hist[-1]
-                    H.save()
+                    serr = H.save()
                     from ocdcircuit import collab as _collab_u
                     _collab_u.get_room(H._room_key(), H.src_text).set_text(
                         H.src_text, _authed(self.headers) or "undo")
-                    self._send(self._build(H.src_text, False))
+                    st_u = self._build(H.src_text, False)
+                    if serr:
+                        st_u["save_error"] = serr
+                    self._send(st_u)
             elif self.path == "/redo":
                 if not H.redo:
                     self._send({"error": "nothing to redo"})
                 else:
                     H.src_text = H.redo.pop()
                     H.commit(H.src_text)
-                    H.save()
+                    serr = H.save()
                     from ocdcircuit import collab as _collab_r
                     _collab_r.get_room(H._room_key(), H.src_text).set_text(
                         H.src_text, _authed(self.headers) or "redo")
-                    self._send(self._build(H.src_text, False))
+                    st_r = self._build(H.src_text, False)
+                    if serr:
+                        st_r["save_error"] = serr
+                    self._send(st_r)
             elif self.path == "/scan":  # photos of a physical board -> draft
                 import base64
                 import binascii
@@ -4486,8 +4538,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     try:
                         blob = base64.b64decode(str(d.get("data", "")),
                                                 validate=True)
-                    except (ValueError, binascii.Error):
-                        continue
+                    except (ValueError, binascii.Error) as e:
+                        self._send({"error": f"bad doc upload (not base64): {e}"})
+                        return
                     dp = os.path.join(
                         work, "doc_" + os.path.basename(
                             str(d.get("name", f"doc{i}"))).replace("..", "_"))

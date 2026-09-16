@@ -264,8 +264,11 @@ def t_xray(a: dict[str, object]) -> dict[str, object]:
     if isinstance(raw, str) and len(raw) > 64:
         try:
             raw = _b64.b64decode(raw, validate=True)  # upload bytes, else a path
-        except (ValueError, binascii.Error):
-            pass
+        except (ValueError, binascii.Error) as e:
+            # long non-base64 that is also not a readable path was treated as
+            # a path and surfaced as a confusing OSError — refuse loudly.
+            if not os.path.isfile(raw):
+                raise ValueError(f"png is not valid base64 and not a file: {e}") from e
     args: dict[str, object] = {}
     for k in ("pxmm", "thr", "dx", "dy", "scale", "min_cells", "max_divs"):
         if a.get(k) is not None:
