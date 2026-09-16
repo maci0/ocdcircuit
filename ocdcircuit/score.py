@@ -61,13 +61,6 @@ def _t1_t5(board: Board) -> tuple[int, float]:
     return n, best
 
 
-def _t1_crossings(board: Board) -> int | None:
-    """Same-layer foreign-net crossings, RAW count. Vias exempt (own layer)."""
-    if not _routed(board):
-        return None
-    return _t1_t5(board)[0]
-
-
 def _cross(a: Seg, b: Seg) -> bool:
     """Proper segment intersection (touching at shared endpoints excluded)."""
     ax1, ay1, ax2, ay2 = a.x1, a.y1, a.x2, a.y2
@@ -131,14 +124,6 @@ def _t4_vias(board: Board) -> dict[str, object] | None:
     if not per:
         return {"total": 0, "per_net": {}}
     return {"total": sum(per.values()), "per_net": per}
-
-
-def _t5_headroom(board: Board) -> float | None:
-    """Clearance headroom: min(actual/min_space) over foreign pairs.
-    Single global min_space — no net-class split (future work)."""
-    if not _routed(board):
-        return None
-    return _headroom_of(board, _t1_t5(board)[1])
 
 
 def _headroom_of(board: Board, best: float) -> float | None:

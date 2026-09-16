@@ -514,12 +514,11 @@ def _ez_layer(lid: int) -> int | None:
     return None
 
 
-def _ez_shape(f: list[str], tag: str, nets: dict[str, dict[str, object]],
+def _ez_shape(f: list[str], tag: str,
               traces: list[dict[str, object]], texts: list[dict[str, object]],
               pours: list[tuple[str, int]], outline: list[tuple[float, float]],
               mholes: list[tuple[float, float, float]],
-              cutouts: list[tuple[float, float, float, float]],
-              skipped: list[str]) -> int:
+              cutouts: list[tuple[float, float, float, float]]) -> int:
     mm = 0.254
     try:
         if tag == "TRACK" and len(f) >= 6:
@@ -762,8 +761,8 @@ def easyeda_doc(doc: dict[str, object]) -> object:
                 if tag in ("TRACK", "VIA", "ARC", "COPPERAREA", "SOLIDREGION",
                            "BOARDOUTLINE", "HOLE", "TEXT", "CIRCLE", "RECT"):
                     max_layer = max(max_layer, _ez_shape(
-                        f, tag, nets, traces, texts, pours, outline,
-                        mholes, cutouts, skipped))
+                        f, tag, traces, texts, pours, outline,
+                        mholes, cutouts))
                 elif tag not in skipped:
                     skipped.append(tag)
             continue  # TRACK copper re-routes; nets come from PAD assigns
@@ -1640,14 +1639,6 @@ def _ole_dir(data: bytes) -> tuple[dict[str, tuple[int, int]], bytes, list[int],
     _walk(0, "")
     ms = _read(nodes[0][5])
 
-    def _mchain(st: int) -> list[int]:
-        out: list[int] = []
-        while st not in (_OLE_END, _OLE_FREE, _OLE_SAT) and len(out) < 1000000:
-            out.append(st)
-            st = minifat[st]
-        return out
-    mini = ms  # closure capture for _stream
-    _ = mini, _mchain  # (kept local; _stream rebuilt per call below)
     # stash tables on the dict for _ole_stream
     paths["_fat_"] = (0, 0)  # marker, never read as a stream
     _ole_dir._fat = fat  # type: ignore[attr-defined]
@@ -1824,7 +1815,6 @@ def _ole_name(e: bytearray, nm: str) -> None:
 
 def _ole_stream(paths: dict[str, tuple[int, int]], path: str) -> bytes | None:
     """Read one OLE stream by path (ministream-aware). None = absent."""
-    import struct
     if path not in paths:
         return None
     st, sz = paths[path]
@@ -1851,7 +1841,6 @@ def _ole_stream(paths: dict[str, tuple[int, int]], path: str) -> bytes | None:
         out2 += data[512 + s * ssz:512 + (s + 1) * ssz]
         s = fat[s]
         guard += 1
-    _ = struct  # (struct used by _ole_dir; keeps imports local)
     return bytes(out2[:sz])
 
 

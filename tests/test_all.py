@@ -3453,8 +3453,8 @@ _scb.place("diffusion", seeds=1, iters=25, seed=3)
 _scb.route_board("lroute")
 _scb.traces.append(_Seg(x1=5.0, y1=5.0, x2=45.0, y2=5.0, net="N0", layer=0, width=0.3))
 _scb.traces.append(_Seg(x1=25.0, y1=1.0, x2=25.0, y2=35.0, net="N1", layer=0, width=0.3))
-_sct1 = _psc._t1_crossings(_scb)
-assert _sct1 is not None and _sct1 > 0, "degenerate fixture"
+_sct1 = _psc._t1_t5(_scb)[0]
+assert _sct1 > 0, "degenerate fixture"
 assert _psc._t9_spacing(_scb), "degenerate fixture"
 assert _psc._t13_schematic(_scb) != {"crossings": 0, "jogs": 0}, "degenerate fixture"
 
@@ -3468,8 +3468,6 @@ assert max(abs(a - b) for a, b in zip(_nn_scalar, _psc._nn_gaps(_nnp))) < 1e-9, 
     "vector nearest-neighbour gaps drifted from the scalar scan"
 
 # _t1_t5: the merged walk must equal INDEPENDENT folds of the same pairs.
-# (Comparing tidy() against _t1_crossings/_t5_headroom alone is circular —
-# they now share _t1_t5, so a bug in it agrees with itself.)
 _ref_n = 0
 _ref_best = float("inf")
 for _A5, _B5, _d5 in _psc._foreign_pairs(_scb):

@@ -489,8 +489,8 @@ class Board(Component):
         (assembly) / fab (debug). Default follows the `silk <n>` line."""
         if key is None:
             from .silk import level_of
-            key = ("ref" if level_of(self) == 0 else "fab"
-                   if level_of(self) >= 3 else "full")
+            lv = level_of(self)
+            key = "ref" if lv == 0 else "fab" if lv >= 3 else "full"
         out = self._run("silk", key, **k)
         assert isinstance(out, dict)
         return out
@@ -1116,7 +1116,7 @@ class Module(Component):
     def build(self, board: Board) -> None:
         pass
 
-    def unmount(self, ctx: Context, board: Board | None = None) -> None:
+    def unmount(self, ctx: Context) -> None:
         from .core import Fiber as _Fiber
         fiber = self._fiber
         if isinstance(fiber, _Fiber):

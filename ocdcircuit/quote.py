@@ -95,7 +95,6 @@ def unit_price(board: Board, ref: str) -> tuple[float | None, str]:
     live lookup); else unpriced. Provider calls go through Board.price →
     _run, so a crashing provider is fenced in failure memory like every
     other plugin (not silently swallowed)."""
-    from .core import Plugin
     p = board.parts.get(ref)
     if p is None:  # KeyError on unknown ref (fixable input)
         raise KeyError(f"no part {ref!r}")

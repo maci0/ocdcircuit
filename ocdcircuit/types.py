@@ -1,7 +1,7 @@
 """Shared static types."""
 from __future__ import annotations
 from collections.abc import Callable
-from typing import NotRequired, TypedDict, Union
+from typing import NotRequired, TypedDict
 
 XY = tuple[float, float]
 BBox = tuple[float, float, float, float]
@@ -9,8 +9,6 @@ BBox = tuple[float, float, float, float]
 Undo = Callable[[], None]
 # constraint dicts: {"t": "near"|"fixed"|"edge"|"layer"|"width"|"power"|..., ...}
 Constraint = dict[str, object]
-# patch ops for the agent API
-Op = dict[str, object]
 # animation frames streamed by placer/router
 Frame = dict[str, object]
 # footprint metadata
@@ -18,11 +16,8 @@ Footprint = dict[str, object]
 PadSpec = tuple[float, float, float, float]  # dx, dy, w, h
 HoleSpec = tuple[float, float, float]  # dx, dy, drill
 SlotSpec = tuple[float, float, float, float]  # dx, dy, w, h (milled slot)
-PinName = str
-NetName = str
-RefName = str
 # allow int pins at boundaries (normalized to str internally)
-PinLike = Union[str, int]
+PinLike = str | int
 # Power rails that stay unprefixed across module include joins, and that ERC
 # treats as power nets (shorted when they share a pin). Owned here so agent
 # (language) and drc (engine) share one constant without crossing layers.

@@ -70,7 +70,7 @@ def _net_index(board: Board) -> dict[str, int]:
     return idx
 
 
-def _part_value(board: Board, ref: str, kind: str) -> float | None:
+def _part_value(board: Board, ref: str) -> float | None:
     p = board.parts.get(ref)
     if p is None:
         return None
@@ -101,13 +101,13 @@ def _elements(board: Board) -> tuple[list[dict[str, object]], list[dict[str, obj
         fp = p.fp.upper()
         if fp.startswith("R") or fp.startswith("L0805") or fp.startswith("L1206") \
                 or fp.startswith("IND"):
-            v = _part_value(board, ref, "r")
+            v = _part_value(board, ref)
             if v is None or len(pinnet) < 2:
                 continue
             a, b = pinnet.get("1", ""), pinnet.get("2", "")
             passives.append({"t": "R", "a": a, "b": b, "v": v})
         elif fp.startswith("C") or fp.startswith("LED"):
-            v = _part_value(board, ref, "c")
+            v = _part_value(board, ref)
             if v is None or len(pinnet) < 2:
                 continue
             a, b = pinnet.get("1", ""), pinnet.get("2", "")

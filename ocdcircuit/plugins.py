@@ -128,7 +128,6 @@ class TidyPlacer(Plugin[float]):
     kind, key = "placer", "tidy"
 
     def run(self, board: Board, *a: object, **k: object) -> float:
-        from typing import cast
         from . import tidy_ga as _ga
         pop = _i(k.get("pop"), 8)
         gen = _i(k.get("gen"), 6)
@@ -628,7 +627,6 @@ class AssemblyRenderer(Plugin[str]):
 
 def _cap(sym: dict[str, object], p: object) -> str:
     """Body caption: symbol `label` template ({ref} {value} {fp}), else ref."""
-    from typing import cast
     ref = str(getattr(p, "ref", ""))
     tmpl = str(sym.get("label", ""))
     if not tmpl:
@@ -870,7 +868,6 @@ class KicadRenderer(Plugin[bytes]):
     def run(self, board: Board, *a: object, **k: object) -> bytes:
         import os
         import shutil
-        import subprocess
         import tempfile
         from .export import MASK_COLORS, export_kicad
         exe = shutil.which("kicad-cli")

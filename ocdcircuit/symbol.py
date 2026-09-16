@@ -18,7 +18,6 @@ the `sym=` attr; otherwise the footprint's default symbol applies.
 from __future__ import annotations
 import re
 
-Side = str  # left|right|top|bottom
 # Symbol = {"w": float, "h": float, "pins": {num: (side, order, label)},
 #           "notch": bool, "zigzag": bool} — pins ordered per side by file order
 Symbol = dict[str, object]

@@ -121,9 +121,6 @@ def parts_map(text: str) -> dict[str, dict[str, str]]:
     return out
 
 
-_np = None  # lazy: imported on the first vectorized ranking, not at load
-
-
 def _unit(vec: array[float], dim: int) -> array[float]:
     """Scale each `dim`-long chunk to unit length (store once, rank with a dot
     product: cosine without recomputing either norm per query)."""

@@ -642,9 +642,6 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
             continue
         A(f'    ({i} {_sexp_str(name)} {typ})')
     A("  )")
-    mask = MASK_COLORS.get(str(board.meta.get("mask", "green")).lower(),
-                           MASK_COLORS["green"])
-    _ = mask  # soldermask tint applies at render time (kicad preset), not in file
     A('  (setup (pad_to_mask_clearance 0.05))')
     net_ids: dict[str, int] = {}
     A('  (net 0 "")')  # KiCad requires the unconnected net declared first

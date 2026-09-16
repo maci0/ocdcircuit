@@ -105,7 +105,7 @@ class Canvas:
         return _png(self.w, self.h, self.px)
 
 
-def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
+def render_top(board: Board, pxmm: float = 10.0) -> bytes:
     """Top-down PNG: mask bg, copper traces/pads, bodies, white silk refs."""
     from .parts import bodies_of, hole_drill, pads_of, pad_size
     c = Canvas(board.width, board.height, pxmm)
@@ -151,7 +151,6 @@ def render_top(board: Board, pxmm: float = 10.0, theme: str = "dark") -> bytes:
     for p in board.parts.values():
         _w, ph = p.wh()
         c.text(p.ref, p.x, p.y + ph / 2 + 0.8, board.height, (245, 245, 245))
-    _ = theme
     return c.bytes()
 
 

@@ -59,7 +59,6 @@ def _pinnet(board: Board, ref: str) -> dict[str, str]:
 
 def netlist(board: Board) -> str:
     """SPICE text for ngspice batch. Raises ValueError on unmappable parts."""
-    from .sim import parse_value
     L = [f"* ocdcircuit: {board.name}", ".options noinit"]
     for c in board.constraints:
         if c.get("t") == "sim" and c.get("kind") == "lib":
