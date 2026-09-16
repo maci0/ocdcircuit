@@ -761,10 +761,19 @@ ICs and connectors you can identify over exhaustively counting passives.
 
 Then write a complete .ocd source for the reconstructed board:
 
-  board NAME WxH LAYERS
+  board NAME 100x80 4L      <- literally "<width>x<height>" then "<n>L";
+                               "board X 100 80 4" is NOT valid syntax
   part REF FOOTPRINT [VALUE] [x=.. y=..]
   net NAME :: REF.PIN <--> REF.PIN
   power NET      route NET on LAYER      silk LEVEL
+
+A minimal complete example:
+
+  board demo 40x30 2L
+  part U1 SOIC8 LM358 x=10 y=15
+  part R1 R0805 10k x=22 y=15
+  net VCC :: U1.8 <--> R1.1
+  power VCC
 
 Put it in one fenced ```ocd block, with `#` comments marking every part of
 the reconstruction you are unsure about. Only include nets you actually

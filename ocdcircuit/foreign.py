@@ -911,7 +911,167 @@ def kicad_pcb_netlist(text: str) -> dict[str, object]:
             "_imported_fp": fps}
 
 
-# -- Altium ASCII (.PcbDoc text export) + P-CAD ASCII (.pcb) --
+def kicad_sch_netlist(text: str) -> dict[str, object]:
+    """Import netlist from .kicad_sch s-expr: symbols + wires/labels → nets.
+    Wires join into nets by shared endpoints (junctions implicit); a
+    global_label names its whole wire group; symbol pins attach by
+    proximity to wire endpoints (our exporter drops verticals from pin
+    to rail, so 3mm tolerance covers the stub). Returns IR dict loadable
+    via agent.from_ir. Mirrors what export.export_kicad_sch writes, so
+    export→import round-trips."""
+    from typing import cast as _castsch2
+    root = sexpr(text)
+    assert root and root[0] == "kicad_sch", "not a .kicad_sch"
+    # library pin offsets: lib_id → {pin-number: (dx, dy)} from the
+    # lib_symbols definitions (any .kicad_sch, not just ours)
+    libpins: dict[str, dict[str, tuple[float, float]]] = {}
+    for lib in _kids(root, "lib_symbols"):
+        for sdef in _kids(lib, "symbol"):
+            lid = _unq(sdef[1]) if len(sdef) > 1 else ""
+            offs: dict[str, tuple[float, float]] = {}
+            for sub in _kids(sdef, "symbol"):
+                for pn in _kids(sub, "pin"):
+                    num = ""
+                    for c in pn[1:]:
+                        if isinstance(c, list) and c and c[0] == "number":
+                            num = _unq(c[1]) if len(c) > 1 else ""
+                    pat = next((c for c in pn[1:] if isinstance(c, list) and c and c[0] == "at"), None)
+                    if num and pat is not None and len(pat) > 2:
+                        offs[num] = (_num(pat[1]), _num(pat[2]))
+            # pins keyed by number; KiCad numbers them "1".."n" in order
+            if lid and offs:
+                libpins[lid] = offs
+    syms: list[dict[str, object]] = []
+    for snode in _kids(root, "symbol"):
+        at = next((c for c in snode[1:] if isinstance(c, list) and c and c[0] == "at"), None)
+        if at is None:
+            continue  # lib_symbols definitions, not instances (no at)
+        x = _num(at[1]) if len(at) > 1 else 0.0
+        y = _num(at[2]) if len(at) > 2 else 0.0
+        ref = val = fp = ""
+        for pr in _kids(snode, "property"):
+            nm = _unq(pr[1]) if len(pr) > 1 else ""
+            vv = _unq(pr[2]) if len(pr) > 2 else ""
+            if nm == "Reference":
+                ref = vv
+            elif nm == "Value":
+                val = vv
+            elif nm == "Footprint":
+                fp = vv
+        lid = ""
+        kids1 = snode[1:]
+        for k, c in enumerate(kids1):
+            if isinstance(c, list) and c and c[0] == "lib_id":
+                lid = _unq(c[1]) if len(c) > 1 else ""
+                break
+            if c == "lib_id" and k + 1 < len(kids1):
+                lid = _unq(kids1[k + 1])
+                break
+        offs = libpins.get(lid, {})
+        pins: list[tuple[str, float, float]] = []
+        for pn in _kids(snode, "pin"):
+            num = _unq(pn[1]) if len(pn) > 1 else ""
+            dx, dy = offs.get(num, (0.0, 0.0))
+            pins.append((num, x + dx, y + dy))
+        syms.append({"ref": ref or f"U{len(syms) + 1}", "fp": fp or val or "unknown",
+                     "value": val, "x": x, "y": y, "pins": pins})
+    wires: list[tuple[float, float, float, float]] = []
+    for w in _kids(root, "wire"):
+        pnode = next((c for c in w[1:] if isinstance(c, list) and c and c[0] == "pts"), None)
+        if not isinstance(pnode, list):
+            continue
+        xys = [(_num(c[1]), _num(c[2])) for c in pnode[1:]
+               if isinstance(c, list) and c and c[0] == "xy" and len(c) > 2]
+        for wa, wb in zip(xys, xys[1:]):
+            wires.append((wa[0], wa[1], wb[0], wb[1]))
+    labels: list[tuple[float, float, str]] = []
+    for lb in _kids(root, "global_label") + _kids(root, "label"):
+        tx = _unq(lb[1]) if len(lb) > 1 else ""
+        at = next((c for c in lb[1:] if isinstance(c, list) and c and c[0] == "at"), None)
+        if tx and at is not None and len(at) > 2:
+            labels.append((_num(at[1]), _num(at[2]), tx))
+    parent: dict[int, int] = {}
+
+    def _find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def _union(a: int, b: int) -> None:
+        parent[_find(a)] = _find(b)
+    pts: list[tuple[float, float]] = []
+    for x1, y1, x2, y2 in wires:
+        for ep in ((x1, y1), (x2, y2)):
+            parent[len(pts)] = len(pts)
+            pts.append(ep)
+
+    def _near(pp: tuple[float, float], tol: float = 0.7) -> list[int]:
+        return [j for j, q in enumerate(pts)
+                if abs(q[0] - pp[0]) < tol and abs(q[1] - pp[1]) < tol]
+    for x1, y1, x2, y2 in wires:
+        # the wire itself joins its ends (plus either endpoint's dots)
+        for ua in _near((x1, y1)):
+            for ub in _near((x2, y2)):
+                _union(ua, ub)
+    for j, qp in enumerate(pts):
+        for k in _near(qp):
+            _union(j, k)
+    groups: dict[int, list[int]] = {}
+    for j in range(len(pts)):
+        groups.setdefault(_find(j), []).append(j)
+    gname: dict[int, str] = {}
+    for g, js in groups.items():
+        gnm = next((t for x, y, t in labels
+                    if any(abs(pts[j][0] - x) < 1.5
+                           and abs(pts[j][1] - y) < 1.5
+                           for j in js)), None)
+        if gnm is not None:
+            gname[g] = gnm
+    nets: dict[str, dict[str, object]] = {}
+    for s in syms:
+        if not s["ref"]:
+            continue
+        for num, px, py in _castsch2(list[tuple[str, float, float]], s["pins"]):
+            best: str | None = None
+            for g, js in groups.items():
+                if g not in gname:
+                    continue
+                if any(abs(pts[j][0] - px) < 3.0 and abs(pts[j][1] - py) < 3.0
+                       for j in js):
+                    best = gname[g]
+                    break
+            if best is None:
+                continue
+            entry = nets.setdefault(best, {"pins": [], "layer": None, "width": 0.3})
+            pins_l = entry["pins"]
+            assert isinstance(pins_l, list)
+            pins_l.append([s["ref"], num])
+    parts: list[dict[str, object]] = []
+    fps: dict[str, Footprint] = {}
+    for s in syms:
+        ref = str(s["ref"])
+        fpname = str(s["fp"])
+        mypins = sorted({q for n, net in nets.items()
+                         for r, q in _castsch2(list[list[str]], net["pins"])
+                         if r == ref})
+        if not mypins:
+            mypins = [str(i + 1)
+                      for i in range(len(_castsch2(list[object], s["pins"])))]
+        wdt = max(2.0, len(mypins) * 1.27 + 2.0)
+        fps.setdefault(fpname, {"w": wdt, "h": 5.0,
+                                "pads": {n: (0.0, 0.0, 1.0, 1.0) for n in mypins},
+                                "holes": {}, "bodies": []})
+        parts.append({"ref": ref, "fp": fpname, "value": str(s["value"]),
+                      "x": float(str(s["x"])), "y": float(str(s["y"]))})
+    from typing import cast as _castsch
+    have = {str(p["ref"]) for p in parts}
+    nets = {n: v for n, v in nets.items()
+            if _castsch(list[list[str]], v["pins"]) and
+            all(pin[0] in have for pin in _castsch(list[list[str]], v["pins"]))}
+    return {"board": {"name": "imported", "w": 40.0, "h": 30.0, "layers": 2},
+            "parts": parts, "nets": nets, "constraints": [],
+            "_imported_fp": fps}
 
 def _alen(v: str) -> float:
     """Altium length field → mm (10mm / 250mil / 10000nm / 2.54cm / 25.4in)."""
@@ -1552,15 +1712,13 @@ def _bin_schdoc(data: bytes, sheet: str = "") -> dict[str, object]:
         return [j for j, q in enumerate(pts)
                 if abs(q[0] - p[0]) < tol and abs(q[1] - p[1]) < tol]
     for x1, y1, x2, y2 in wires:
+        # the wire itself joins its ends (plus either endpoint's dots)
         for a in _near((x1, y1)):
-            for b in _near((x1, y1)):
-                _union(a, b)
-        for a in _near((x2, y2)):
             for b in _near((x2, y2)):
                 _union(a, b)
     # every pin joins every wire-end/pin within tolerance (shared dots)
-    for j, p in enumerate(pts):
-        for k in _near(p):
+    for j, qp in enumerate(pts):
+        for k in _near(qp):
             _union(j, k)
     groups: dict[int, list[int]] = {}
     for j in range(len(pts)):

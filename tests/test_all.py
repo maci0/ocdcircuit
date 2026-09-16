@@ -2495,6 +2495,14 @@ assert len(_mep) == 2 and all(p.get("pour") == "solid" for p in _mep)
 # kicad .sch export: same picture as the canvas, ERC-clean per kicad-cli
 _ksf = _ebb.export("kicad-sch", outdir=tempfile.mkdtemp())[0]
 assert _ksf.endswith(".kicad_sch") and "(global_label" in open(_ksf).read()
+# kicad .sch import round-trips (symbols + wires/labels → same nets)
+_krt = agent.from_ir(foreign.kicad_sch_netlist(open(_ksf).read()))
+assert sorted(_krt.parts) == sorted(_ebb.parts)
+assert {n: sorted(p for p in _krt.nets[n].pins) for n in _krt.nets} == \
+    {n: sorted(p for p in _ebb.nets[n].pins) for n in _ebb.nets}
+_ksb = Board("ksb", 40, 30)
+_ksr = _ksb.import_fp("pcb", path=_ksf)
+assert _ksr["parts"] == len(_ebb.parts) and _ksr["nets"] == len(_ebb.nets)
 # lcsc/mpn ride as hidden properties (KiCad→JLC backup path)
 _kl = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcsc=C1 mpn=M1\n"
                   "part C1 C0805 100n\nN :: R1.1 C1.2\n", base=EX)

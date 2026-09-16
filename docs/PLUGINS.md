@@ -28,7 +28,7 @@ Kinds (see `plugins.py` for keys): `placer placer→float` · `router→int` ·
 Current keys (from a live registry — count, don't hand-edit):
 `placer` compact/diffusion/hierarchical/multilevel/thermal/tidy ·
 `router` coarse/lroute/maze/wiremask · `exporter`
-bundle/eagle/easyeda/jlc/json/kicad/kicad-sch/ocd/altium · `importer`
+bundle/eagle/easyeda/jlc/json/kicad/kicad-sch/ocd/altium/pcad/schlib · `importer`
 eagle/eagle-brd/easyeda/fp/kicad/pcb/schlib/sym/tscircuit/altium/altium-sch · `renderer`
 all/assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg/xray ·
 `simulate` gates/mna/ngspice · `silk` fab/full/ref · `drc` all/erc/fab/jlc-flex ·

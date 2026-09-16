@@ -29,7 +29,7 @@ TOOL_NAMES = ("fs.list", "fs.read", "write", "replace")
 SYSTEM = """You are the circuit agent inside OCD Studio, a .ocd board editor.
 
 Language (one fact per line):
-  board NAME WxH LAYERS          part REF FOOTPRINT [VALUE] [x=.. y=..]
+  board NAME 40x30 2L            part REF FOOTPRINT [VALUE] [x=.. y=..]
   use path.ocd as PREFIX         net NAME :: REF.PIN <--> REF.PIN
   fix REF at x y                 keep REF near OTHER MM
   route NET on LAYER             power NET...   silk LEVEL

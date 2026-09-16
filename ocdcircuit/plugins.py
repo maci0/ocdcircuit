@@ -1347,12 +1347,12 @@ class TscircuitImporter(Plugin[dict[str, object]]):
 
 
 class PcbImporter(Plugin[dict[str, object]]):
-    """Board importer: .kicad_pcb (sniffed), Eagle .brd, P-CAD .pcb,
-    or Altium ASCII → parts/nets."""
+    """Board importer: .kicad_pcb/.kicad_sch (sniffed), Eagle .brd,
+    P-CAD .pcb, or Altium ASCII → parts/nets."""
     kind, key = "importer", "pcb"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
-        from .foreign import altium_ascii, eagle_brd, kicad_pcb_netlist, pcad_ascii
+        from .foreign import altium_ascii, eagle_brd, kicad_pcb_netlist, kicad_sch_netlist, pcad_ascii
         path = k.get("path", "")
         assert isinstance(path, str) and path
         with open(path, encoding="latin-1") as f:
@@ -1364,6 +1364,8 @@ class PcbImporter(Plugin[dict[str, object]]):
             ir = pcad_ascii(text)
         elif "|RECORD=" in s.upper():
             ir = altium_ascii(text)
+        elif s.startswith("(kicad_sch"):
+            ir = kicad_sch_netlist(text)
         else:
             ir = kicad_pcb_netlist(text)
         return _board_ir_into(board, ir)
