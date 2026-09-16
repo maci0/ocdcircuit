@@ -964,10 +964,23 @@ def footprint_menu() -> str:
     a prompt sends the model back to inventing names. Measured cause of
     unloadable drafts — deepseek-flash guessed KiCad-style `Barrel_Jack` and
     `QFP208` when nothing told it the vocabulary.
+
+    Sizes ship with the names because names alone are not enough to place
+    anything: a draft put two LEDs 5 mm either side of a PINHD2X5, whose
+    body is 12.2 mm wide, and the overlap was the DRC error. The model
+    cannot leave room for a part whose size it does not know.
     """
     from .parts import FOOTPRINTS
-    return ("\n\nAvailable FOOTPRINT names (use these exactly):\n  "
-            + ", ".join(sorted(FOOTPRINTS)))
+    rows = []
+    for name in sorted(FOOTPRINTS):
+        fp = FOOTPRINTS[name]
+        fw, fh = fp.get("w"), fp.get("h")
+        rows.append(f"{name} {float(cast(float, fw)):g}x"
+                    f"{float(cast(float, fh)):g}mm" if fw and fh else name)
+    return ("\n\nAvailable FOOTPRINT names with body size (use these names "
+            "exactly, and leave at least the listed width between part "
+            "centres or the board will not pass DRC):\n  "
+            + ", ".join(rows))
 
 
 def read_doc(path: str, limit: int = 20000) -> str:
@@ -1628,6 +1641,10 @@ def demo() -> None:
     from .parts import FOOTPRINTS as _FPS
     assert "SOIC8" in menu and "BARREL" in menu and "PINHD2X5" in menu
     assert all(f in menu for f in _FPS), "footprint menu is not the full library"
+    # sizes must ride along: a name alone cannot tell a model how much room
+    # to leave, which is what produced overlapping parts in real drafts.
+    assert "PINHD2X5 12.16x6.68mm" in menu, menu[:200]
+    assert "7.6000000000000005" not in menu, "raw float noise in the prompt"
 
     # supplied context: note, document text, and answers to earlier questions
     assert context_block() == ""
