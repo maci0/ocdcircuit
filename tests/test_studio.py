@@ -172,6 +172,11 @@ def main() -> None:
     assert len(_st_ui._AUTH_HITS) <= _st_ui._AUTH_HITS_MAX
     _st_ui._SESSIONS.clear()
     _st_ui._AUTH_HITS.clear()
+    # shelf account names must not appear in stderr paths
+    assert _st_ui._path_for_log(".users/alice/board.ocd") == ".users/*/board.ocd"
+    assert _st_ui._path_for_log("/tmp/x/.users/bob") == "/tmp/x/.users/*"
+    assert "alice" not in _st_ui._path_for_log("boards/.users/alice/y.ocd")
+    assert _st_ui._path_for_log("boards/blinky.ocd") == "boards/blinky.ocd"
     print("session/auth cache bounds ok")
 
     port = free_port()
@@ -256,9 +261,9 @@ def main() -> None:
         _me = post(base, "/auth/me", {})
         assert _me.get("user") == "tester", _me
         assert _me.get("display") == "tester", _me  # default display = name
-        _prof = post(base, "/auth/profile", {"display": "Marcel Wysocki"})
+        _prof = post(base, "/auth/profile", {"display": "Ada Circuit"})
         assert not _prof.get("error"), _prof
-        assert post(base, "/auth/me", {})["display"] == "Marcel Wysocki"
+        assert post(base, "/auth/me", {})["display"] == "Ada Circuit"
         _profblank = post(base, "/auth/profile", {"display": "  "})
         assert "error" in _profblank, _profblank
         _profinject = post(base, "/auth/profile",

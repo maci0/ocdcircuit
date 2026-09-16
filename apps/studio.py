@@ -2815,6 +2815,17 @@ def _users_path() -> str:
     return os.path.join(ROOT, _USERS_FILE)
 
 
+# Account dirs are `.users/<name>/…` — names identify people. Keep them out of
+# stderr (REQ lines, save refusals) so a shared host log is not a user roster.
+_USER_PATH_LOG_RE = re.compile(r"(^|/)\.users/[^/]+(?=/|$)")
+
+
+def _path_for_log(path: object) -> str:
+    """Project-relative path with `.users/<name>` scrubbed to `.users/*`."""
+    s = str(path).replace("\\", "/")
+    return _USER_PATH_LOG_RE.sub(r"\1.users/*", s)
+
+
 def _client_key(handler: object) -> str:
     """Rate-limit key: peer host when available, else a shared bucket."""
     addr = getattr(handler, "client_address", None)
@@ -3676,8 +3687,9 @@ class H(http.server.BaseHTTPRequestHandler):
         with H._mu:
             text = H.src_text if H.src_text.endswith("\n") else H.src_text + "\n"
             if H.save_target and os.path.abspath(H.save_target) != os.path.abspath(SRC):
-                print(f"studio: refusing to save to {SRC}: the buffer belongs to "
-                      f"{H.save_target}", file=sys.stderr)
+                print(f"studio: refusing to save to {_path_for_log(SRC)}: "
+                      f"the buffer belongs to {_path_for_log(H.save_target)}",
+                      file=sys.stderr)
                 return
             path = SRC
             try:
@@ -3686,14 +3698,14 @@ class H(http.server.BaseHTTPRequestHandler):
                 old = 0
             if old and len(text) < old * H.SHRINK:
                 print(f"studio: refusing to write {len(text)} bytes over {old} bytes "
-                      f"at {path} (wrong board?)", file=sys.stderr)
+                      f"at {_path_for_log(path)} (wrong board?)", file=sys.stderr)
                 return
             try:
                 _atomic_write(path, text)
                 H.saved_text = H.src_text
                 H.save_target = path
             except OSError as e:
-                print(f"studio: save failed: {e}", file=sys.stderr)
+                print(f"studio: save failed: {_path_for_log(e)}", file=sys.stderr)
 
     def _secure_headers(self) -> None:
         """Baseline browser hardening; CSP is frame-ancestors only so the
@@ -3954,8 +3966,10 @@ class H(http.server.BaseHTTPRequestHandler):
         if not isinstance(req, dict):
             self._send({"error": "body must be a JSON object"})
             return
-        print(f"REQ {self.path} src={os.path.relpath(SRC, ROOT)} "
-              f"want={req.get('src')!r}", flush=True, file=sys.stderr)
+        _want = req.get("src")
+        _want_log = None if _want is None else _path_for_log(_want)
+        print(f"REQ {self.path} src={_path_for_log(os.path.relpath(SRC, ROOT))} "
+              f"want={_want_log!r}", flush=True, file=sys.stderr)
         user = _authed(self.headers)
         _tok = _REQ_USER.set(user)
         try:
