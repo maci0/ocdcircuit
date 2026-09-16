@@ -7,13 +7,27 @@ import tempfile
 from typing import cast
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ocdcircuit import Board, Module
+from ocdcircuit import Board, Module, ParseError
 from ocdcircuit import agent
 from ocdcircuit.core import Context, Plugin
 from ocdcircuit.types import Constraint
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EX = os.path.join(HERE, "..", "boards")
+
+
+# agent.loads: ParseError carries line + msg (still a ValueError)
+try:
+    agent.loads("part R1 R0805")
+    assert False, "expected ParseError"
+except ParseError as _pe:
+    assert _pe.line == 1 and "board header" in _pe.msg
+    assert isinstance(_pe, ValueError)
+try:
+    agent.loads("")
+    assert False, "expected empty ParseError"
+except ParseError as _pe0:
+    assert _pe0.line == 0 and str(_pe0) == "empty circuit"
 
 
 class PSU(Module):
@@ -443,7 +457,7 @@ _ps = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "fix R1 at 20 15\nfix C1 at 30 15\nkeepout 20 15 6x6\n", base=EX)
 _ps.place(seeds=1, iters=30)
 _ps.route_board()
-assert any("pour-isolated GND R1.2" in e for e in cast(list[str], _ps.check()["errors"]))
+assert any("pour-isolated GND R1.2" in e for e in _ps.check()["errors"])
 assert "<canvas" in cast(str, bj.render("html3d"))
 _sch = cast(str, bj.render("sch"))
 assert _sch.startswith("<svg") and "GND" in _sch and "U1" in _sch
@@ -643,13 +657,13 @@ _fb.route_board("maze")
 assert _fb.check("jlc-flex")["errors"] == [], _fb.check("jlc-flex")["errors"]
 assert not [t for t in _fb.traces if t.via and 27 <= t.x1 <= 33]
 _tb = agent.loads("board t 40x30\npart R1 R0805 1k\nbend 20 15 10x10 r1\nfix R1 at 20 15\n", base=EX)
-errs = cast(list[str], _tb.check("jlc-flex")["errors"])
+errs = _tb.check("jlc-flex")["errors"]
 assert any(e.startswith("bend-part") for e in errs) and any(e.startswith("bend-radius") for e in errs)
 # planes crack in dynamic bends: pour + dynamic bend errors (static is fine)
 _bp = agent.loads("board t 60x20 2L\npart J1 PINHD4\npart U1 SOIC8 X\n"
                   "net A: J1.1 U1.1\nnet B: J1.2 U1.2\npour A on 0\n"
                   "bend 30 10 6x20 r5\nfix J1 at 8 10\nfix U1 at 50 10\n", base=EX)
-assert any(e.startswith("bend-pour A") for e in cast(list[str], _bp.check()["errors"]))
+assert any(e.startswith("bend-pour A") for e in _bp.check()["errors"])
 # fiducials + deadzones: round/square, explicit/near-part, maze + DRC + dumps
 _fdz = agent.loads("board t 40x30\npart F1 FIDUCIAL\npart R1 R0805 1k\npart C1 C0805 100n\n"
                    "fix F1 at 3 3\nfix R1 at 30 20\nfix C1 at 8 25\n"
@@ -792,21 +806,21 @@ assert (_rz["x"], _rz["y"], _rz["w"], _rz["h"]) == (5.0, 10.0, 4.0, 6.0)
 _dzbad = agent.loads("board t 40x30\npart F1 FIDUCIAL\npart R1 R0805 1k\n"
                      "fix F1 at 20 15\nfix R1 at 20 15\nnet N: R1.1 R1.2\n"
                      "keepout near F1 d4\n", base=EX)
-_dzbadw = cast(list[str], _dzbad.check()["warnings"])
+_dzbadw = _dzbad.check()["warnings"]
 assert any(str(w).startswith("keepout R1") for w in _dzbadw)
 assert not any(str(w).startswith("keepout F1 ") for w in _dzbadw)
 bo.fab = "oshpark"
 ro = bo.check()
 assert ro["fab"] == "oshpark"
 bo.fab = "jlc"
-assert not cast(list[str], bo.check()["errors"])
+assert not bo.check()["errors"]
 # drc:all merges siblings with key prefixes; keys= subsets
 _all = bo.check("all")
-assert set(cast(list[str], _all["ran"])) >= {"fab", "erc"}
-assert all(":" in str(e) for e in cast(list[str], _all["errors"]) + cast(list[str], _all["warnings"]))
+assert set(_all["ran"]) >= {"fab", "erc"}
+assert all(":" in str(e) for e in _all["errors"] + _all["warnings"])
 _sub = bo.check("all", keys=["erc"])
-assert cast(list[str], _sub["ran"]) == ["erc"]
-assert bo.check("all")["ran"] == cast(list[str], _all["ran"])
+assert _sub["ran"] == ["erc"]
+assert bo.check("all")["ran"] == _all["ran"]
 # config:toml applies board.toml, missing file → {}
 with tempfile.TemporaryDirectory() as _td:
     open(os.path.join(_td, "board.toml"), "w").write(
@@ -860,7 +874,7 @@ for pl in ["diffusion", "compact", "thermal"]:
         bm = agent.loads(ocd, base=EX)
         bm.place(pl, seeds=2, iters=100)
         bm.route_board(rt, **({"pop": 2, "gen": 1} if rt == "wiremask" else {}))
-        assert not cast(list[str], bm.check()["errors"]), (pl, rt)
+        assert not bm.check()["errors"], (pl, rt)
 # loads-only farm: every committed board parses (grammar regressions
 # surface here, not in the slow full-solve farm)
 import glob as _glob
@@ -969,7 +983,7 @@ b.constrain(cast(Constraint, {"t": "power", "nets": ["VCC", "GND"]}))
 b.place(seeds=3, iters=200)
 b.route_board()
 chk = b.check()
-assert not cast(list[str], chk["errors"]), chk["errors"]
+assert not chk["errors"], chk["errors"]
 with tempfile.TemporaryDirectory() as d:
     files = (b.export("jlc", outdir=d) + b.export("kicad", outdir=d)
              + b.export("json", outdir=d) + b.export("ocd", outdir=d))
@@ -1049,7 +1063,7 @@ with tempfile.TemporaryDirectory() as d:
     _ps = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                       "net VBUS: R1.1 C1.1\nnet VSYS: R1.1 C1.2\npower VBUS VSYS\n", base=EX)
     assert any("power-short VSYS/VBUS at R1.1" in e
-               for e in cast(list[str], _ps.check("erc")["errors"]))
+               for e in _ps.check("erc")["errors"])
     _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     # csv.writer quotes a field only when it must: a single designator stays
@@ -1076,7 +1090,7 @@ with tempfile.TemporaryDirectory() as d:
     from ocdcircuit.circuit import Seg as _Seg
     _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
     assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5
-               cast(list[str], _cb.check()["warnings"]))
+               _cb.check()["warnings"])
     # X-crossings short: caught; distant via-points are not crossings
     from ocdcircuit.drc import _seg_dist as _sd
     assert _sd((0, 0, 10, 10), (0, 10, 10, 0)) == 0.0
@@ -1085,7 +1099,7 @@ with tempfile.TemporaryDirectory() as d:
                       "A :: R1.1 R1.2\nB :: C1.1 C1.2\n", base=EX)
     _xx.place(seeds=1, iters=20)
     _xx.traces = [_Seg("A", 5, 15, 35, 15, 0, 0.3), _Seg("B", 20, 5, 20, 25, 0, 0.3)]
-    assert any("clearance A-B" in w for w in cast(list[str], _xx.check()["warnings"]))
+    assert any("clearance A-B" in w for w in _xx.check()["warnings"])
     kc = open([f for f in files if f.endswith(".kicad_pcb")][0]).read()
     assert kc.startswith("(kicad_pcb") and "(segment" in kc and "(footprint" in kc
     assert '(net 0 "")' in kc  # KiCad requires the unconnected net declared

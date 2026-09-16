@@ -2,7 +2,8 @@
 
 One fact per line. Keywords case-insensitive, `#` starts a comment,
 blank lines ignored. Units are mm. First non-blank line must be `board`.
-Build with `python -m apps.ocd <file.ocd>` — errors name the line number.
+Build with `python -m apps.ocd <file.ocd>` — errors name the line number
+(`ParseError.line` / `.msg` when loading via `agent.loads`).
 
 ## Your first board (six lines)
 

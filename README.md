@@ -31,6 +31,29 @@ python -m apps.studio boards/blinky_555.ocd     # visual editor → localhost:80
 # 4. ship: one zip, or push the .kicad_pcb back to KiCad
 ```
 
+Or drive the same loop from Python (errors are typed — catch `ParseError`
+for bad `.ocd`, read `DrcReport["errors"]` after `check()`):
+
+```python
+from ocdcircuit import Board, ParseError, agent
+
+src = """board demo 20x10
+part R1 R0805 1k x=3 y=5
+part C1 C0805 100n
+N :: R1.2 <--> C1.2
+GND :: R1.1 <--> C1.1
+"""
+try:
+    b = agent.loads(src)
+except ParseError as e:
+    raise SystemExit(f"line {e.line}: {e.msg}") from e
+b.place(seeds=2, iters=100)
+b.route_board()
+report = b.check()          # {"errors": [...], "warnings": [...], ...}
+files = b.export("kicad")   # list of written paths
+print(len(report["errors"]), "DRC errors;", files)
+```
+
 New board instead? Six lines, then `ocd run` (full spec: `docs/OCD.md`):
 
 ```ocd

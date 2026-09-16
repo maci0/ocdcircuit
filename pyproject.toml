@@ -8,6 +8,18 @@ readme = "README.md"
 # Interpreter pin (single source for CI + local): see .python-version.
 # Ruff/mypy versions are pinned in requirements-dev.txt.
 
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ocdcircuit*"]
+
+# Typed package + fab logo tiles (importlib.resources under assets/fabs/).
+[tool.setuptools.package-data]
+ocdcircuit = ["py.typed"]
+"ocdcircuit.assets.fabs" = ["*.png"]
+
 [tool.ruff]
 target-version = "py314"
 src = ["ocdcircuit", "apps", "tools", "benches", "tests"]

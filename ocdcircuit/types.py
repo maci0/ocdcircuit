@@ -1,7 +1,7 @@
 """Shared static types."""
 from __future__ import annotations
 from collections.abc import Callable
-from typing import Union
+from typing import NotRequired, TypedDict, Union
 
 XY = tuple[float, float]
 BBox = tuple[float, float, float, float]
@@ -23,3 +23,17 @@ NetName = str
 RefName = str
 # allow int pins at boundaries (normalized to str internally)
 PinLike = Union[str, int]
+
+
+class DrcReport(TypedDict):
+    """Return shape of ``Board.check()`` / DRC plugins.
+
+    ``errors`` and ``warnings`` are always present (possibly empty).
+    ``fab`` is set when a fab profile was applied; ``ran`` lists sibling
+    keys when ``check("all")`` merges multiple DRC plugins.
+    """
+
+    errors: list[str]
+    warnings: list[str]
+    fab: NotRequired[str]
+    ran: NotRequired[list[str]]

@@ -33,6 +33,7 @@ HERE = ROOT
 from ocdcircuit import agent  # noqa: E402
 from ocdcircuit import fab as _fab  # noqa: E402
 from ocdcircuit.circuit import Board  # noqa: E402
+from ocdcircuit.types import DrcReport  # noqa: E402
 from ocdcircuit.recommend import recommend  # noqa: E402
 from ocdcircuit.core import UiSlots  # noqa: E402
 
@@ -2582,7 +2583,7 @@ def _sch_state(b: Board) -> dict[str, object]:
 
 def board_state(b: Board, text: str, frames: list[dict[str, object]],
                 traces: list[dict[str, object]], cost: float,
-                drc: dict[str, object]) -> dict[str, object]:
+                drc: dict[str, object] | DrcReport) -> dict[str, object]:
     from ocdcircuit.geom3d import body_material
     from ocdcircuit.parts import bodies_of, hole_drill, pad_size, pads_of
     from typing import cast
@@ -4076,14 +4077,16 @@ class H(http.server.BaseHTTPRequestHandler):
                 b.configure("toml", base=BASE)
                 b.place()
                 b.route_board()
-                out = b.render(rkey)
+                # distinct name: earlier branches assign `out` as str
+                rendered = b.render(rkey)
                 ext = {"svg": "svg", "sch": "sch.svg", "png": "png",
                        "stl": "stl", "gltf": "glb", "xray": "xray.svg"}.get(rkey, rkey)
-                if isinstance(out, bytes):
-                    self._send({"data": base64.b64encode(out).decode(),
+                if isinstance(rendered, bytes):
+                    self._send({"data": base64.b64encode(rendered).decode(),
                                 "bin": True, "name": f"{b.name}.{ext}"})
                 else:
-                    self._send({"data": out if isinstance(out, str) else "\n".join(out),
+                    self._send({"data": rendered if isinstance(rendered, str)
+                                else "\n".join(rendered),
                                 "bin": False, "name": f"{b.name}.{ext}"})
             elif self.path == "/xray":  # fab scan (base64 PNG) vs design
                 import base64
@@ -4496,6 +4499,7 @@ class H(http.server.BaseHTTPRequestHandler):
         drc_keys = ([str(drcsel)] if isinstance(drcsel, str)
                     else list(_dd) if isinstance(_dd, list) else None)
         dense_skip: list[str] = []
+        drc: DrcReport
         if dense and not req.get("full"):
             # The ask was to see the board, not to wait four minutes for DRC.
             drc = {"errors": [], "warnings": [

@@ -7,9 +7,11 @@ through the board's Registry.
 """
 from .core import Context, Component, Loader, Plugin, Registry
 from .circuit import Board, Module, Part, Net
+from .agent import ParseError
+from .types import DrcReport
 from . import solver, drc, export, agent, plugins, tidy_ga, recommend, collab
 
 __all__ = ["Context", "Component", "Loader", "Plugin", "Registry",
-           "Board", "Module", "Part", "Net",
+           "Board", "Module", "Part", "Net", "ParseError", "DrcReport",
            "solver", "drc", "export", "agent", "plugins", "tidy_ga",
            "recommend", "collab"]

@@ -9,9 +9,10 @@ from dataclasses import dataclass, field
 import json
 import math
 import subprocess
+from typing import cast
 from .core import Context, Component, Fiber, Registry, Plugin
 from .parts import FOOTPRINTS, pin_offset as _std_pin_offset
-from .types import Constraint, PinLike, Undo, XY
+from .types import Constraint, DrcReport, PinLike, Undo, XY
 
 #: Constraint types dumps() can emit. constrain() rejects anything else:
 #: an unknown `t` would silently vanish on save (typo'd kinds failing
@@ -462,10 +463,10 @@ class Board(Component):
         assert isinstance(out, int)
         return out
 
-    def check(self, key: str | None = None, **k: object) -> dict[str, object]:
+    def check(self, key: str | None = None, **k: object) -> DrcReport:
         out = self._run("drc", key, **k)
         assert isinstance(out, dict)
-        return out
+        return cast(DrcReport, out)
 
     def export(self, key: str | None = None, **k: object) -> list[str]:
         out = self._run("exporter", key, **k)

@@ -305,7 +305,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
             simline = "sim: error\n"
     trows = "\n".join(f"| {k} | {_tidy_md(v)} |" for k, v in t.items()
                         if k not in ("coverage", "routed_segs"))
-    ran = cast(list[str], checks.get("ran", []))
+    ran = checks.get("ran", [])
     doc = (f"# STATUS — {b.name}\n\n"
            f"OCD score: {s['total']}/100 ({s['grade']})\n\n"
            f"## tidy ({t['coverage']} metrics defined)\n\n"

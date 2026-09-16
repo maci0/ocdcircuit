@@ -14,6 +14,28 @@ from typing import TYPE_CHECKING, cast
 from .types import Constraint, Undo
 
 
+class ParseError(ValueError):
+    """`.ocd` parse failure with a recoverable line number.
+
+    Subclasses ``ValueError`` so existing ``except ValueError`` handlers keep
+    working. Prefer ``except ParseError as e`` and read ``e.line`` / ``e.msg``
+    instead of string-matching the message.
+    """
+
+    def __init__(self, line: int, msg: object, source: str = "") -> None:
+        self.line = line
+        self.msg = str(msg)
+        self.source = source
+        if line <= 0 and not source:
+            # whole-text failures (empty circuit) keep a bare message
+            super().__init__(self.msg)
+        else:
+            detail = f"line {line}: {msg}"
+            if source:
+                detail += f": {source!r}"
+            super().__init__(detail)
+
+
 def _q(v: object) -> str:
     """Attr value for dumps: quote iff it carries whitespace/quotes so
     the line still reloads (shlex.split on parse)."""
@@ -52,7 +74,7 @@ def _strip_comment(raw: str) -> str:
 if TYPE_CHECKING:
     from .circuit import Board
 
-ErrFn = Callable[[object], ValueError]
+ErrFn = Callable[[object], ParseError]
 
 
 def apply_patch(board: Board, ops: list[dict[str, object]]) -> int:
@@ -612,8 +634,8 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
         if not line:
             continue
 
-        def err(msg: object) -> ValueError:
-            return ValueError(f"line {ln}: {msg}: {line!r}")
+        def err(msg: object) -> ParseError:
+            return ParseError(ln, msg, line)
 
         toks0 = line.split(None, 1)
         kw = toks0[0].lower() if toks0 else ""
@@ -710,14 +732,14 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
                 # raw: lint owns junk-reporting; Board.constrain validates
                 b._constrain_raw(c)
     if b is None:
-        raise ValueError("empty circuit")
+        raise ParseError(0, "empty circuit")
     b.comments[:] = comments
     # load-path writes land as one journal entry on the board fiber: a
     # parsed board unloads like any other domain state (paper Alg 4 —
     # unload reverts all of it, not just the emitted parts).
     b._load_journal(log_load(b))
     if pending:  # fp/sym lines but never a board header to import them into
-        raise ValueError(f"line 1: board header first: {pending[0][1]!r}")
+        raise ParseError(1, "board header first", pending[0][1])
     if top:
         _validate(b)
     return b

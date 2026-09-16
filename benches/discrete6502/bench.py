@@ -63,7 +63,7 @@ def apply_golden(b: object, g: dict[str, tuple[float, float]]) -> None:
 def overlaps(b: object) -> int:
     from ocdcircuit.circuit import Board
     assert isinstance(b, Board)
-    errs = cast(list[str], b.check()["errors"])
+    errs = b.check()["errors"]
     return sum(1 for e in errs if str(e).startswith("overlap"))
 
 
@@ -96,7 +96,7 @@ def main() -> None:
     ov = overlaps(b)
     # floating nets are file-static (5953 single-pin nets in the netlist),
     # not placement signal — errors counts the placeable rest.
-    all_errs = cast(list[str], b.check()["errors"])
+    all_errs = b.check()["errors"]
     errs = sum(1 for e in all_errs if not str(e).startswith("floating"))
     print(f"seeds={seeds} iters={iters} time={dt:.1f}s cost={cost:.0f}")
     print(f"wirelength placed={placed_wl:.0f} golden={golden_wl:.0f} "

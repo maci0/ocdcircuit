@@ -24,6 +24,7 @@ from typing import cast
 
 from ocdcircuit import agent
 from ocdcircuit.circuit import Board
+from ocdcircuit.types import DrcReport
 
 BASE = os.getcwd()
 BOARD: Board | None = None
@@ -199,7 +200,7 @@ def _fab_override(b: Board, a: dict[str, object]) -> None:
         b.fab = fab
 
 
-def t_check(a: dict[str, object]) -> dict[str, object]:
+def t_check(a: dict[str, object]) -> DrcReport:
     b = _board()
     _fab_override(b, a)
     key = a.get("key")
