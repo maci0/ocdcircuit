@@ -184,6 +184,16 @@ stated as a word in a pill.
   1/3 — and every miss scores below the drop gate, so a bad frame is
   discarded rather than median-blended into the stitch.
 
+  When a photo will not line up the scan says so and what to shoot instead,
+  rather than silently discarding it. **Shoot whole-board frames plus
+  mid-range ones**: whole-image matching needs overlapping landmarks, and a
+  close-up tighter than about a third of the board registers poorly — its
+  true match scores 0.03-0.10 at the coarse search level against 0.51-0.66
+  at fine resolution, so the pyramid cannot find it. Searching at full
+  resolution instead was measured and is worse (3/18 against 11/18): the
+  coarse pass is what rejects wrong basins. Feature matching, not
+  whole-image correlation, is the real fix if tight close-ups matter.
+
   The 3D half is scored separately, because a handheld shoot simulated by
   warping a flat photo has no parallax by construction and cannot test it.
   Against a pinhole render with a camera that actually moves and four parts
