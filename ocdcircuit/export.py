@@ -1044,7 +1044,7 @@ def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
     + chained rail segments, N netlabel per net. Mirrors what
     foreign.easyeda_sch parses, so export→import round-trips."""
     import json
-    from .plugins import sch_layout
+    from .sch import sch_layout
     os.makedirs(outdir, exist_ok=True)
     lay = sch_layout(board)
     order, px, rail_y, top = lay.order, lay.px, lay.rail_y, float(lay.top)
@@ -1113,7 +1113,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.kicad_sch: generic box symbols on the shared sch_layout
     grid (same picture as the SVG canvas), one wire per pin-to-rail drop,
     one global_label per net. Validated with `kicad-cli sch erc`."""
-    from .plugins import sch_layout
+    from .sch import sch_layout
     os.makedirs(outdir, exist_ok=True)
     lay = sch_layout(board)
     order, px, rail_y, top = lay.order, lay.px, lay.rail_y, float(lay.top)

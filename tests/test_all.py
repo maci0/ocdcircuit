@@ -3386,7 +3386,7 @@ for _ in range(60):
 # score fast paths must agree with the scalar forms they replaced: these
 # feed the studio scorecard AND tidy_ga's fitness, so drift is invisible.
 from ocdcircuit import score as _psc  # noqa: E402
-from ocdcircuit.plugins import sch_layout as _psl  # noqa: E402
+from ocdcircuit.sch import sch_layout as _psl  # noqa: E402
 from ocdcircuit.circuit import Seg as _Seg  # noqa: E402
 
 # Placed + routed + two deliberately crossing segments: every metric below

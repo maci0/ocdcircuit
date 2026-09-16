@@ -381,7 +381,7 @@ def _t13_schematic(board: Board) -> dict[str, object] | None:
     """Schematic readability (RAW): rail crossings + jogs in sch_layout
     geometry. Drop-lines crossing foreign rails; jogs = rail direction
     changes per net (rails are straight by construction → always 0)."""
-    from .plugins import sch_layout
+    from .sch import sch_layout
     lay = sch_layout(board)
     px, rail_y = lay.px, lay.rail_y
     crossings = 0

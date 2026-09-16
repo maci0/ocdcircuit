@@ -2587,7 +2587,7 @@ def _sch_state(b: Board) -> dict[str, object]:
     if len(b.parts) >= DENSE_PARTS:
         return {"order": [], "px": {}, "rail_y": {}, "top": 70, "W": 0,
                 "skipped": "board is dense — the schematic is not laid out"}
-    from ocdcircuit.plugins import sch_layout
+    from ocdcircuit.sch import sch_layout
     lay = sch_layout(b)
     return {"order": lay.order, "px": lay.px, "rail_y": lay.rail_y,
             "top": lay.top, "W": lay.W}

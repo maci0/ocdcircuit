@@ -12,6 +12,7 @@ apps/mcp.py ───┘         │                        │                 
                          │ per kind               │ failure memory     │ engine imports
                          ▼                        ▼                     ▼
                    agent.py (.ocd ⇄ IR)     core.py (Context/undo)  solver/maze/drc/…
+                   sch.py (schematic geom)                          export/score/…
 ```
 
 - **Board** (`circuit.py`): model (parts/nets/traces/constraints/meta) +
@@ -29,15 +30,20 @@ apps/mcp.py ───┘         │                        │                 
 - **Plugins** (`plugins.py`): 70+ classes, `kind`+`key`, `run(board, **k)`.
   Engine imports live inside `run()` so `import ocdcircuit` stays light.
   Mounted per-Board by `mount_defaults` (swappable per board, undoable).
+  Shared leaf helpers live outside this file: `agent.ir_of`/`from_ir` (JSON
+  IR), `sch.sch_layout` (schematic geometry used by render/export/studio/score).
 - **Engines**: `solver` (diffusion place + min-conflicts repair), `maze`
   (A* route, per-layer copper/halo, MST legs, rip-up), `drc` (fab-profile
   checks + shared `in_zone`), `export` (gerber/kicad/kicad-sch/eagle/easyeda),
-  `agent` (.ocd text ⇄ IR), `foreign` (kicad/eagle/easyeda/tscircuit import),
+  `agent` (.ocd text ⇄ IR), `sch` (shared schematic layout), `foreign`
+  (kicad/eagle/easyeda/tscircuit import),
   `score/silk/sim/spice/calc/lint/doctor/diff` (analysis), `geom3d/raster/
   view3d` (3D), `parts/footprint/fab` (data), `kb` (the board's `kb/`:
   notes + datasheets, text-extracted on demand, embeddings for `ask` via
   `llm.embed` with a term-match floor — CLI, MCP and studio read the same
   directory, so there is no index to invalidate beyond `kb/.cache/`).
+  Shared constants like `AUTO_JOIN` live in `types.py` so language and DRC
+  share them without engines importing `agent`.
 - **Apps** (`apps/`): `ocd` (CLI), `studio` (webui, slot-composed page),
   `mcp` (30-tool agent server). `tools/` holds one-shot porters
   (tscircuit/atopile/mitox); `boards/` one dir per board; `benches/`

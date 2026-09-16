@@ -388,7 +388,7 @@ def erc(board: Board) -> dict[str, object]:
     a pin), empty nets.
     Warnings: pins sharing a footprint pad name across parts is fine —
     reported only when a net has >12 pins (smell: accidental global)."""
-    from .agent import AUTO_JOIN
+    from .types import AUTO_JOIN
     errors: list[str] = []
     warnings: list[str] = []
     lib = board._lib()

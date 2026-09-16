@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
-from .types import Constraint, Undo
+from .types import AUTO_JOIN, Constraint, Undo
 
 
 class ParseError(ValueError):
@@ -779,9 +779,6 @@ def _validate(b: Board) -> None:
 
 
 
-AUTO_JOIN = ("VCC", "GND", "VDD", "VSS", "5V", "3V3")
-
-
 def _remap_net(n: str, pre: str, joins: set[str], join: str | None) -> str:
     """Prefix a child net unless it is explicitly joined or an AUTO_JOIN rail."""
     if (joins and n in joins) or (join is None and n in AUTO_JOIN):
@@ -1036,11 +1033,31 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
     child.unload()
 
 
-def ir(board: Board) -> dict[str, object]:
+def ir_of(board: Board) -> dict[str, object]:
     """Structured snapshot for LLM agents. Also the circuit language:
     circuits are Python (Board API) or this JSON — no custom parser.
     Answers 'what language': JSON (from_ir/to_json) + Python builder."""
-    from .plugins import ir_of
+    return {
+        "board": {"name": board.name, "w": board.width, "h": board.height,
+                  "layers": board.layers, "fab": board.fab, "meta": dict(board.meta)},
+        "parts": [{"ref": p.ref, "fp": p.fp, "value": p.value,
+                   "x": round(p.x, 3), "y": round(p.y, 3),
+                   "attrs": dict(p.attrs)}
+                  for p in board.parts.values()],
+        "nets": {n: {"pins": [[r, pin] for r, pin in net.pins],
+                     "layer": net.layer, "width": net.width,
+                     "attrs": dict(net.attrs)}
+                 for n, net in board.nets.items()},
+        "constraints": board.constraints,
+        "includes": board.includes,
+        # custom footprints ride along (from_ir restores them): without
+        # this, IR round-trips silently drop customs and parts dangle.
+        "_imported_fp": {fn: dict(meta) for fn, meta in board.custom_fp.items()},
+        "_imported_sym": {sn: dict(sym) for sn, sym in board.custom_sym.items()},
+    }
+
+
+def ir(board: Board) -> dict[str, object]:
     return ir_of(board)
 
 
@@ -1049,8 +1066,62 @@ def to_json(board: Board) -> str:
 
 
 def from_ir(doc: dict[str, object]) -> Board:
-    from .plugins import from_ir as _f
-    return _f(doc)
+    """JSON is the circuit language: agents emit this, boards load it.
+    `includes` is provenance only (parts/nets arrive already merged —
+    re-running includes would ref-clash); customs restore above."""
+    from .circuit import Board as _Board
+    bb = cast(dict[str, object], doc["board"])
+    w = bb["w"]
+    h = bb["h"]
+    assert isinstance(w, (int, float)) and isinstance(h, (int, float))
+    layers = bb.get("layers", 2)
+    assert isinstance(layers, int)
+    b = _Board(str(bb.get("name", "board")), float(w), float(h), layers)
+    fab = bb.get("fab")
+    if isinstance(fab, str):
+        b.fab = fab
+    meta = bb.get("meta", {})
+    assert isinstance(meta, dict)
+    b.meta.update({str(k): str(v) for k, v in meta.items()})
+    for fn, meta in cast(dict[str, dict[str, object]], doc.get("_imported_fp", {})).items():
+        if fn not in b._lib():
+            b.add_footprint(fn, meta)
+    for sn, sym in cast(dict[str, dict[str, object]], doc.get("_imported_sym", {})).items():
+        if sn not in b.custom_sym:
+            b.add_symbol(sn, sym)
+    for p in cast(list[dict[str, object]], doc.get("parts", [])):
+        pref = str(p["ref"])
+        # .ocd refs must survive fix/net/nc round-trips (fix is \w+):
+        # reject foreign refs outside that space instead of building
+        # a board whose dumps won't reload.
+        if not re.fullmatch(r"\w+", pref):
+            raise ValueError(f"bad part ref {pref!r} (want \\w+)")
+        x = p.get("x")
+        y = p.get("y")
+        attrs = p.get("attrs", {})
+        assert isinstance(attrs, dict)
+        b.add_part(pref, str(p["fp"]), str(p.get("value", "")),
+                   float(x) if isinstance(x, (int, float)) else None,
+                   float(y) if isinstance(y, (int, float)) else None,
+                   attrs={str(k): str(v) for k, v in attrs.items()} or None)
+    for n, net in cast(dict[str, dict[str, object]], doc.get("nets", {})).items():
+        for ref, pin in cast(list[list[object]], net.get("pins", [])):
+            b.connect(n, str(ref), str(pin))
+        nattrs = net.get("attrs", {})
+        assert isinstance(nattrs, dict)
+        b.nets[n].attrs.update({str(k): str(v) for k, v in nattrs.items()})
+        if net.get("layer") is not None:
+            layer = net["layer"]
+            assert isinstance(layer, int)
+            b.constrain({"t": "layer", "net": n, "layer": layer})
+        width = net.get("width", 0.3)
+        assert isinstance(width, (int, float))
+        if float(width) != 0.3:
+            b.constrain({"t": "width", "net": n, "width": float(width)})
+    for c in cast(list[Constraint], doc.get("constraints", [])):
+        if c.get("t") not in ("layer", "width"):  # already applied above
+            b.constrain(c)
+    return b
 
 
 def from_json(text: str) -> Board:

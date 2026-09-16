@@ -23,6 +23,10 @@ NetName = str
 RefName = str
 # allow int pins at boundaries (normalized to str internally)
 PinLike = Union[str, int]
+# Power rails that stay unprefixed across module include joins, and that ERC
+# treats as power nets (shorted when they share a pin). Owned here so agent
+# (language) and drc (engine) share one constant without crossing layers.
+AUTO_JOIN = ("VCC", "GND", "VDD", "VSS", "5V", "3V3")
 
 
 class DrcReport(TypedDict):
