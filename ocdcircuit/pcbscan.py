@@ -767,6 +767,11 @@ Then write a complete .ocd source for the reconstructed board:
   net NAME :: REF.PIN <--> REF.PIN
   power NET      route NET on LAYER      silk LEVEL
 
+FOOTPRINT must come from the list below — it is the whole vocabulary, and an
+invented name (a KiCad-style `Barrel_Jack`, a guessed `QFP208`) makes the
+file unloadable. Pick the closest available package and put what you really
+saw in the VALUE and a `#` comment.
+
 A minimal complete example:
 
   board demo 40x30 2L
@@ -787,6 +792,19 @@ connector mates with, a part number you can see is printed but cannot
 resolve, a voltage or a measurement. Never ask what the images already
 answer, and leave the block out entirely if nothing is worth asking.
 """
+
+
+def footprint_menu() -> str:
+    """The footprint names the parts library actually serves.
+
+    Read live rather than hardcoded: the library grows, and a stale list in
+    a prompt sends the model back to inventing names. Measured cause of
+    unloadable drafts — deepseek-flash guessed KiCad-style `Barrel_Jack` and
+    `QFP208` when nothing told it the vocabulary.
+    """
+    from .parts import FOOTPRINTS
+    return ("\n\nAvailable FOOTPRINT names (use these exactly):\n  "
+            + ", ".join(sorted(FOOTPRINTS)))
 
 
 def read_doc(path: str, limit: int = 20000) -> str:
@@ -907,8 +925,8 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
                 lines.append(f"  image {len(images)}: {side} {v}")
     if not images:
         raise ValueError("nothing to analyse — run scan() first")
-    text = (PROMPT + "\n\nScan report:\n" + "\n".join(lines)
-            + context_block(note, docs, answers))
+    text = (PROMPT + footprint_menu() + "\n\nScan report:\n"
+            + "\n".join(lines) + context_block(note, docs, answers))
     return llm.vision(text, images, timeout=timeout)
 
 
@@ -1140,6 +1158,12 @@ def demo() -> None:
                                  + "```")) == 5, "question cap not applied"
     # unterminated questions block (token cap) still yields what was asked
     assert extract_questions("```questions\nOnly one?") == ["Only one?"]
+
+    # the prompt must name real footprints, read from the live library
+    menu = footprint_menu()
+    from .parts import FOOTPRINTS as _FPS
+    assert "SOIC8" in menu and "BARREL" in menu and "PINHD2X5" in menu
+    assert all(f in menu for f in _FPS), "footprint menu is not the full library"
 
     # supplied context: note, document text, and answers to earlier questions
     assert context_block() == ""
