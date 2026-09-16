@@ -17,7 +17,7 @@ Interactions:
 Run: python studio.py [file.ocd]  → http://localhost:8077
 """
 from __future__ import annotations
-from ocdcircuit.util import as_float as _f, as_int as _i
+from ocdcircuit.util import as_float as _f, as_int as _i, path_for_log as _path_for_log
 import contextvars
 import gzip
 import hashlib
@@ -2812,15 +2812,9 @@ def _users_path() -> str:
     return os.path.join(ROOT, _USERS_FILE)
 
 
-# Account dirs are `.users/<name>/…` — names identify people. Keep them out of
-# stderr (REQ lines, save refusals) so a shared host log is not a user roster.
-_USER_PATH_LOG_RE = re.compile(r"(^|/)\.users/[^/]+(?=/|$)")
-
-
-def _path_for_log(path: object) -> str:
-    """Project-relative path with `.users/<name>` scrubbed to `.users/*`."""
-    s = str(path).replace("\\", "/")
-    return _USER_PATH_LOG_RE.sub(r"\1.users/*", s)
+def _exc_for_log(exc: BaseException) -> str:
+    """`Type: message` with account names scrubbed — stderr and API errors."""
+    return f"{type(exc).__name__}: {_path_for_log(exc)}"
 
 
 def _client_key(handler: object) -> str:
@@ -3031,7 +3025,9 @@ def _ensure_shelf_rel(as_rel: str, label: str | None = None) -> None:
         return
     who = _REQ_USER.get()
     if not who or owner != who:
-        raise ValueError(f"{label or as_rel}: outside your shelf")
+        # scrub the other account's name — the peer only needs "not yours"
+        shown = label if label is not None else _path_for_log(as_rel)
+        raise ValueError(f"{shown}: outside your shelf")
 
 
 def _ensure_open_board() -> None:
@@ -3279,7 +3275,7 @@ def _import_upload(name: str, data: str) -> dict[str, object]:
             os.remove(full)  # a failed import leaves no file behind
         except OSError:
             pass
-        return {"error": f"{type(e).__name__}: {e}"}
+        return {"error": _exc_for_log(e)}
 
 
 def _git(*args: str, timeout: float = 20.0) -> str:
@@ -3374,7 +3370,8 @@ def _board_digest() -> str:
         if len(s) <= n:
             return s
         return s[:n] + f" … ({label} truncated, {len(s) - n} more chars)"
-    return (f"open file: {os.path.relpath(SRC, ROOT)}  "
+    # account dir names identify people — do not ship them to the LLM host
+    return (f"open file: {_path_for_log(os.path.relpath(SRC, ROOT))}  "
             f"board {b.name} {b.width:g}x{b.height:g} {b.layers}L\n"
             f"parts: {_trim('parts', parts)}\nnets: {_trim('nets', nets)}")
 
@@ -3569,7 +3566,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 rel = os.path.relpath(full, ROOT)
                 old = _read(rel) if os.path.exists(full) else ""
             except ValueError as e:
-                refused.append(str(e))
+                refused.append(_path_for_log(e))
                 continue
             props.append({"id": rel, "path": rel, "text": text,
                           "diff": _unified(old, text, rel), "rev": H.rev})
@@ -3666,8 +3663,8 @@ class H(http.server.BaseHTTPRequestHandler):
             from ocdcircuit.util import read_text
             return read_text(SRC)
         except OSError as e:
-            print(f"studio: cannot read {_path_for_log(SRC)}: {e}",
-                  file=sys.stderr)
+            print(f"studio: cannot read {_path_for_log(SRC)}: "
+                  f"{_path_for_log(e)}", file=sys.stderr)
             return None
 
     @staticmethod
@@ -3749,7 +3746,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 H.saved_text = H.src_text
                 H.save_target = path
             except OSError as e:
-                msg = f"save failed: {_path_for_log(path)}: {e}"
+                msg = (f"save failed: {_path_for_log(path)}: "
+                       f"{_path_for_log(e)}")
                 print(f"studio: {msg}", file=sys.stderr)
                 return msg
             return None
@@ -4060,7 +4058,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     try:
                         _write_user(name, password)
                     except (ValueError, OSError) as e:
-                        self._send({"error": f"{type(e).__name__}: {e}"})
+                        self._send({"error": _exc_for_log(e)})
                         return
                     self._send({"ok": True, "user": name}, cookie=_new_session(name))
             elif self.path == "/auth/login":
@@ -4097,7 +4095,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 try:
                     _set_display(user, disp)
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
                     return
                 self._send({"ok": True, "display": disp})
             elif self.path == "/shelf":
@@ -4169,7 +4167,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 want = req.get("src")
                 if isinstance(want, str) and want and want != key:
                     self._send({"stale": True, "error": f"board changed to "
-                                f"{key} — edit again"})
+                                f"{_path_for_log(key)} — edit again"})
                     return
                 rev = _i(req.get("rev"), -1)
                 snap0 = room.snapshot()
@@ -4188,7 +4186,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     # unparseable push: nothing adopted (claim changed no
                     # state — validate, then cas-adopt).
                     snap_e = room.snapshot()
-                    self._send({"error": f"{type(e).__name__}: {e}",
+                    self._send({"error": _exc_for_log(e),
                                 "rev": snap_e["rev"], "text": snap_e["text"]})
                     return
                 new_rev, how, cur = H._room_adopt(
@@ -4236,7 +4234,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     st = self._build(text, False, req)
                 except (ValueError, KeyError, AssertionError) as e:
                     snap_e = room.snapshot()
-                    self._send({"error": f"{type(e).__name__}: {e}",
+                    self._send({"error": _exc_for_log(e),
                                 "rev": snap_e["rev"], "text": snap_e["text"]})
                     return
                 new_rev, how, cur = H._room_adopt(
@@ -4286,7 +4284,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     # the browser was editing a different board when this
                     # keystroke was captured: drop it, the caller re-reads
                     self._send({"stale": True, "error": f"board changed to "
-                                f"{src_rel} — edit again"})
+                                f"{_path_for_log(src_rel)} — edit again"})
                     return
                 st = self._build(text, False, req)
                 with H._mu:
@@ -4435,7 +4433,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 try:
                     r = b.xray(None, png=xraw, **args)
                 except (ValueError, OSError, KeyError, AssertionError) as e:
-                    self._send({"error": f"{type(e).__name__}: {e}"})
+                    self._send({"error": _exc_for_log(e)})
                     return
                 divs = r.get("divs")
                 assert isinstance(divs, list)
@@ -4453,7 +4451,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send(b.quote(qty=_iiq(req.get("qty"), 5), fabs=fabs,
                                        no_parts=bool(req.get("no_parts", False))))
                 except (ValueError, KeyError, AssertionError) as e:
-                    self._send({"error": f"{type(e).__name__}: {e}"})
+                    self._send({"error": _exc_for_log(e)})
                     return
             elif self.path == "/simulate":  # dc | tran on current text
                 what = str(req.get("what", "dc"))
@@ -4570,7 +4568,7 @@ class H(http.server.BaseHTTPRequestHandler):
                             llm=bool(req.get("llm", True)))
                     except (ValueError, OSError, KeyError, RuntimeError,
                             AssertionError) as e:
-                        self._send({"error": f"{type(e).__name__}: {e}"})
+                        self._send({"error": _exc_for_log(e)})
                         return
                     draft = ""
                     if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
@@ -4635,7 +4633,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                        start=_i(req.get("start"), 1),
                                        lines=_i(req.get("lines"), 120)))
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
             elif self.path == "/kb/search":
                 from ocdcircuit.kb import KB
                 kb = _kb()
@@ -4644,7 +4642,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send(kb.search(str(req.get("q", "")),
                                         limit=_i(req.get("limit"), 8)))
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
             elif self.path == "/kb/ask":
                 from ocdcircuit.kb import KB
                 kb = _kb()
@@ -4654,7 +4652,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                       k=_i(req.get("limit"), 6),
                                       answer=bool(req.get("answer"))))
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
             elif self.path == "/kb/add":
                 from ocdcircuit.kb import KB
                 from urllib.parse import urlparse as _uparse
@@ -4685,7 +4683,7 @@ class H(http.server.BaseHTTPRequestHandler):
                             src = _abs(src, must_exist=True, near=BASE)
                     self._send(kb.add(src))
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
             elif self.path == "/kb/fetch":
                 self._send(_kb_fetch_start())
             elif self.path == "/kb/prefs":
@@ -4701,7 +4699,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send(kb.prefs_add(str(req.get("when", "")),
                                             str(req.get("text", ""))))
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
             elif self.path == "/kb/prefs/set":
                 from ocdcircuit.kb import KB
                 kb = _kb()
@@ -4710,7 +4708,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send(kb.prefs_set(_i(req.get("id"), -1),
                                             bool(req.get("approved"))))
                 except (ValueError, OSError) as e:
-                    self._send({"error": f"ValueError: {e}"})
+                    self._send({"error": _exc_for_log(e)})
             elif self.path == "/chat":
                 text = str(req.get("text", "")).strip()
                 if not text:
@@ -4772,7 +4770,8 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"diff": _git("diff", "--no-color", "--", rel)[:20000]})
             elif self.path == "/vcs/commit":
                 rel = _rel(os.path.relpath(SRC, ROOT))
-                msg = str(req.get("message", "")).strip() or "studio: update " + rel
+                msg = str(req.get("message", "")).strip() or (
+                    "studio: update " + _path_for_log(rel))
                 if "\n" in msg or "\r" in msg or msg.startswith("-"):
                     self._send({"error": "commit message must be one safe line"})
                     return
@@ -4785,7 +4784,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 # (docs: any failure returns {"error": ...}; never bare 404).
                 self._send({"error": f"unknown path {self.path}"})
         except Exception as e:  # never 500 the UI thread: report, keep serving
-            self._send({"error": f"{type(e).__name__}: {e}"})
+            self._send({"error": _exc_for_log(e)})
         finally:
             _REQ_USER.reset(_tok)
 
@@ -4944,7 +4943,8 @@ def main() -> None:
     # ponytail: stdlib ThreadingHTTPServer, no new dep, no refactor.
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
     srv.daemon_threads = True
-    print(f"OCD Studio: http://localhost:{port}  ({SRC})")
+    print(f"OCD Studio: http://localhost:{port}  "
+          f"({_path_for_log(SRC)})")
     srv.serve_forever()
 
 

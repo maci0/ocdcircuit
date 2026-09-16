@@ -16,6 +16,7 @@ PNG, zip) stay on `"rb"`/`"wb"`. Altium-ASCII PCB sniff keeps latin-1 so
 any byte sequence survives the format probe.
 """
 from __future__ import annotations
+import re
 from typing import Any
 
 
@@ -58,6 +59,17 @@ def as_str(v: object, default: str | None = None) -> str:
         return default
     assert isinstance(v, str), f"expected a string, got {v!r}"
     return v
+
+
+# Account dirs are `.users/<name>/…` — names identify people. Scrub them out of
+# stderr / client errors / LLM digests so a shared host log is not a roster.
+_USER_PATH_LOG_RE = re.compile(r"(^|/)\.users/[^/]+(?=/|$)")
+
+
+def path_for_log(path: object) -> str:
+    """Scrub `.users/<name>` → `.users/*` in paths and exception text."""
+    s = str(path).replace("\\", "/")
+    return _USER_PATH_LOG_RE.sub(r"\1.users/*", s)
 
 
 _np = None  # lazy: imported on first vectorized call, not at package load

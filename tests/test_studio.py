@@ -178,6 +178,23 @@ def main() -> None:
     assert _st_ui._path_for_log("/tmp/x/.users/bob") == "/tmp/x/.users/*"
     assert "alice" not in _st_ui._path_for_log("boards/.users/alice/y.ocd")
     assert _st_ui._path_for_log("boards/blinky.ocd") == "boards/blinky.ocd"
+    # OSError / API text can embed absolute shelf paths — scrub those too
+    _ose = OSError(2, "No such file", "/tmp/proj/.users/carol/x.ocd")
+    assert "carol" not in _st_ui._path_for_log(_ose)
+    assert ".users/*" in _st_ui._path_for_log(_ose)
+    assert "carol" not in _st_ui._exc_for_log(_ose)
+    assert _st_ui._exc_for_log(_ose).split(":", 1)[0].endswith("Error")
+    # cross-shelf denial must not name the other account for the peer
+    _tok = _st_ui._REQ_USER.set("bob")
+    try:
+        try:
+            _st_ui._ensure_shelf_rel(".users/alice/board.ocd")
+            raise AssertionError("expected shelf denial")
+        except ValueError as _ve:
+            assert "alice" not in str(_ve), _ve
+            assert ".users/*" in str(_ve), _ve
+    finally:
+        _st_ui._REQ_USER.reset(_tok)
     # unreadable .ocd-users must not look like "no accounts" — that opened a
     # wipe-on-signup path. Only a missing file means empty.
     _td_u = tempfile.mkdtemp(prefix="ocd-users-")

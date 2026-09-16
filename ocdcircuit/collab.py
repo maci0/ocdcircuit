@@ -20,6 +20,8 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from .util import path_for_log
+
 if TYPE_CHECKING:
     from .circuit import Board
 
@@ -219,7 +221,8 @@ class Room:
             # they must catch up via /collab/sync; surface it for the operator
             import sys
             print(f"collab: dropped fan-out to {dropped}/{len(subs)} "
-                  f"subscriber(s) (queue full) for room {self.key!r}",
+                  f"subscriber(s) (queue full) for room "
+                  f"{path_for_log(self.key)!r}",
                   file=sys.stderr)
 
 
