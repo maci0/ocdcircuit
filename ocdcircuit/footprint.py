@@ -142,5 +142,5 @@ def dumps(name: str, fp: Footprint) -> str:
 
 
 def load_file(path: str) -> tuple[str, Footprint]:
-    with open(os.path.abspath(path)) as f:
-        return loads(f.read())
+    from .util import read_text
+    return loads(read_text(os.path.abspath(path)))

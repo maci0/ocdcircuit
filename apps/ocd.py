@@ -48,9 +48,10 @@ def _boot() -> object:
 
 
 def _load(agent: object, src: str) -> Board:
+    from ocdcircuit.util import read_text
     loads = cast(object, getattr(agent, "loads"))
     fn = cast(Callable[..., Board], loads)
-    b = fn(open(src).read(), base=os.path.dirname(os.path.abspath(src)))
+    b = fn(read_text(src), base=os.path.dirname(os.path.abspath(src)))
     b.configure("toml", base=os.path.dirname(os.path.abspath(src)))
     return b
 
@@ -128,20 +129,20 @@ def cmd_new(args: list[str]) -> int:
     name = os.path.basename(os.path.abspath(d)).replace("-", "_")
     board = os.path.join(d, f"{name}.ocd")
     if not os.path.exists(board):
-        with open(board, "w") as f:
+        with open(board, "w", encoding="utf-8") as f:
             f.write(f"board {name} 40x30 2L\n"
                     f"part R1 R0805 10k\npart C1 C0805 100n\n"
                     f"N :: R1.2 <--> C1.2\nGND :: R1.1 <--> C1.1\nfix R1 at 3 5\n")
     readme = os.path.join(d, "README.md")
     if not os.path.exists(readme):
-        with open(readme, "w") as f:
+        with open(readme, "w", encoding="utf-8") as f:
             f.write(f"# {name}\n\n`ocd run {name}.ocd` → `out/` fab package.\n"
                     f"`ocd status {name}.ocd` refreshes STATUS.md.\n"
                     f"Notes + datasheets live in `kb/` (`ocd kb search {name}.ocd <term>`,\n"
                     f"`ocd kb fetch {name}.ocd` pulls datasheets for `lcsc=` parts).\n")
     toml = os.path.join(d, "board.toml")
     if not os.path.exists(toml):
-        with open(toml, "w") as f:
+        with open(toml, "w", encoding="utf-8") as f:
             f.write('# per-project defaults (CLI flags win). Keys: fab, placer,\n'
                     '# router, drc (list), mask, style. Values are validated:\n'
                     '# `ocd plugins [kind]` lists legal placer/router/drc picks.\n'
@@ -150,7 +151,7 @@ def cmd_new(args: list[str]) -> int:
     os.makedirs(os.path.join(d, "kb", "datasheets"), exist_ok=True)
     notes = os.path.join(d, "kb", "NOTES.md")
     if not os.path.exists(notes):
-        with open(notes, "w") as f:
+        with open(notes, "w", encoding="utf-8") as f:
             f.write(f"# {name} — notes\n\n"
                     f"Decisions, errata, pin notes. Datasheets go in `kb/datasheets/`\n"
                     f"(`ocd kb fetch {name}.ocd`, or drop them in by hand).\n"
@@ -329,7 +330,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + f"{cast(list[float], _ext['shrink'])[0]:g}x"
            + f"{cast(list[float], _ext['shrink'])[1]:g})\n")
     proj = os.path.dirname(os.path.abspath(src))
-    with open(os.path.join(proj, "STATUS.md"), "w") as f:
+    with open(os.path.join(proj, "STATUS.md"), "w", encoding="utf-8") as f:
         f.write(doc)
     print(doc, end="")
     return 0 if not derr else 2
@@ -385,7 +386,7 @@ def cmd_xray(agent: object, args: list[str]) -> int:
     for k2 in ("svg", "overlay"):
         fn = _os.path.join(
             out, b.name + (".xray.svg" if k2 == "svg" else ".xray-div.svg"))
-        open(fn, "w").write(cast(str, r[k2]))
+        open(fn, "w", encoding="utf-8").write(cast(str, r[k2]))
     _out().print(f"xray: {out}/{b.name}.xray.svg + {b.name}.xray-div.svg")
     return 0
 
@@ -532,6 +533,7 @@ def _kb_base(target: str) -> str:
 
 def cmd_kb(agent: object, args: list[str]) -> int:
     from ocdcircuit import kb as _kb
+    from ocdcircuit.util import read_text
     if len(args) < 2 or args[0] in ("-h", "--help"):
         print(KB_USAGE)
         return 1
@@ -546,7 +548,7 @@ def cmd_kb(agent: object, args: list[str]) -> int:
             if op == "fetch":
                 board = _load(agent, target)
             else:
-                parts = _kb.parts_map(open(target).read())
+                parts = _kb.parts_map(read_text(target))
     except (OSError, ValueError, KeyError, AssertionError) as e:
         print(f"ocd: {e}")
         return 1

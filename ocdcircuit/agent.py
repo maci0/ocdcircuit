@@ -860,9 +860,12 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
     if not os.path.isfile(fn):
         raise err(f"no such file: {path!r}")
     try:
-        text = open(fn).read()
+        from .util import read_text
+        text = read_text(fn)
     except OSError as e:
         raise err(e)
+    except UnicodeDecodeError as e:
+        raise err(f"not utf-8: {path!r} ({e})")
     child = _loads(text, os.path.dirname(fn), stack + (fn,))
     pre = (prefix + "_") if prefix else (child.name + "_")
     joins = set(join.split()) if join else set()

@@ -272,6 +272,18 @@ def main() -> None:
         assert "error" in _profinject, _profinject
         _profcolon = post(base, "/auth/profile", {"display": "has:colon"})
         assert "error" in _profcolon, _profcolon
+        _profzw = post(base, "/auth/profile",
+                       {"display": "Ada\u200bCircuit"})  # ZWSP
+        assert "error" in _profzw, _profzw
+        _unic = post(base, "/auth/signup",
+                     {"user": "caf\u00e9", "password": "testtest99"})
+        assert "error" in _unic, _unic  # ASCII usernames only
+        _tr = post(base, "/auth/signup",
+                   {"user": "I\u0307stanbul", "password": "testtest99"})
+        assert "error" in _tr, _tr  # combining marks / non-ASCII rejected
+        _slug = post(base, "/shelf/new", {"name": "capteur caf\u00e9"})
+        assert not _slug.get("error"), _slug
+        assert _slug.get("name") == "capteur-caf", _slug  # ASCII slug only
         # shelf isolation: second user cannot /fs/read the first user's board
         _mine = post(base, "/shelf/new", {"name": "private-board"})
         assert not _mine.get("error"), _mine

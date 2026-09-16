@@ -533,4 +533,35 @@ _il.declare([{"id": "a", "factory": _nop_factory,
               "intercept": {"svc": {"other": 1}}}])
 assert _ie.fiber.ctx._intercept == {"svc": {"other": 1}}
 
+# UTF-8 text boundaries: use/include path + util.read_text (non-ASCII comment)
+import tempfile
+from ocdcircuit import agent as _ag
+from ocdcircuit.util import read_text as _rt, write_text as _wt
+_td = tempfile.mkdtemp()
+_child = os.path.join(_td, "子.ocd")
+_wt(_child, "# café — comment\nboard child 10x10\npart R1 R0805 1k\n")
+_parent = os.path.join(_td, "p.ocd")
+_wt(_parent, "board p 20x10\nuse 子.ocd\npart C1 C0805 100n\n")
+_b = _ag.loads(_rt(_parent), base=_td)
+assert "child_R1" in _b.parts, sorted(_b.parts)
+# latin-1 bytes must not be silently mis-decoded as utf-8 on use
+_bad = os.path.join(_td, "bad.ocd")
+open(_bad, "wb").write(b"board x 10x10\n# \xff\xfe latin-1 only\n")
+try:
+    _ag.loads("board t 10x10\nuse bad.ocd\n", base=_td)
+    raise AssertionError("expected utf-8 decode failure on use")
+except Exception as _e:
+    assert "utf-8" in str(_e).lower() or "unicode" in type(_e).__name__.lower(), _e
+
+# OLE name truncation must not leave a lone UTF-16 high surrogate
+from ocdcircuit.foreign import _ole_name as _ole_nm
+_ent = bytearray(128)
+_ole_nm(_ent, "x" * 30 + "\U0001F600")  # 30 BMP + astral = 32 units → must drop orphan
+_raw = bytes(_ent[:64])
+assert b"\x00\x00" in _raw
+_units = _raw.split(b"\x00\x00", 1)[0]
+if len(_units) >= 2:
+    _last = int.from_bytes(_units[-2:], "little")
+    assert not (0xD800 <= _last <= 0xDBFF), hex(_last)
+
 print("CORE PAPER OK")

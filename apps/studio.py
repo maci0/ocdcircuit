@@ -2795,7 +2795,7 @@ def _atomic_write(path: str, data: str) -> None:
     d = os.path.dirname(path) or "."
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".ocd-", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
@@ -2864,12 +2864,25 @@ def _purge_sessions(now: float | None = None) -> None:
 
 
 def _ok_display(disp: str) -> bool:
-    """Display names must not break the colon-separated users file."""
+    """Display names must not break the colon-separated users file or hide
+    identity with format/control chars (ZWSP, bidi marks, etc.)."""
+    import unicodedata
     if not disp or len(disp) > 40:
         return False
-    if any(ord(c) < 32 for c in disp) or ":" in disp:
+    if ":" in disp:
         return False
+    for c in disp:
+        if ord(c) < 32 or unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp"):
+            return False
     return True
+
+
+def _ok_username(name: str) -> bool:
+    """Account ids are ASCII [A-Za-z0-9_-] only — matches the signup error
+    text and keeps `.users/<name>/` free of NFC/NFD and non-ASCII alnum traps."""
+    if not name or len(name) > 32:
+        return False
+    return all(c.isascii() and (c.isalnum() or c in "_-") for c in name)
 
 
 def _read_users() -> dict[str, tuple[str, str, str]]:
@@ -2877,7 +2890,7 @@ def _read_users() -> dict[str, tuple[str, str, str]]:
     display is a 4th colon field; old 3-field lines read as display=name."""
     out: dict[str, tuple[str, str, str]] = {}
     try:
-        with open(_users_path()) as f:
+        with open(_users_path(), encoding="utf-8") as f:
             for line in f:
                 parts = line.rstrip("\n").split(":")
                 if len(parts) >= 3 and parts[0]:
@@ -2894,7 +2907,7 @@ def _set_display(name: str, display: str) -> None:
         raise ValueError("display name can't contain control chars or ':'")
     with _AUTH_MU:
         try:
-            lines = open(_users_path()).read().splitlines()
+            lines = open(_users_path(), encoding="utf-8").read().splitlines()
         except OSError:
             raise ValueError("no accounts yet")
         out = []
@@ -2915,12 +2928,12 @@ def _write_user(name: str, password: str) -> None:
     import hashlib
     import secrets
     salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=16384, r=8, p=1)
     line = f"{name}:{salt.hex()}:{digest.hex()}\n"
     with _AUTH_MU:
         path = _users_path()
         try:
-            cur = open(path, encoding="utf8").read()
+            cur = open(path, encoding="utf-8").read()
         except OSError:
             cur = ""
         # Refuse a duplicate under the same lock that writes — two concurrent
@@ -2934,9 +2947,9 @@ def _write_user(name: str, password: str) -> None:
     # secrets must never be committed: keep them out of git on first signup
     try:
         gi = os.path.join(ROOT, ".gitignore")
-        have = open(gi).read() if os.path.isfile(gi) else ""
+        have = open(gi, encoding="utf-8").read() if os.path.isfile(gi) else ""
         if _USERS_FILE not in have:
-            with open(gi, "a", encoding="utf8") as f:
+            with open(gi, "a", encoding="utf-8") as f:
                 if have and not have.endswith("\n"):
                     f.write("\n")
                 f.write(GITIGNORE_AUTH)
@@ -2952,7 +2965,7 @@ def _check_user(name: str, password: str) -> bool:
         return False
     salt_hex, want, _disp = users[name]
     try:
-        digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex),
+        digest = hashlib.scrypt(password.encode("utf-8"), salt=bytes.fromhex(salt_hex),
                                 n=16384, r=8, p=1)
     except (ValueError, TypeError):
         return False
@@ -3204,7 +3217,7 @@ def _read(rel: object) -> str:
     if os.path.getsize(full) > 2_000_000:
         raise ValueError(f"{rel}: too large to edit")
     try:
-        return open(full, encoding="utf8").read()
+        return open(full, encoding="utf-8").read()
     except UnicodeDecodeError as e:
         raise ValueError(f"{rel}: not utf-8 text") from e
 
@@ -3516,7 +3529,7 @@ class H(http.server.BaseHTTPRequestHandler):
             # re-inits against the open board either way.
             if os.path.splitext(full)[1].lower() == ".ocd":
                 agent.loads(text, base=os.path.dirname(full))
-            with open(full, "w", encoding="utf8") as f:
+            with open(full, "w", encoding="utf-8") as f:
                 f.write(text)
             return {"path": rel, "state": None}
         st = H._build(text, False)  # raises on a parse error: nothing written
@@ -3630,7 +3643,8 @@ class H(http.server.BaseHTTPRequestHandler):
     @staticmethod
     def _disk() -> str:
         try:
-            return open(SRC).read()
+            from ocdcircuit.util import read_text
+            return read_text(SRC)
         except OSError:
             return ""
 
@@ -4001,7 +4015,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 password = str(req.get("password", ""))
                 if not name or not password:
                     self._send({"error": "a name and a password, both"})
-                elif not name.replace("_", "").replace("-", "").isalnum() or len(name) > 32:
+                elif not _ok_username(name):
                     self._send({"error": "names are letters, digits, _ and - (32 max)"})
                 elif len(password) < 8:
                     self._send({"error": "password needs 8+ characters"})
@@ -4044,7 +4058,8 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": "a display name can't be blank"})
                     return
                 if not _ok_display(disp):
-                    self._send({"error": "display name can't contain control chars or ':'"})
+                    self._send({"error": "display name can't contain control "
+                                 "chars, format marks, or ':'"})
                     return
                 try:
                     _set_display(user, disp)
@@ -4059,8 +4074,10 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/shelf/new":
                 assert user is not None  # gated above
                 raw = str(req.get("name", "")).strip().lower()
-                # prompt-box prose ("a wifi sensor node!") degrades to a slug
-                slug = "".join(c if c.isalnum() else "-" for c in raw).strip("-")
+                # prompt-box prose ("a wifi sensor node!") degrades to a slug;
+                # ASCII-only so shelf filenames stay NFC/NFD-safe across hosts.
+                slug = "".join(
+                    c if c.isascii() and c.isalnum() else "-" for c in raw).strip("-")
                 while "--" in slug:
                     slug = slug.replace("--", "-")
                 name = "".join(c for c in slug if c.isalnum() or c in "_-")[:32]
@@ -4072,7 +4089,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     if os.path.exists(full):
                         self._send({"error": f"{fn} already on your shelf"})
                     else:
-                        with open(full, "w", encoding="utf8") as f:
+                        with open(full, "w", encoding="utf-8") as f:
                             f.write(STARTER_OCD.format(name=name))
                         # name is the stem the landing page opens via /?board=
                         self._send({"ok": True, "name": name,
@@ -4495,11 +4512,11 @@ class H(http.server.BaseHTTPRequestHandler):
                     return
                 draft = ""
                 if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
-                    with open(str(r["draft"])) as fh:
+                    with open(str(r["draft"]), encoding="utf-8") as fh:
                         draft = fh.read()
                 report = ""
                 if isinstance(r.get("analysis"), str) and os.path.isfile(str(r["analysis"])):
-                    with open(str(r["analysis"])) as fh:
+                    with open(str(r["analysis"]), encoding="utf-8") as fh:
                         report = fh.read()
                 sides = cast(dict[str, object], r.get("sides", {}))
                 # The viewer needs pixels, not paths: the outdir is a server
@@ -4846,7 +4863,8 @@ def main() -> None:
     if any(a in ("-h", "--help") for a in sys.argv[1:]):
         print("usage: python -m apps.studio [board.ocd]  # OCD_PORT=8077 to change port")
         return
-    H.src_text = open(SRC).read() if os.path.isfile(SRC) else (
+    from ocdcircuit.util import read_text as _read_src
+    H.src_text = _read_src(SRC) if os.path.isfile(SRC) else (
         "board demo 40x30\npart R1 R0805 1k\npart C1 C0805 100n\n"
         "net N: R1.2 C1.2\nnet GND: R1.1 C1.1\n")
     H.saved_text = H.src_text

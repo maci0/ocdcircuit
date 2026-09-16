@@ -109,8 +109,9 @@ if __name__ == "__main__":
         raise SystemExit(1)
     from ocdcircuit import agent
     from ocdcircuit.geom3d import to_gltf
-    b = agent.loads(open(sys.argv[1]).read())
+    from ocdcircuit.util import read_text
+    b = agent.loads(read_text(sys.argv[1]))
     b.place()
     b.route_board()
-    open("preview3d.html", "w").write(page(b, to_gltf(b)))
+    open("preview3d.html", "w", encoding="utf-8").write(page(b, to_gltf(b)))
     print("preview3d.html written")

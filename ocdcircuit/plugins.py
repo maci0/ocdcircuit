@@ -442,19 +442,19 @@ class OcdExporter(Plugin[list[str]]):
                 os.makedirs(os.path.join(outdir, "fp"), exist_ok=True)
                 safe = re.sub(r"[^A-Za-z0-9_.-]", "_", n) or "X"
                 fn = os.path.join(outdir, "fp", f"{safe}.fp")
-                with open(fn, "w") as f:
+                with open(fn, "w", encoding="utf-8") as f:
                     f.write(_fp.dumps(n, board.custom_fp[n]))
                 lines.insert(1, f"fp fp/{safe}.fp")
             for n in bare_sym:
                 os.makedirs(os.path.join(outdir, "sym"), exist_ok=True)
                 safe = re.sub(r"[^A-Za-z0-9_.-]", "_", n) or "X"
                 fn = os.path.join(outdir, "sym", f"{safe}.sym")
-                with open(fn, "w") as f:
+                with open(fn, "w", encoding="utf-8") as f:
                     f.write(_sym.dumps(n, board.custom_sym[n]))
                 lines.insert(1, f"sym sym/{safe}.sym")
             text = "\n".join(lines) + "\n"
         fn = os.path.join(outdir, f"{board.name}.ocd")
-        open(fn, "w").write(text)
+        open(fn, "w", encoding="utf-8").write(text)
         return [fn]
 
 
@@ -469,7 +469,7 @@ class JsonExporter(Plugin[list[str]]):
         assert isinstance(outdir, str)
         os.makedirs(outdir, exist_ok=True)
         fn = os.path.join(outdir, f"{board.name}.json")
-        open(fn, "w").write(json.dumps(ir_of(board), indent=1))
+        open(fn, "w", encoding="utf-8").write(json.dumps(ir_of(board), indent=1))
         return [fn]
 
 
@@ -842,8 +842,8 @@ bpy.ops.render.render(write_still=True)
             src = os.path.join(tmp, board.name + ".gltf")
             out = os.path.join(tmp, board.name + ".png")
             script = os.path.join(tmp, "studio.py")
-            open(src, "w").write(to_gltf(board))
-            open(script, "w").write(self.SCRIPT)
+            open(src, "w", encoding="utf-8").write(to_gltf(board))
+            open(script, "w", encoding="utf-8").write(self.SCRIPT)
             r = subprocess.run(
                 ["flatpak", "run", "--filesystem=" + tmp,
                  "org.blender.Blender", "--background",
@@ -907,7 +907,7 @@ class KicadRenderer(Plugin[bytes]):
         from . import envcfg
         cfg = envcfg.kicad_3d_viewer_cfg()
         try:
-            d = json.load(open(cfg)) if cfg else None
+            d = json.load(open(cfg, encoding="utf-8")) if cfg else None
         except (OSError, ValueError):
             d = None
         if d is None:
@@ -924,11 +924,11 @@ class KicadRenderer(Plugin[bytes]):
                 if c.get("layer") in ("soldermask_top", "soldermask_bottom"):
                     r, g, b = mask
                     c["color"] = f"rgba({r}, {g}, {b}, 0.831)"
-            json.dump(d, open(cfg, "w"), indent=2)
+            json.dump(d, open(cfg, "w", encoding="utf-8"), indent=2)
             subprocess.run(cmd, capture_output=True, check=True, timeout=300)
         finally:
             d["layer_presets"][0]["colors"] = json.loads(saved)
-            json.dump(d, open(cfg, "w"), indent=2)
+            json.dump(d, open(cfg, "w", encoding="utf-8"), indent=2)
         if not os.path.isfile(out):
             raise RuntimeError("kicad-cli did not produce a rendered image")
 
@@ -962,7 +962,7 @@ class PcbdrawRenderer(Plugin[str]):
             subprocess.run([exe, "plot", "-s", style, "--side", side,
                             "--silent", src, out],
                            capture_output=True, check=True, timeout=300)
-            return open(out).read()
+            return open(out, encoding="utf-8").read()
 
 
 class EasyedaRenderer(Plugin[str]):
@@ -980,7 +980,7 @@ class EasyedaRenderer(Plugin[str]):
         S = _f(k.get("scale", 10))
         with tempfile.TemporaryDirectory() as tmp:
             fn = export_easyeda(board, tmp)[0]
-            doc = json.load(open(fn))
+            doc = json.load(open(fn, encoding="utf-8"))
         W, H = board.width * S, board.height * S
         mm = 1 / 0.254  # export units: 10-mil
         el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
@@ -1100,10 +1100,17 @@ class AllRenderer(Plugin[list[str]]):
                 continue
             plug = board.plugins().get("renderer", key)
             ext = str(getattr(plug, "ext", f".{key}"))
-            mode = "w" if isinstance(out, str) else "wb"
             fn = os.path.join(outdir, board.name + ext)
-            with open(fn, mode) as f:
-                f.write(out)
+            if isinstance(out, str):
+                with open(fn, "w", encoding="utf-8") as f:
+                    f.write(out)
+            elif isinstance(out, (bytes, bytearray)):
+                with open(fn, "wb") as f:
+                    f.write(out)
+            else:
+                print(f"ocd: render {key} skipped: unexpected {type(out).__name__}",
+                      file=sys.stderr)
+                continue
             written.append(fn)
         return written
 
@@ -1228,7 +1235,7 @@ class TscircuitImporter(Plugin[dict[str, object]]):
         import json
         from .foreign import easyeda_doc
         path = _import_path(k)
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             text = f.read()
         try:
             doc = json.loads(text)
@@ -1318,7 +1325,7 @@ class EagleBoardImporter(Plugin[dict[str, object]]):
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .foreign import eagle_brd
         path = _import_path(k)
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             ir = eagle_brd(f.read())
         return _board_ir_into(board, ir)
 
@@ -1333,7 +1340,7 @@ class EasyedaImporter(Plugin[dict[str, object]]):
         import json
         from .foreign import easyeda_doc, easyeda_sch
         path = _import_path(k)
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             doc = json.load(f)
         assert isinstance(doc, dict)
         if str(doc.get("head", "")).split("~")[0] == "1":
@@ -1884,7 +1891,8 @@ def _jlc_api_creds() -> tuple[str, str, str] | None:
     if acc and sec:
         return (app, acc, sec)
     try:
-        lines = open(os.path.expanduser("~/.secrets/jlcpcb")).read().splitlines()
+        lines = open(os.path.expanduser("~/.secrets/jlcpcb"),
+                     encoding="utf-8").read().splitlines()
     except OSError:
         return None
     vals: dict[str, str] = {}

@@ -137,7 +137,8 @@ def tidy_ga(board: Board, pop: int = 8, gen: int = 6, seed: int = 0,
 
 if __name__ == "__main__":  # python -m ocdcircuit.tidy_ga
     from ocdcircuit import agent
-    b = agent.loads(open("boards/blinky_555.ocd").read(), base="boards")
+    from ocdcircuit.util import read_text
+    b = agent.loads(read_text("boards/blinky_555.ocd"), base="boards")
     b.place(seeds=2, iters=100)
     b.route_board()
     f0 = fitness(b)

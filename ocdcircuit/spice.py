@@ -178,7 +178,7 @@ def _run_ngspice(workdir: str, spice: str, cmds: list[str], dat: str,
     cir = os.path.join(workdir, "c.cir")
     body = spice.rsplit(".end", 1)[0]  # commands go BEFORE .end,
     # wrapped in .control (bare commands error in batch mode)
-    with open(cir, "w") as f:
+    with open(cir, "w", encoding="utf-8") as f:
         f.write(body + ".control\n" + "\n".join(cmds) + "\n.endc\n.end\n")
     r = subprocess.run([NGSPICE, "-b", cir], capture_output=True, text=True,
                        timeout=60, cwd=workdir)
@@ -187,7 +187,7 @@ def _run_ngspice(workdir: str, spice: str, cmds: list[str], dat: str,
         raise RuntimeError(f"ngspice failed: {err}")
     # wrdata writes each vector as a (scale, value) column pair
     cols: dict[str, list[float]] = {p: [] for p in probes}
-    for line in open(dat):
+    for line in open(dat, encoding="utf-8"):
         parts = line.split()
         if len(parts) < 2 * len(probes):
             continue

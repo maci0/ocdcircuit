@@ -50,7 +50,8 @@ def t_load(a: dict[str, object]) -> dict[str, object]:
         base = str(a.get("base", BASE))
     elif "path" in a:
         SRC = str(a["path"])
-        text = open(SRC).read()
+        from ocdcircuit.util import read_text
+        text = read_text(SRC)
         base = os.path.dirname(os.path.abspath(SRC))
     else:
         raise ValueError("load_board needs text or path")

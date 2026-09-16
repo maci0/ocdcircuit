@@ -94,8 +94,8 @@ def dumps(name: str, sym: Symbol) -> str:
 
 
 def load_file(path: str) -> tuple[str, Symbol]:
-    with open(path) as f:
-        return loads(f.read())
+    from .util import read_text
+    return loads(read_text(path))
 
 
 def pin_pos(sym: Symbol, num: str, n_extra: int = 0) -> tuple[float, float, str]:

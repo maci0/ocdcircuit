@@ -833,11 +833,11 @@ class KB:
 if __name__ == "__main__":  # self-check: ingest → traverse → search → paging
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        open(os.path.join(td, "t.ocd"), "w").write("board t 10x10\n")
+        open(os.path.join(td, "t.ocd"), "w", encoding="utf-8").write("board t 10x10\n")
         k = KB(td)
         k.add(text="# Notes\nQ1 gate needs 10k pulldown\n", name="NOTES.md")
         note = os.path.join(td, "errata.txt")
-        open(note, "w").write("rev B: R7 must be 0R\n")
+        open(note, "w", encoding="utf-8").write("rev B: R7 must be 0R\n")
         assert k.add(note)["added"] == "errata.txt"
         names = [str(d["name"]) for d in k.docs()]
         assert names == ["NOTES.md", "errata.txt"], names

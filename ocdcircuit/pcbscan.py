@@ -941,7 +941,7 @@ def scan_side(paths: list[str], outdir: str, side: str,
         f.write(splat_ply(rgb, hm, mm_px, max_mm=tall_mm))
     files["splat"] = ply
     found = pads(rgb, mm_px)
-    with open(os.path.join(outdir, f"{side}-pads.json"), "w") as f:
+    with open(os.path.join(outdir, f"{side}-pads.json"), "w", encoding="utf-8") as f:
         json.dump(found, f)
     files["pads"] = os.path.join(outdir, f"{side}-pads.json")
     return {
@@ -976,7 +976,7 @@ def scan(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
         if paths:
             cast(dict[str, object], man["sides"])[side] = scan_side(
                 paths, outdir, side, board_mm, maxdim, tall_mm)
-    with open(os.path.join(outdir, "manifest.json"), "w") as f:
+    with open(os.path.join(outdir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(man, f, indent=2)
     man["manifest"] = os.path.join(outdir, "manifest.json")
     return man
@@ -1455,7 +1455,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     report = analyse(man, note=note, docs=docs, answers=answers,
                      zoom=zoom, pads=pads)
     rp = os.path.join(outdir, "analysis.md")
-    with open(rp, "w") as f:
+    with open(rp, "w", encoding="utf-8") as f:
         f.write(report)
     man["analysis"] = rp
     asked = extract_questions(report)
@@ -1468,7 +1468,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
         return man
     man["certainty"] = extract_certainty(report)
     dp = os.path.join(outdir, "draft.ocd")
-    with open(dp, "w") as f:
+    with open(dp, "w", encoding="utf-8") as f:
         f.write(src)
     man["draft"] = dp
     try:

@@ -342,7 +342,7 @@ def _selfcheck() -> None:
             cfg_dir = os.path.join(d, "kicad", "9.0")
             os.makedirs(cfg_dir)
             cfg = os.path.join(cfg_dir, "3d_viewer.json")
-            open(cfg, "w").write("{}")
+            open(cfg, "w", encoding="utf-8").write("{}")
             os.environ["XDG_CONFIG_HOME"] = d
             assert kicad_3d_viewer_cfg() == cfg
             del os.environ["XDG_CONFIG_HOME"]

@@ -1168,12 +1168,12 @@ def _bin_pcblib(data: bytes) -> list[tuple[str, Footprint]]:
 
 def load_foreign(path: str) -> list[tuple[str, Footprint]]:
     """Dispatch by extension: .kicad_mod/.pretty, .lbr, .json, .PcbLib."""
+    from .util import read_text
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pcblib":
         with open(path, "rb") as f:
             return _bin_pcblib(f.read())
-    with open(path) as f:
-        text = f.read()
+    text = read_text(path)
     if ext in (".kicad_mod", ".pretty"):
         return [kicad_mod(text)]
     if ext == ".lbr":
@@ -1806,7 +1806,17 @@ def _ole_write(streams: dict[str, bytes]) -> bytes:
 def _ole_name(e: bytearray, nm: str) -> None:
     """UTF-16LE name + length prefix into a 128B directory entry."""
     import struct
-    raw = nm.encode("utf-16-le")[:62] + b"\x00\x00"
+    # Max 31 UTF-16 code units (+ null) = 62 bytes. Truncate on a code-unit
+    # boundary and drop a trailing high surrogate so astral chars (e.g. 😀,
+    # U+1F600) never leave a lone surrogate in the OLE directory.
+    units = nm.encode("utf-16-le")
+    if len(units) > 62:
+        units = units[:62]
+        if len(units) >= 2:
+            cu = int.from_bytes(units[-2:], "little")
+            if 0xD800 <= cu <= 0xDBFF:
+                units = units[:-2]
+    raw = units + b"\x00\x00"
     raw = raw[:64]
     e[:len(raw)] = raw
     e[64:66] = struct.pack("<H", len(raw))

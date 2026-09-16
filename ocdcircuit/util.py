@@ -1,4 +1,4 @@
-"""Shared scalar coercion and the lazy optional-dependency handle.
+"""Shared scalar coercion, UTF-8 text I/O, and the lazy optional-dependency handle.
 
 These were 23 near-identical private helpers copied per module (`_f` x10,
 `_i` x5, `s` x2, `_num` x2, `_numpy` x2 — 112 lines). One implementation
@@ -9,9 +9,27 @@ None handling is the one thing the copies disagreed on, so it is explicit:
 without a `default`, a missing value is an error (what six of the `_f` copies
 did, and the repo's fixable-input convention wants); pass one where absence
 legitimately means zero.
+
+Text files (.ocd, .fp, JSON importers, users file, Gerber/CSV dumps) are
+UTF-8 at every boundary — never the locale default. Binary formats (OLE,
+PNG, zip) stay on `"rb"`/`"wb"`. Altium-ASCII PCB sniff keeps latin-1 so
+any byte sequence survives the format probe.
 """
 from __future__ import annotations
 from typing import Any
+
+
+def read_text(path: str, *, errors: str = "strict") -> str:
+    """Read a text file as UTF-8. `errors` matches open(): strict by default
+    so a latin-1 board mislabeled as .ocd fails loudly instead of mojibake."""
+    with open(path, encoding="utf-8", errors=errors) as f:
+        return f.read()
+
+
+def write_text(path: str, text: str) -> None:
+    """Write a text file as UTF-8 (no BOM)."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 def as_float(v: object, default: float | None = None) -> float:

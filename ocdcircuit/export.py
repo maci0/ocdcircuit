@@ -204,25 +204,25 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             x0, y0, x1, y1 = edge, edge, board.width - edge, board.height - edge
             flood = [(x0, y0, x1, y0), (x1, y0, x1, y1),
                      (x1, y1, x0, y1), (x0, y1, x0, y0)]
-            open(fn, "w").write(_gerber([], flood + cuts, 0.4,
+            open(fn, "w", encoding="utf-8").write(_gerber([], flood + cuts, 0.4,
                                         negative=",".join(
                                             f"{n}@L{ll}" for n, lls in poured_nets.items() if ll in lls)))
         else:
-            open(fn, "w").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4,
+            open(fn, "w", encoding="utf-8").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4,
                                         widths=widths.get(ll, [])))
         files.append(fn)
     # paste (top only — single-sided SMT like the mitox board)
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
-    open(fn, "w").write(_gerber(paste, [], 0.4, fsizes=psizes))
+    open(fn, "w", encoding="utf-8").write(_gerber(paste, [], 0.4, fsizes=psizes))
     files.append(fn)
     # mask: openings over pads (empty file = full mask = unsolderable).
     # Bottom is pad-free (single-sided SMT), so empty GBS is correct there.
     fn = os.path.join(outdir, f"{board.name}.GTS.gbr")
-    open(fn, "w").write(_gerber(flashes.get(0, []), [], 0.5, fsizes=msizes))
+    open(fn, "w", encoding="utf-8").write(_gerber(flashes.get(0, []), [], 0.5, fsizes=msizes))
     files.append(fn)
     if board.layers > 1:
         fn = os.path.join(outdir, f"{board.name}.GBS.gbr")
-        open(fn, "w").write(_gerber([], [], 0.5))
+        open(fn, "w", encoding="utf-8").write(_gerber([], [], 0.5))
         files.append(fn)
     # silk: courtyard outlines + pin-1 dots (no stroke font in this
     # writer, so ref text stays in the KiCad export, not Gerber)
@@ -235,11 +235,11 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     silk_draws += [(b.x0, b.y1, b.x0, b.y0) for b in sk.boxes]
     silk_fl: list[Flash] = [(d.x, d.y) for d in sk.dots]
     fn = os.path.join(outdir, f"{board.name}.GTO.gbr")
-    open(fn, "w").write(_gerber(silk_fl, silk_draws, 0.2))
+    open(fn, "w", encoding="utf-8").write(_gerber(silk_fl, silk_draws, 0.2))
     files.append(fn)
     if board.layers > 1:
         fn = os.path.join(outdir, f"{board.name}.GBO.gbr")
-        open(fn, "w").write(_gerber([], [], 0.2))
+        open(fn, "w", encoding="utf-8").write(_gerber([], [], 0.2))
         files.append(fn)
     W, H = board.width, board.height
     fn = os.path.join(outdir, f"{board.name}.GKO.gbr")
@@ -255,7 +255,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
                      (cx + hw, cy - hh, cx + hw, cy + hh),
                      (cx + hw, cy + hh, cx - hw, cy + hh),
                      (cx - hw, cy + hh, cx - hw, cy - hh)]
-    open(fn, "w").write(_gerber([], outl, 0.1))
+    open(fn, "w", encoding="utf-8").write(_gerber([], outl, 0.1))
     files.append(fn)
     # drill: PTH holes (soldering) + vias (layer changes).
     # 1-layer boards have no vias — but PTH drills still go here.
@@ -300,7 +300,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
         d += [f"G85X{x1:.3f}Y{y1:.3f}X{x2:.3f}Y{y2:.3f}"
               for x1, y1, x2, y2 in sorted(slots.get(dr, ()))]
     d += ["T0", "M30"]
-    open(fn, "w").write("\n".join(d))
+    open(fn, "w", encoding="utf-8").write("\n".join(d))
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.BOM.csv")
     # JLC format: Comment,Designator,Footprint,LCSC — grouped by value,
@@ -316,7 +316,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     # csv.writer, not ",".join: a value carrying a comma (`1k,1%`) used to shift
     # every column (JLC read Designator="1%"), and quoting by hand is a bug per
     # field. lineterminator keeps the LF the rest of the bundle uses.
-    with open(fn, "w", newline="") as f:
+    with open(fn, "w", newline="", encoding="utf-8") as f:
         cw = csv.writer(f, lineterminator="\n")
         cw.writerow(["Comment", "Designator", "Footprint", "LCSC", "Alternates"])
         for (value, fp, lcsc, dnp), refs in sorted(groups.items()):
@@ -332,7 +332,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
     # DNP excluded: CPL drives the pick-and-place machine, BOM marks the
     # row do-not-place — listing both would place what must stay empty.
-    with open(fn, "w", newline="") as f:
+    with open(fn, "w", newline="", encoding="utf-8") as f:
         cw = csv.writer(f, lineterminator="\n")
         cw.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
         for p in board.parts.values():
@@ -415,7 +415,7 @@ def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
            "shape": shape, "title": board.meta.get("title", board.name),
            "dataStr": {"layers": layers}}
     fn = os.path.join(outdir, f"{board.name}.easyeda.json")
-    open(fn, "w").write(json.dumps(doc))
+    open(fn, "w", encoding="utf-8").write(json.dumps(doc))
     return [fn]
 
 
@@ -777,7 +777,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
             A('    (fill (thermal_gap 0.5) (thermal_bridge_width 0.5)))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_pcb")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return [fn]
 
 
@@ -837,7 +837,7 @@ def export_altium(board: Board, outdir: str = "out") -> list[str]:
               f"|VX0=0mm|VY0=0mm|VX1={W}mm|VY1=0mm"
               f"|VX2={W}mm|VY2={H}mm|VX3=0mm|VY3={H}mm|")
     fn = os.path.join(outdir, f"{board.name}.PcbDocAscii")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return [fn]
 
 
@@ -905,7 +905,7 @@ def export_pcad(board: Board, outdir: str = "out") -> list[str]:
         A("  )")
     A(")")
     fn = os.path.join(outdir, f"{board.name}.pcb")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return [fn]
 
 
@@ -1029,7 +1029,7 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     A("</signals>")
     A("</board></drawing></eagle>")
     fn = os.path.join(outdir, f"{board.name}.brd")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return [fn]
 
 
@@ -1107,7 +1107,7 @@ def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
     doc = {"head": "1~1.7.5", "canvas": "CA~1200~1200~#FFFFFF~yes~#CCCCCC~10~1200~1200~line~10~pixel~5~400~300",
            "shape": shape, "title": board.meta.get("title", board.name)}
     fn = os.path.join(outdir, f"{board.name}.easyeda_sch.json")
-    open(fn, "w").write(json.dumps(doc))
+    open(fn, "w", encoding="utf-8").write(json.dumps(doc))
     return [fn]
 
 
@@ -1225,5 +1225,5 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
     A('  (sheet_instances (path "/" (page "1")))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_sch")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return [fn]
