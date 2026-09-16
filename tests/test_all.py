@@ -1315,7 +1315,7 @@ assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
 assert len(cast(dict[str, object], _call("fabs", {})["fabs"])) == 11
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert cast(float, _call("place", {})["cost"]) >= 0  # every tool invoked live
-assert cast(int, _call("route", {})["segments"]) >= 0
+assert cast(int, _call("route", {})["segments"]) > 0  # blinky must actually route
 assert _call("use_plugin", {"kind": "placer", "key": "compact"}) == {"active": "compact"}
 assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active": "diffusion"}
 with tempfile.TemporaryDirectory() as _md:
@@ -1427,15 +1427,19 @@ with tempfile.TemporaryDirectory() as _kbm:
     assert _kba["method"] in ("embeddings", "lexical"), _kba
     assert cast(list[dict[str, object]], _kba["passages"])[0]["doc"] == "N.md", _kba
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
-assert len(cast(list[object], _call("context", {})["fibers"])) >= 0  # fiber ledger
+_fibs = cast(list[dict[str, object]], _call("context", {})["fibers"])
+assert _fibs and all("uid" in f and "state" in f for f in _fibs), _fibs
+assert any(f.get("state") == "ACTIVE" for f in _fibs), _fibs  # board fiber live
 assert _call("context", {"op": "get", "key": "plugins"})["value"] is not None
 assert _call("lint", {})["errors"] == []
 assert _call("doctor", {})["ok"] is True
 assert _call("import_footprint", {"key": "fp",
     "path": os.path.join(EX, "usb_c_edge.fp")})["name"] == "USB_C_EDGE_GCT"
-assert "coverage" in _call("score", {})
-assert cast(float, _call("score", {"tidy": False})["total"]) >= 0
-_ext = cast(dict[str, object], _call("score", {"tidy": False})["extent"])
+_sc = _call("score", {})
+assert "coverage" in _sc, _sc  # tidy metrics (T1..T15 + coverage)
+_sc2 = _call("score", {"tidy": False})
+assert cast(float, _sc2["total"]) > 0, _sc2  # placement score, not vacuous >=0
+_ext = cast(dict[str, object], _sc2["extent"])
 assert 0 < cast(float, _ext["fill"]) <= 1.0, _ext
 _sh = cast(list[float], _ext["shrink"])
 assert len(_sh) == 2 and all(v > 0 for v in _sh), _ext  # shrink suggestion rides extent

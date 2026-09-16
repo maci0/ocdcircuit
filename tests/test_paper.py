@@ -385,8 +385,14 @@ fld.declare([])  # reconcile survives the failed entry
 assert "bad" not in fld.entries
 
 # Alg 8/9: classify + stale detection
+# Decline path: empty-import modules decline; dependents whose imports are
+# all declined follow; modules unreachable from stashed stay unclassified.
 acc, dec = classify({"a"}, {"ext"}, {"a": {"b", "c"}, "b": {"c"}, "c": set(), "z": {"ext"}})
-assert "b" in acc and "z" in dec and "c" not in dec | acc or True
+assert acc == {"a"} and dec == {"b", "c", "ext"}, (acc, dec)
+assert "z" not in acc | dec, (acc, dec)
+# Accept path: a module is accepted once any import is already accepted.
+acc2, dec2 = classify({"a"}, set(), {"a": {"b"}, "b": {"a"}})
+assert acc2 == {"a", "b"} and dec2 == set(), (acc2, dec2)
 st = stale_entries([Entry("e1", _fac, url="m1"), Entry("e2", _fac, url="m2")],
                    {"m1"}, set(), lambda u: {"m1"} if u == "m1" else set())
 assert [e.id for e in st] == ["e1"]
