@@ -22,6 +22,8 @@ texture, silkscreen, solder joints and copper are all real.
 
 Usage:  python -m tools.scanbench [outdir]      (default /tmp/scanbench)
         SCANBENCH_LLM=1 also runs the vision analysis stage.
+        SCANBENCH_REPS=n repeats each arm and reports medians (the analysis
+        stage is noisy; n=1 cannot separate two arms).
 """
 from __future__ import annotations
 
@@ -219,30 +221,53 @@ def main(argv: list[str]) -> int:
         def cast_paths(v: object) -> list[str] | None:
             return [str(x) for x in v] if isinstance(v, list) else None
 
-        def score(tag: str, **kw: Any) -> None:
-            """Recall of the schematic's reference designators, plus whether
-            the named parts survive into the draft."""
-            t0 = time.time()
-            out = os.path.join(root, f"scan-{tag}")
+        reps = int(os.environ.get("SCANBENCH_REPS", "1"))
+
+        def once(tag: str, n: int, **kw: Any) -> tuple[int, int, int, int] | None:
+            out = os.path.join(root, f"scan-{tag}" + (f"-{n}" if n else ""))
             shots_in = cast_paths(kw.pop("photos", None)) or photos
             try:
                 r = P.reverse(shots_in, out, board_mm=100.0, **kw)
             except Exception as e:        # noqa: BLE001 - report, keep going
                 print(f"  {tag:10s} FAILED: {type(e).__name__}: {e}")
-                return
+                return None
             rep = open(str(r["analysis"])).read() if "analysis" in r else ""
             found = [x for x in refs if x in rep]
             vals = [v for _, v in gtc
                     if v and v.split()[0][:6].upper() in rep.upper()]
             traced = sum(1 for ln in rep.splitlines()
                          if "<-->" in ln and "guess" not in ln.lower())
+            ok = 1 if r.get("draft_parts") else 0
+            return len(found), len(vals), traced, ok
+
+        def score(tag: str, **kw: Any) -> None:
+            """Recall of the schematic's reference designators, the parts it
+            names, and connections it traced without hedging.
+
+            Reported as a median over SCANBENCH_REPS runs: a single run of
+            this is noisy enough to invert an arm ordering (measured: the
+            same arm, same inputs, scored 3 and 15 traced connections on two
+            consecutive runs), so one number per arm cannot support a claim.
+            """
+            t0 = time.time()
+            got = [g for g in (once(tag, i if reps > 1 else 0, **dict(kw))
+                               for i in range(reps)) if g]
+            if not got:
+                return
+            def med(ix: int) -> float:
+                col = sorted(g[ix] for g in got)
+                mid = len(col) // 2
+                return (col[mid] if len(col) % 2 else
+                        (col[mid - 1] + col[mid]) / 2)
+            spread = ""
+            if reps > 1:
+                spread = ("  [refs " + "/".join(str(g[0]) for g in got)
+                          + ", traced " + "/".join(str(g[2]) for g in got) + "]")
             print(f"  {tag:10s} {time.time() - t0:5.0f}s  "
-                  f"refs {len(found):2d}/{len(refs)}  parts {len(vals):2d}/{len(gtc)}"
-                  f"  draft {r.get('draft_parts', '-')}p/{r.get('draft_nets', '-')}n"
-                  f"  traced {traced:2d}"
-                  f"  asked {len(cast_list(r.get('questions')))}")
-            if r.get("draft_error"):
-                print(f"             draft_error: {r['draft_error']}")
+                  f"refs {med(0):4.1f}/{len(refs)}  parts {med(1):4.1f}/{len(gtc)}"
+                  f"  traced {med(2):4.1f}"
+                  f"  drafts-parse {int(sum(g[3] for g in got))}/{len(got)}"
+                  f"{spread}")
 
         print(f"  ground truth: {len(refs)} refs, "
               f"model={os.environ.get('OCD_LLM_MODEL', '?')}")
