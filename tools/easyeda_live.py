@@ -53,6 +53,7 @@ class CDP:
             resp += self.s.recv(4096)
         self.oid = 0
         self.events: list[dict[str, object]] = []
+        self._events_max = 256  # drop oldest unmatched CDP noise
         self.lock = threading.Lock()
         self._closed = False
         threading.Thread(target=self._loop, daemon=True).start()
@@ -103,6 +104,8 @@ class CDP:
                     continue
                 with self.lock:
                     self.events.append(m)
+                    if len(self.events) > self._events_max:
+                        del self.events[:-self._events_max]
         except (ConnectionError, OSError):
             return
 
@@ -151,13 +154,15 @@ class CDP:
         r = self.call("Page.captureScreenshot", {"format": "png"})
         data = r.get("data", "")
         assert isinstance(data, str)
-        open(path, "wb").write(base64.b64decode(data))
+        with open(path, "wb") as fh:
+            fh.write(base64.b64decode(data))
         return path
 
 
 def page_ws(port: int = 9223) -> str:
-    targets = json.load(urllib.request.urlopen(
-        f"http://127.0.0.1:{port}/json/list", timeout=10))
+    with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/json/list", timeout=10) as resp:
+        targets = json.load(resp)
     page = next(t for t in targets if t.get("type") == "page")
     url = page["webSocketDebuggerUrl"]
     assert isinstance(url, str)
@@ -224,18 +229,17 @@ def pro_source(board: object, blank: str, ticket0: int = 200) -> str:
 
 def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
     """One fresh client per board (they crash ~15min under automation)."""
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from ocdcircuit import agent
-    text = open(ocd_path).read()
-    base = os.path.dirname(os.path.abspath(ocd_path))
+    # Board load + pro_source push stay gated until a client build survives
+    # the full chain (see RuntimeError below); only CDP/process lifecycle
+    # runs today — always tear down proc + profile dir on every exit path.
     proc, home = launch_client(port)
+    cdp: CDP | None = None
     try:
-        cdp = CDP(wait_ready(port))
-    except TimeoutError:
-        proc.terminate()
-        shutil.rmtree(home, ignore_errors=True)
-        raise RuntimeError("easyeda-pro not found (need local install)")
-    try:
+        try:
+            cdp = CDP(wait_ready(port))
+        except (TimeoutError, OSError, ConnectionError) as e:
+            raise RuntimeError(
+                "easyeda-pro not found (need local install)") from e
         pre = ("(async()=>{const R=window._EXTAPI_ROOT_;return " , ";})()")
         team = "/home/maci/Documents/EasyEDA-Pro/projects"
         name = os.path.basename(ocd_path).replace(".ocd", "")
@@ -252,8 +256,14 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
         raise RuntimeError("pro_source push untested (client kept crashing); "
                            "see module docstring for the proven chain")
     finally:
-        cdp.close()
+        if cdp is not None:
+            cdp.close()
         proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
         shutil.rmtree(home, ignore_errors=True)
     return out_png
 

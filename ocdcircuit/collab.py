@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 COLORS = ("#0f5c37", "#1d5fa8", "#8a2318", "#6b3fa0", "#b9770e", "#0e7c86",
           "#be185d", "#4d7c0f", "#1d4ed8", "#a16207", "#0f766e", "#7e22ce")
 HEARTBEAT_TIMEOUT = 15.0  # ponytail: prune lazily on access, no timer thread
+# Cap per SSE subscriber: an unbounded Queue never raises Full, so a slow
+# (or wedged) client would retain every push until OOM. Dropped revs catch
+# up via /collab/sync — same path the Full handler already documents.
+SUB_QUEUE_MAX = 64
 
 
 def color_for(name: str) -> str:
@@ -160,7 +164,7 @@ class Room:
                                  Callable[[], None]]:
         """One SSE stream: the queue gets every broadcast; the disposer
         unsubscribes (idempotent)."""
-        q: queue.Queue[dict[str, object]] = queue.Queue()
+        q: queue.Queue[dict[str, object]] = queue.Queue(maxsize=SUB_QUEUE_MAX)
         with self._mu:
             self._subs.append(q)
         armed = {"on": True}
@@ -277,10 +281,25 @@ if __name__ == "__main__":
     assert color_for("alice") == color_for("alice")
     # push at matching rev wins, broadcasts to the subscriber
     stream, unsub = r.subscribe()
+    assert stream.maxsize == SUB_QUEUE_MAX
     ok, rev = r.push("alice", 0, "board demo 40x30\npart R1 R0805 1k\n")
     assert ok and rev == 1
     got = stream.get(timeout=2)
     assert got["by"] == "alice"
+    # Full is reachable: fill without a reader, then one more put_nowait
+    while stream.qsize() < stream.maxsize:
+        stream.put_nowait({"pad": True})
+    try:
+        stream.put_nowait({"overflow": True})
+        raise AssertionError("unbounded subscriber queue")
+    except queue.Full:
+        pass
+    # drain so later broadcasts still land for this test
+    while True:
+        try:
+            stream.get_nowait()
+        except queue.Empty:
+            break
     # stale push loses: ok=False + current rev, client reloads
     ok2, rev2 = r.push("bob", 0, "board demo 40x30\npart C1 C0805 1n\n")
     assert not ok2 and rev2 == 1

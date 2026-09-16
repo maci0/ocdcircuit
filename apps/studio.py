@@ -4509,106 +4509,114 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": f"{len(shots)} photos is more than "
                                          "this endpoint takes (max 40)"})
                     return
+                # Photos + scan artifacts live under a temp dir the browser
+                # never opens (views are inlined as data URIs). Wipe it on
+                # every exit — success, bad base64, empty shots, scan error —
+                # or each /scan leaves multi-MB trees until the process dies.
+                import shutil
                 work = tempfile.mkdtemp(prefix="ocd-scan-")
-                paths: list[str] = []
                 try:
-                    for i, item in enumerate(shots):
-                        if not isinstance(item, dict):
-                            continue
-                        name = str(item.get("name", f"photo{i}"))
-                        # the side hint lives in the filename (pcbscan splits
-                        # on it), so keep the user's name, not a temp id
-                        safe = os.path.basename(name).replace("..", "_") or f"p{i}"
-                        blob = base64.b64decode(str(item.get("data", "")),
-                                                validate=True)
-                        dest = os.path.join(work, f"{i:02d}_{safe}")
-                        with open(dest, "wb") as fh:
-                            fh.write(blob)
-                        paths.append(dest)
-                except (ValueError, binascii.Error) as e:
-                    self._send({"error": f"bad upload (not base64): {e}"})
-                    return
-                if not paths:
-                    self._send({"error": "upload at least one photo"})
-                    return
-                docs: list[str] = []
-                for i, d in enumerate(req.get("docs") or []):
-                    if not isinstance(d, dict):
-                        continue
+                    paths: list[str] = []
                     try:
-                        blob = base64.b64decode(str(d.get("data", "")),
-                                                validate=True)
-                    except (ValueError, binascii.Error) as e:
-                        self._send({"error": f"bad doc upload (not base64): {e}"})
-                        return
-                    dp = os.path.join(
-                        work, "doc_" + os.path.basename(
-                            str(d.get("name", f"doc{i}"))).replace("..", "_"))
-                    with open(dp, "wb") as fh:
-                        fh.write(blob)
-                    docs.append(dp)
-                answers: dict[str, str] = {}
-                for qa in req.get("answers") or []:
-                    if isinstance(qa, dict) and qa.get("q"):
-                        answers[str(qa["q"])] = str(qa.get("a", ""))
-                from ocdcircuit.circuit import Board as _B
-                try:
-                    r = _B("scan").scan(
-                        photos=paths, outdir=os.path.join(work, "out"),
-                        board_mm=(_f(req.get("mm")) if req.get("mm") else None),
-                        note=str(req.get("note", "")),
-                        docs=docs or None, answers=answers or None,
-                        llm=bool(req.get("llm", True)))
-                except (ValueError, OSError, KeyError, RuntimeError,
-                        AssertionError) as e:
-                    self._send({"error": f"{type(e).__name__}: {e}"})
-                    return
-                draft = ""
-                if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
-                    with open(str(r["draft"]), encoding="utf-8") as fh:
-                        draft = fh.read()
-                report = ""
-                if isinstance(r.get("analysis"), str) and os.path.isfile(str(r["analysis"])):
-                    with open(str(r["analysis"]), encoding="utf-8") as fh:
-                        report = fh.read()
-                sides = cast(dict[str, object], r.get("sides", {}))
-                # The viewer needs pixels, not paths: the outdir is a server
-                # temp dir the browser cannot reach. Inline the two views it
-                # draws (stitch + contrast) as data URIs at 1024px — ~0.8MB,
-                # against multi-MB analysis text already in this response.
-                from ocdcircuit import pcbscan as _scanmod
-                views: dict[str, dict[str, str]] = {}
-                for side, sv in sides.items():
-                    if not isinstance(sv, dict):
-                        continue
-                    files = sv.get("files")
-                    if not isinstance(files, dict):
-                        continue
-                    got: dict[str, str] = {}
-                    for view in ("stitch", "contrast"):
-                        fp = files.get(view)
-                        if isinstance(fp, str) and os.path.isfile(fp):
-                            try:
-                                got[view] = _scanmod._b64_png(fp, 1024)
-                            except (OSError, ValueError):
+                        for i, item in enumerate(shots):
+                            if not isinstance(item, dict):
                                 continue
-                    if got:
-                        views[str(side)] = got
-                self._send({
-                    "sides": {k: {kk: vv for kk, vv in
-                                  cast(dict[str, object], v).items()
-                                  if kk != "files"}
-                              for k, v in sides.items()},
-                    "questions": r.get("questions", []),
-                    "draft": draft, "analysis": report,
-                    "draft_error": r.get("draft_error", ""),
-                    "wired": r.get("draft_wired", 0),
-                    "floating": r.get("draft_floating", []),
-                    "drc": r.get("draft_drc_errors", 0),
-                    "drc_lines": r.get("draft_drc", []),
-                    "review": r.get("review", {}),
-                    "views": views,
-                    "outdir": str(r.get("outdir", ""))})
+                            name = str(item.get("name", f"photo{i}"))
+                            # the side hint lives in the filename (pcbscan splits
+                            # on it), so keep the user's name, not a temp id
+                            safe = os.path.basename(name).replace("..", "_") or f"p{i}"
+                            blob = base64.b64decode(str(item.get("data", "")),
+                                                    validate=True)
+                            dest = os.path.join(work, f"{i:02d}_{safe}")
+                            with open(dest, "wb") as fh:
+                                fh.write(blob)
+                            paths.append(dest)
+                    except (ValueError, binascii.Error) as e:
+                        self._send({"error": f"bad upload (not base64): {e}"})
+                        return
+                    if not paths:
+                        self._send({"error": "upload at least one photo"})
+                        return
+                    docs: list[str] = []
+                    for i, d in enumerate(req.get("docs") or []):
+                        if not isinstance(d, dict):
+                            continue
+                        try:
+                            blob = base64.b64decode(str(d.get("data", "")),
+                                                    validate=True)
+                        except (ValueError, binascii.Error) as e:
+                            self._send({"error": f"bad doc upload (not base64): {e}"})
+                            return
+                        dp = os.path.join(
+                            work, "doc_" + os.path.basename(
+                                str(d.get("name", f"doc{i}"))).replace("..", "_"))
+                        with open(dp, "wb") as fh:
+                            fh.write(blob)
+                        docs.append(dp)
+                    answers: dict[str, str] = {}
+                    for qa in req.get("answers") or []:
+                        if isinstance(qa, dict) and qa.get("q"):
+                            answers[str(qa["q"])] = str(qa.get("a", ""))
+                    from ocdcircuit.circuit import Board as _B
+                    try:
+                        r = _B("scan").scan(
+                            photos=paths, outdir=os.path.join(work, "out"),
+                            board_mm=(_f(req.get("mm")) if req.get("mm") else None),
+                            note=str(req.get("note", "")),
+                            docs=docs or None, answers=answers or None,
+                            llm=bool(req.get("llm", True)))
+                    except (ValueError, OSError, KeyError, RuntimeError,
+                            AssertionError) as e:
+                        self._send({"error": f"{type(e).__name__}: {e}"})
+                        return
+                    draft = ""
+                    if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
+                        with open(str(r["draft"]), encoding="utf-8") as fh:
+                            draft = fh.read()
+                    report = ""
+                    if isinstance(r.get("analysis"), str) and os.path.isfile(str(r["analysis"])):
+                        with open(str(r["analysis"]), encoding="utf-8") as fh:
+                            report = fh.read()
+                    sides = cast(dict[str, object], r.get("sides", {}))
+                    # The viewer needs pixels, not paths: the outdir is a server
+                    # temp dir the browser cannot reach. Inline the two views it
+                    # draws (stitch + contrast) as data URIs at 1024px — ~0.8MB,
+                    # against multi-MB analysis text already in this response.
+                    from ocdcircuit import pcbscan as _scanmod
+                    views: dict[str, dict[str, str]] = {}
+                    for side, sv in sides.items():
+                        if not isinstance(sv, dict):
+                            continue
+                        files = sv.get("files")
+                        if not isinstance(files, dict):
+                            continue
+                        got: dict[str, str] = {}
+                        for view in ("stitch", "contrast"):
+                            fp = files.get(view)
+                            if isinstance(fp, str) and os.path.isfile(fp):
+                                try:
+                                    got[view] = _scanmod._b64_png(fp, 1024)
+                                except (OSError, ValueError):
+                                    continue
+                        if got:
+                            views[str(side)] = got
+                    self._send({
+                        "sides": {k: {kk: vv for kk, vv in
+                                      cast(dict[str, object], v).items()
+                                      if kk != "files"}
+                                  for k, v in sides.items()},
+                        "questions": r.get("questions", []),
+                        "draft": draft, "analysis": report,
+                        "draft_error": r.get("draft_error", ""),
+                        "wired": r.get("draft_wired", 0),
+                        "floating": r.get("draft_floating", []),
+                        "drc": r.get("draft_drc_errors", 0),
+                        "drc_lines": r.get("draft_drc", []),
+                        "review": r.get("review", {}),
+                        "views": views,
+                        "outdir": str(r.get("outdir", ""))})
+                finally:
+                    shutil.rmtree(work, ignore_errors=True)
             elif self.path == "/doctor":  # tooling health, no board needed
                 from ocdcircuit.circuit import Board as _B
                 r = _B("doctor").doctor()
