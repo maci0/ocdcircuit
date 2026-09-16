@@ -2887,7 +2887,9 @@ def _ok_username(name: str) -> bool:
 
 def _read_users() -> dict[str, tuple[str, str, str]]:
     """name -> (salt_hex, hash_hex, display). Missing file = no accounts yet.
-    display is a 4th colon field; old 3-field lines read as display=name."""
+    display is a 4th colon field; old 3-field lines read as display=name.
+    Other OSError (permission, EISDIR, I/O) propagates: treating those as
+    empty used to flip needs_setup and let signup wipe the real roster."""
     out: dict[str, tuple[str, str, str]] = {}
     try:
         with open(_users_path(), encoding="utf-8") as f:
@@ -2896,8 +2898,8 @@ def _read_users() -> dict[str, tuple[str, str, str]]:
                 if len(parts) >= 3 and parts[0]:
                     disp = parts[3] if len(parts) > 3 and parts[3] else parts[0]
                     out[parts[0]] = (parts[1], parts[2], disp)
-    except OSError:
-        pass
+    except FileNotFoundError:
+        return out
     return out
 
 
@@ -2908,8 +2910,8 @@ def _set_display(name: str, display: str) -> None:
     with _AUTH_MU:
         try:
             lines = open(_users_path(), encoding="utf-8").read().splitlines()
-        except OSError:
-            raise ValueError("no accounts yet")
+        except FileNotFoundError:
+            raise ValueError("no accounts yet") from None
         out = []
         found = False
         for ln in lines:
@@ -2934,10 +2936,12 @@ def _write_user(name: str, password: str) -> None:
         path = _users_path()
         try:
             cur = open(path, encoding="utf-8").read()
-        except OSError:
+        except FileNotFoundError:
             cur = ""
         # Refuse a duplicate under the same lock that writes — two concurrent
-        # signups for the same name must not both land.
+        # signups for the same name must not both land. Other OSError
+        # (unreadable file) must not fall through to an empty cur + replace:
+        # that wiped every existing account.
         for ln in cur.splitlines():
             if ln.split(":", 1)[0] == name:
                 raise ValueError(f"{name} exists — log in instead")
@@ -2953,8 +2957,9 @@ def _write_user(name: str, password: str) -> None:
                 if have and not have.endswith("\n"):
                     f.write("\n")
                 f.write(GITIGNORE_AUTH)
-    except OSError:
-        pass
+    except OSError as e:
+        print(f"studio: could not append {_USERS_FILE} to .gitignore: {e}",
+              file=sys.stderr)
 
 
 def _check_user(name: str, password: str) -> bool:
@@ -3358,7 +3363,7 @@ def _board_digest() -> str:
     header, parts, nets. Keeps a weak model from hallucinating refs."""
     try:
         b = agent.loads(H.src_text, base=BASE)
-    except Exception:
+    except (agent.ParseError, ValueError, KeyError, AssertionError, OSError):
         return f"(the current {os.path.basename(SRC)} does not parse)"
     parts = ", ".join(f"{r}={p.fp}" + (f"({p.value})" if p.value else "")
                       for r, p in sorted(b.parts.items()))
@@ -4054,8 +4059,8 @@ class H(http.server.BaseHTTPRequestHandler):
                     # the "one studio, one owner" rule died with realtime collab.
                     try:
                         _write_user(name, password)
-                    except ValueError as e:
-                        self._send({"error": str(e)})
+                    except (ValueError, OSError) as e:
+                        self._send({"error": f"{type(e).__name__}: {e}"})
                         return
                     self._send({"ok": True, "user": name}, cookie=_new_session(name))
             elif self.path == "/auth/login":

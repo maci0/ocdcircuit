@@ -610,6 +610,12 @@ assert [r["fab"] for r in _qrows][:2] == ["jlc", "allpcb"], _qrows[:3]
 _jasm = cast(dict[str, object], [r for r in _qrows if r["fab"] == "jlc"][0]["asm"])
 assert _jasm["parts_per_board"] == 0.03 and _jasm["sources"] == {"manual": 2}, _jasm
 assert _jasm["unpriced"] == [], _jasm
+# unknown footprint must not invent a 2-pad joint count (silent misprice)
+try:
+    _qq._pads("NOPE", {})
+    raise AssertionError("should have raised on unknown footprint")
+except ValueError as e:
+    assert "unknown footprint" in str(e), str(e)
 # cents reconcile: fees + parts*qty == total under decimal (price=0.014
 # used to leave the half-up total a cent below fees+parts*qty)
 _qcent = agent.loads("board qc 40x30 2L\npart R1 R0805 10k price=0.014\n"

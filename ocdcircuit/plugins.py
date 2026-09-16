@@ -1812,9 +1812,10 @@ def _price_offline(lcsc: str) -> float | None:
 class KnollPrice(Plugin[dict[str, object]]):
     """Unit-price provider: knoll's live JLC lookup (LCSC exact, MPN exact).
     Needs network + knoll's checkout (KNOLL_SRC or ~/Desktop/knoll/src);
-    unreachable/absent → unpriced, never an error. Loaded via importlib spec
-    so knoll stays an undeclared checkout, not a dependency and never on
-    sys.path. cordis-boundary: network emission, withheld until run()."""
+    missing/broken checkout → unpriced (logged once), never an error — knoll
+    is an optional undeclared checkout, not a declared dependency. Loaded via
+    importlib spec so it never lands on sys.path. cordis-boundary: network
+    emission, withheld until run()."""
     kind, key = "price", "knoll"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
@@ -1829,11 +1830,19 @@ class KnollPrice(Plugin[dict[str, object]]):
         return {"price": v, "source": src}
 
 
+_KNOLL_WARNED = False  # one stderr line per process for knoll load/lookup fails
+
+
 def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
+    """Live JLC lookup via an optional knoll checkout. Missing file → try
+    next candidate / unpriced. Load or lookup failure → unpriced, logged
+    once (swallowing without a trace hid a broken checkout forever)."""
     import importlib.util
     import math
     import os
+    import sys
     from . import envcfg
+    global _KNOLL_WARNED
     cands = [envcfg.knoll_src(), os.path.expanduser("~/Desktop/knoll/src")]
     for cand in cands:
         if not cand:
@@ -1847,7 +1856,11 @@ def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
             m = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(m)
             r = m.lookup_jlc(lcsc, mpn)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — optional checkout; stay unpriced
+            if not _KNOLL_WARNED:
+                print(f"price:knoll failed ({mod}): {type(e).__name__}: {e}",
+                      file=sys.stderr)
+                _KNOLL_WARNED = True
             return None, "unpriced"
         if not isinstance(r, dict) or r.get("price") is None:
             return None, "unpriced"
@@ -1909,6 +1922,9 @@ def _jlc_api_creds() -> tuple[str, str, str] | None:
     return None
 
 
+_JLC_API_WARNED = False  # one stderr line per process for jlc-api transport fails
+
+
 def _jlc_api_price(lcsc: str) -> float | None:
     """One unit price via the official parts API, else None. Any failure —
     no creds, 401 (app still in review), network, bad shape — is unpriced."""
@@ -1921,6 +1937,7 @@ def _jlc_api_price(lcsc: str) -> float | None:
     import time
     import urllib.error
     import urllib.request
+    global _JLC_API_WARNED
     creds = _jlc_api_creds()
     if not creds or not lcsc:
         return None
@@ -1945,7 +1962,13 @@ def _jlc_api_price(lcsc: str) -> float | None:
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read(8 << 20))
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        # once: a multi-part quote must not drown the log in identical lines
+        if not _JLC_API_WARNED:
+            import sys
+            print(f"price:jlc-api failed: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+            _JLC_API_WARNED = True
         return None
     # untrusted body: tolerate any shape; find our LCSC in the page
     try:

@@ -178,6 +178,32 @@ def main() -> None:
     assert _st_ui._path_for_log("/tmp/x/.users/bob") == "/tmp/x/.users/*"
     assert "alice" not in _st_ui._path_for_log("boards/.users/alice/y.ocd")
     assert _st_ui._path_for_log("boards/blinky.ocd") == "boards/blinky.ocd"
+    # unreadable .ocd-users must not look like "no accounts" — that opened a
+    # wipe-on-signup path. Only a missing file means empty.
+    _td_u = tempfile.mkdtemp(prefix="ocd-users-")
+    _upath = os.path.join(_td_u, ".ocd-users")
+    open(_upath, "w", encoding="utf-8").write("alice:aa:bb\n")
+    _orig_up = _st_ui._users_path
+    _st_ui._users_path = lambda: _upath  # type: ignore[method-assign]
+    try:
+        assert "alice" in _st_ui._read_users()
+        os.remove(_upath)
+        assert _st_ui._read_users() == {}  # missing ≡ no accounts yet
+        os.mkdir(_upath)  # path exists but is not a file → OSError, not empty
+        try:
+            _st_ui._read_users()
+            raise AssertionError("directory-as-users-file looked like no accounts")
+        except OSError:
+            pass
+        try:
+            _st_ui._write_user("eve", "password12")
+            raise AssertionError("signup overwrote an unreadable users path")
+        except OSError:
+            pass
+        assert os.path.isdir(_upath)  # not replaced with a wiped file
+    finally:
+        _st_ui._users_path = _orig_up  # type: ignore[method-assign]
+        shutil.rmtree(_td_u)
     print("session/auth cache bounds ok")
 
     port = free_port()

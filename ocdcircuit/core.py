@@ -880,6 +880,7 @@ class Loader:
                     e.fiber = self._spawn(e)
                 swapped.append(e)
         except Exception:
+            import sys
             for e in swapped:
                 try:
                     if e.fiber is not None:
@@ -890,8 +891,9 @@ class Loader:
                         e.factory = backup[e.id]
                         if not e.disabled:
                             e.fiber = self._spawn(e)
-                except Exception:
-                    pass
+                except Exception as re:  # noqa: BLE001 — still re-raise below
+                    print(f"registry: remount rollback failed for {e.id}: "
+                          f"{type(re).__name__}: {re}", file=sys.stderr)
             raise
 
     # --- declarative entries (paper §5.2.1): per-field least-disruptive ---

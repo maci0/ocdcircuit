@@ -72,14 +72,17 @@ JLC_CONFIRM = 0.45
 
 
 def _pads(fp: str, lib: object) -> int:
+    """Pad/hole/slot count for SMT joint fees. Unknown footprints used to
+    invent 2 pads — that silently under-priced QFNs and over-priced jumpers."""
     from typing import cast
     from .parts import pads_of
     from .types import Footprint
+    assert isinstance(lib, dict)
     try:
-        assert isinstance(lib, dict)
         return len(pads_of(fp, cast(dict[str, Footprint], lib)))
     except KeyError:
-        return 2
+        raise ValueError(
+            f"unknown footprint {fp!r} (cannot price assembly joints)") from None
 
 
 def assembly_parts(board: Board) -> list[dict[str, object]]:
