@@ -1956,6 +1956,16 @@ function scanConfirm(ref){
     scanEdit(ref, true);
     return;
   }
+  // Confirming a NAMED value only clears the hedge flag: the draft line
+  // already carries this value, so there is nothing to rewrite — but the
+  // trailing model note ("marking likely 45DB041B") described doubt that no
+  // longer applies, and leaving it would re-flag the part on reload.
+  // Strip a trailing `# ...` note only; x/y/attrs are untouched.
+  const {lines,i}=scanPartLine(ref);
+  if(i>=0&&/#/.test(lines[i])){
+    lines[i]=lines[i].split('#')[0].trimEnd();
+    scanSetDraft(lines);
+  }
   p.uncertain=false;p.note='';
   scanDraw();scanRows();
   $('scanstat').textContent=`${ref} confirmed as ${p.fp} ${p.value}`;
@@ -1987,6 +1997,18 @@ function scanRemove(ref){
   const {lines,i}=scanPartLine(ref);
   if(i<0){$('scanstat').textContent=`${ref} not found in draft text`;return;}
   lines.splice(i,1);
+  // a removed part must not leave dangling pins: a net naming a part that
+  // no longer exists fails the whole draft ("net GND: unknown part 'U5'").
+  // drop its pins, and drop nets left with fewer than two pins.
+  const pinre=new RegExp(`\\b${ref}\\.\\S+`,'g');
+  for(let k=lines.length-1;k>=0;k--){
+    const ln=lines[k];
+    if(!ln.startsWith('net '))continue;
+    const cut=ln.replace(pinre,'').replace(/<-->\s*<-->/g,'').trim();
+    const pins=(cut.match(/[A-Za-z0-9_]+\.[A-Za-z0-9_]+/g)||[]).length;
+    if(pins<2)lines.splice(k,1);
+    else lines[k]=cut;
+  }
   scanRev.parts=(scanRev.parts||[]).filter(x=>x.ref!==ref);
   scanSetDraft(lines);scanDraw();scanRows();
   scanCommit(`${ref} removed — rebuilding`);
