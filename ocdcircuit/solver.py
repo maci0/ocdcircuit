@@ -44,15 +44,31 @@ def _near(board: Board) -> list[tuple[str, str, float]]:
     return out
 
 
-def wirelength(board: Board) -> float:
+def wirelength(board: Board, pads: dict[tuple[str, str], XY] | None = None) -> float:
+    """Star-model wirelength. `pads` is an optional (ref, pin) → rotated
+    offset map (see _pad_cache): cost() is called ~5x per repair round and
+    walks every pin of every net, and resolving the offset per pin is the
+    single hottest call in a placement run. Offsets are static while parts
+    only move, so the caller may hoist them; without one this resolves per
+    pin exactly as before."""
     tot = 0.0
+    parts = board.parts
     for net in board.nets.values():
         pts = []
         for ref, pin in net.pins:
-            if ref in board.parts:
-                pts.append(board.pad_pos(ref, pin))
+            p = parts.get(ref)
+            if p is not None:
+                if pads is not None:
+                    off = pads.get((ref, str(pin)))
+                    if off is None:
+                        pts.append(board.pad_pos(ref, pin))
+                        continue
+                    pts.append((p.x + off[0], p.y + off[1]))
+                else:
+                    pts.append(board.pad_pos(ref, pin))
+        x0, y0 = pts[0] if pts else (0.0, 0.0)
         for i in range(1, len(pts)):
-            tot += abs(pts[i][0] - pts[0][0]) + abs(pts[i][1] - pts[0][1])
+            tot += abs(pts[i][0] - x0) + abs(pts[i][1] - y0)
     return tot
 
 
@@ -81,20 +97,65 @@ def _keepout_cost(board: Board) -> float:
     return c
 
 
-def cost(board: Board) -> float:
+def _overlap_hits(np: Any, box: list[tuple[float, float, float, float]]) -> int:
+    """Count overlapping part pairs (i<j) — the O(n²) half of cost().
+
+    Chunked over rows like _repel_block: the full broadcast would
+    materialise an n×n bool pair (14.7M pairs / 29MB at n=5,420). Returns
+    the pair count only; the caller does the float accumulation, because
+    summing 1e6 k times is not k*1e6 in float64 and cost() picks seeds.
+    """
+    a = np.asarray(box, dtype=np.float64)
+    n = a.shape[0]
+    x, y, w, h = a[:, 0], a[:, 1], a[:, 2], a[:, 3]
+    total = 0
+    step = max(64, CHUNK_PAIRS // max(1, n))
+    for i0 in range(0, n, step):
+        i1 = min(n, i0 + step)
+        ox = np.abs(x[i0:i1, None] - x[None, :]) < (w[i0:i1, None] + w[None, :])
+        oy = np.abs(y[i0:i1, None] - y[None, :]) < (h[i0:i1, None] + h[None, :])
+        hit = ox & oy
+        # upper triangle only (j > i), matching the scalar loop's pairs
+        rows = np.arange(i0, i1)
+        hit &= rows[:, None] < np.arange(n)[None, :]
+        total += int(hit.sum())
+    return total
+
+
+def cost(board: Board, pads: dict[tuple[str, str], XY] | None = None) -> float:
+    """Placement cost. `pads` is an optional hoisted pad-offset map passed
+    straight to wirelength(); omit it and nothing changes."""
     parts = list(board.parts.values())
-    c = wirelength(board)
+    c = wirelength(board, pads)
     # Overlap scan is O(n^2) — 14.7M pairs on discrete6502, each asking for two
     # boxes four times. Precompute (x, y, w/2+0.2, h/2+0.2) per part once;
     # aw+bw then equals (aw+bw)/2+0.4 exactly, so placements do not move.
     box = [(p.x, p.y, p.wh()[0] / 2 + 0.2, p.wh()[1] / 2 + 0.2)
            for p in parts]
-    for i in range(len(box)):
-        ax, ay, aw, ah = box[i]
-        for j in range(i + 1, len(box)):
-            bx, by, bw, bh = box[j]
-            if abs(ax - bx) < aw + bw and abs(ay - by) < ah + bh:
-                c += 1e6
+    np = _numpy()
+    hits = -1
+    if np is not None and len(box) >= 64:
+        hits = _overlap_hits(np, box)
+    if hits >= 0:
+        # Detection is vectorized; the accumulation is deliberately NOT.
+        # c += 1e6 k times differs from c + k*1e6 in float64 at realistic
+        # (wirelength, overlap-count) pairs — measured 665/4000 random draws
+        # over c0∈[1e2,1e7], k∈[0,200k] — and cost() picks seeds, so a drift
+        # here silently changes placements. sum(repeat(1e6, k), c) is also
+        # NOT equivalent (501/3000 mismatches: different accumulation
+        # strategy). The adds stay one at a time, in this order.
+        # ponytail: ~0.4s per cost() at 14.7M overlaps on discrete6502; the
+        # upgrade path is math.fsum-style exact accumulation with a proof,
+        # not a multiply.
+        for _ in range(hits):
+            c += 1e6
+    else:
+        for i in range(len(box)):
+            ax, ay, aw, ah = box[i]
+            for j in range(i + 1, len(box)):
+                bx, by, bw, bh = box[j]
+                if abs(ax - bx) < aw + bw and abs(ay - by) < ah + bh:
+                    c += 1e6
     m = edge_margin(board)
     lib = board._lib()
     for p in parts:
@@ -372,28 +433,37 @@ def _diffuse_np(board: Board, np: Any, iters: int, seed: int,
     pads = _pad_cache(board)
     near_idx = [(idx[a], idx[b], w) for a, b, w in near
                 if a in idx and b in idx]
+    # A net's centroid is one value per iteration, but the old loop rebuilt
+    # it once per member part: sum(len(net.pins)) over (part, net) pairs
+    # instead of sum(len(net.pins)) over nets — 409x the work on virgo
+    # (1.81M point-builds per iteration vs 4.4k). Resolve each net's pin
+    # list once here, then compute each centroid once below and reuse it for
+    # every member. Same pins, same order, same arithmetic.
+    net_pins: dict[str, list[tuple[Part, XY]]] = {}
+    for nname in {nn for r in refs for nn in mem[r]}:
+        pl = [(board.parts[rr], pads.get((rr, str(pn)), (0.0, 0.0)))
+              for rr, pn in board.nets[nname].pins if rr in board.parts]
+        if len(pl) > 1:
+            net_pins[nname] = pl
     if frames is not None:
         frames.append(_snap(board))
     for t in range(iters):
         T = 1 - t / iters
         step = (0.25 + 0.65 * T) * (0.3 + 0.7 * T)
         F = np.zeros((n, 2))
-        # springs to net centroids (pad-accurate via cache)
+        # springs to net centroids (pad-accurate via cache), one per net
+        cent: dict[str, XY] = {}
+        for nname, pl in net_pins.items():
+            k = len(pl)
+            cent[nname] = (sum(q.x + off[0] for q, off in pl) / k,
+                           sum(q.y + off[1] for q, off in pl) / k)
         for r in refs:
             i = idx[r]
             for nname in mem[r]:
-                net = board.nets[nname]
-                pts = []
-                for rr, pn in net.pins:
-                    if rr in board.parts:
-                        q = board.parts[rr]
-                        rx, ry = pads.get((rr, str(pn)), (0.0, 0.0))
-                        pts.append((q.x + rx, q.y + ry))
-                if len(pts) > 1:
-                    cx = sum(q[0] for q in pts) / len(pts)
-                    cy = sum(q[1] for q in pts) / len(pts)
-                    F[i, 0] += pull * (cx - pos[i, 0])
-                    F[i, 1] += pull * (cy - pos[i, 1])
+                c = cent.get(nname)
+                if c is not None:
+                    F[i, 0] += pull * (c[0] - pos[i, 0])
+                    F[i, 1] += pull * (c[1] - pos[i, 1])
         for a, b, w in near_idx:
             F[a] += 0.05 * w * (pos[b] - pos[a])
             F[b] += 0.05 * w * (pos[a] - pos[b])
@@ -573,6 +643,9 @@ def _repair(board: Board, rounds: int = 8) -> None:
     lib = board._lib()
     parts = [p for p in board.parts.values() if p.ref not in fx]
 
+    np = _numpy()
+    marg = edge_margin(board)  # hoisted: rescans every constraint per call
+
     def _bad(p: object) -> int:
         assert isinstance(p, Part)
         pw, ph = p.wh()
@@ -585,25 +658,66 @@ def _repair(board: Board, rounds: int = 8) -> None:
                     abs(p.y - q.y) < (ph + qh) / 2 + 0.4):
                 n += 1
         if not lib.get(p.fp, {}).get("edge"):
-            m = edge_margin(board)
-            if not (pw / 2 + m <= p.x <= board.width - pw / 2 - m and
-                    ph / 2 + m <= p.y <= board.height - ph / 2 - m):
+            if not (pw / 2 + marg <= p.x <= board.width - pw / 2 - marg and
+                    ph / 2 + marg <= p.y <= board.height - ph / 2 - marg):
                 n += 1
         return n
 
+    def _worst() -> Part:
+        """The most-conflicted movable part.
+
+        max(parts, key=_bad) ran an O(n) python scan per part — O(n·m) per
+        round (2.9M wh() calls on virgo). Same counts, same first-wins tie
+        break as max/argmax; falls back to the scalar key when numpy is
+        absent or the board is small enough that setup dominates.
+        """
+        if np is None or len(parts) < 64:
+            return max(parts, key=_bad)
+        allp = list(board.parts.values())
+        ax = np.fromiter((q.x for q in allp), float, len(allp))
+        ay = np.fromiter((q.y for q in allp), float, len(allp))
+        aw = np.fromiter((q.size[0] for q in allp), float, len(allp))
+        ah = np.fromiter((q.size[1] for q in allp), float, len(allp))
+        mi = np.fromiter((i for i, q in enumerate(allp) if q.ref not in fx),
+                         int, len(parts))
+        px, py, pw, ph = ax[mi], ay[mi], aw[mi], ah[mi]
+        counts = np.zeros(len(parts), dtype=np.int64)
+        step = max(64, CHUNK_PAIRS // max(1, len(allp)))
+        for i0 in range(0, len(parts), step):
+            i1 = min(len(parts), i0 + step)
+            ox = (np.abs(px[i0:i1, None] - ax[None, :])
+                  < (pw[i0:i1, None] + aw[None, :]) / 2 + 0.4)
+            oy = (np.abs(py[i0:i1, None] - ay[None, :])
+                  < (ph[i0:i1, None] + ah[None, :]) / 2 + 0.4)
+            hit = ox & oy
+            hit[np.arange(i1 - i0), mi[i0:i1]] = False  # q is p
+            counts[i0:i1] = hit.sum(1)
+        off = ~((pw / 2 + marg <= px) & (px <= board.width - pw / 2 - marg)
+                & (ph / 2 + marg <= py) & (py <= board.height - ph / 2 - marg))
+        edge_fp = np.fromiter(
+            (bool(lib.get(q.fp, {}).get("edge")) for q in parts),
+            bool, len(parts))
+        counts += (off & ~edge_fp).astype(np.int64)
+        return parts[int(counts.argmax())]
+
+    # repair only translates parts — no rotation, no footprint change — so
+    # the rotated pad offsets are constant for the whole run. Resolving them
+    # per pin inside cost() was the hottest call left (467k pad_pos per
+    # 20-iter virgo placement); hoist once, hand to every cost() below.
+    pads = _pad_cache(board)
     for _ in range(rounds):
         if not parts:
             return
-        p = max(parts, key=_bad)
+        p = _worst()
         if _bad(p) == 0:
             return
-        m = edge_margin(board)
+        m = marg
         pw, ph = p.wh()
-        bx, by, bc = p.x, p.y, cost(board)
+        bx, by, bc = p.x, p.y, cost(board, pads)
         for _ in range(12):
             p.x = min(max(rng.uniform(bx - 8, bx + 8), pw / 2 + m), board.width - pw / 2 - m)
             p.y = min(max(rng.uniform(by - 8, by + 8), ph / 2 + m), board.height - ph / 2 - m)
-            c = cost(board)
+            c = cost(board, pads)
             if c < bc:
                 bx, by, bc = p.x, p.y, c
         p.x, p.y = bx, by
@@ -883,7 +997,7 @@ def _pad_cache(board: Board) -> dict[tuple[str, str], XY]:
     and the diffusion loops read an offset per pin per net per iteration —
     millions of `rot_xy` calls as well. Both are static for a placement run,
     so resolve and rotate once here; callers add the part position."""
-    from .parts import pads_of, pin_offset
+    from .parts import pads_of
     lib = board._lib()
     out: dict[tuple[str, str], XY] = {}
     for ref, p in board.parts.items():
@@ -891,11 +1005,9 @@ def _pad_cache(board: Board) -> dict[tuple[str, str], XY]:
             pads = pads_of(p.fp, lib)
         except KeyError:
             continue
-        for pin in pads:
-            try:
-                dx, dy = pin_offset(p.fp, pin, lib)
-            except KeyError:
-                continue
+        for pin, (dx, dy) in pads.items():
+            # pads_of already IS the offset — pin_offset() would rebuild the
+            # same dict per pin (O(pins²) per part).
             out[(ref, str(pin))] = p.rot_xy(dx, dy)
     return out
 
@@ -1200,6 +1312,12 @@ def assign_layers(board: Board) -> None:
                 return sum(1 for bb in boxes[ll] if not (
                     bx[2] < bb[0] or bx[0] > bb[2] or bx[3] < bb[1] or bx[1] > bb[3]))
             net.layer = min(boxes, key=hits)
+        elif not 0 <= net.layer < board.layers:
+            # `route N on 9` on a 2-layer board: lint reports it as an error
+            # and that is where the user is told, but the router must not
+            # die on it (it did, with a bare `KeyError: 9` from this dict).
+            # Clamp into the stackup and route the net somewhere real.
+            net.layer = max(0, min(board.layers - 1, net.layer))
         boxes[net.layer].append(bx)
     if "GND" in board.nets and board.nets["GND"].layer is None:
         board.nets["GND"].layer = board.layers - 1

@@ -510,6 +510,15 @@ from ocdcircuit import fab
 assert fab.get("oshpark")["min_drill"] == 0.508
 assert fab.get("jlc-flex")["layers"] == (1, 2, 4)
 assert fab.get("jlc-flex")["finishes"] == ("ENIG",)
+# every fab has a monogram badge; logo() renders it as an inline-SVG data URI
+assert sorted(fab.MARKS) == fab.list_fabs(), (sorted(fab.MARKS), fab.list_fabs())
+_lsvg = fab.logo("oshpark")
+assert _lsvg.startswith("data:image/svg+xml,") and "OSH" in _lsvg, _lsvg[:80]
+try:
+    fab.logo("nope")
+    assert False, "logo must KeyError like get()"
+except KeyError:
+    pass
 # all eleven profiles load and run DRC through the generic drc:fab path
 assert len(fab.list_fabs()) == 11, fab.list_fabs()
 _bfab = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
@@ -1513,7 +1522,8 @@ assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "13/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch", "inspector"}
 assert "xraygo" in _studio.SLOTS.render("view", None)  # x-ray compare controls
-assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export button
+assert "id=m-board" in _studio.SLOTS.render("toolbar", None)  # menus, not buttons
+assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export action kept
 _spp = _studio.H._build("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n", False, {})
 assert cast(dict[str, object], _spp["pours"]) == {"GND": [0]}
@@ -3158,6 +3168,15 @@ for _ws, _want in (("route 5V  on 1", "layer"), ("power  VCC  GND", "power"),
 assert agent.parse_constraint("route 5V on 1") == {"t": "layer", "net": "5V",
                                                    "layer": 1}
 
+# an out-of-range route layer is a lint error, but the router must survive
+# it: it used to die on a bare `KeyError: 9` from a dict keyed by layer.
+_oob = agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart R2 R0805 1k\n"
+                   "net N :: R1.1 <--> R2.1\nroute N on 9\n")
+_oob.place(seeds=1, iters=30)
+assert _oob.route_board() > 0, "out-of-range layer stopped the router"
+assert any("layer 9" in e for e in cast(list[str], _oob.lint()["errors"]))
+assert _oob.nets["N"].layer == 1, _oob.nets["N"].layer  # clamped into stackup
+
 assert "scan:photo" in Board("scanreg").plugins().list()
 try:
     import numpy as _np_probe  # noqa: F401
@@ -3189,5 +3208,83 @@ else:
     assert "a PSU board" in _ctx and "Q: Volts?\nA: 12V" in _ctx
     assert _pcbscan.extract_questions(
         "```questions\n1. What is it from?\n```") == ["What is it from?"]
+
+# --- perf-review: the fast paths must stay equivalent to the scalar ones ---
+# _overlap_hits replaced cost()'s O(n^2) python scan; a drift here is a
+# silent placement-quality change, not just a slow test.
+from ocdcircuit import solver as _psv  # noqa: E402
+from ocdcircuit.util import numpy as _pnp  # noqa: E402
+
+def _scalar_hits(box: list[tuple[float, float, float, float]]) -> int:
+    k = 0
+    for i in range(len(box)):
+        ax, ay, aw, ah = box[i]
+        for j in range(i + 1, len(box)):
+            bx, by, bw, bh = box[j]
+            if abs(ax - bx) < aw + bw and abs(ay - by) < ah + bh:
+                k += 1
+    return k
+
+_np_h = _pnp()
+if _np_h is not None:
+    import random as _prng
+    _pr = _prng.Random(11)
+    for _t in range(40):
+        # ties and exact-touch coords included: that is where < vs <= drifts
+        _box = [(_pr.choice([0.0, 1.0, 2.5, _pr.uniform(0, 20)]),
+                 _pr.choice([0.0, 1.0, _pr.uniform(0, 20)]),
+                 _pr.choice([0.5, 1.0]), _pr.choice([0.5, 1.0]))
+                for _ in range(_pr.randint(64, 160))]
+        assert _psv._overlap_hits(_np_h, _box) == _scalar_hits(_box), \
+            "vector overlap count drifted from the scalar scan"
+
+# pin_offset reads one pad directly; it must still agree with pads_of and
+# still raise KeyError on an unknown pin.
+from ocdcircuit.parts import FOOTPRINTS as _PF, pads_of as _pads_of  # noqa: E402
+from ocdcircuit.parts import pin_offset as _pin_off  # noqa: E402
+
+for _pofp in _PF:
+    for _popin, _pooff in _pads_of(_pofp).items():
+        assert _pin_off(_pofp, _popin) == _pooff, \
+            f"pin_offset drift {_pofp}:{_popin}"
+try:
+    _pin_off(next(iter(_PF)), "__nope__")
+    raise AssertionError("pin_offset must raise KeyError on an unknown pin")
+except KeyError:
+    pass
+
+# _grid_pairs splits oversized boxes out of the spatial hash; it is a broad
+# phase, so the result must stay a SUPERSET of the naive cell product (a
+# lost pair is a missed DRC error) and must stay sorted (report stability).
+from ocdcircuit.drc import _grid_pairs as _gp  # noqa: E402
+
+def _gp_naive(bbox: list[tuple[float, float, float, float]],
+              cell: float) -> set[frozenset[int]]:
+    grid: dict[tuple[int, int], list[int]] = {}
+    for i, (x0, y0, x1, y1) in enumerate(bbox):
+        for gx in range(int(x0 // cell), int(x1 // cell) + 1):
+            for gy in range(int(y0 // cell), int(y1 // cell) + 1):
+                grid.setdefault((gx, gy), []).append(i)
+    out: set[frozenset[int]] = set()
+    for mem in grid.values():
+        for ai in range(len(mem)):
+            for bj in mem[ai + 1:]:
+                out.add(frozenset((mem[ai], bj)))
+    return out
+
+_gprng = _prng.Random(5)
+for _ in range(60):
+    _gpbox = []
+    for _ in range(_gprng.randint(2, 90)):
+        _gpx, _gpy = _gprng.uniform(0, 200), _gprng.uniform(0, 120)
+        # mix of normal parts and the oversized boxes that trip the split
+        _gpw = _gprng.choice([1.0, 2.0, 5.0, 40.0, 300.0])
+        _gph = _gprng.choice([1.0, 2.0, 5.0, 40.0, 120.0])
+        _gpbox.append((_gpx, _gpy, _gpx + _gpw, _gpy + _gph))
+    _gpgot = _gp(_gpbox, 5.0)
+    assert _gpgot == sorted(_gpgot), "_grid_pairs must return sorted pairs"
+    assert len({frozenset(p) for p in _gpgot}) == len(_gpgot), "duplicate pair"
+    assert _gp_naive(_gpbox, 5.0) <= {frozenset(p) for p in _gpgot}, \
+        "_grid_pairs dropped a candidate pair (missed DRC error)"
 
 print("ALL OK")
