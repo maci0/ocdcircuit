@@ -9,6 +9,9 @@ Three numbers, because three different things can be wrong:
 
   registration  did each photo land in the right place?  (vs the exact
                 transform used to synthesise it: rotation deg, scale %)
+  3D geometry   does the height field rank real components by height, and
+                does the splat carry that into a .ply? (pinhole render with
+                a camera that moves, so parallax genuinely exists)
   stitch        is the composite closer to the real board than one photo?
                 (mean |err| and NCC of bandpassed structure, plus the
                 ceiling the same stitcher reaches with perfect transforms)
@@ -104,6 +107,77 @@ def shoot(P: Any, cache: str, out: str,
     return gt
 
 
+def bench_3d(P: Any) -> list[str]:
+    """Score the height field and splat against known component heights.
+
+    The handheld shoot above warps a flat photograph, so it has no parallax
+    by construction — it cannot test the 3D half at all. This renders a
+    board with raised boxes through a pinhole camera that actually moves, so
+    a face at height z shifts by z/(camz-z) times the camera offset, which
+    is the signal the height field claims to invert.
+    """
+    import numpy as np
+    rng = np.random.default_rng(11)
+    h = w = 520
+    board_mm, camz = 60.0, 420.0
+    plane = np.zeros((h, w, 3), dtype=np.float32)
+    plane[..., 0], plane[..., 1], plane[..., 2] = 24, 92, 46
+    for i in range(16):
+        y = 18 + i * 31
+        plane[y:y + 6, int(rng.integers(20, 120)):int(rng.integers(330, 500))] = (
+            196, 152, 64)
+    plane = np.clip(plane + rng.normal(0, 3, plane.shape), 0, 255)
+    mm_px = board_mm / w
+    # (cy, cx, half_h, half_w, height_px)
+    parts = [(110, 130, 34, 46, 46.0), (110, 380, 22, 30, 16.0),
+             (330, 150, 26, 60, 30.0), (350, 400, 30, 34, 46.0)]
+
+    def shoot(ox: float, oy: float) -> Any:
+        im = plane.copy()
+        for cy, cx, hh, hw, z in sorted(parts, key=lambda q: q[4]):
+            sh, mg = z / (camz - z), camz / (camz - z)
+            dy, dx = int(round(-oy * sh)), int(round(-ox * sh))
+            ya, yb = int(cy - hh * mg) + dy, int(cy + hh * mg) + dy
+            xa, xb = int(cx - hw * mg) + dx, int(cx + hw * mg) + dx
+            ya, yb = max(0, ya), min(h, yb)
+            xa, xb = max(0, xa), min(w, xb)
+            if yb > ya and xb > xa:
+                im[ya:yb, xa:xb] = (30, 30, 32)
+                im[ya + 5:ya + 15, xa + 5:min(xb - 5, xa + 34)] = (228, 228, 224)
+        return np.clip(im + rng.normal(0, 3, im.shape), 0, 255)
+
+    views = [shoot(a, b) for a, b in ((0, 0), (-70, 0), (70, 0), (0, -60),
+                                      (0, 60), (-50, 45), (55, -40))]
+    rg = P.gray(views[0])
+    xf = [{"scale": 1.0, "rot": 0.0, "dx": 0.0, "dy": 0.0, "peak": 1.0}]
+    xf += [P.register(rg, P.gray(v)) for v in views[1:]]
+    hm = P.height_field(views, xf, w, h)
+    meas = [float(hm[cy - hh:cy + hh, cx - hw:cx + hw].mean())
+            for cy, cx, hh, hw, _z in parts]
+    true = [q[4] * mm_px for q in parts]
+    pairs = [(i, j) for i in range(len(parts)) for j in range(i + 1, len(parts))
+             if abs(true[i] - true[j]) > 0.5]
+    ok = sum(1 for i, j in pairs
+             if (true[i] < true[j]) == (meas[i] < meas[j]))
+    bare = float(np.mean([hm[250:300, 40:120].mean(),
+                          hm[430:500, 200:300].mean()]))
+    rgb, _cov = P.stitch(views, xf, w, h)
+    ply = P.splat_ply(rgb, hm, mm_px, max_mm=max(true))
+    n = int(ply.split(b"element vertex ")[1].split(b"\n")[0])
+    arr = np.frombuffer(ply.split(b"end_header\n", 1)[1],
+                        dtype="<f4").reshape(n, 17)
+    return [
+        f"registration: {sum(1 for t in xf[1:] if t['peak'] > 0.3)}"
+        f"/{len(xf) - 1} moved views locked",
+        f"height ranking: {ok}/{len(pairs)} pairs correct "
+        f"(true mm {[round(t, 1) for t in true]})",
+        f"measured relief: parts {[round(m, 2) for m in meas]}, "
+        f"bare board {bare:.3f}",
+        f"splat: {n} gaussians, {arr[:, 0].max():.0f} mm board extent, "
+        f"z 0..{arr[:, 2].max():.1f} mm",
+    ]
+
+
 def main(argv: list[str]) -> int:
     root = argv[1] if len(argv) > 1 else "/tmp/scanbench"
     cache, shots = os.path.join(root, "board"), os.path.join(root, "shoot")
@@ -189,6 +263,10 @@ def main(argv: list[str]) -> int:
     print(f"  gated stitch : mean|err| {e2:5.1f}  structNCC {n2:.3f}  "
           f"({len(keep)}/{len(xf)} frames, coverage {cover.mean():.2f})")
     print(f"  -> error {e1 / max(e2, 1e-6):.1f}x lower than one photo")
+
+    print("== 3D geometry (height field + splat, pinhole render)")
+    for line in bench_3d(P):
+        print("  " + line)
 
     print("== enhancement (median local contrast, 16px tiles)")
 
