@@ -1,0 +1,13 @@
+# Normalize line endings for contributors on every OS. Binary assets stay
+# untouched; everything else is LF in the worktree (matches CI on Ubuntu).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.step binary
+*.stl binary
+*.wav binary
+*.zip binary
