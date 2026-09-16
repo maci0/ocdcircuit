@@ -765,7 +765,9 @@ Then write a complete .ocd source for the reconstructed board:
                                "board X 100 80 4" is NOT valid syntax
   part REF FOOTPRINT [VALUE] [x=.. y=..]
   net NAME :: REF.PIN <--> REF.PIN
-  power NET      route NET on LAYER      silk LEVEL
+  power NET [NET...]        <- e.g. "power 3V3 GND"
+  route NET on LAYER        <- LAYER is a number: "route GND on 1"
+  silk LEVEL                <- LEVEL is 0-3: "silk 2" ("silk top" is invalid)
 
 Net names are bare words: `3V3`, `VCC`, `GND`, `USB_DP`. No leading `+` and
 no `-` (`+3V3` and `VCC-5` do not parse); write `power 3V3 GND` with the
