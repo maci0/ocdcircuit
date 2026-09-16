@@ -163,6 +163,9 @@ def parse_constraint(text: str) -> Constraint | None:
     m = re.match(r"fix (\w+) at (-?[\d.]+) (-?[\d.]+)$", t, re.I)
     if m:
         return {"t": "fixed", "ref": m.group(1), "x": float(m.group(2)), "y": float(m.group(3))}
+    m = re.match(r"edge ([\d.]+)$", t, re.I)
+    if m:
+        return {"t": "edge", "margin": float(m.group(1))}
     m = re.match(r"route (\w+) on (top|bottom|\d+)$", t, re.I)
     if m:
         layer = {"top": 0, "bottom": 1}[m.group(2).lower()] if m.group(2).lower() in ("top", "bottom") else int(m.group(2))
@@ -397,6 +400,8 @@ def dumps(board: Board) -> str:
         elif t == "fixed":
             # placement persists only here (x=/y= never emit on part lines)
             L.append(f"fix {c['ref']} at {_f(c['x']):g} {_f(c['y']):g}")
+        elif t == "edge":
+            L.append(f"edge {_f(c.get('margin', 0.5)):g}")
         elif t == "layer" and str(c["net"]) in board.nets and str(c["net"]) not in lay_bad:
             continue  # folded onto the net line above (or via `use`)
         elif t == "layer" and c.get("owner"):

@@ -7,7 +7,7 @@ XY = tuple[float, float]
 BBox = tuple[float, float, float, float]
 # effect closures stored on the undo stack
 Undo = Callable[[], None]
-# constraint dicts: {"t": "near"|"fixed"|"layer"|"width"|"power"|..., ...}
+# constraint dicts: {"t": "near"|"fixed"|"edge"|"layer"|"width"|"power"|..., ...}
 Constraint = dict[str, object]
 # patch ops for the agent API
 Op = dict[str, object]

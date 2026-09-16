@@ -17,7 +17,7 @@ _NETKEYS = ("net", "nets", "p", "n")
 # ... with numeric ranges worth a second glance
 _RANGES = {"width": ("width", 0.05, 3.0), "bend": ("r", 0.5, 50.0),
            "hole": ("d", 0.1, 10.0), "keepout": ("d", 0.2, 200.0),
-           "stiffener": ("th", 0.05, 3.0)}
+           "stiffener": ("th", 0.05, 3.0), "edge": ("margin", 0.0, 20.0)}
 
 
 def _strs(v: object) -> list[str]:

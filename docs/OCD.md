@@ -79,6 +79,7 @@ footprint — checked at load, no silent bad pins. Unknown footprints fail:
 ```ocd
 fix J1 at 3 15                 # pin a part (or x=/y= on the part line)
 keep U1 near C1 3              # pull parts together (weight, default 2)
+edge 1.0                       # placer keep-in margin from board outline (mm; default 0.5)
 ```
 
 ## Routing constraints (fold onto the net line where possible)

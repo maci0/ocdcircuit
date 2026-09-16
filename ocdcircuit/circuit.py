@@ -18,7 +18,7 @@ from .types import Constraint, PinLike, Undo, XY
 #: an unknown `t` would silently vanish on save (typo'd kinds failing
 #: loud here, not as false-success applies).
 CONSTRAINT_TYPES = frozenset({
-    "near", "fixed", "near-group", "layer", "width", "route-grid",
+    "near", "fixed", "near-group", "edge", "layer", "width", "route-grid",
     "route-penalty", "silk", "nc", "pour", "keepout", "cutout", "hole",
     "bend", "stiffener", "sim", "match", "diff", "power", "class",
 })
@@ -971,6 +971,13 @@ class Board(Component):
             w = c.get("width", 0.3)
             if not isinstance(w, (int, float)) or not math.isfinite(w) or w <= 0:
                 raise ValueError(f"trace {c.get('net')} has bad width {w!r}")
+        if t == "edge":
+            # placer keep-in margin: non-positive/non-finite would shove
+            # every part onto the outline (or NaN the cost). Default 0.5
+            # matches solver.edge_margin when no constraint is present.
+            m = c.get("margin", 0.5)
+            if not isinstance(m, (int, float)) or not math.isfinite(m) or m < 0:
+                raise ValueError(f"edge has bad margin {m!r}")
         self._constrain_raw(c)
 
     def _constrain_raw(self, c: Constraint) -> None:

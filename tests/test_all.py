@@ -1728,6 +1728,19 @@ _arms = set(_re2.findall(r'elif t == "([a-z-]+)"',
 _arms |= {"near", "fixed", "near-group", "layer", "width", "pour"}
 from ocdcircuit.circuit import CONSTRAINT_TYPES as _CT
 assert _arms == set(_CT), (_arms ^ set(_CT))
+# edge: RFC/solver margin constraint — parse+dumps+constrain round-trip
+from ocdcircuit.solver import edge_margin as _edge_m
+_eb = agent.loads("board t 40x30\npart R1 R0805 1k\nedge 1.25\n", base=EX)
+assert _edge_m(_eb) == 1.25
+assert "edge 1.25" in agent.dumps(_eb)
+_eb2 = Board("t")
+_eb2.constrain({"t": "edge", "margin": 2.0})
+assert _edge_m(_eb2) == 2.0
+try:
+    _eb2.constrain({"t": "edge", "margin": -1})
+    assert False, "negative edge margin must raise"
+except ValueError as e:
+    assert "margin" in str(e), str(e)
 # Part rotation: rot parses + clamps, wh swaps on 90/270, rot_xy rotates offsets
 from ocdcircuit.circuit import Part as _Part
 _rp = _Part(ref="R1", fp="R0805", value="", x=10, y=10, w=2.0, h=1.0,
