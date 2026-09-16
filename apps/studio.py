@@ -4269,8 +4269,15 @@ class H(http.server.BaseHTTPRequestHandler):
                     feas = _solver.feasible(b)
                 finally:
                     b.ctx.rollback(rbsnap)
-                self._send({"candidates": cands, "feasible": feas,
-                            "layers": b.layers})
+                # same shape as MCP candidates (docs: "same shapes as MCP tools")
+                cout: dict[str, object] = {
+                    "candidates": cands,
+                    "feasible": {str(k): v for k, v in feas.items()},
+                    "layers": b.layers,
+                    "note": "pick one via /pick (same n/seed/iters)"}
+                if pkey is not None:
+                    cout["placer"] = pkey
+                self._send(cout)
             elif self.path == "/pick":
                 from ocdcircuit import solver as _solver
                 # (cast is imported at module level; a local import here would
@@ -4342,7 +4349,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 import base64
                 import binascii
                 data = req.get("png", req.get("data", ""))
-                assert isinstance(data, str) and data
+                if not isinstance(data, str) or not data:
+                    self._send({"error": "xray needs png=<base64 PNG>"})
+                    return
                 try:
                     xraw = base64.b64decode(data, validate=True)
                 except (ValueError, binascii.Error) as e:
@@ -4449,6 +4458,9 @@ class H(http.server.BaseHTTPRequestHandler):
                         paths.append(dest)
                 except (ValueError, binascii.Error) as e:
                     self._send({"error": f"bad upload (not base64): {e}"})
+                    return
+                if not paths:
+                    self._send({"error": "upload at least one photo"})
                     return
                 docs: list[str] = []
                 for i, d in enumerate(req.get("docs") or []):
@@ -4688,8 +4700,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send({"ok": True, "commit": out.strip().splitlines()[-1][:200],
                             "log": _git_log(40, rel), "status": _git_status()})
             else:
-                self.send_response(404)
-                self.end_headers()
+                # Match the JSON error envelope every other failure uses
+                # (docs: any failure returns {"error": ...}; never bare 404).
+                self._send({"error": f"unknown path {self.path}"})
         except Exception as e:  # never 500 the UI thread: report, keep serving
             self._send({"error": f"{type(e).__name__}: {e}"})
         finally:

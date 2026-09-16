@@ -48,10 +48,12 @@ def t_load(a: dict[str, object]) -> dict[str, object]:
     if "text" in a:
         text = str(a["text"])
         base = str(a.get("base", BASE))
-    else:
+    elif "path" in a:
         SRC = str(a["path"])
         text = open(SRC).read()
         base = os.path.dirname(os.path.abspath(SRC))
+    else:
+        raise ValueError("load_board needs text or path")
     PROJ = os.path.abspath(base)
     prev = BOARD
     BOARD = agent.loads(text, base=base)
@@ -353,7 +355,12 @@ def t_lint(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_doctor(a: dict[str, object]) -> dict[str, object]:
-    return _board().doctor()
+    # Studio /doctor needs no board; doctor.doctor(None) skips plugin rows.
+    # With a loaded board, use it so plugin:kind checks appear (same as CLI).
+    if BOARD is not None:
+        return BOARD.doctor()
+    from ocdcircuit.circuit import Board as _B
+    return _B("doctor").doctor()
 
 
 def t_use(a: dict[str, object]) -> dict[str, object]:
@@ -446,7 +453,9 @@ def t_solve(a: dict[str, object]) -> dict[str, object]:
 
 
 TOOLS: dict[str, object] = {
-    "load_board": (t_load, {"text": "ocd source (or path)", "fab": "fab key",
+    "load_board": (t_load, {"text?": "ocd source text (use text OR path)",
+                             "path?": ".ocd file path (use text OR path)",
+                             "fab?": "fab key",
                              "base?": "dir use/fp paths resolve against"}),
     "get_state": (t_state, {}),
     "apply_patch": (t_patch, {"ops": "patch op list (undoable, atomic)"}),
@@ -494,6 +503,42 @@ TOOLS: dict[str, object] = {
 }
 
 
+def _tool_schema(spec: dict[str, object]) -> dict[str, object]:
+    """TOOLS human arg specs → JSON Schema for MCP tools/list.
+
+    Convention in TOOLS: `name?` = optional; bare name with int/bool/float
+    default = optional with that default; bare name with a string description
+    = required. Array/object hints start with `[` / `{`."""
+    props: dict[str, object] = {}
+    required: list[str] = []
+    for key, hint in spec.items():
+        optional = key.endswith("?")
+        name = key[:-1] if optional else key
+        if isinstance(hint, bool):
+            props[name] = {"type": "boolean", "default": hint}
+            optional = True
+        elif isinstance(hint, int):
+            props[name] = {"type": "integer", "default": hint}
+            optional = True
+        elif isinstance(hint, float):
+            props[name] = {"type": "number", "default": hint}
+            optional = True
+        else:
+            desc = str(hint)
+            if desc.startswith("["):
+                props[name] = {"type": "array", "description": desc}
+            elif desc.startswith("{"):
+                props[name] = {"type": "object", "description": desc}
+            else:
+                props[name] = {"type": "string", "description": desc}
+        if not optional:
+            required.append(name)
+    out: dict[str, object] = {"type": "object", "properties": props}
+    if required:
+        out["required"] = required
+    return out
+
+
 def handle(msg: dict[str, object]) -> dict[str, object] | None:
     mid = msg.get("id")
     method = str(msg.get("method", ""))
@@ -505,8 +550,12 @@ def handle(msg: dict[str, object]) -> dict[str, object] | None:
                            "capabilities": {"tools": {}},
                            "serverInfo": {"name": "ocd-circuit", "version": "0.2"}}}
     if method == "tools/list":
-        tools = [{"name": n, "inputSchema": {"type": "object"}}
-                 for n in TOOLS]
+        tools: list[dict[str, object]] = []
+        for n, entry in TOOLS.items():
+            assert isinstance(entry, tuple) and len(entry) == 2
+            spec = entry[1]
+            assert isinstance(spec, dict)
+            tools.append({"name": n, "inputSchema": _tool_schema(spec)})
         return {"jsonrpc": "2.0", "id": mid, "result": {"tools": tools}}
     if method == "tools/call":
         name = str(params.get("name", ""))

@@ -583,12 +583,18 @@ def main() -> None:
         assert isinstance(_xc["divs"], list) and "overlay" in _xc, _xc
         _xb = post(base, "/xray", {"png": "!!!not-base64!!!"})
         assert "error" in _xb, _xb
+        assert "error" in post(base, "/xray", {}), "empty png not refused"
         print(f"xray compare ok (score={_xc['score']})")
         # photo scan: the panel is served, junk is refused, and a real image
         # goes through the deterministic half (llm=False needs no endpoint).
         assert "error" in post(base, "/scan", {"photos": []}), "empty not refused"
+        assert "error" in post(base, "/scan", {"photos": [1, "x"]}), \
+            "non-dict photos not refused"
         assert "error" in post(base, "/scan",
                                {"photos": [{"name": "a.png", "data": "!!"}]})
+        # unknown POST path uses the JSON error envelope (not a bare 404)
+        _unk = post(base, "/no-such-route", {})
+        assert "error" in _unk and "unknown path" in str(_unk["error"]), _unk
         try:
             import numpy  # noqa: F401
         except ImportError:
@@ -677,6 +683,9 @@ def main() -> None:
                                          "seed": 3, "iters": 30})
         cands = cast(list[dict[str, object]], gal["candidates"])
         assert len(cands) == 2, gal
+        assert gal.get("placer") == "diffusion" and "note" in gal, gal
+        assert all(isinstance(k, str)
+                   for k in cast(dict[str, object], gal["feasible"])), gal
         pk = post(base, "/pick", {"placer": "diffusion", "router": "lroute",
                                   "n": 2, "seed": 3, "iters": 30, "index": 0})
         assert not pk.get("error"), pk

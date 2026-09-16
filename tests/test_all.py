@@ -1293,7 +1293,22 @@ def _call(name: str, args: dict[str, object]) -> dict[str, object]:
 
 assert cast(dict[str, object], _rpc("initialize")["result"])["serverInfo"] == {
     "name": "ocd-circuit", "version": "0.2"}
-assert len(cast(list[object], cast(dict[str, object], _rpc("tools/list")["result"])["tools"])) == 30
+_tools = cast(list[dict[str, object]],
+              cast(dict[str, object], _rpc("tools/list")["result"])["tools"])
+assert len(_tools) == 30
+_by_name = {str(t["name"]): t for t in _tools}
+_lb_schema = cast(dict[str, object], _by_name["load_board"]["inputSchema"])
+assert _lb_schema["type"] == "object"
+assert "path" in cast(dict[str, object], _lb_schema["properties"])
+assert "text" in cast(dict[str, object], _lb_schema["properties"])
+_place_schema = cast(dict[str, object], _by_name["place"]["inputSchema"])
+assert cast(dict[str, object],
+            cast(dict[str, object], _place_schema["properties"])["seeds"])["default"] == 4
+# load_board with neither text nor path is a clean JSON-RPC error
+_lnone = _rpc("tools/call", {"name": "load_board", "arguments": {}})
+assert "error" in _lnone and "text or path" in str(_lnone["error"]), _lnone
+# doctor works with no board loaded (studio /doctor parity; process starts empty)
+assert _call("doctor", {})["ok"] is True
 assert len(cast(list[object], _call("footprints", {})["footprints"])) >= 100
 assert all(f["name"] == "R0805" for f in cast(list[dict[str, object]],
            _call("footprints", {"q": "R0805"})["footprints"]))

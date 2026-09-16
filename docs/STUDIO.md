@@ -88,13 +88,14 @@ parser accepts (`<-->`-joined, attrs preserved).
 `/kb/list /kb/read /kb/search /kb/ask /kb/add /kb/fetch` (the board's
 knowledgebase; `/kb/fetch` runs in a worker thread and reports through
 `/kb/list`) · `/kb/prefs*` · `/slots` (plugin inventory) ·
-`/auth/signup|/login|/logout|/me` · `/shelf*` · `/chat*` ·
+`/auth/signup|/login|/logout|/me|/profile` · `/shelf*` · `/chat*` ·
 `/fs/open|/read|/import` · `/vcs*` · `/poll /load /reload`.
 `/collab/sync /collab/push /collab/cursor /collab/op` (POST JSON) +
 `/collab/events` (SSE): realtime multiplayer, one room per board —
 rev-guarded pushes (stale loser reloads), presence pills + PCB rings,
 structured ops through the `collab` plugin. Any failure
 returns `{"error": "Type: msg"}` — the server never 500s the UI thread.
+Unknown POST paths also return that JSON envelope (not a bare HTTP 404).
 
 ## Realtime collab (Google-docs-shaped, N engineers)
 
