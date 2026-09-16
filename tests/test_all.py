@@ -3162,19 +3162,37 @@ with tempfile.TemporaryDirectory() as _d:
     assert "OPX" in _sb2.custom_sym
     _sb2.ctx.rollback(_s0)
     assert "OPX" not in _sb2.custom_sym
-# doctor: registry healthy on a live board
+# doctor: registry healthy on a live board; optionals are reported but do
+# not fail `ok` (a clean machine without kicad/chromium still gates green).
 _doc = _lb.plugins().get("doctor", "std")
 assert isinstance(_doc, Plugin)
 _docr = cast(dict[str, object], _doc.run(_lb))
 assert _docr["ok"] is True, _docr
+_doc_checks = cast(list[dict[str, object]], _docr["checks"])
+_doc_names = {str(c.get("name")) for c in _doc_checks}
 assert any(str(c.get("name")) == "plugin:lint"
-           and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
+           and c.get("ok") for c in _doc_checks)
 assert any(str(c.get("name")) == "plugin:score"
-           and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
+           and c.get("ok") for c in _doc_checks)
 assert any(str(c.get("name")) == "plugin:diff"
-           and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
-assert any(str(c.get("name")) == "kicad-cli"
-           and c.get("ok") for c in cast(list[dict[str, object]], _docr["checks"]))
+           and c.get("ok") for c in _doc_checks)
+assert "kicad-cli" in _doc_names and "chromium" in _doc_names
+assert "pdftotext" in _doc_names
+import shutil as _shutil_doc
+_real_which = _shutil_doc.which
+def _no_optionals(name: str) -> str | None:
+    if name in ("ngspice", "kicad-cli", "pdftotext", "chromium",
+                "chromium-browser", "google-chrome", "google-chrome-stable"):
+        return None
+    return _real_which(name)
+setattr(_shutil_doc, "which", _no_optionals)
+try:
+    _docr2 = cast(dict[str, object], _doc.run(_lb))
+finally:
+    setattr(_shutil_doc, "which", _real_which)
+assert _docr2["ok"] is True, _docr2  # optionals missing ≠ gate failure
+assert any(str(c.get("name")) == "kicad-cli" and not c.get("ok")
+           for c in cast(list[dict[str, object]], _docr2["checks"]))
 
 # pcb photo scan: the plugin is mounted and dispatches, and the imaging
 # pipeline self-check passes (registration/stitch/enhance/splat on a

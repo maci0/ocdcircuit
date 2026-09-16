@@ -5,8 +5,14 @@ Your silkscreen is aligned. Your DRC is clean. It has to be.
 
 Needs: Python 3.14 (see `.python-version`), no other deps (`rich`
 optional for pretty CLI; `numpy` optional for the SIMD placer).
-Developing: `pip install -r requirements-dev.txt` — it pins the
-checker `make check` runs.
+Developing: see [CONTRIBUTING.md](CONTRIBUTING.md) — short version:
+
+```bash
+python -m pip install -r requirements-dev.txt   # pins mypy + ruff
+make doctor                                     # names missing optionals
+make check                                      # lint + all tests (what CI runs)
+make                                            # lists every contributor command
+```
 
 ## 10 minutes from KiCad
 
@@ -38,8 +44,8 @@ GND :: R1.1 <--> C1.1
 ```bash
 python -m apps.ocd --placer compact --router maze boards/blinky_555.ocd  # cleanest
 python -m apps.ocd --fab oshpark boards/psu.ocd # same board, stricter fab
-python tests/test_all.py                     # one self-check for everything
-mypy     # strict, zero errors
+make check                               # full gate (lint + all four test scripts)
+python tests/test_paper.py               # fast core loop while editing
 ```
 
 ## The language (full spec: `docs/OCD.md`)

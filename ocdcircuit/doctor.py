@@ -1,7 +1,11 @@
 """Doctor: is the tooling itself healthy? Python version (≥3.14, pinned
-in `.python-version`), optional binaries (ngspice), and the plugin
-registry (every kind has an active). No board needed — pass None. One
-check behind means one degraded feature, never a mystery traceback later."""
+in `.python-version`), optional binaries (ngspice, chromium, …), and the
+plugin registry (every kind has an active). No board needed — pass None.
+
+`ok` is True when required checks pass (Python + mounted plugins). Optional
+tools still appear as ✗ rows when missing so a contributor sees the gap
+up front; they degrade a feature, they do not fail the gate. One check
+behind means one degraded feature, never a mystery traceback later."""
 from __future__ import annotations
 import shutil
 import sys
@@ -9,6 +13,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .circuit import Board
+
+# Host tools / packages the code imports opportunistically. Missing → feature
+# falls back; required gate is Python + plugin registry only.
+_OPTIONAL = frozenset({
+    "numpy", "rich", "ngspice", "kicad-cli", "pdftotext", "chromium",
+})
 
 
 def doctor(board: Board | None = None) -> dict[str, object]:
@@ -33,6 +43,12 @@ def doctor(board: Board | None = None) -> dict[str, object]:
     add("pdftotext", pt is not None,
         pt or "missing (kb/ datasheet PDFs stay unsearchable; "
               "install poppler-utils)")
+    chrom = (shutil.which("chromium") or shutil.which("chromium-browser")
+             or shutil.which("google-chrome")
+             or shutil.which("google-chrome-stable"))
+    add("chromium", chrom is not None,
+        chrom or "missing (studio browser half skipped; "
+                 "CI installs chromium-browser)")
     try:
         import rich  # noqa: F401
         add("rich", True, "pretty CLI on")
@@ -49,5 +65,5 @@ def doctor(board: Board | None = None) -> dict[str, object]:
                 add(f"plugin:{kind}", True, f"{kind}:{active.key}")
             except (KeyError, AssertionError) as e:
                 add(f"plugin:{kind}", False, str(e))
-    ok = all(c["ok"] for c in checks)
+    ok = all(c["ok"] for c in checks if str(c["name"]) not in _OPTIONAL)
     return {"ok": ok, "checks": checks}

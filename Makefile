@@ -6,7 +6,30 @@ export LC_ALL := C
 export TZ := UTC
 export SOURCE_DATE_EPOCH ?= 0
 
-.PHONY: check run lint doctor test snap bench farm fabsweep clean
+.PHONY: help check run lint doctor test snap bench farm fabsweep clean
+
+help:				# list contributor commands (default)
+	@printf '%s\n' \
+	  'Contributor commands (see CONTRIBUTING.md):' \
+	  '  make doctor     tooling self-check (Python, optionals, plugins)' \
+	  '  make lint       mypy + ruff + ocd lint on $$(BOARD)' \
+	  '  make test       all four test scripts (what CI runs after lint)' \
+	  '  make check      lint + test — full gate before push' \
+	  '  make run        studio webui on :8077 (BOARD=$(BOARD))' \
+	  '  make snap       re-pin golden snapshots after intentional change' \
+	  '  make bench      5420-part stress (~5 min, not in check)' \
+	  '  make farm       load+solve every board' \
+	  '  make fabsweep   every board × every fab profile' \
+	  '  make clean      wipe out/ caches and report leftovers' \
+	  '' \
+	  'Single suite (edit-test loop):' \
+	  '  python tests/test_paper.py      # core paper (~0.1s)' \
+	  '  python tests/test_all.py        # unit + MCP (~1–2 min)' \
+	  '  python tests/test_snapshot.py   # golden geometry' \
+	  '  python tests/test_studio.py     # studio smoke (+ chromium if present)' \
+	  '' \
+	  'Setup: python -m pip install -r requirements-dev.txt' \
+	  'CI also wants: chromium-browser, poppler-utils (pdftotext).'
 
 check: lint test			# everything green before commit
 lint:				# types + source lint (no place/route)

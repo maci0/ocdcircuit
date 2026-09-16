@@ -495,13 +495,17 @@ def cmd_doctor() -> int:
     from ocdcircuit.circuit import Board as _B
     r = _B("doctor").doctor()
     rows = []
-    for c in cast(list[dict[str, object]], r["checks"]):
+    checks = cast(list[dict[str, object]], r["checks"])
+    for c in checks:
         mark = "[green]✓[/green]" if c["ok"] else "[red]✗[/red]"
         rows.append((f"{mark} {c['name']}", str(c.get("detail", ""))))
     _table("doctor", rows)
     if not r["ok"]:
-        _out().print("[yellow]degraded: see ✗ rows (features fall back, nothing crashes)[/yellow]")
+        _out().print("[red]broken: required checks failed (Python / plugins)[/red]")
         return 1
+    if any(not c["ok"] for c in checks):
+        _out().print("[yellow]degraded: see ✗ rows (features fall back, nothing crashes)[/yellow]")
+        return 0
     _out().print("[green]✓ all systems[/green]")
     return 0
 
