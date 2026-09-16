@@ -175,6 +175,14 @@ stated as a word in a pill.
   within **1 mm** of the real 100 mm across three runs; withholding them
   (same photos, same context) gives 67x67 and 85x88 — up to 33 mm out.
 
+  The 3D half is scored separately, because a handheld shoot simulated by
+  warping a flat photo has no parallax by construction and cannot test it.
+  Against a pinhole render with a camera that actually moves and four parts
+  at known heights: 6/6 moved views register, the height field ranks all
+  5/5 height pairs correctly, bare board reads 0.04, and the splat carries
+  that into a .ply with the board extent exact. Depth is relative — set
+  `--tall MM` to the tallest part to scale it.
+
   Netlist tracing stays the weak axis, and pad measurement does not rescue
   it (4 vs 3 traced connections, spreads fully overlapping). On a finished
   board the traces run *under* soldermask: thresholding copper yields ~5400
