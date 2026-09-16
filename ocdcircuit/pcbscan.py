@@ -767,6 +767,10 @@ Then write a complete .ocd source for the reconstructed board:
   net NAME :: REF.PIN <--> REF.PIN
   power NET      route NET on LAYER      silk LEVEL
 
+Net names are bare words: `3V3`, `VCC`, `GND`, `USB_DP`. No leading `+` and
+no `-` (`+3V3` and `VCC-5` do not parse); write `power 3V3 GND` with the
+same spelling used in the `net` lines.
+
 FOOTPRINT must come from the list below — it is the whole vocabulary, and an
 invented name (a KiCad-style `Barrel_Jack`, a guessed `QFP208`) makes the
 file unloadable. Pick the closest available package and put what you really
