@@ -201,14 +201,45 @@ def main(argv: list[str]) -> int:
 
     if os.environ.get("SCANBENCH_LLM"):
         print("== vision analysis (SCANBENCH_LLM set)")
-        out = os.path.join(root, "scan")
-        t0 = time.time()
-        r = P.reverse(sorted(os.path.join(shots, f) for f in os.listdir(shots)),
-                      out, board_mm=100.0)
-        print(f"  {time.time() - t0:.0f}s -> {r.get('analysis')}")
-        for k in ("draft", "draft_parts", "draft_nets", "draft_error"):
-            if k in r:
-                print(f"  {k}: {r[k]}")
+        photos = sorted(os.path.join(shots, f) for f in os.listdir(shots)
+                        if f.endswith(".png"))
+        refs = [r for r, _ in gtc]
+        manual = os.path.join(root, "manual.txt")
+        with open(manual, "w") as f:      # the "datasheet" a user would upload
+            f.write("NComputing L130 thin client - service notes\n\n"
+                    + "\n".join(f"  {r}  {v}" for r, v in gtc)
+                    + "\n\nEthernet-attached thin client: FPGA does video and\n"
+                      "USB, PHY does the network, DataFlash holds the FPGA\n"
+                      "configuration, SDRAM is the framebuffer.\n")
+
+        def cast_list(v: object) -> list[object]:
+            return list(v) if isinstance(v, list) else []
+
+        def score(tag: str, **kw: Any) -> None:
+            """Recall of the schematic's reference designators, plus whether
+            the named parts survive into the draft."""
+            t0 = time.time()
+            out = os.path.join(root, f"scan-{tag}")
+            try:
+                r = P.reverse(photos, out, board_mm=100.0, **kw)
+            except Exception as e:        # noqa: BLE001 - report, keep going
+                print(f"  {tag:10s} FAILED: {type(e).__name__}: {e}")
+                return
+            rep = open(str(r["analysis"])).read() if "analysis" in r else ""
+            found = [x for x in refs if x in rep]
+            vals = [v for _, v in gtc
+                    if v and v.split()[0][:6].upper() in rep.upper()]
+            print(f"  {tag:10s} {time.time() - t0:5.0f}s  "
+                  f"refs {len(found):2d}/{len(refs)}  parts {len(vals):2d}/{len(gtc)}"
+                  f"  draft {r.get('draft_parts', '-')}p/{r.get('draft_nets', '-')}n"
+                  f"  asked {len(cast_list(r.get('questions')))}")
+            if r.get("draft_error"):
+                print(f"             draft_error: {r['draft_error']}")
+
+        print(f"  ground truth: {len(refs)} refs, model={os.environ.get('OCD_LLM_MODEL', '?')}")
+        score("bare")
+        score("noted", note="Ethernet thin client, VGA out, pulled from a dead unit.")
+        score("manual", note="Ethernet thin client.", docs=[manual])
     print("\nbenchmark done")
     return 0
 
