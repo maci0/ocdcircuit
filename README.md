@@ -144,7 +144,12 @@ stated as a word in a pill.
   manual.pdf` (PDFs via pdftotext). It asks back what the photos cannot
   settle — answer with `--answer "question=reply"` and re-run for a
   better-informed pass. Context is evidence, not authority: where a manual
-  and the board disagree, the model is told to believe the board.
+  and the board disagree, the model is told to believe the board. Detail
+  views also go out as native-resolution tiles (`--zoom 2`), because a
+  whole-board image downscaled for a model puts a 0.2 mm trace at ~2 px —
+  readable as "there is copper", not as "this pad reaches that pin".
+  Upload the same photos in the studio's **photo scan** panel to get the
+  draft straight into the editor.
   Measured on a real board with a published schematic
   (`python -m tools.scanbench`, NComputing L130): 83% of handheld frames
   lock to 0.04°/0.03%, the gated stitch lands 2.1x closer to the true board

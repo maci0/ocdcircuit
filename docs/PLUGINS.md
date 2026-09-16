@@ -37,7 +37,8 @@ all/assembly/blender/easyeda/gltf/html3d/kicad/pcbdraw/png/sch/stl/svg/xray ·
 `quote` std (fab price comparison: bare per fab + JLC assembly) ·
 `scan` photo (photos of a physical board -> stitch + enhancement stack +
 parallax height + gaussian splat -> vision analysis -> draft .ocd; takes
-note=/docs= context and returns questions= for the user) ·
+note=/docs= context, zoom=/maxdim= detail knobs, and returns questions=
+for the user) ·
 `price` std/knoll/jlc-api (unit-price provider: manual attr → offline JLC DB → knoll live → official JLC API).
 
 Rules: engine imports inside `run()` (keeps `import ocdcircuit` light);
