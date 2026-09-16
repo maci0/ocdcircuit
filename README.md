@@ -175,6 +175,15 @@ stated as a word in a pill.
   within **1 mm** of the real 100 mm across three runs; withholding them
   (same photos, same context) gives 67x67 and 85x88 — up to 33 mm out.
 
+  Mixed framing is scored separately too, because a real shoot is not all
+  overviews: people take close-ups of one corner. Those need a translation
+  that is a large fraction of a coarse search grid and used to vanish
+  silently — on a 20-photo mixed-zoom shoot only 5/18 registered. The
+  search now retries wider when the coarse pass finds nothing, giving
+  11/18. By tier it is honest: overviews 4/4, medium 2/4, tight close-ups
+  1/3 — and every miss scores below the drop gate, so a bad frame is
+  discarded rather than median-blended into the stitch.
+
   The 3D half is scored separately, because a handheld shoot simulated by
   warping a flat photo has no parallax by construction and cannot test it.
   Against a pinhole render with a camera that actually moves and four parts
