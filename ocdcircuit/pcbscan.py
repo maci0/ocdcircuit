@@ -649,11 +649,12 @@ def _side_paths(photos: dict[str, list[str]] | list[str]) -> dict[str, list[str]
 
 
 def scan_side(paths: list[str], outdir: str, side: str,
-              board_mm: float | None = None) -> dict[str, object]:
+              board_mm: float | None = None,
+              maxdim: int = MAXDIM) -> dict[str, object]:
     """One side end to end. Returns the manifest fragment for that side."""
     np = _numpy()
     os.makedirs(outdir, exist_ok=True)
-    raws = [fit(load(p)) for p in paths]
+    raws = [fit(load(p), maxdim) for p in paths]
     sharp = [sharpness(gray(r)) for r in raws]
     ref = int(max(range(len(raws)), key=lambda i: sharp[i]))
     order = [ref] + [i for i in range(len(raws)) if i != ref]
@@ -706,16 +707,23 @@ def scan_side(paths: list[str], outdir: str, side: str,
 
 
 def scan(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
-         board_mm: float | None = None) -> dict[str, object]:
+         board_mm: float | None = None,
+         maxdim: int = MAXDIM) -> dict[str, object]:
     """Full deterministic pass: every side stitched, enhanced, splatted, and
-    a manifest.json listing every artifact for the analysis step."""
+    a manifest.json listing every artifact for the analysis step.
+
+    `maxdim` is the stitch canvas resolution, and it is the ceiling on every
+    downstream detail: a 0.2 mm trace is ~3 px at the 1600 default and ~5 px
+    at 2400. Raising it costs memory quadratically — the stitch holds every
+    frame at once (10 photos: 0.3 GB at 1600, 0.7 GB at 2400) — so it is a
+    knob, not a default."""
     sides = _side_paths(photos)
     os.makedirs(outdir, exist_ok=True)
     man: dict[str, object] = {"outdir": outdir, "sides": {}}
     for side, paths in sides.items():
         if paths:
             cast(dict[str, object], man["sides"])[side] = scan_side(
-                paths, outdir, side, board_mm)
+                paths, outdir, side, board_mm, maxdim)
     with open(os.path.join(outdir, "manifest.json"), "w") as f:
         json.dump(man, f, indent=2)
     man["manifest"] = os.path.join(outdir, "manifest.json")
@@ -736,6 +744,12 @@ they answer different questions:
   copper    exposed copper isolated: pads, vias, fingers, test points
   height    parallax standoff, bright = stands off the board: which
             footprints are tall parts (electrolytics, connectors, cans)
+
+Images marked ZOOM are native-resolution crops of one quadrant of the same
+board (they overlap, so a trace crossing a seam is whole in one of them).
+The whole-board views tell you where things are; the ZOOM crops are the only
+images where individual traces and small part numbers are actually resolved,
+so trace copper and read fine markings in those.
 
 Work in this order and say what you actually see, never what a board like
 this usually has:
@@ -885,32 +899,83 @@ def extract_questions(reply: str) -> list[str]:
     return out[:5]
 
 
-def _b64_png(path: str, maxdim: int = 1024) -> str:
-    """Artifact → data URI, downscaled so 12 images fit a context window."""
+def _b64_arr(img: Any) -> str:
+    """uint8 array -> PNG data URI."""
     import base64
     np = _numpy()
     from .raster import _png
+    a = np.clip(np.nan_to_num(np.asarray(img)), 0, 255).astype(np.uint8)
+    if a.ndim == 2:
+        a = np.repeat(a[..., None], 3, axis=2)
+    h, w = a.shape[:2]
+    return ("data:image/png;base64,"
+            + base64.b64encode(_png(w, h, bytearray(a.tobytes()))).decode())
+
+
+def _b64_png(path: str, maxdim: int = 1024) -> str:
+    """Artifact → data URI, downscaled so the overview images fit a context
+    window."""
+    return _b64_arr(fit(load(path), maxdim))
+
+
+def tile_uris(path: str, grid: int = 2, maxdim: int = 1024,
+              overlap: float = 0.08) -> list[tuple[str, str]]:
+    """Cut an artifact into `grid`x`grid` overlapping crops at native
+    resolution: [(label, data-uri), ...].
+
+    This is what makes traces traceable. A 3000 px board scaled to one
+    1024 px image puts a 0.2 mm trace at ~2 px — enough to say "there is
+    copper", not enough to say "this pad connects to that pin". The same
+    board as 2x2 crops keeps ~6 px per trace, and 3x3 keeps ~10.
+
+    Tiles overlap so a net crossing a seam is whole in at least one crop;
+    labels carry the quadrant so the model can say where it looked.
+    """
+    np = _numpy()
     img = np.asarray(load(path))
-    img = np.clip(fit(img, maxdim), 0, 255).astype(np.uint8)
     h, w = img.shape[:2]
-    raw = _png(w, h, bytearray(img.tobytes()))
-    return "data:image/png;base64," + base64.b64encode(raw).decode()
+    out: list[tuple[str, str]] = []
+    ov = max(0.0, min(0.3, overlap))
+    for gy in range(grid):
+        for gx in range(grid):
+            x0 = max(0, int((gx / grid - ov) * w))
+            x1 = min(w, int(((gx + 1) / grid + ov) * w))
+            y0 = max(0, int((gy / grid - ov) * h))
+            y1 = min(h, int(((gy + 1) / grid + ov) * h))
+            crop = img[y0:y1, x0:x1]
+            if crop.size == 0:
+                continue
+            if grid == 1:
+                where = "whole"
+            else:
+                where = (("top" if gy == 0 else
+                          "bottom" if gy == grid - 1 else f"row{gy + 1}")
+                         + "-" + ("left" if gx == 0 else
+                                  "right" if gx == grid - 1 else f"col{gx + 1}"))
+            out.append((where, _b64_arr(fit(crop, maxdim))))
+    return out
 
 
 VIEWS = ("stitch", "contrast", "edges", "silk", "copper", "height")
+ZOOM = ("contrast", "copper")   # the views worth sending at native pixels
 
 
 def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
             note: str = "", docs: list[str] | None = None,
             answers: dict[str, str] | None = None,
-            timeout: float = 600.0) -> str:
+            zoom: int = 2, timeout: float = 600.0) -> str:
     """Hand the scan to a vision model and get the reverse-engineering
     report plus a reconstructed .ocd back. Needs a vision-capable model at
     OCD_LLM_BASE/OCD_LLM_MODEL.
 
     `note` is what the owner says the board is, `docs` are manuals or
     datasheets (PDF or text) to read alongside the images, and `answers`
-    carries replies to questions a previous pass asked."""
+    carries replies to questions a previous pass asked.
+
+    `zoom` is the tile grid for the detail views: every side sends whole-board
+    overviews plus zoom^2 native-resolution crops, because a downscaled
+    overview cannot resolve a trace (measured: ~2 px per trace at 1024 px,
+    ~6 px as 2x2 tiles). zoom=1 disables tiling."""
     from . import llm
     images: list[str] = []
     lines: list[str] = []
@@ -928,7 +993,13 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
         for v in views:
             if v in files:
                 images.append(_b64_png(files[v]))
-                lines.append(f"  image {len(images)}: {side} {v}")
+                lines.append(f"  image {len(images)}: {side} {v} (whole board)")
+        for v in ZOOM:
+            if v in files and zoom > 1:
+                for where, uri in tile_uris(files[v], zoom):
+                    images.append(uri)
+                    lines.append(f"  image {len(images)}: {side} {v} "
+                                 f"ZOOM {where} (native resolution)")
     if not images:
         raise ValueError("nothing to analyse — run scan() first")
     text = (PROMPT + footprint_menu() + "\n\nScan report:\n"
@@ -981,6 +1052,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
             *, board_mm: float | None = None, note: str = "",
             docs: list[str] | None = None,
             answers: dict[str, str] | None = None,
+            maxdim: int = MAXDIM, zoom: int = 2,
             llm_analysis: bool = True) -> dict[str, object]:
     """Photos in, scan artifacts + analysis + a draft .ocd out.
 
@@ -993,10 +1065,10 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     model asked come back under `questions` either way: they are the most
     useful output when the reconstruction is thin.
     """
-    man = scan(photos, outdir, board_mm)
+    man = scan(photos, outdir, board_mm, maxdim)
     if not llm_analysis:
         return man
-    report = analyse(man, note=note, docs=docs, answers=answers)
+    report = analyse(man, note=note, docs=docs, answers=answers, zoom=zoom)
     rp = os.path.join(outdir, "analysis.md")
     with open(rp, "w") as f:
         f.write(report)
@@ -1164,6 +1236,35 @@ def demo() -> None:
                                  + "```")) == 5, "question cap not applied"
     # unterminated questions block (token cap) still yields what was asked
     assert extract_questions("```questions\nOnly one?") == ["Only one?"]
+
+    # zoom tiles: native-resolution crops that cover the board with overlap.
+    # This is the only path by which a trace is more than a couple of pixels
+    # wide by the time a model sees it, so the contract is worth pinning.
+    import tempfile as _tf2
+    _big = np.zeros((600, 800, 3), dtype=np.uint8)
+    _big[::40, :] = 255                       # horizontal rules to find
+    _tp = os.path.join(_tf2.mkdtemp(), "big.png")
+    write_png(_tp, _big)
+    _tiles = tile_uris(_tp, 2, maxdim=1024)
+    assert len(_tiles) == 4, f"2x2 grid gave {len(_tiles)} tiles"
+    assert [w for w, _ in _tiles] == ["top-left", "top-right",
+                                      "bottom-left", "bottom-right"]
+    assert all(u.startswith("data:image/png;base64,") for _, u in _tiles)
+    # each tile must be a real crop: more than a quarter of the board
+    # (overlap) but not the whole thing
+    _t0 = _tf2.NamedTemporaryFile(suffix=".png", delete=False)
+    import base64 as _b64m
+    _t0.write(_b64m.b64decode(_tiles[0][1].split(",", 1)[1]))
+    _t0.close()
+    _th, _tw = load(_t0.name).shape[:2]
+    assert 400 <= _tw < 800, f"tile width {_tw} is not a crop of 800"
+    assert 300 <= _th < 600, f"tile height {_th} is not a crop of 600"
+    # tiling must not silently downscale below the overview's own detail
+    assert _tw / 800 > 0.5, "tile keeps less than half the source width"
+    assert [w for w, _ in tile_uris(_tp, 1)] == ["whole"]
+    assert len(tile_uris(_tp, 3)) == 9
+    os.unlink(_t0.name)
+    os.unlink(_tp)
 
     # the prompt must name real footprints, read from the live library
     menu = footprint_menu()
