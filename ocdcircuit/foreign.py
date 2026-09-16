@@ -111,6 +111,62 @@ def _strip_comment(l: str) -> str:
     return l
 
 
+def _uf_find(parent: dict[int, int], a: int) -> int:
+    while parent[a] != a:
+        parent[a] = parent[parent[a]]
+        a = parent[a]
+    return a
+
+
+def _uf_union(parent: dict[int, int], a: int, b: int) -> None:
+    parent[_uf_find(parent, a)] = _uf_find(parent, b)
+
+
+def _uf_add(parent: dict[int, int], pts: list[tuple[float, float]],
+            xy: tuple[float, float]) -> int:
+    i = len(pts)
+    parent[i] = i
+    pts.append(xy)
+    return i
+
+
+def _uf_near(pts: list[tuple[float, float]], p: tuple[float, float],
+             tol: float) -> list[int]:
+    return [j for j, q in enumerate(pts)
+            if abs(q[0] - p[0]) < tol and abs(q[1] - p[1]) < tol]
+
+
+def _uf_join_wires(parent: dict[int, int], pts: list[tuple[float, float]],
+                   wires: list[tuple[float, float, float, float]],
+                   tol: float) -> None:
+    """Union each wire's ends and every near-pair within tol (shared dots)."""
+    for x1, y1, x2, y2 in wires:
+        for ua in _uf_near(pts, (x1, y1), tol):
+            for ub in _uf_near(pts, (x2, y2), tol):
+                _uf_union(parent, ua, ub)
+    for j, qp in enumerate(pts):
+        for k in _uf_near(pts, qp, tol):
+            _uf_union(parent, j, k)
+
+
+def _uf_groups(parent: dict[int, int], n: int) -> dict[int, list[int]]:
+    groups: dict[int, list[int]] = {}
+    for j in range(n):
+        groups.setdefault(_uf_find(parent, j), []).append(j)
+    return groups
+
+
+def _net_add_pin(nets: dict[str, dict[str, object]],
+                 net: str | None, ref: str, num: str) -> None:
+    """Append [ref, num] to nets[net], creating the net entry if needed."""
+    if not net:
+        return
+    entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
+    pins = entry["pins"]
+    assert isinstance(pins, list)
+    pins.append([ref, num])
+
+
 def sexpr(s: str) -> list[object]:
     """Parse one s-expression (skips ; comments)."""
     lines = [_strip_comment(l) for l in s.splitlines()]
@@ -681,14 +737,6 @@ def easyeda_doc(doc: dict[str, object]) -> object:
     minx = miny = float("inf")
     maxx = maxy = float("-inf")
 
-    def _pin(net: str, ref: str, num: str) -> None:
-        if not net:
-            return
-        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
-        pins = entry["pins"]
-        assert isinstance(pins, list)
-        pins.append([ref, num])
-
     # PAD lines following a LIB belong to it (children were joined with #@$)
     cur: tuple[str, str, float, float,
                dict[str, tuple[float, float, float, float]],
@@ -806,7 +854,7 @@ def easyeda_doc(doc: dict[str, object]) -> object:
                           max(hole * 2, 0.8) * mm)
         else:
             pads[num] = (px * mm - lx * mm, py * mm - ly * mm, pw * mm, ph * mm)
-        _pin(f[7] if len(f) > 7 else "", ref, num)
+        _net_add_pin(nets, f[7] if len(f) > 7 else "", ref, num)
     _flush()
     if len(outline) >= 3:
         xs = [p[0] for p in outline]
@@ -931,34 +979,12 @@ def easyeda_sch(doc: dict[str, object], ox: float = 0.0, oy: float = 0.0) -> dic
                         continue
                     break
     parent: dict[int, int] = {}
-
-    def _find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
-    def _union(a: int, b: int) -> None:
-        parent[_find(a)] = _find(b)
     pts: list[tuple[float, float]] = []
     for x1, y1, x2, y2 in wires:
         for ep in ((x1, y1), (x2, y2)):
-            parent[len(pts)] = len(pts)
-            pts.append(ep)
-
-    def _near(pp: tuple[float, float], tol: float = 2.0) -> list[int]:
-        return [j for j, q in enumerate(pts)
-                if abs(q[0] - pp[0]) < tol and abs(q[1] - pp[1]) < tol]
-    for x1, y1, x2, y2 in wires:
-        for ua in _near((x1, y1)):
-            for ub in _near((x2, y2)):
-                _union(ua, ub)
-    for j, qp in enumerate(pts):
-        for k in _near(qp):
-            _union(j, k)
-    groups: dict[int, list[int]] = {}
-    for j in range(len(pts)):
-        groups.setdefault(_find(j), []).append(j)
+            _uf_add(parent, pts, ep)
+    _uf_join_wires(parent, pts, wires, tol=2.0)
+    groups = _uf_groups(parent, len(pts))
     gname: dict[int, str] = {}
     for g, js in groups.items():
         gnm = next((t for x, y, t in labels
@@ -982,10 +1008,7 @@ def easyeda_sch(doc: dict[str, object], ox: float = 0.0, oy: float = 0.0) -> dic
                     break
             if best is None:
                 continue
-            entry = nets.setdefault(best, {"pins": [], "layer": None, "width": 0.3})
-            pins_l = entry["pins"]
-            assert isinstance(pins_l, list)
-            pins_l.append([s["ref"], num])
+            _net_add_pin(nets, best, str(s["ref"]), num)
     xs = [float(str(s["x"])) for s in syms] or [0.0]
     ys = [float(str(s["y"])) for s in syms] or [0.0]
     sx = 40.0 / max(max(xs) - min(xs), 1.0)
@@ -1425,35 +1448,13 @@ def kicad_sch_netlist(text: str) -> dict[str, object]:
         if tx and at is not None and len(at) > 2:
             labels.append((_num(at[1]), _num(at[2]), tx))
     parent: dict[int, int] = {}
-
-    def _find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
-    def _union(a: int, b: int) -> None:
-        parent[_find(a)] = _find(b)
     pts: list[tuple[float, float]] = []
     for x1, y1, x2, y2 in wires:
         for ep in ((x1, y1), (x2, y2)):
-            parent[len(pts)] = len(pts)
-            pts.append(ep)
-
-    def _near(pp: tuple[float, float], tol: float = 0.7) -> list[int]:
-        return [j for j, q in enumerate(pts)
-                if abs(q[0] - pp[0]) < tol and abs(q[1] - pp[1]) < tol]
-    for x1, y1, x2, y2 in wires:
-        # the wire itself joins its ends (plus either endpoint's dots)
-        for ua in _near((x1, y1)):
-            for ub in _near((x2, y2)):
-                _union(ua, ub)
-    for j, qp in enumerate(pts):
-        for k in _near(qp):
-            _union(j, k)
-    groups: dict[int, list[int]] = {}
-    for j in range(len(pts)):
-        groups.setdefault(_find(j), []).append(j)
+            _uf_add(parent, pts, ep)
+    # the wire itself joins its ends (plus either endpoint's dots)
+    _uf_join_wires(parent, pts, wires, tol=0.7)
+    groups = _uf_groups(parent, len(pts))
     gname: dict[int, str] = {}
     for g, js in groups.items():
         gnm = next((t for x, y, t in labels
@@ -1477,10 +1478,7 @@ def kicad_sch_netlist(text: str) -> dict[str, object]:
                     break
             if best is None:
                 continue
-            entry = nets.setdefault(best, {"pins": [], "layer": None, "width": 0.3})
-            pins_l = entry["pins"]
-            assert isinstance(pins_l, list)
-            pins_l.append([s["ref"], num])
+            _net_add_pin(nets, best, str(s["ref"]), num)
     parts: list[dict[str, object]] = []
     fps: dict[str, Footprint] = {}
     for s in syms:
@@ -1693,7 +1691,10 @@ def _ole_write(streams: dict[str, bytes]) -> bytes:
     dirsec = 1
     # iterate: nfat depends on total sectors, total depends on nfat
     nfat = 1
+    fat_passes = 0
     while True:
+        fat_passes += 1
+        assert fat_passes <= 3, "ole FAT size iteration does not terminate"
         dirsec = nfat
         secno = nfat + ndir
         minifat_sec = secno
@@ -2124,50 +2125,19 @@ def _bin_schdoc(data: bytes, sheet: str = "") -> dict[str, object]:
                            r["TEXT"].rstrip("\x00").strip()))
     # union-find over touched points (pin ends + wire ends + labels)
     parent: dict[int, int] = {}
-
-    def _find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
-    def _union(a: int, b: int) -> None:
-        parent[_find(a)] = _find(b)
     pts: list[tuple[float, float]] = []
-    pin_at: list[int] = []
     for x, y, _rf, _pn in pins:
-        parent[len(pts)] = len(pts)
-        pts.append((x, y))
-        pin_at.append(len(pins) and len(pts) - 1)
+        _uf_add(parent, pts, (x, y))
     for x1, y1, x2, y2 in wires:
         for x, y in ((x1, y1), (x2, y2)):
-            parent[len(pts)] = len(pts)
-            pts.append((x, y))
-
-    def _near(p: tuple[float, float], tol: float = 0.3) -> list[int]:
-        return [j for j, q in enumerate(pts)
-                if abs(q[0] - p[0]) < tol and abs(q[1] - p[1]) < tol]
-    for x1, y1, x2, y2 in wires:
-        # the wire itself joins its ends (plus either endpoint's dots)
-        for a in _near((x1, y1)):
-            for b in _near((x2, y2)):
-                _union(a, b)
+            _uf_add(parent, pts, (x, y))
+    # the wire itself joins its ends (plus either endpoint's dots);
     # every pin joins every wire-end/pin within tolerance (shared dots)
-    for j, qp in enumerate(pts):
-        for k in _near(qp):
-            _union(j, k)
-    groups: dict[int, list[int]] = {}
-    for j in range(len(pts)):
-        groups.setdefault(_find(j), []).append(j)
+    _uf_join_wires(parent, pts, wires, tol=0.3)
+    groups = _uf_groups(parent, len(pts))
     npin = len(pins)
     nets: dict[str, dict[str, object]] = {}
     auto = 0
-
-    def _pin(net: str, ref: str, num: str) -> None:
-        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
-        pins_l = entry["pins"]
-        assert isinstance(pins_l, list)
-        pins_l.append([ref, num])
     for g in groups.values():
         members = [pins[j] for j in g if j < npin]
         if not members:
@@ -2179,7 +2149,7 @@ def _bin_schdoc(data: bytes, sheet: str = "") -> dict[str, object]:
             auto += 1
             name = f"N{auto}"
         for _x, _y, ref, num in members:
-            _pin(name, ref, num)
+            _net_add_pin(nets, name, ref, num)
     parts: list[dict[str, object]] = []
     fps: dict[str, Footprint] = {}
     for idx, r in comps.items():
@@ -2476,14 +2446,6 @@ def altium_ascii(text: str) -> dict[str, object]:
     nets: dict[str, dict[str, object]] = {}
     refs: list[str] = []
 
-    def _pin(net: str | None, ref: str, num: str) -> None:
-        if not net:
-            return
-        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
-        pins = entry["pins"]
-        assert isinstance(pins, list)
-        pins.append([ref, num])
-
     for i, c in enumerate(comps):
         ref = (c.get("SOURCEDESIGNATOR") or c.get("DESIGNATOR")
                or c.get("NAME") or f"U{i + 1}")
@@ -2535,7 +2497,7 @@ def altium_ascii(text: str) -> dict[str, object]:
             fp_p = fp.setdefault("pads", {})
             assert isinstance(fp_p, dict)
             fp_p[num] = (dx, dy, w, h)
-        _pin(_net(r), ref, num)
+        _net_add_pin(nets, _net(r), ref, num)
     for r in recs:  # free pads: no owning component → one single-pad fp each
         if r["RECORD"] != "PAD":
             continue
@@ -2567,7 +2529,7 @@ def altium_ascii(text: str) -> dict[str, object]:
             assert isinstance(fpp, dict)
             fpp[num] = (0.0, 0.0, w, h)
         parts.append({"ref": ref, "fp": fpname, "value": fpname, "x": x, "y": y})
-        _pin(net, ref, num)
+        _net_add_pin(nets, net, ref, num)
     # footprint bodies: pad bbox (empty customs place at 2x2 but DRC walls
     # their pads — same rule as kicad_pcb_netlist's rebuilt footprints)
     for fp in fps.values():
@@ -2852,21 +2814,13 @@ def pcad_ascii(text: str) -> dict[str, object]:
     nets: dict[str, dict[str, object]] = {}
     inst: dict[str, tuple[str, str]] = {}  # ref → (comp, value)
 
-    def _pin(net: str, ref: str, num: str) -> None:
-        if not net:
-            return
-        entry = nets.setdefault(net, {"pins": [], "layer": None, "width": 0.3})
-        pins = entry["pins"]
-        assert isinstance(pins, list)
-        pins.append([ref, num])
-
     for n in _kids(netsec, "net"):
         nn = _unq(n[1]) if len(n) > 1 else ""
         for node in _kids(n, "node"):
             raw = _unq(node[1]) if len(node) > 1 else ""
             rs = raw.split()
             if len(rs) >= 2:
-                _pin(nn, rs[0], rs[1])
+                _net_add_pin(nets, nn, rs[0], rs[1])
     for c in _kids(netsec, "compInst"):
         ref = _unq(c[1]) if len(c) > 1 else ""
         comp = val = ""
@@ -2950,7 +2904,7 @@ def pcad_ascii(text: str) -> dict[str, object]:
             assert isinstance(fp_, dict)
             fp_[str(i + 1)] = (0.0, 0.0, st[0], st[1])
         parts.append({"ref": ref, "fp": fpname, "value": fpname, "x": x, "y": y})
-        _pin(_ref(pad, "netNameRef"), ref, str(i + 1))
+        _net_add_pin(nets, _ref(pad, "netNameRef"), ref, str(i + 1))
     traces: list[dict[str, object]] = []
     texts: list[dict[str, object]] = []
     pours: list[tuple[str, int]] = []

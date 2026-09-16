@@ -108,6 +108,29 @@ def _max_tokens() -> int | None:
         raise LLMError(str(e)) from e
 
 
+def _post_json(c: dict[str, str], path: str, payload: dict[str, Any],
+               *, timeout: float, reach_hint: str) -> bytes:
+    """POST JSON to `c['base']+path`. Propagates HTTPError; wraps transport.
+
+    `reach_hint` is an LLMError template with `{base}` and `{err}` for the
+    unreachable-host path (chat and embed word this differently).
+    """
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        c["base"] + path, data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 **({"Authorization": f"Bearer {c['key']}"} if c["key"] else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read()
+            assert isinstance(raw, (bytes, bytearray))
+            return bytes(raw)
+    except urllib.error.HTTPError:
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise LLMError(reach_hint.format(base=c["base"], err=e)) from e
+
+
 def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
          timeout: float = 180.0, max_tokens: int | None = -1) -> str:
     """One completion. Raises LLMError with the endpoint's own words.
@@ -124,14 +147,11 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
     cap = _max_tokens() if max_tokens == -1 else max_tokens
     if cap is not None:
         payload["max_tokens"] = cap
-    body = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        c["base"] + "/chat/completions", data=body, method="POST",
-        headers={"Content-Type": "application/json",
-                 **({"Authorization": f"Bearer {c['key']}"} if c["key"] else {})})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            raw = r.read()
+        raw = _post_json(
+            c, "/chat/completions", payload, timeout=timeout,
+            reach_hint=("cannot reach {base} ({err}). Set OCD_LLM_BASE, "
+                        "OCD_LLM_MODEL, OCD_LLM_KEY."))
     except urllib.error.HTTPError as e:
         detail = e.read()[:400].decode("utf8", "replace")
         hint = ""
@@ -143,9 +163,6 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
             hint = " (rate limited — wait, then retry once; no auto-retry)"
         raise LLMError(f"{c['base']} said {e.code} for model {c['model']!r}: "
                        f"{detail}{hint}. Set OCD_LLM_MODEL.") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise LLMError(f"cannot reach {c['base']} ({e}). Set OCD_LLM_BASE, "
-                       "OCD_LLM_MODEL, OCD_LLM_KEY.") from e
     try:
         doc = json.loads(raw)
         content = doc["choices"][0]["message"]["content"]
@@ -188,21 +205,16 @@ def embed(texts: list[str], *, model: str | None = None,
     except envcfg.EnvError as e:
         raise LLMError(str(e)) from e
     mid = model or embed_model()
-    body = json.dumps({"model": mid, "input": texts}).encode()
-    req = urllib.request.Request(
-        c["base"] + "/embeddings", data=body, method="POST",
-        headers={"Content-Type": "application/json",
-                 **({"Authorization": f"Bearer {c['key']}"} if c["key"] else {})})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            raw = r.read()
+        raw = _post_json(
+            c, "/embeddings", {"model": mid, "input": texts},
+            timeout=timeout,
+            reach_hint=("cannot reach {base} for embeddings ({err}). "
+                        "Set OCD_LLM_BASE, OCD_LLM_EMBED."))
     except urllib.error.HTTPError as e:
         detail = e.read()[:400].decode("utf8", "replace")
         raise LLMError(f"{c['base']} said {e.code} for embedding model "
                        f"{mid!r}: {detail}. Set OCD_LLM_EMBED.") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise LLMError(f"cannot reach {c['base']} for embeddings ({e}). "
-                       "Set OCD_LLM_BASE, OCD_LLM_EMBED.") from e
     try:
         doc = json.loads(raw)
         rows = sorted(doc["data"], key=lambda d: d.get("index", 0))

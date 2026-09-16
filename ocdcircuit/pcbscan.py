@@ -369,7 +369,13 @@ def register(ref_g: Any, img_g: Any, *, scales: tuple[float, ...] = SCALES,
     step_r = float(rots[1] - rots[0]) if len(rots) > 1 else 10.0
     step_s = 0.09
     res = coarse
+    # Bound matches the schedule self-check in __main__ (_passes < 40):
+    # step halves each pass and res doubles until REG, then finishes when
+    # step_r < 0.5 — a few dozen passes at most from any starting level.
+    refine_passes = 0
     while True:
+        refine_passes += 1
+        assert refine_passes < 40, "refinement schedule does not terminate"
         cands = [max([c] + [probe(c["scale"] * (1 + ds), c["rot"] + dr, res)
                             for ds in (-step_s, 0.0, step_s)
                             for dr in (-step_r, 0.0, step_r)

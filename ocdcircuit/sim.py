@@ -70,12 +70,18 @@ def _net_index(board: Board) -> dict[str, int]:
     return idx
 
 
-def _part_value(board: Board, ref: str) -> float | None:
+def _part_value(board: Board, ref: str, *kinds: str) -> float | None:
+    """Part value, with `sim <kind> REF` overrides matching spice._val.
+
+    `kinds` are the override kinds that apply (e.g. "r" for resistors,
+    "r"/"l" for L-prefix parts mapped to R). A `sim c` must not override R.
+    """
+    assert kinds, "at least one override kind"
     p = board.parts.get(ref)
     if p is None:
         return None
     for c in _sim_constraints(board):
-        if c.get("t") == "sim" and c.get("kind") in ("r", "c", "l") and c.get("ref") == ref:
+        if c.get("t") == "sim" and c.get("kind") in kinds and c.get("ref") == ref:
             try:
                 return parse_value(str(c.get("value", "")))
             except ValueError:
@@ -88,7 +94,6 @@ def _part_value(board: Board, ref: str) -> float | None:
 
 def _elements(board: Board) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """(passives, sources) from parts + sim constraints."""
-    idx = _net_index(board)
     passives: list[dict[str, object]] = []
     sources: list[dict[str, object]] = []
     for ref, p in board.parts.items():
@@ -101,13 +106,14 @@ def _elements(board: Board) -> tuple[list[dict[str, object]], list[dict[str, obj
         fp = p.fp.upper()
         if fp.startswith("R") or fp.startswith("L0805") or fp.startswith("L1206") \
                 or fp.startswith("IND"):
-            v = _part_value(board, ref)
+            # L* footprints become R in MNA; accept sim r or sim l overrides
+            v = _part_value(board, ref, "r", "l")
             if v is None or len(pinnet) < 2:
                 continue
             a, b = pinnet.get("1", ""), pinnet.get("2", "")
             passives.append({"t": "R", "a": a, "b": b, "v": v})
         elif fp.startswith("C") or fp.startswith("LED"):
-            v = _part_value(board, ref)
+            v = _part_value(board, ref, "c")
             if v is None or len(pinnet) < 2:
                 continue
             a, b = pinnet.get("1", ""), pinnet.get("2", "")
@@ -130,16 +136,10 @@ def _elements(board: Board) -> tuple[list[dict[str, object]], list[dict[str, obj
     return passives, sources
 
 
-def _solve_dc(passives: list[dict[str, object]], sources: list[dict[str, object]],
-              idx: dict[str, int]) -> dict[str, float]:
-    """Nodal analysis, R + V sources (conductance matrix, Gaussian elim)."""
-    n = len(idx)
-    nv = sum(1 for s in sources if s["t"] in ("V", "sine"))
-    N = n + nv
-    A = [[0.0] * (N + 1) for _ in range(N)]
-    for p in passives:
-        if p["t"] != "R":
-            continue
+def _stamp_resistors(A: list[list[float]], idx: dict[str, int],
+                     resistors: list[dict[str, object]]) -> None:
+    """Add G = 1/R stamps for each resistor into conductance matrix A."""
+    for p in resistors:
         rv = _f(p["v"], 1.0)
         if not math.isfinite(rv) or rv <= 0:
             raise ValueError(f"resistor value must be positive (got {rv})")
@@ -153,41 +153,62 @@ def _solve_dc(passives: list[dict[str, object]], sources: list[dict[str, object]
         if a >= 0 and b >= 0:
             A[a][b] -= g
             A[b][a] -= g
+
+
+def _stamp_sources(A: list[list[float]], idx: dict[str, int],
+                   sources: list[dict[str, object]], n: int, n_cols: int) -> None:
+    """Stamp V/sine (extra MNA rows) and I sources into A | rhs."""
     vi = 0
     for s in sources:
-        if s["t"] not in ("V", "sine"):
-            continue
-        v = _f(s["v0"]) if s["t"] == "V" else _f(s["off"])
-        row = n + vi
-        vi += 1
-        net = idx.get(str(s["net"]), -1)
-        if net >= 0:
-            A[net][row] += 1.0
-            A[row][net] += 1.0
-        A[row][N] = v
-    for s in sources:
-        if s["t"] != "I":
-            continue
-        net = idx.get(str(s["net"]), -1)
-        if net >= 0:
-            A[net][N] += _f(s["v"])
-    x = _gauss(A, N)
+        kind = s["t"]
+        if kind in ("V", "sine"):
+            # DC OP uses sine offset; transient converts sine→V with v0 set
+            v = _f(s["v0"]) if kind == "V" else _f(s["off"])
+            row = n + vi
+            vi += 1
+            net = idx.get(str(s["net"]), -1)
+            if net >= 0:
+                A[net][row] += 1.0
+                A[row][net] += 1.0
+            A[row][n_cols] = v
+        elif kind == "I":
+            net = idx.get(str(s["net"]), -1)
+            if net >= 0:
+                A[net][n_cols] += _f(s["v"])
+
+
+def _mna_size(idx: dict[str, int], sources: list[dict[str, object]]) -> tuple[int, int]:
+    """(n_nodes, N_total) for the MNA matrix including voltage-source rows."""
+    n = len(idx)
+    nv = sum(1 for s in sources if s["t"] in ("V", "sine"))
+    return n, n + nv
+
+
+def _solve_dc(passives: list[dict[str, object]], sources: list[dict[str, object]],
+              idx: dict[str, int]) -> dict[str, float]:
+    """Nodal analysis, R + V sources (conductance matrix, Gaussian elim)."""
+    n, n_total = _mna_size(idx, sources)
+    A = [[0.0] * (n_total + 1) for _ in range(n_total)]
+    _stamp_resistors(A, idx, [p for p in passives if p["t"] == "R"])
+    _stamp_sources(A, idx, sources, n, n_total)
+    x = _gauss(A, n_total)
     return {net: x[i] for net, i in idx.items()}
 
 
-def _gauss(A: list[list[float]], N: int) -> list[float]:
+def _gauss(A: list[list[float]], n_total: int) -> list[float]:
     M = [row[:] for row in A]
-    for col in range(N):
-        piv = max(range(col, N), key=lambda r: abs(M[r][col]))
+    for col in range(n_total):
+        piv = max(range(col, n_total), key=lambda r: abs(M[r][col]))
         if abs(M[piv][col]) < 1e-12:
             continue
         M[col], M[piv] = M[piv], M[col]
-        for r in range(N):
+        for r in range(n_total):
             if r != col and M[r][col] != 0.0:
                 f = M[r][col] / M[col][col]
-                for c in range(col, N + 1):
+                for c in range(col, n_total + 1):
                     M[r][c] -= f * M[col][c]
-    return [(M[i][N] / M[i][i] if abs(M[i][i]) > 1e-12 else 0.0) for i in range(N)]
+    return [(M[i][n_total] / M[i][i] if abs(M[i][i]) > 1e-12 else 0.0)
+            for i in range(n_total)]
 
 
 def dc(board: Board) -> dict[str, float]:
@@ -220,6 +241,7 @@ def tran(board: Board, t_end: float | None = None,
     if not idx:
         return {}
     passives, sources = _elements(board)
+    # floor division of time: exact steps of equal width (caller-chosen count)
     dt = t_end_v / steps_v
     # Backward Euler companions: Geq = C/dt in parallel with a current
     # source Geq*vc_prev flowing b→a. First-order, stable, plenty for
@@ -242,59 +264,31 @@ def tran(board: Board, t_end: float | None = None,
             Geq = C / dt
             eff.append({"t": "R", "a": p["a"], "b": p["b"], "v": 1.0 / Geq})
             ihist[id(p)] = Geq * vc[id(p)]
-        # time-varying sources
+        # time-varying sources (sine/step become plain V with v0 set)
         tsrc: list[dict[str, object]] = []
         for s in sources:
             if s["t"] == "V" and s["v1"] is not None:
                 tsrc.append({"t": "V", "net": s["net"], "v0": _f(s["v1"])})
             elif s["t"] == "sine":
-                v = _f(s["off"]) + _f(s["amp"], 1.0) * math.sin(2 * math.pi * _f(s["freq"], 1000.0) * t)
+                v = (_f(s["off"])
+                     + _f(s["amp"], 1.0)
+                     * math.sin(2 * math.pi * _f(s["freq"], 1000.0) * t))
                 tsrc.append({"t": "V", "net": s["net"], "v0": v})
             else:
                 tsrc.append(s)
-        # solve with companion currents injected
-        n = len(idx)
-        nv = sum(1 for s in tsrc if s["t"] in ("V", "sine"))
-        N = n + nv
-        A = [[0.0] * (N + 1) for _ in range(N)]
-        for p in eff:
-            rv = _f(p["v"], 1.0)
-            if not math.isfinite(rv) or rv <= 0:
-                raise ValueError(f"resistor value must be positive (got {rv})")
-            g = 1.0 / rv
-            a = idx.get(str(p["a"]), -1)
-            b = idx.get(str(p["b"]), -1)
-            if a >= 0:
-                A[a][a] += g
-            if b >= 0:
-                A[b][b] += g
-            if a >= 0 and b >= 0:
-                A[a][b] -= g
-                A[b][a] -= g
+        n, n_total = _mna_size(idx, tsrc)
+        A = [[0.0] * (n_total + 1) for _ in range(n_total)]
+        _stamp_resistors(A, idx, eff)
         for p in caps:
             Ih = ihist[id(p)]
             a = idx.get(str(p["a"]), -1)
             b = idx.get(str(p["b"]), -1)
             if a >= 0:
-                A[a][N] += Ih
+                A[a][n_total] += Ih
             if b >= 0:
-                A[b][N] -= Ih
-        vi = 0
-        for s in tsrc:
-            if s["t"] in ("V", "sine"):
-                v = _f(s["v0"]) if s["t"] == "V" else _f(s["off"])
-                row = n + vi
-                vi += 1
-                net = idx.get(str(s["net"]), -1)
-                if net >= 0:
-                    A[net][row] += 1.0
-                    A[row][net] += 1.0
-                A[row][N] = v
-            elif s["t"] == "I":
-                net = idx.get(str(s["net"]), -1)
-                if net >= 0:
-                    A[net][N] += _f(s["v"])
-        x = _gauss(A, N)
+                A[b][n_total] -= Ih
+        _stamp_sources(A, idx, tsrc, n, n_total)
+        x = _gauss(A, n_total)
         sol = {net: x[i] for net, i in idx.items()}
         for p in caps:
             a = idx.get(str(p["a"]), -1)
