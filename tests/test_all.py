@@ -985,6 +985,12 @@ with tempfile.TemporaryDirectory() as d:
     _zn = _zf.ZipFile(_zb).namelist()
     assert any(n.endswith(".GTL.gbr") for n in _zn) and any(n.endswith(".CPL.csv") for n in _zn)
     assert any(n.endswith(".kicad_sch") for n in _zn) and any(n.endswith(".brd") for n in _zn)
+    # same board → bit-identical fab zip (content UUIDs + SOURCE_DATE_EPOCH)
+    _zb2 = b.export("bundle", outdir=tempfile.mkdtemp())[0]
+    assert open(_zb, "rb").read() == open(_zb2, "rb").read()
+    _zi = _zf.ZipFile(_zb).infolist()
+    assert [i.filename for i in _zi] == sorted(i.filename for i in _zi)
+    assert len({i.date_time for i in _zi}) == 1  # uniform, not host mtimes
     # drill file carries PTH holes (J1=PINHD2), grouped by tool diameter
     drl = open([f for f in files if f.endswith(".TXT")][0]).read()
     assert "M48" in drl and "M30" in drl

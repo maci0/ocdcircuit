@@ -1,7 +1,7 @@
-"""Doctor: is the tooling itself healthy? Python version, optional
-binaries (ngspice), and the plugin registry (every kind has an active).
-No board needed — pass None. One check behind means one degraded feature,
-never a mystery traceback later."""
+"""Doctor: is the tooling itself healthy? Python version (≥3.14, pinned
+in `.python-version`), optional binaries (ngspice), and the plugin
+registry (every kind has an active). No board needed — pass None. One
+check behind means one degraded feature, never a mystery traceback later."""
 from __future__ import annotations
 import shutil
 import sys
@@ -17,7 +17,7 @@ def doctor(board: Board | None = None) -> dict[str, object]:
     def add(name: str, ok: bool, detail: str = "") -> None:
         checks.append({"name": name, "ok": ok, "detail": detail})
 
-    add("python", sys.version_info >= (3, 11), sys.version.split()[0])
+    add("python", sys.version_info >= (3, 14), sys.version.split()[0])
     try:
         import numpy
         add("numpy", True, str(numpy.__version__))

@@ -3,9 +3,10 @@
 A circuit design tool for people with OCD. Your traces are parallel.
 Your silkscreen is aligned. Your DRC is clean. It has to be.
 
-Needs: Python 3.11+, no other deps (`rich` optional for pretty CLI;
-`numpy` optional for the SIMD placer). Developing: `pip install -r
-requirements-dev.txt` — it pins the checker `make check` runs.
+Needs: Python 3.14 (see `.python-version`), no other deps (`rich`
+optional for pretty CLI; `numpy` optional for the SIMD placer).
+Developing: `pip install -r requirements-dev.txt` — it pins the
+checker `make check` runs.
 
 ## 10 minutes from KiCad
 

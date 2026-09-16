@@ -1,5 +1,11 @@
 BOARD ?= boards/blinky_555.ocd
 
+# Hermetic-ish local/CI gate: C locale + UTC so sort/date never leak host
+# settings into check output; SOURCE_DATE_EPOCH stabilizes fab.zip mtimes.
+export LC_ALL := C
+export TZ := UTC
+export SOURCE_DATE_EPOCH ?= 0
+
 .PHONY: check run lint doctor test snap bench farm fabsweep clean
 
 check: lint test			# everything green before commit

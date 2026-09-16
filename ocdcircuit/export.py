@@ -428,16 +428,31 @@ def _enet(board: Board, ref: str, pin: object) -> str:
 
 def export_bundle(board: Board, outdir: str = "out") -> list[str]:
     """One-zip fab bundle: Gerbers + drill + BOM + CPL + .ocd source.
-    Download → upload → boards. Returns [zip path]."""
+    Download → upload → boards. Returns [zip path].
+
+    Zip entry order, mtimes, and modes are normalized so two exports of
+    the same board byte-match when SOURCE_DATE_EPOCH is set (default 0)."""
+    import time
     import zipfile
     files = export_jlc(board, outdir)
     files += export_kicad(board, outdir)
     files += export_kicad_sch(board, outdir)
     files += export_eagle(board, outdir)
     zfn = os.path.join(outdir, f"{board.name}-fab.zip")
+    # ZIP local headers reject pre-1980; clamp so SOURCE_DATE_EPOCH=0 still works.
+    epoch = max(int(os.environ.get("SOURCE_DATE_EPOCH", "0")), 315532800)
+    stamp = time.gmtime(epoch)
+    date_time = (stamp.tm_year, stamp.tm_mon, stamp.tm_mday,
+                 stamp.tm_hour, stamp.tm_min, stamp.tm_sec)
+    # basename-unique: exporters may list overlapping paths across kinds
+    by_name = {os.path.basename(f): f for f in files}
     with zipfile.ZipFile(zfn, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in files:
-            z.write(f, os.path.basename(f))
+        for name in sorted(by_name):
+            info = zipfile.ZipInfo(name, date_time=date_time)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            with open(by_name[name], "rb") as fh:
+                z.writestr(info, fh.read())
     return [zfn]
 
 
@@ -445,9 +460,14 @@ def _sexp_str(s: str) -> str:
     return '"' + s.replace('"', "'") + '"'
 
 
-def _uuid() -> str:
-    import uuid
-    return str(uuid.uuid4())
+import uuid as _uuid_mod
+
+_UUID_NS = _uuid_mod.uuid5(_uuid_mod.NAMESPACE_URL, "https://ocdcircuit.dev/export")
+
+
+def _uuid(key: str) -> str:
+    """Content-addressed UUID: same board+slot → same id across runs."""
+    return str(_uuid_mod.uuid5(_UUID_NS, key))
 
 
 def _tech_layers() -> list[tuple[int, str, str]]:
@@ -644,24 +664,25 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     for n, net in board.nets.items():
         for r, q in net.pins:
             pin_net[(r, str(q))] = n
+    bn = board.name
     for p in sorted(board.parts.values(), key=lambda q: q.ref):
-        uuid = _uuid()
+        uuid = _uuid(f"{bn}:fp:{p.ref}")
         A(f'  (footprint {_sexp_str(p.fp)} (layer "F.Cu") (uuid "{uuid}")')
         if p.attrs.get("dnp"):
             A('    (attr dnp)')  # KiCad excludes from BOM/PnP, like our CPL
         A(f"    (at {p.x:.4f} {p.y:.4f})")
         A(f'    (descr {_sexp_str(p.value or p.fp)})')
         _pw, _ph = p.wh()
-        puuid = _uuid()
+        puuid = _uuid(f"{bn}:fptext:{p.ref}:ref")
         A(f'    (fp_text user {_sexp_str(p.ref)} (at 0 {-_ph / 2 - 1:.4f}) (layer "F.SilkS") (uuid "{puuid}"))')
         if p.value:
             A(f'    (fp_text value {_sexp_str(p.value)} (at 0 {_ph / 2 + 1:.4f}) '
-              f'(layer "F.Fab") (uuid "{_uuid()}"))')
+              f'(layer "F.Fab") (uuid "{_uuid(f"{bn}:fptext:{p.ref}:value")}"))')
         for pin in sorted(pads_of(p.fp, lib)):
             dx, dy = board.pad_pos(p.ref, pin)
             dr = hole_drill(p.fp, pin, lib)
             nn = _sexp_str(pin_net.get((p.ref, str(pin)), ""))
-            q = _uuid()
+            q = _uuid(f"{bn}:pad:{p.ref}:{pin}")
             if dr > 0:
                 A(f'    (pad {_sexp_str(pin)} thru_hole circle (at {dx - p.x:.4f} {dy - p.y:.4f}) '
                   f'(size {dr + 0.7:.4f} {dr + 0.7:.4f}) (drill {dr:.4f}) '
@@ -681,10 +702,12 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
         nid = _sexp_str(t.net)
         if t.via:
             A(f'  (via (at {t.x1:.4f} {t.y1:.4f}) (size 0.8) (drill 0.4) '
-              f'(layers {_sexp_str(layers[0])} {_sexp_str(layers[-1])}) (net {nid}) (uuid "{_uuid()}"))')
+              f'(layers {_sexp_str(layers[0])} {_sexp_str(layers[-1])}) (net {nid}) '
+              f'(uuid "{_uuid(f"{bn}:via:{t.net}:{t.layer}:{t.x1:.4f}:{t.y1:.4f}")}"))')
             continue
         A(f'  (segment (start {t.x1:.4f} {t.y1:.4f}) (end {t.x2:.4f} {t.y2:.4f}) '
-          f'(width {t.width:.4f}) (layer {_sexp_str(ln)}) (net {nid}) (uuid "{_uuid()}"))')
+          f'(width {t.width:.4f}) (layer {_sexp_str(ln)}) (net {nid}) '
+          f'(uuid "{_uuid(f"{bn}:seg:{t.net}:{t.layer}:{t.x1:.4f}:{t.y1:.4f}:{t.x2:.4f}:{t.y2:.4f}:{t.width:.4f}")}"))')
     W, H = board.width, board.height
     for x1, y1, x2, y2 in [(0, 0, W, 0), (W, 0, W, H), (W, H, 0, H), (0, H, 0, 0)]:
         A(f'  (gr_line (start {x1:.4f} {y1:.4f}) (end {x2:.4f} {y2:.4f}) '
@@ -712,11 +735,13 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
             _cmts(zone_at(board, con))
         elif kind == "hole":
             hx, hy, hd = _f(con["x"]), _f(con["y"]), _f(con["d"])
-            A(f'  (footprint "MOUNT_HOLE" (layer "F.Cu") (uuid "{_uuid()}")')
+            A(f'  (footprint "MOUNT_HOLE" (layer "F.Cu") '
+              f'(uuid "{_uuid(f"{bn}:hole:{hx:.4f}:{hy:.4f}:{hd:.4f}")}")')
             A(f"    (at {hx:.4f} {hy:.4f})")
             A(f'    (pad "1" thru_hole circle (at 0 0) '
               f'(size {hd + 0.6:.4f} {hd + 0.6:.4f}) '
-              f'(drill {hd:.4f}) (layers "*.Cu" "*.Mask") (net "") (uuid "{_uuid()}"))')
+              f'(drill {hd:.4f}) (layers "*.Cu" "*.Mask") (net "") '
+              f'(uuid "{_uuid(f"{bn}:holepad:{hx:.4f}:{hy:.4f}:{hd:.4f}")}"))')
             A("  )")
         elif kind in ("bend", "stiffener"):
             cx, cy = _f(con["x"]), _f(con["y"])
@@ -731,7 +756,7 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
                   f'(layer "Cmts.User") (width 0.05))')
             A(f'  (gr_text "{tag}" (at {cx:.4f} {cy:.4f}) (layer "Cmts.User"))')
     # footprint keepouts (antenna zones etc.) ride along as Cmts.User art
-    for ref in board.parts:
+    for ref in sorted(board.parts):
         for c in fp_keepouts(board, ref):
             _cmts(zone_at(board, c))
     # pours: copper zones (KiCad refills geometry on load; hatch marks intent)
@@ -739,12 +764,12 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
     from .fab import get as _fab_get2
     zedge = float(cast(float, _fab_get2(board.fab).get("edge", 0.3)))
     zx0, zy0, zx1, zy1 = zedge, zedge, W - zedge, H - zedge
-    for pname, lls in _pours(board).items():
+    for pname, lls in sorted(_pours(board).items()):
         zid = net_ids.get(pname, 0)
-        for ll in lls:
+        for ll in sorted(lls):
             zln = layers[ll] if ll < len(layers) else layers[0]
             A(f'  (zone (net {zid}) (net_name {_sexp_str(pname)}) (layer {_sexp_str(zln)})'
-              f' (uuid "{_uuid()}") (hatch edge 0.5)')
+              f' (uuid "{_uuid(f"{bn}:zone:{pname}:{ll}")}") (hatch edge 0.5)')
             A(f'    (polygon (pts (xy {zx0:.4f} {zy0:.4f}) (xy {zx1:.4f} {zy0:.4f})'
               f' (xy {zx1:.4f} {zy1:.4f}) (xy {zx0:.4f} {zy1:.4f})))')
             A('    (fill (thermal_gap 0.5) (thermal_bridge_width 0.5)))')
@@ -1082,18 +1107,17 @@ def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.easyeda_sch.json")
     open(fn, "w").write(json.dumps(doc))
     return [fn]
-    """Write <name>.kicad_sch: generic box symbols on the shared sch_layout
-    grid (same picture as the SVG canvas), one wire per pin-to-rail drop,
-    one global_label per net. Validated with `kicad-cli sch erc`."""
+
+
 def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.kicad_sch: generic box symbols on the shared sch_layout
     grid (same picture as the SVG canvas), one wire per pin-to-rail drop,
     one global_label per net. Validated with `kicad-cli sch erc`."""
-    import uuid as _uuid_mod
     from .plugins import sch_layout
     os.makedirs(outdir, exist_ok=True)
     lay = sch_layout(board)
     order, px, rail_y, top = lay.order, lay.px, lay.rail_y, float(lay.top)
+    bn = board.name
     # KiCad schematic units are mm; our layout is ~px — scale down
     S = 0.25
     L: list[str] = []
@@ -1109,7 +1133,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
 
     counts = sorted({len(_part_pins(board, r)) for r in order})
     A('(kicad_sch (version 20250114) (generator "ocdcircuit") (generator_version "10.0")')
-    A(f'  (uuid "{_uuid_mod.uuid4()}")')
+    A(f'  (uuid "{_uuid(f"{bn}:sch")}")')
     A('  (paper "A4")')
     A("  (lib_symbols")
     for n in counts:
@@ -1155,7 +1179,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
         sym = f"ocd:box{n}" if n else "ocd:box0"
         x, y = g(float(px[r]) * S), g(float(top - 20) * S)
         A(f'  (symbol (lib_id "{sym}") (at {x:.2f} {y:.2f} 0) (unit 1)')
-        A(f'    (uuid "{_uuid_mod.uuid4()}")')
+        A(f'    (uuid "{_uuid(f"{bn}:sch:sym:{r}")}")')
         A(f'    (property "Reference" "{r}" (at {x:.2f} {y - 5.08:.2f} 0)'
           ' (effects (font (size 1.27 1.27))))')
         A(f'    (property "Value" "{p.value or p.fp}" (at {x:.2f} {y + 5.08:.2f} 0)'
@@ -1170,7 +1194,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
                 A(f'    (property "{_prop}" "{_v}" (at {x:.2f} {y + 10.16:.2f} 0)'
                   ' (effects (font (size 1.27 1.27)) hide))')
         for i, q in enumerate(pins):
-            A(f'    (pin "{i + 1}" (uuid "{_uuid_mod.uuid4()}"))')
+            A(f'    (pin "{i + 1}" (uuid "{_uuid(f"{bn}:sch:pin:{r}:{i}")}"))')
             pin_pos[(r, q)] = pin_xy(i, n, x, y)
         A("  )")
     for i, nn in enumerate(nets):
@@ -1184,10 +1208,10 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
         for xa, xb in zip(xs, xs[1:]):
             A(f'  (wire (pts (xy {xa:.2f} {y:.2f}) (xy {xb:.2f} {y:.2f}))'
               ' (stroke (width 0.254) (type default))'
-              f' (uuid "{_uuid_mod.uuid4()}"))')
+              f' (uuid "{_uuid(f"{bn}:sch:rail:{nn}:{xa:.2f}:{xb:.2f}:{y:.2f}")}"))')
         A(f'  (global_label "{nn}" (shape input) (at {xs[0]:.2f} {y:.2f} 180)'
           ' (effects (font (size 1.27 1.27)))'
-          f' (uuid "{_uuid_mod.uuid4()}"))')
+          f' (uuid "{_uuid(f"{bn}:sch:label:{nn}")}"))')
         for r, q in board.nets[str(nn)].pins:
             if (r, str(q)) not in pin_pos:
                 continue
@@ -1195,7 +1219,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
             # lib pin `at` IS the wire attach point — drop straight to rail
             A(f'  (wire (pts (xy {ex:.2f} {ey:.2f}) (xy {ex:.2f} {y:.2f}))'
               ' (stroke (width 0.254) (type default))'
-              f' (uuid "{_uuid_mod.uuid4()}"))')
+              f' (uuid "{_uuid(f"{bn}:sch:drop:{nn}:{r}:{q}")}"))')
     A('  (sheet_instances (path "/" (page "1")))')
     A(")")
     fn = os.path.join(outdir, f"{board.name}.kicad_sch")

@@ -1,0 +1,43 @@
+[project]
+name = "ocdcircuit"
+version = "0.0.0"
+description = "Circuit design tool for people with OCD"
+requires-python = ">=3.14"
+readme = "README.md"
+
+# Interpreter pin (single source for CI + local): see .python-version.
+# Ruff/mypy versions are pinned in requirements-dev.txt.
+
+[tool.ruff]
+target-version = "py314"
+src = ["ocdcircuit", "apps", "tools", "benches", "tests"]
+
+[tool.ruff.lint]
+# Correctness / suspicious categories on; ignores are only rules the tree
+# does not yet pass. Drop an ignore after a local `ruff check` clean-up —
+# never widen ignore to silence a new finding.
+select = [
+    "F",                         # pyflakes
+    "E4", "E7", "E9",            # import / statement / runtime (not E1-E3 style)
+    "W",                         # pycodestyle warnings
+    "YTT", "ASYNC", "FA", "PGH",
+    "B",                         # bugbear
+    "S",                         # flake8-bandit
+    "RUF",                       # ruff-specific
+]
+ignore = [
+    # pyflakes — unused / redefine noise still present
+    "F401", "F541", "F811", "F841",
+    # pycodestyle — deferred import sites + short names in parsers
+    "E401", "E402", "E741",
+    # bugbear — loop vars, getattr/setattr strings, assert False in tests,
+    # exception chaining, zip-strict, map-strict
+    "B007", "B009", "B010", "B011", "B023", "B904", "B905", "B912",
+    # bandit — asserts, /tmp paths, try/pass, urllib, RNG, XML, md5/sha1,
+    # subprocess without shell audit
+    "S101", "S108", "S110", "S112", "S310", "S311", "S314", "S324", "S603", "S607",
+    # ruff — confusable unicode in docs/strings, micro-opts, mutable defaults,
+    # unused noqa (kept for rules not yet enabled), etc.
+    "RUF001", "RUF002", "RUF003", "RUF005", "RUF007", "RUF012", "RUF015",
+    "RUF021", "RUF022", "RUF046", "RUF059", "RUF100",
+]
