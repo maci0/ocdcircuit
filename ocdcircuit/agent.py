@@ -129,7 +129,11 @@ def _opt_float(v: object) -> float | None:
 
 
 def parse_constraint(text: str) -> Constraint | None:
-    t = text.strip()
+    # Collapse runs of whitespace: every pattern below is written with single
+    # spaces, so "route 5V  on 1" (or a tab) silently parsed as nothing and
+    # surfaced as "unknown statement" three lines later. Normalising once
+    # here fixes every form at the one point they all pass through.
+    t = re.sub(r"\s+", " ", text.strip())
     m = re.match(r"keep (\w+) near (\w+)(?: (\d+(?:\.\d+)?))?$", t, re.I)
     if m:
         return {"t": "near", "a": m.group(1), "b": m.group(2),

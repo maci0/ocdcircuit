@@ -3123,6 +3123,16 @@ assert any(str(c.get("name")) == "kicad-cli"
 # pipeline self-check passes (registration/stitch/enhance/splat on a
 # synthetic shoot — see pcbscan.demo). Skipped without numpy, which is the
 # one hard dependency of that module.
+# constraint lines tolerate ragged whitespace: an LLM (or a human) writing
+# "route 5V  on 1" used to get "unknown statement" from a double space.
+for _ws, _want in (("route 5V  on 1", "layer"), ("power  VCC  GND", "power"),
+                   ("silk  2", "silk"), ("keep R1  near  U1", "near"),
+                   ("fix U1 at 1  2", "fixed")):
+    _pc = agent.parse_constraint(_ws)
+    assert _pc is not None and _pc["t"] == _want, (_ws, _pc)
+assert agent.parse_constraint("route 5V on 1") == {"t": "layer", "net": "5V",
+                                                   "layer": 1}
+
 assert "scan:photo" in Board("scanreg").plugins().list()
 try:
     import numpy as _np_probe  # noqa: F401
