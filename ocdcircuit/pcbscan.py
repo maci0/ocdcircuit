@@ -1150,6 +1150,74 @@ def context_block(note: str = "", docs: list[str] | None = None,
             + "\n\n".join(out))
 
 
+def extract_certainty(reply: str) -> dict[str, dict[str, object]]:
+    """Per-part certainty mined from the reply's own words.
+
+    Two signals, both already in the contract the prompt asks for: `?` as a
+    draft VALUE means the model could not identify the part, and the
+    INVENTORY bullets carry hedge language ("marking unreadable", "likely",
+    "function not known"...) versus assertive language ("confirmed",
+    "strongly visible"). Anything the parser cannot classify stays out —
+    an absent entry means unknown, never confident.
+    """
+    import re
+    out: dict[str, dict[str, object]] = {}
+    try:
+        src = extract_ocd(reply)
+    except ValueError:
+        src = ""
+    values: dict[str, str] = {}
+    notes: dict[str, str] = {}
+    for line in src.splitlines():
+        m = re.match(r"part\s+(\S+)\s+(\S+)(?:\s+(\S+))?", line)
+        if not m:
+            continue
+        ref, fp, val = m.group(1), m.group(2), (m.group(3) or "")
+        if val.startswith("x=") or val.startswith("#"):
+            val = ""
+        values[ref] = val
+        tail = line.split("#", 1)
+        notes[ref] = tail[1].strip() if len(tail) > 1 else ""
+    hedge = re.compile(
+        r"not\s+(readable|read|resolvable|cleanly readable|proven|known|confirmed)|"
+        r"unreadable|unknown|not known|cannot confirm|not trace-confirmed|"
+        r"\blikely\b|\bmaybe\b|\bpossibly\b|guess|suspect|unconfirmed|"
+        r"visible in places|not resolvable|not measured", re.I)
+    inv = reply.split("## 2.")[0]
+    for line in inv.splitlines():
+        s = line.strip()
+        if not (s.startswith("- **") or s.startswith("-**")):
+            continue
+        body = s[2:].strip()
+        if body.startswith("**"):
+            body = body[2:]
+        seg = re.split(r"\*\*|—|–|-", body, maxsplit=1)[0]
+        refs = [r for r in re.split(r"[,\s]+", seg)
+                if re.fullmatch(r"[A-Z]+\d+", r or "")]
+        if not refs:
+            continue
+        unc = bool(hedge.search(s))
+        for r in refs:
+            prev = out.get(r)
+            if prev is None or unc:
+                out[r] = {"uncertain": unc, "note": ""}
+    try:
+        from . import agent
+        b = agent.loads(src, base=".")
+        for ref in list(out):
+            if ref not in b.parts:
+                del out[ref]
+    except (ValueError, KeyError, AssertionError, OSError):
+        pass
+    for ref, entry in out.items():
+        val = values.get(ref, "")
+        if val == "?":
+            entry["uncertain"] = True
+        if notes.get(ref):
+            entry["note"] = notes[ref]
+    return out
+
+
 def extract_questions(reply: str) -> list[str]:
     """The ```questions block, if the model asked anything back."""
     import re
@@ -1375,6 +1443,10 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     """
     man = scan(photos, outdir, board_mm, maxdim, tall_mm)
     if not llm_analysis:
+        # No analysis means no draft and no certainty prose — but the viewer
+        # still needs its canvas keys, with zero parts, so the client draws
+        # the stitch with no boxes instead of branching on a missing key.
+        man["review"] = review("", "board review 1x1 1L\n", man)
         return man
     report = analyse(man, note=note, docs=docs, answers=answers,
                      zoom=zoom, pads=pads)
@@ -1390,6 +1462,7 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
     except ValueError as e:
         man["draft_error"] = str(e)
         return man
+    man["certainty"] = extract_certainty(report)
     dp = os.path.join(outdir, "draft.ocd")
     with open(dp, "w") as f:
         f.write(src)
@@ -1403,7 +1476,88 @@ def reverse(photos: dict[str, list[str]] | list[str], outdir: str = "scan",
         man["draft_error"] = f"draft does not parse: {e}"
         return man
     man.update(buildable(b))
+    man["review"] = review(report, src, man)
     return man
+
+
+def review(report: str, src: str, man: dict[str, object]) -> dict[str, object]:
+    """Per-part review rows for the scan viewer: outline box, label text,
+    and tooltip content for one detected part.
+
+    Geometry comes from the draft's own fix constraints (the model-placed
+    mm position) plus live footprint sizes — never from pixels, so a box
+    cannot drift out of sync with the design it edits. Certainty comes from
+    extract_certainty on the same reply: `?` values and hedge language both
+    mark a part review-worthy. A part with neither signal still gets a row
+    (label + box) but no tooltip flag — absence means unknown, never
+    confident.
+    """
+    import re
+    from . import agent
+    from .parts import FOOTPRINTS
+    sides = cast(dict[str, object], man.get("sides", {}))
+
+    def _side(name: str) -> tuple[float, int, int]:
+        s = sides.get(name)
+        if not isinstance(s, dict):
+            return 0.1, 0, 0
+        mp = s.get("mm_per_px")
+        mm = float(cast(float, mp if isinstance(mp, (int, float)) else 0.1))
+        cv = s.get("canvas")
+        cw2, ch2 = 0, 0
+        if isinstance(cv, list) and len(cv) > 1:
+            cw2 = int(cast(int, cv[0])) if isinstance(cv[0], (int, float)) else 0
+            ch2 = int(cast(int, cv[1])) if isinstance(cv[1], (int, float)) else 0
+        return mm, cw2, ch2
+
+    mmpx, cw, ch = _side("top")
+    mmpx_b, cw_b, ch_b = _side("bottom")
+    try:
+        sizes: dict[str, tuple[float, float]] = {}
+        for m in re.finditer(r"(\S+)\s+([\d.]+)x([\d.]+)mm", footprint_menu()):
+            sizes[m.group(1)] = (float(m.group(2)), float(m.group(3)))
+    except (ValueError, KeyError):
+        sizes = {}
+    cert = extract_certainty(report)
+    rows: list[dict[str, object]] = []
+    try:
+        b = agent.loads(src, base=".")
+    except (ValueError, KeyError, AssertionError, OSError):
+        return {"parts": rows,
+                "canvas": {"top": [cw, ch], "bottom": [cw_b, ch_b]},
+                "mm_per_px": {"top": mmpx, "bottom": mmpx_b}}
+    for ref, p in b.parts.items():
+        fx = next((c for c in b.constraints
+                   if c.get("t") == "fixed"
+                   and str(c.get("ref")) == ref), None)
+        if fx is None:
+            continue
+        fp = FOOTPRINTS.get(p.fp, {})
+        fw = float(cast(float, fp.get("w", 0) or 0))
+        fh = float(cast(float, fp.get("h", 0) or 0))
+        if not fw or not fh:
+            lib = sizes.get(p.fp)
+            if lib:
+                fw, fh = lib
+        x = float(cast(float, fx.get("x", 0)))
+        y = float(cast(float, fx.get("y", 0)))
+        entry = cert.get(ref, {})
+        unc = bool(entry.get("uncertain", False))
+        # `?` as a draft value is itself the model's uncertainty flag, and it
+        # survives loads() — but without prose the note is empty, which the
+        # tooltip must distinguish from "confident".
+        if p.value.strip() == "?":
+            unc = True
+        rows.append({
+            "ref": ref, "fp": p.fp, "value": p.value,
+            "x": x, "y": y, "w": fw, "h": fh,
+            "uncertain": unc,
+            "note": str(entry.get("note", "")),
+        })
+    rows.sort(key=lambda r: (str(r["ref"])))
+    return {"parts": rows,
+            "canvas": {"top": [cw, ch], "bottom": [cw_b, ch_b]},
+            "mm_per_px": {"top": mmpx, "bottom": mmpx_b}}
 
 
 def buildable(board: object) -> dict[str, object]:

@@ -3219,6 +3219,21 @@ else:
     assert "a PSU board" in _ctx and "Q: Volts?\nA: 12V" in _ctx
     assert _pcbscan.extract_questions(
         "```questions\n1. What is it from?\n```") == ["What is it from?"]
+    # certainty comes from the reply's own contract: `?` values plus hedge
+    # language in INVENTORY bullets. Assertive prose stays confident, hedged
+    # prose and `?` flip uncertain, and refs the draft never defines leak out.
+    _rep = ("## 1. INVENTORY\n"
+            "- **U1** — SOT-223. Silk `U1` confirmed, marking resolves cleanly.\n"
+            "- **U4** — QFP. Silk `U4` visible. Body marking **not readable**.\n"
+            "- **X9** — mentioned but never drafted.\n"
+            "## 2. PART IDENTIFICATION\n```ocd\nboard t 40x30 2L\n"
+            "part U1 SOT223 AP1117 x=1 y=1\n"
+            "part U4 QFP32 ? x=2 y=2                # marking unreadable\n```\n")
+    _cert = _pcbscan.extract_certainty(_rep)
+    assert _cert["U1"] == {"uncertain": False, "note": ""}, _cert["U1"]
+    assert _cert["U4"]["uncertain"] is True, _cert["U4"]
+    assert _cert["U4"]["note"] == "marking unreadable", _cert["U4"]
+    assert "X9" not in _cert, "ungrounded ref leaked into certainty"
 
 # --- perf-review: the fast paths must stay equivalent to the scalar ones ---
 # _overlap_hits replaced cost()'s O(n^2) python scan; a drift here is a

@@ -243,6 +243,20 @@ _slot("view", "scan",
                          'name files with &ldquo;top&rdquo; / &ldquo;bottom&rdquo; so the sides are split &middot; '
                          'shoot whole-board frames plus mid-range ones; very tight close-ups often fail to line up</div>'
                          '<div id=scanq></div>'
+                         '<div id=scanview hidden>'
+                         '<div id=scanviewbar>'
+                         '<label>side <select id=scanside aria-label="board side to view">'
+                         '<option value=top>top</option><option value=bottom>bottom</option>'
+                         '</select></label>'
+                         '<label>view <select id=scanviewkind aria-label="which enhancement to show">'
+                         '<option value=stitch>photo</option><option value=contrast>markings</option>'
+                         '</select></label>'
+                         '<label class=scancheck><input id=scanlabels type=checkbox checked> labels</label>'
+                         '<label class=scancheck><input id=scanboxes type=checkbox checked> outlines</label>'
+                         '<span id=scanhover role=status aria-live=polite></span></div>'
+                         '<div class=scanstage><img id=scanimg alt="stitched board photo">'
+                         '<svg id=scansvg aria-hidden=true></svg></div>'
+                         '<div id=scanparts></div></div>'
                          '<pre id=scanout></pre>'
                          '</section>',
                order=5.5)
@@ -774,6 +788,21 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 .scanqa label{flex:1;min-width:220px;font-size:13px}
 .scanqa input{flex:1;min-width:0}
 #scanout{max-height:340px;overflow:auto;white-space:pre-wrap;padding:0 14px}
+#scanview{padding:0 14px 12px}
+#scanviewbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 0;font-size:13px}
+.scancheck{display:flex;gap:4px;align-items:center}
+#scanhover{margin-left:auto;color:var(--ink-2);min-height:1.2em}
+.scanstage{position:relative;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#000}
+.scanstage img{display:block;width:100%;height:auto}
+.scanstage svg{position:absolute;inset:0;width:100%;height:100%}
+.scanstage .bx{fill:rgba(46,204,113,.10);stroke:#2ecc71;stroke-width:1.5}
+.scanstage .bx.unc{fill:rgba(231,76,60,.14);stroke:#e74c3c}
+.scanstage text{font:11px var(--mono);paint-order:stroke;stroke:#000;stroke-width:3px}
+#scanparts{display:flex;flex-direction:column;gap:2px;margin-top:8px;max-height:220px;overflow:auto}
+.scanprow{display:flex;gap:8px;align-items:center;font:.8rem var(--mono);padding:2px 4px;border-radius:4px}
+.scanprow.unc{background:rgba(231,76,60,.10)}
+.scanprow input{width:9ch}
+.scanprow select{max-width:12ch}
 #kbbar,#kbadd{display:flex;gap:8px;align-items:center;padding:10px 14px 0}
 #kbbar input,#kbadd input{flex:1;min-width:0}
 #kbstat{padding:8px 14px 0;font:.8rem var(--mono);color:var(--ink-2);min-height:1.3em}
@@ -1788,9 +1817,12 @@ if($('scango'))$('scango').onclick=async()=>{
         const d=document.createElement('div');d.className='panel-note';
         d.textContent=`dropped ${k}/${nm}: ${why}`;$('scanq').appendChild(d);});});
     $('scanout').textContent=r.analysis||r.draft_error||'(no analysis)';
+    scanRev = r.review||null; scanViews = r.views||{};
+    scanDraft = r.draft||'';
+    scanShowReview();
     if(r.draft){const b=document.createElement('button');b.type='button';
       b.className='primary';b.textContent='open this draft in the editor';
-      b.onclick=()=>{$('src').value=r.draft;build();};
+      b.onclick=()=>{setEditor(r.draft);push();};
       $('scanq').appendChild(b);}
     if(r.draft_error){const w=document.createElement('div');
       w.className='panel-note';w.textContent='draft did not parse: '+r.draft_error;
@@ -1812,6 +1844,166 @@ if($('scango'))$('scango').onclick=async()=>{
   }catch(e){$('scanstat').textContent='scan failed: '+e;}
   finally{$('scango').disabled=false;}
 };
+
+// scan review: stitch image with detected-part boxes, labels, tooltips.
+// Boxes come from the draft's own fix constraints + live footprint sizes
+// (the review payload), so an outline cannot drift from the positions the
+// edits below act on. mm -> canvas px uses the canvas + mm_per_px from the
+// same response; canvas y grows downward, board y grows up.
+let scanRev=null, scanViews={}, scanDraft='';
+function scanSide(){
+  const want=($('scanside')||{}).value||'top';
+  if(scanViews[want])return want;
+  const ks=Object.keys(scanViews);
+  return ks.length?ks[0]:'top';
+}
+function scanShowReview(){
+  const has=(scanRev&&scanRev.parts&&scanRev.parts.length)||Object.keys(scanViews).length;
+  $('scanview').hidden=!has;
+  if(!has)return;
+  const side=scanSide();
+  if($('scanside').value!==side)$('scanside').value=side;
+  scanDraw();
+  scanRows();
+}
+function scanScale(){
+  const cv=((scanRev||{}).canvas||{})[scanSide()]||[0,0];
+  const mm=(((scanRev||{}).mm_per_px||{})[scanSide()])||0;
+  return {cw:cv[0]||0, ch:cv[1]||0, mm:mm||0};
+}
+function scanDraw(){
+  const img=$('scanimg'), svg=$('scansvg');
+  const side=scanSide();
+  const views=scanViews[side]||{};
+  img.src=views[($('scanviewkind')||{}).value||'stitch']||views.stitch||'';
+  const {cw,ch,mm}=scanScale();
+  const W=cw||img.naturalWidth||1, H=ch||img.naturalHeight||1;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const showB=$('scanboxes').checked, showL=$('scanlabels').checked;
+  const parts=((scanRev||{}).parts||[]);
+  let h='';
+  // draft x/y grow DOWN the stitch image (the model reads positions off the
+  // photo: U4 at y=82 sits low in the frame, matching "bottom-left/centre"
+  // in its own inventory). canvas rows grow the same way, so no flip.
+  for(const p of parts){
+    if(!p.w||!p.h||!mm)continue;
+    const x0=(p.x-p.w/2)/mm, x1=(p.x+p.w/2)/mm;
+    const y0=(p.y-p.h/2)/mm, y1=(p.y+p.h/2)/mm;
+    if(showB)h+=`<rect class="bx${p.uncertain?' unc':''}" x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${(x1-x0).toFixed(1)}" height="${(y1-y0).toFixed(1)}" data-ref="${p.ref}"/>`;
+    if(showL)h+=`<text x="${x0.toFixed(1)}" y="${(y0-3).toFixed(1)}" data-ref="${p.ref}">${p.ref}</text>`;
+  }
+  svg.innerHTML=h;
+}
+function scanTip(p){
+  const bits=[`${p.ref} · ${p.fp}${p.value&&p.value!=='?'?` · ${p.value}`:''}`,
+    `${p.w}×${p.h}mm at (${p.x}, ${p.y})`];
+  if(p.value==='?')bits.push('value unreadable — confirm it below');
+  else if(p.uncertain)bits.push('reading uncertain');
+  if(p.note)bits.push(p.note);
+  return bits.join(' — ');
+}
+function scanRows(){
+  const box=$('scanparts');box.innerHTML='';
+  for(const p of ((scanRev||{}).parts||[])){
+    const row=document.createElement('div');
+    row.className='scanprow'+(p.uncertain?' unc':'');
+    row.dataset.ref=p.ref;
+    row.title=scanTip(p);
+    const lbl=document.createElement('b');lbl.textContent=p.ref;row.appendChild(lbl);
+    const dim=document.createElement('span');dim.className='dim';
+    dim.textContent=`${p.fp} · ${p.value||'?'}`;row.appendChild(dim);
+    if(p.uncertain){
+      const fix=document.createElement('button');fix.type='button';
+      fix.textContent='confirm';fix.title=`accept ${p.ref} as ${p.fp} ${p.value||'?'}`;
+      fix.onclick=()=>scanConfirm(p.ref);
+      row.appendChild(fix);
+      const ed=document.createElement('button');ed.type='button';
+      ed.textContent='edit';ed.title=`correct ${p.ref} (value / footprint)`;
+      ed.onclick=()=>scanEdit(p.ref);
+      row.appendChild(ed);
+    }
+    const del=document.createElement('button');del.type='button';
+    del.textContent='remove';del.title=`drop ${p.ref} from the draft`;
+    del.onclick=()=>scanRemove(p.ref);
+    row.appendChild(del);
+    box.appendChild(row);
+  }
+}
+// review edits rewrite the DRAFT text, never Board state: the draft is the
+// review's working copy and /build re-parses it, so the editor, solver and
+// undo history all see the same change they would from a hand edit.
+function scanDraftLines(){return (scanDraft||'').split('\n');}
+function scanSetDraft(lines){
+  scanDraft=lines.join('\n');
+  scanRev.parts=scanRev.parts||[];
+}
+function scanPartLine(ref){
+  const lines=scanDraftLines();
+  const i=lines.findIndex(l=>l.startsWith('part '+ref+' ')||l==='part '+ref);
+  return {lines,i};
+}
+function scanCommit(msg){
+  setEditor(scanDraft);push();
+  $('scanstat').textContent=msg;
+}
+function scanConfirm(ref){
+  // '?'/hedged value -> keep fp+position, mark certain by writing the value
+  // the row already shows (no-op textually) only when a real value exists;
+  // otherwise ask: a confirm must resolve the '?', not bless it.
+  const p=((scanRev||{}).parts||[]).find(x=>x.ref===ref);
+  if(!p)return;
+  if(!p.value||p.value==='?'){
+    scanEdit(ref, true);
+    return;
+  }
+  p.uncertain=false;p.note='';
+  scanDraw();scanRows();
+  $('scanstat').textContent=`${ref} confirmed as ${p.fp} ${p.value}`;
+}
+function scanEdit(ref, mustName){
+  const p=((scanRev||{}).parts||[]).find(x=>x.ref===ref);
+  if(!p)return;
+  const val=prompt(`value for ${ref} (footprint ${p.fp})${p.note?'\nmodel note: '+p.note:''}`, p.value==='?'?'':p.value);
+  if(val===null)return;
+  const fp=prompt(`footprint for ${ref} (Enter keeps ${p.fp})`, p.fp) || p.fp;
+  const {lines,i}=scanPartLine(ref);
+  if(i<0){$('scanstat').textContent=`${ref} not found in draft text`;return;}
+  // splice tokens, keep the rest of the line: the draft may carry attrs the
+  // review row does not model (rot=, mpn=...), and a blind rewrite would eat
+  // them. x=/y= keep model position unless the line already disagrees.
+  // Values with spaces are shlex-quoted the way dumps() quotes them.
+  const qv=v=>(/\s|["']/.test(v)?`"${v.replace(/"/g,'\\"')}"`:v);
+  const toks=lines[i].split(/\s+/);
+  // part REF FP [VALUE] [k=v ...] [# note]
+  let j=3;
+  if(j<toks.length&&!toks[j].includes('=')&&!toks[j].startsWith('#'))j++;
+  toks.splice(2, j-2, fp, ...(val?[qv(val)]:[]));
+  lines[i]=toks.join(' ');
+  p.value=val;p.fp=fp;p.uncertain=false;p.note='';
+  scanSetDraft(lines);scanDraw();scanRows();
+  scanCommit(`${ref} corrected — rebuilding`);
+}
+function scanRemove(ref){
+  const {lines,i}=scanPartLine(ref);
+  if(i<0){$('scanstat').textContent=`${ref} not found in draft text`;return;}
+  lines.splice(i,1);
+  scanRev.parts=(scanRev.parts||[]).filter(x=>x.ref!==ref);
+  scanSetDraft(lines);scanDraw();scanRows();
+  scanCommit(`${ref} removed — rebuilding`);
+}
+if($('scanside'))$('scanside').onchange=scanShowReview;
+if($('scanviewkind'))$('scanviewkind').onchange=scanShowReview;
+if($('scanlabels'))$('scanlabels').onchange=scanShowReview;
+if($('scanboxes'))$('scanboxes').onchange=scanShowReview;
+if($('scansvg')){
+  $('scansvg').addEventListener('mousemove',e=>{
+    const t=e.target;
+    const ref=t&&t.dataset?t.dataset.ref:null;
+    const p=((scanRev||{}).parts||[]).find(x=>x.ref===ref);
+    $('scanhover').textContent=p?scanTip(p):'';
+  });
+  $('scansvg').addEventListener('mouseleave',()=>{$('scanhover').textContent='';});
+}
 
 // x-ray: reference download + fab-scan upload vs the design (score + boxes)
 let xrayRaw='';
@@ -3791,6 +3983,28 @@ class H(http.server.BaseHTTPRequestHandler):
                     with open(str(r["analysis"])) as fh:
                         report = fh.read()
                 sides = cast(dict[str, object], r.get("sides", {}))
+                # The viewer needs pixels, not paths: the outdir is a server
+                # temp dir the browser cannot reach. Inline the two views it
+                # draws (stitch + contrast) as data URIs at 1024px — ~0.8MB,
+                # against multi-MB analysis text already in this response.
+                from ocdcircuit import pcbscan as _scanmod
+                views: dict[str, dict[str, str]] = {}
+                for side, sv in sides.items():
+                    if not isinstance(sv, dict):
+                        continue
+                    files = sv.get("files")
+                    if not isinstance(files, dict):
+                        continue
+                    got: dict[str, str] = {}
+                    for view in ("stitch", "contrast"):
+                        fp = files.get(view)
+                        if isinstance(fp, str) and os.path.isfile(fp):
+                            try:
+                                got[view] = _scanmod._b64_png(fp, 1024)
+                            except (OSError, ValueError):
+                                continue
+                    if got:
+                        views[str(side)] = got
                 self._send({
                     "sides": {k: {kk: vv for kk, vv in
                                   cast(dict[str, object], v).items()
@@ -3803,6 +4017,8 @@ class H(http.server.BaseHTTPRequestHandler):
                     "floating": r.get("draft_floating", []),
                     "drc": r.get("draft_drc_errors", 0),
                     "drc_lines": r.get("draft_drc", []),
+                    "review": r.get("review", {}),
+                    "views": views,
                     "outdir": str(r.get("outdir", ""))})
             elif self.path == "/doctor":  # tooling health, no board needed
                 from ocdcircuit.circuit import Board as _B
