@@ -163,8 +163,8 @@ if __name__ == "__main__":
         print("usage: python -m ocdcircuit.raster <board.ocd>  # writes preview.png",
               file=sys.stderr)
         raise SystemExit(1)
-    from ocdcircuit import agent
-    from ocdcircuit.util import read_text
+    from . import agent
+    from .util import read_text
     b = agent.loads(read_text(sys.argv[1]))
     b.place()
     b.route_board()

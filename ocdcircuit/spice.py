@@ -266,7 +266,7 @@ def run(board: Board, what: str = "dc", **k: object) -> dict[str, object]:
 
 if __name__ == "__main__":
     # self-check: divider dc + RC step vs analytic
-    from ocdcircuit import agent
+    from . import agent
     b = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
                     "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\nsim vcc VIN 9\n")
     from typing import cast

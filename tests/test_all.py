@@ -3295,23 +3295,24 @@ _ml.place("multilevel", seeds=1, iters=30)
 _ml.route_board("lroute")
 assert _ml.check()["errors"] == [], _ml.check()["errors"]
 # gallery candidates: N distinct seeds, sorted, one undoable effect
+# (Board surface — apps must not import solver for this)
 from ocdcircuit import solver as _solver
 _gal = agent.loads(open(os.path.join(EX, "psu.ocd")).read(), base=EX)
 _snap0 = _gal.ctx.snapshot()
-_cands = _solver.candidates(_gal, n=3, seeds=1, iters=30)
+_cands = _gal.candidates(n=3, seeds=1, iters=30)
 _costs = [float(cast(float, c["cost"])) for c in _cands]
 assert len(_cands) == 3 and len({_c["seed"] for _c in _cands}) == 3
 assert _costs == sorted(_costs)
 assert _gal.ctx.snapshot() - _snap0 == 1  # inner placements rolled back
 # pick worst, verify restore is exact, undo returns to start
-_solver.restore_candidate(_gal, _cands[-1])
+_gal.restore_candidate(_cands[-1])
 assert round(_solver.cost(_gal), 1) == _costs[-1]
 _gal.ctx.undo()
 assert _gal.ctx.snapshot() == _snap0 + 1  # candidates' own effect remains
 # chain: fix a part, re-run a different engine, others re-arrange
 _gal2 = agent.loads(open(os.path.join(EX, "psu.ocd")).read(), base=EX)
-_c0 = _solver.candidates(_gal2, n=1, key="diffusion", seeds=1, iters=30)[0]
-_solver.restore_candidate(_gal2, _c0)
+_c0 = _gal2.candidates(n=1, key="diffusion", seeds=1, iters=30)[0]
+_gal2.restore_candidate(_c0)
 before = {r: (p.x, p.y) for r, p in _gal2.parts.items()}
 _gal2.constrain({"t": "fixed", "ref": "J1", "x": 3.0, "y": 15.0})
 _gal2.place("compact", seeds=1, iters=30)
@@ -3321,7 +3322,7 @@ assert any((p.x, p.y) != before[r] for r, p in _gal2.parts.items() if r != "J1")
 # comparison, not a maze verdict — ok means "routed", DRC owns "clean")
 _fb = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
 _fb.place(seeds=2, iters=100)
-_feas = _solver.feasible(_fb)
+_feas = _fb.feasible()
 assert int(cast(int, _feas[2]["segs"])) > 0
 assert float(cast(float, _feas[2]["wirelength"])) <= float(cast(float, _feas[1]["wirelength"]))
 assert len(_fb.traces) == 0  # probe leaves the board untouched

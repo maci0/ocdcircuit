@@ -1,8 +1,10 @@
 # Architecture (current — read this before the ADRs)
 
 Three layers. Dependencies point inward only: apps → Board → plugins →
-engines. Engines never import each other except leaf math (`pads_of`,
-`_seg_dist`, cost terms); behavior always dispatches through the registry.
+engines. Apps never import engines (`solver`/`drc`/`maze`/…). Engines never
+import each other except leaf math (`pads_of`, `seg_dist`/`grid_pairs`,
+`net_length`/`match_cost`/`diff_cost`); behavior always dispatches through
+the registry.
 
 ```
 apps/ocd.py ──┐
@@ -18,8 +20,10 @@ apps/mcp.py ───┘         │                        │                 
 - **Board** (`circuit.py`): model (parts/nets/traces/constraints/meta) +
   one dispatch method per plugin kind (`place/route_board/check/export/
   render/silk/import_fp/import_sym/calc/simulate/lint/score/doctor/diff/
-  collab/xray/scan/quote/price/configure`). Never calls
-  engines directly. `_run()` funnels all dispatch: a crashing plugin is
+  collab/xray/scan/quote/price/configure`) plus Board-owned gallery helpers
+  (`candidates`/`restore_candidate`/`feasible`) that deferred-import the
+  solver so apps never touch engines. Never calls engines at module level.
+  `_run()` funnels all plugin dispatch: a crashing plugin is
   marked failed, the previous entry keeps serving, explicit `use()` re-arms.
   Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`/`TimeoutExpired`)
   bypass the fence — retry works without re-arm. Recommendations are

@@ -4320,19 +4320,18 @@ class H(http.server.BaseHTTPRequestHandler):
                     st["save_error"] = serr
                 self._send(st)
             elif self.path == "/candidates":
-                from ocdcircuit import solver as _solver
                 b = agent.loads(H.src_text, base=BASE)
                 pkey = req.get("placer")
                 assert pkey is None or isinstance(pkey, str)
                 n = _i(req.get("n"), 4)
-                cands = _solver.candidates(b, n=n, key=pkey,
-                                           seed=_i(req.get("seed"), 0),
-                                           seeds=1, iters=_i(req.get("iters"), 400))
+                cands = b.candidates(n=n, key=pkey,
+                                     seed=_i(req.get("seed"), 0),
+                                     seeds=1, iters=_i(req.get("iters"), 400))
                 # feasibility on the best candidate (unplaced text proves nothing)
-                _solver.restore_candidate(b, cands[0])
+                b.restore_candidate(cands[0])
                 rbsnap = b.ctx.snapshot()
                 try:
-                    feas = _solver.feasible(b)
+                    feas = b.feasible()
                 finally:
                     b.ctx.rollback(rbsnap)
                 # same shape as MCP candidates (docs: "same shapes as MCP tools")
@@ -4345,20 +4344,19 @@ class H(http.server.BaseHTTPRequestHandler):
                     cout["placer"] = pkey
                 self._send(cout)
             elif self.path == "/pick":
-                from ocdcircuit import solver as _solver
                 # (cast is imported at module level; a local import here would
                 # shadow it for every earlier branch in this function)
                 b = agent.loads(H.src_text, base=BASE)
                 pkey2 = req.get("placer")
                 assert pkey2 is None or isinstance(pkey2, str)
                 idx = _i(req.get("index"), 0)
-                cands = _solver.candidates(b, n=_i(req.get("n"), 4), key=pkey2,
-                                           seed=_i(req.get("seed"), 0),
-                                           seeds=1, iters=_i(req.get("iters"), 400))
+                cands = b.candidates(n=_i(req.get("n"), 4), key=pkey2,
+                                     seed=_i(req.get("seed"), 0),
+                                     seeds=1, iters=_i(req.get("iters"), 400))
                 if not 0 <= idx < len(cands):
                     self._send({"error": f"index {idx} out of range"})
                     return
-                _solver.restore_candidate(b, cands[idx])
+                b.restore_candidate(cands[idx])
                 router = str(req.get("router", "lroute"))
                 b.route_board(router)
                 drc = b.check()
@@ -4366,7 +4364,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     {"x1": t.x1, "y1": t.y1, "x2": t.x2,
                      "y2": t.y2, "layer": t.layer, "w": t.width}
                     for t in b.traces], cast(float, cands[idx]["cost"]), drc)
-                H._decorate(st, b, b.score(tidy=True), _solver.feasible(b),
+                H._decorate(st, b, b.score(tidy=True), b.feasible(),
                             b.plugins().list("placer"), b.plugins().list("router"),
                             req.get("silk", "full"), b.plugins().list("silk"))
                 H.src_text = str(st["text"])
@@ -4870,8 +4868,7 @@ class H(http.server.BaseHTTPRequestHandler):
             st_tidy = b.score(tidy=True)
             st_score = b.score()
         st_lint = b.lint()
-        from ocdcircuit import solver as _solver
-        feas = {} if dense else _solver.feasible(b)
+        feas = {} if dense else b.feasible()
         # `net` is not in the payload: the canvas colours by layer, and a dense
         # board has thousands of names to serialise (0.15MB on discrete6502).
         traces: list[dict[str, object]] = [

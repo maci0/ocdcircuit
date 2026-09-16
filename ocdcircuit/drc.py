@@ -183,6 +183,12 @@ def _seg_dist(a: tuple[float, float, float, float],
                d(x3, y3, x1, y1, x2, y2), d(x4, y4, x1, y1, x2, y2))
 
 
+# In-tree public leaf math for sibling engines (score). Underscore names
+# remain for local call sites; apps still go through Board, not these.
+grid_pairs = _grid_pairs
+seg_dist = _seg_dist
+
+
 def check(board: Board, fab: str | None = None) -> dict[str, object]:
     key = fab or board.fab or DEFAULT
     P = get(key)
@@ -330,11 +336,11 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             need = (10 if c.get("dynamic", True) else 6) * th
             if _f(c["r"]) < need:
                 errors.append(f"bend-radius {c['r']} < {need:g} (dynamic={c.get('dynamic', True)})")
-    from .solver import _diff_cost, _match_cost
-    mc = _match_cost(board)
+    from .solver import diff_cost, match_cost
+    mc = match_cost(board)
     if mc > 5.0:
         warnings.append(f"length-mismatch skew~{mc / 50.0:.1f}mm")
-    dc = _diff_cost(board)
+    dc = diff_cost(board)
     if dc > 10.0:
         warnings.append(f"diff-pair skew/gap dev~{dc / 100.0:.1f}mm")
     def _need(a: str, b: str) -> float:

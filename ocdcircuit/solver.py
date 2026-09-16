@@ -236,6 +236,13 @@ def _diff_cost(board: Board) -> float:
     return c
 
 
+# In-tree public leaf math for sibling engines (drc warnings, score).
+# Apps use Board.feasible/candidates — not these cost terms.
+net_length = _net_length
+match_cost = _match_cost
+diff_cost = _diff_cost
+
+
 def edge_margin(board: Board) -> float:
     for c in board.constraints:
         if c.get("t") == "edge":

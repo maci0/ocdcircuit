@@ -140,20 +140,19 @@ def _ii(v: object, default: int) -> int:
 
 
 def t_candidates(a: dict[str, object]) -> dict[str, object]:
-    from ocdcircuit import solver as _solver
     b = _board()
     key = a.get("key")
     assert key is None or isinstance(key, str)
     key = key or b.proj_str("placer")
-    cands = _solver.candidates(b, n=_ii(a.get("n"), 4),
-                               key=key, seed=_ii(a.get("seed"), 0),
-                               seeds=_ii(a.get("seeds"), 1),
-                               iters=_ii(a.get("iters"), 400))
+    cands = b.candidates(n=_ii(a.get("n"), 4),
+                         key=key, seed=_ii(a.get("seed"), 0),
+                         seeds=_ii(a.get("seeds"), 1),
+                         iters=_ii(a.get("iters"), 400))
     # feasibility on the best candidate (unplaced positions prove nothing)
-    _solver.restore_candidate(b, cands[0])
+    b.restore_candidate(cands[0])
     snap = b.ctx.snapshot()
     try:
-        feas = _solver.feasible(b)
+        feas = b.feasible()
     finally:
         b.ctx.rollback(snap)
     out: dict[str, object] = {"candidates": cands,
@@ -166,31 +165,28 @@ def t_candidates(a: dict[str, object]) -> dict[str, object]:
 
 
 def t_apply_candidate(a: dict[str, object]) -> dict[str, object]:
-    from ocdcircuit import solver as _solver
-    from typing import cast
     b = _board()
     idx = a.get("index", 0)
     assert isinstance(idx, int)
     key = a.get("key")
     assert key is None or isinstance(key, str)
     key = key or b.proj_str("placer")
-    cands = _solver.candidates(b, n=_ii(a.get("n"), 4), key=key,
-                               seed=_ii(a.get("seed"), 0),
-                               seeds=1, iters=_ii(a.get("iters"), 400))
+    cands = b.candidates(n=_ii(a.get("n"), 4), key=key,
+                         seed=_ii(a.get("seed"), 0),
+                         seeds=1, iters=_ii(a.get("iters"), 400))
     if not 0 <= idx < len(cands):
         return {"applied": False, "error": f"index {idx} out of range ({len(cands)})"}
-    _solver.restore_candidate(b, cands[idx])
+    b.restore_candidate(cands[idx])
     return {"applied": True, "seed": cands[idx]["seed"], "cost": cands[idx]["cost"]}
 
 
 def t_feasible(a: dict[str, object]) -> dict[str, object]:
-    from ocdcircuit import solver as _solver
     b = _board()
     raw = a.get("layers")
     layers = None
     if isinstance(raw, list):
         layers = [int(v) for v in raw if isinstance(v, (int, float))]
-    return {"feasible": {str(k): v for k, v in _solver.feasible(b, layers).items()},
+    return {"feasible": {str(k): v for k, v in b.feasible(layers).items()},
             "layers": b.layers}
 
 

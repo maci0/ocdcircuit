@@ -454,6 +454,29 @@ class Board(Component):
         assert isinstance(out, float)
         return out
 
+    def candidates(self, n: int = 4, key: str | None = None,
+                   seed: int = 0, seeds: int = 1, iters: int = 400,
+                   **k: object) -> list[dict[str, object]]:
+        """N seeded layouts for gallery pick (studio / MCP).
+
+        Board surface over the solver gallery helper — apps depend on
+        Board, not engines (see docs/ARCHITECTURE.md).
+        """
+        from . import solver
+        return solver.candidates(self, n=n, key=key, seed=seed,
+                                 seeds=seeds, iters=iters, **k)
+
+    def restore_candidate(self, cand: dict[str, object]) -> None:
+        """Apply one gallery layout as a single undoable effect."""
+        from . import solver
+        solver.restore_candidate(self, cand)
+
+    def feasible(self, layers: list[int] | None = None
+                 ) -> dict[int, dict[str, object]]:
+        """Routability hint per layer count on the current placement."""
+        from . import solver
+        return solver.feasible(self, layers)
+
     def route_board(self, key: str | None = None, **k: object) -> int:
         if key is None and len(self.parts) >= 1000:
             # coarse-grid maze drafts huge boards ~10x faster; refine

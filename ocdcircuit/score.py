@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 EPS = 0.1  # T7 alignment tolerance, mm (placeholder per doc — uncalibrated)
 
-from .drc import _grid_pairs  # shared spatial hash (lives with _seg_dist)
+from .drc import grid_pairs  # shared spatial hash (lives with seg_dist)
 
 
 def _routed(board: Board) -> bool:
@@ -28,7 +28,7 @@ def _foreign_pairs(board: Board) -> Iterator[tuple[Seg, Seg, float]]:
     T1 (crossings) and T5 (clearance headroom) walked the identical spatial
     hash and differed only in what they did with `d`; this yields the pairs
     once so each metric is its own two-line loop."""
-    from .drc import _seg_dist
+    from .drc import seg_dist
     segs = [s for s in board.traces if not s.jumper]
     by_layer: dict[int, list[int]] = {}
     for i, s in enumerate(segs):
@@ -37,12 +37,12 @@ def _foreign_pairs(board: Board) -> Iterator[tuple[Seg, Seg, float]]:
         boxes = [(min(segs[i].x1, segs[i].x2), min(segs[i].y1, segs[i].y2),
                   max(segs[i].x1, segs[i].x2), max(segs[i].y1, segs[i].y2))
                  for i in members]
-        for a, b in _grid_pairs(boxes, 5.0):
+        for a, b in grid_pairs(boxes, 5.0):
             A, B = segs[members[a]], segs[members[b]]
             if A.net == B.net:
                 continue
-            yield A, B, _seg_dist((A.x1, A.y1, A.x2, A.y2),
-                                  (B.x1, B.y1, B.x2, B.y2))
+            yield A, B, seg_dist((A.x1, A.y1, A.x2, A.y2),
+                                 (B.x1, B.y1, B.x2, B.y2))
 
 
 def _t1_t5(board: Board) -> tuple[int, float]:
@@ -135,9 +135,9 @@ def _headroom_of(board: Board, best: float) -> float | None:
 
 
 def _t6_skew(board: Board) -> dict[str, object]:
-    """Length skew RAW mm per match group + diff gap info. Uses _net_length
+    """Length skew RAW mm per match group + diff gap info. Uses net_length
     (routed length, else Manhattan pad estimate — flagged via 'estimated')."""
-    from .solver import _net_length
+    from .solver import net_length
     out: dict[str, object] = {}
     from typing import cast
     for c in board.constraints:
@@ -145,7 +145,7 @@ def _t6_skew(board: Board) -> dict[str, object]:
         if t == "match":
             nets = [n for n in cast(list[str], c.get("nets", [])) if n in board.nets]
             if len(nets) >= 2:
-                lens = [_net_length(board, str(n)) for n in nets]
+                lens = [net_length(board, str(n)) for n in nets]
                 est = not any(s.net in nets for s in board.traces)
                 out[f"match:{'+'.join(str(n) for n in nets)}"] = {
                     "skew_mm": round(max(lens) - min(lens), 3), "estimated": est}
@@ -154,7 +154,7 @@ def _t6_skew(board: Board) -> dict[str, object]:
             if p in board.nets and n in board.nets:
                 est = not any(s.net in (p, n) for s in board.traces)
                 out[f"diff:{p}/{n}"] = {
-                    "skew_mm": round(abs(_net_length(board, p) - _net_length(board, n)), 3),
+                    "skew_mm": round(abs(net_length(board, p) - net_length(board, n)), 3),
                     "estimated": est}
     return out
 
@@ -251,7 +251,7 @@ def _t14_silk(board: Board) -> dict[str, object] | None:
     # silk text ~1.0mm tall (AtlasPCB rule), ~0.6 aspect, centered on Text.xy
     boxes = [(t.x - len(t.s) * 0.3, t.y - 0.5, t.x + len(t.s) * 0.3, t.y + 0.5)
              for t in texts]
-    tt = sum(1 for i, j in _grid_pairs(boxes, 5.0) if _ov(boxes[i], boxes[j]))
+    tt = sum(1 for i, j in grid_pairs(boxes, 5.0) if _ov(boxes[i], boxes[j]))
     lib = board._lib()
     from .parts import pads_of
     copper = []

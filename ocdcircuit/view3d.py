@@ -111,9 +111,9 @@ if __name__ == "__main__":
         print("usage: python -m ocdcircuit.view3d <board.ocd>  # writes preview3d.html",
               file=sys.stderr)
         raise SystemExit(1)
-    from ocdcircuit import agent
-    from ocdcircuit.geom3d import to_gltf
-    from ocdcircuit.util import read_text
+    from . import agent
+    from .geom3d import to_gltf
+    from .util import read_text
     b = agent.loads(read_text(sys.argv[1]))
     b.place()
     b.route_board()
