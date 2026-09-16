@@ -22,6 +22,8 @@ def fingerprint() -> dict[str, dict[str, object]]:
                       ("usb_breakout.ocd", "diffusion", "lroute", EX, None, 3),
                       ("pico_tmc2209.ocd", "hierarchical", "maze",
                        os.path.join(EX, "pico_tmc2209"), None, 3),
+                      ("pico_tmc2209.ocd", "multilevel", "maze",
+                       os.path.join(EX, "pico_tmc2209"), None, 3),
                       ("mitox.ocd", "compact", "maze",
                        os.path.join(EX, "mitox"), None, 2),
                       ("bme690_carrier.ocd", "diffusion", "maze",

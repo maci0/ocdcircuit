@@ -5,6 +5,7 @@ BOARD ?= boards/blinky_555.ocd
 check: lint test			# everything green before commit
 lint:				# types + source lint (no place/route)
 	mypy
+	ruff check
 	python -m apps.ocd lint $(BOARD)
 doctor:				# tooling self-check
 	python -m apps.ocd doctor

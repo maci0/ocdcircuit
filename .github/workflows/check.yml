@@ -9,7 +9,8 @@ jobs:
         with: {python-version: "3.14"}
       - run: pip install -r requirements-dev.txt
         # pinned, so the gate cannot change under us between runs; bump the pin
-        # in requirements-dev.txt deliberately after a local `mypy` pass
+        # in requirements-dev.txt deliberately after a local `mypy` / `ruff check`
+        # pass
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser poppler-utils
         # studio gate skips its browser half when no chromium is found;
         # the apt line keeps the full gate (screenshot + console-clean) live.

@@ -19,7 +19,7 @@ def doctor(board: Board | None = None) -> dict[str, object]:
 
     add("python", sys.version_info >= (3, 11), sys.version.split()[0])
     try:
-        import numpy  # noqa: F401
+        import numpy
         add("numpy", True, str(numpy.__version__))
     except ImportError:
         add("numpy", False, "missing (SIMD placer falls back to scalar)")

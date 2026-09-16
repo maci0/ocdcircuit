@@ -21,8 +21,8 @@ import subprocess
 import sys
 from typing import cast
 
-from ocdcircuit import agent  # noqa: E402
-from ocdcircuit.circuit import Board  # noqa: E402
+from ocdcircuit import agent
+from ocdcircuit.circuit import Board
 
 BASE = os.getcwd()
 BOARD: Board | None = None

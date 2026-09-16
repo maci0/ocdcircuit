@@ -34,13 +34,24 @@ def _fixed(board: Board) -> dict[str, XY]:
 
 
 def _near(board: Board) -> list[tuple[str, str, float]]:
+    """Keep-together pairs. `near-group` members come from one owner index
+    built lazily on the first group, not from a fresh parts scan per group:
+    cost() calls this ~105x per placement, and the old scan was
+    len(constraints) x len(parts) owner compares — 1725 x 5420 = 9.4M per
+    call, 31s of a 47s discrete6502 run. Same refs, same order, so the cost
+    sum accumulates identically."""
     out: list[tuple[str, str, float]] = []
+    by_owner: dict[str | None, list[str]] | None = None
     for c in board.constraints:
         if c.get("t") == "near":
             w = c.get("w", 2.0)
             out.append((str(c["a"]), str(c["b"]), float(cast(float, w))))
         elif c.get("t") == "near-group":  # keep an include's parts together
-            refs = [r for r, q in board.parts.items() if q.owner == c["prefix"]]
+            if by_owner is None:
+                by_owner = {}
+                for r, q in board.parts.items():
+                    by_owner.setdefault(q.owner, []).append(r)
+            refs = by_owner.get(cast("str | None", c["prefix"]), [])
             out += [(refs[i], refs[i + 1], 1.5) for i in range(len(refs) - 1)]
     return out
 
@@ -771,6 +782,18 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
     import random
     from .circuit import Board as _Board
     rng = random.Random(seed)
+    # Per-owner pin lists, one pass over the netlist. The level-1 loop used to
+    # rescan every net for every owner (1725 owners x 9493 nets on
+    # discrete6502 = ~20 min a seed before a single part moved); multilevel
+    # already indexes this way. Net order is board.nets order per owner and
+    # pins stay in net order, so each proto is built exactly as before.
+    net_pins: dict[str, dict[str, list[tuple[str, str]]]] = {o: {} for o in groups}
+    for n, net in board.nets.items():
+        for r, q in net.pins:
+            p = board.parts.get(r)
+            if p is None or p.owner not in net_pins:
+                continue
+            net_pins[p.owner].setdefault(n, []).append((r, q))
     # --- level 1: prototype = first instance of each owner, solved alone ---
     offsets: dict[str, dict[str, XY]] = {}  # owner → {ref: (dx, dy)}
     anchors: dict[str, XY] = {}  # owner → prototype centroid after solve
@@ -788,8 +811,7 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
             proto.parts[ref] = _Part(ref=ref, fp=p.fp, value=p.value,
                                      x=p.x, y=p.y, w=w, h=h)
         # internal nets only (both ends inside the group)
-        for n, net in board.nets.items():
-            pins = [(r, q) for r, q in net.pins if r in board.parts and board.parts[r].owner == owner]
+        for n, pins in net_pins[owner].items():
             if len(pins) >= 2:
                 for r, q in pins:
                     proto.net(n).pins.append((r, q))
@@ -1065,6 +1087,7 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
             _w, _h = _q.wh()
             hw[_r] = _w
             hh[_r] = _h
+        cent: dict[str, XY] = {}
         for owner, refs in groups.items():
             if any(r in fx for r in refs):
                 continue
@@ -1111,8 +1134,19 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
                             continue
                         seen_c.add(other)
                         orefs = groups[other]
-                        ox = sum(board.parts[r].x for r in orefs) / len(orefs)
-                        oy = sum(board.parts[r].y for r in orefs) / len(orefs)
+                        # Centroids are memoised per iteration and dropped
+                        # the moment their group moves (below), so a hit
+                        # always returns the same live positions the sum
+                        # would: hoisting them for the whole iteration is
+                        # what the fingerprint gate rejected (Gauss-Seidel —
+                        # an earlier group has already moved). ~72k requests
+                        # against 1725 groups per iteration on discrete6502.
+                        oc = cent.get(other)
+                        if oc is None:
+                            oc = (sum(board.parts[r].x for r in orefs) / len(orefs),
+                                  sum(board.parts[r].y for r in orefs) / len(orefs))
+                            cent[other] = oc
+                        ox, oy = oc
                         dx, dy = cx - ox, cy - oy
                         d = (dx * dx + dy * dy) ** 0.5 or 1.0
                         if d < 25.0:
@@ -1132,6 +1166,7 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
                 p = board.parts[ref]
                 p.x += dx0
                 p.y += dy0
+            cent.pop(owner, None)  # this group moved: cached centroid is stale
         if frames is not None and (t % every == 0 or t == iters - 1):
             frames.append(_snap(board))
 

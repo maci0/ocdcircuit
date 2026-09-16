@@ -3,7 +3,9 @@
 # Bump deliberately — CI installs exactly this file, so a new checker cannot
 # change the gate on its own:
 #   python -m pip install -U mypy && mypy && edit the pin here.
+#   python -m pip install -U ruff && ruff check && edit the pin here.
 mypy==2.3.1
+ruff==0.16.7
 
 # Optional runtime extras, deliberately NOT pinned (the code imports them
 # opportunistically and degrades without them — see ocdcircuit/doctor.py):

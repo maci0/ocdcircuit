@@ -20,7 +20,7 @@ import re
 import sys
 from typing import Callable, cast
 
-from ocdcircuit.circuit import Board  # noqa: E402
+from ocdcircuit.circuit import Board
 
 USAGE = """usage:
   ocd new <dir>                 scaffold a board project
