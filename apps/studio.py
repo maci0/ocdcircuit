@@ -83,7 +83,7 @@ def fab_strip() -> str:
             f'<img src="/fab-logo/{key}" alt="{name} logo" width=96 height=32 '
             f'loading=lazy decoding=async>'
             f'</a>')
-    return ('<div class=fabstrip aria-label="supported fabs">'
+    return ('<div class=fabstrip role=group aria-label="supported fabs">'
             '<span class=fabkicker>ships to</span>' + "".join(cells)
             + '<span class=fabfine>logos belong to their owners</span></div>')
 MENUS = (
@@ -113,7 +113,7 @@ MENUS = (
     '<div class=mnote>shift-click toggles dc/tran · needs sim lines</div>'
     '</div></details>'
     '<details class=menu id=m-tools><summary title="agent, calculators, prices, health">Tools</summary><div class=mpop>'
-    '<button id=chatbtn title="show or hide the agent chat panel">chat</button>'
+    '<button id=chatbtn type=button aria-pressed=false title="show or hide the agent chat panel">chat</button>'
     '<label class=auto title="apply a proposal without asking, but only when '
     'it builds DRC-clean"><input type=checkbox id=chatauto>auto-apply clean proposals</label>'
     '<details id=calc title="trace width and divider calculators"><summary>calc</summary>'
@@ -464,7 +464,7 @@ a{color:var(--term-ok)}
 .fabstrip{display:flex;gap:.4rem .8rem;justify-content:center;align-items:center;flex-wrap:wrap;
 margin:2.6rem auto 0;max-width:62rem}
 .fabkicker{font:.72rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint)}
-.fabfine{font:.72rem var(--mono);color:var(--term-faint);opacity:.7}
+.fabfine{font:.72rem var(--mono);color:var(--term-faint)}
 .fabcell{display:inline-flex;align-items:center;text-decoration:none;
 border:1px solid var(--term-line);border-radius:9px;padding:.3rem}
 .fabcell:hover{border-color:var(--term-ok)}
@@ -477,6 +477,7 @@ fold — the offer and its button come first, the proof follows. */
 .mini{white-space:pre-wrap}}
 /* reduced motion keeps the authored frame — paint() already stops after one
 pass, so hiding the canvas threw away the visual instead of the animation. */
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
 <!-- landing: hero first, account form one click behind, shelf after login -->
 <header class=hero><canvas id=art aria-hidden=true></canvas>
@@ -486,7 +487,7 @@ pass, so hiding the canvas threw away the visual instead of the animation. */
 <div class=herobody>
 <h1>Your whole team. One board. Zero merge conflicts.</h1>
 <p class=dek>Open a board, send the link, co-edit it live — every cursor, every part move, every net, in real time.</p>
-<div class=collab aria-label="three engineers editing one board live">
+<div class=collab role=group aria-label="three engineers editing one board live">
 <div class=person><b class=who><i style="background:#5fd894"></i>maya</b>
 <p>dragging the regulator into place</p>
 <div class=mini>fix U1 at 12.4 18.1
@@ -518,9 +519,9 @@ places parts, routes traces. You stay the lead engineer.</p>
 <div class=brand><svg width=24 height=24 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></div>
 <h2 id=title>Create your Studio account</h2>
 <p class=sub id=sub>Create an account to start building hardware, from anywhere.</p>
-<p id=err role=alert aria-live=polite></p>
-<form id=f><label>Username<input id=u autocomplete=username maxlength=32 required></label>
-<label>Password<input id=p type=password autocomplete=current-password minlength=8 required></label>
+<p id=err role=alert aria-live=polite tabindex=-1></p>
+<form id=f><label>Username<input id=u autocomplete=username maxlength=32 required aria-describedby=err></label>
+<label>Password<input id=p type=password autocomplete=current-password minlength=8 required aria-describedby=err></label>
 <button id=go type=submit>Create account</button>
 <button id=swap type=button class=ghost>Have an account? Log in</button></form>
 <div id=shelf role=group aria-label="your boards"></div>
@@ -589,13 +590,18 @@ $('go').textContent=m==='signup'?'Create account':'Log in';
 $('p').setAttribute('autocomplete',m==='signup'?'new-password':'current-password');
 $('swap').textContent=m==='signup'?'Have an account? Log in':'New here? Create an account';}
 $('swap').onclick=()=>setMode(mode==='signup'?'login':'signup');
+function authErr(msg,field){ // announce + move focus so keyboard/AT users hear it
+$('err').textContent=msg;['u','p'].forEach(id=>$(id).removeAttribute('aria-invalid'));
+if(field){field.setAttribute('aria-invalid','true');field.focus();}
+else{$('err').focus();}}
 $('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';
+['u','p'].forEach(id=>$(id).removeAttribute('aria-invalid'));
 const u=$('u').value.trim(),p=$('p').value;
-if(!u){$('err').textContent="Username can't be blank!";return;}
+if(!u){authErr("Username can't be blank!",$('u'));return;}
 const go=$('go');go.disabled=true;
 try{
 const r=await api(mode==='signup'?'/auth/signup':'/auth/login',{user:u,password:p});
-if(r.error){$('err').textContent=r.error;return;}
+if(r.error){authErr(r.error);return;}
 me=r.user||u;showShelf();
 }finally{go.disabled=false;}};
 function openShelfBoard(name){ // every create path lands in the workshop
@@ -619,7 +625,7 @@ cardSec(box,'Templates',(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,'')
   s:t.blurb||'starter board',
   m:'template — opens a copy in the workshop',
   go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
-    if(x.error){$('err').textContent=x.error;return;}openShelfBoard(x.name);}})));
+    if(x.error){authErr(x.error);return;}openShelfBoard(x.name);}})));
 _npcache={boards:r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
   s:b.blurb||`${b.parts} parts · ${b.nets} nets`,
   m:`${b.name} · ${b.mtime}`,
@@ -627,7 +633,7 @@ _npcache={boards:r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
   templates:(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
   s:t.blurb||'starter board',m:'template — opens a copy in the workshop',
   go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
-    if(x.error){$('err').textContent=x.error;return;}
+    if(x.error){authErr(x.error);return;}
     if($('newproj').open)$('newproj').close();openShelfBoard(x.name);}}))};
 }
 function cardSec(box,h,cards){
@@ -643,15 +649,15 @@ function cardSec(box,h,cards){
 $('promptbox').onsubmit=async e=>{e.preventDefault();
   const q=$('promptq').value.trim();if(!q)return;
   const r=await api('/shelf/new',{name:q});
-  if(r.error){$('err').textContent=r.error+' — try a shorter name';return;}
+  if(r.error){authErr(r.error+' — try a shorter name');return;}
   openShelfBoard(r.name);};
 $('profgo').onclick=async()=>{
   const r=await api('/auth/profile',{display:$('profin').value});
-  if(r.error){$('err').textContent=r.error;return;}
+  if(r.error){authErr(r.error);return;}
   $('title').textContent='Welcome, '+r.display;$('err').textContent='saved';};
 $('newboard').onsubmit=async e=>{e.preventDefault();
 const r=await api('/shelf/new',{name:$('nbname').value});
-if(r.error){$('err').textContent=r.error;return;}
+if(r.error){authErr(r.error);return;}
 openShelfBoard(r.name);};
 // new-project modal: the shelf's own lists, filtered client-side. Reuses
 // cardSec cards; blank reuses /shelf/new with the search text as the name.
@@ -662,7 +668,7 @@ $('npsearch').oninput=npRender;
 $('npblank').onclick=async()=>{
   const q=$('npsearch').value.trim()||'untitled';
   const r=await api('/shelf/new',{name:q});
-  if(r.error){$('err').textContent=r.error;return;}
+  if(r.error){authErr(r.error);return;}
   $('newproj').close();openShelfBoard(r.name);};
 function npRender(){
   const q=$('npsearch').value.trim().toLowerCase();
@@ -686,7 +692,7 @@ PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Stu
    machine's voice (source, readouts, listings). State is a word in a pill. */
 :root{
 --paper:#f7f5f0;--paper-2:#efece4;--card:#fffdf8;--line:#e2ddd0;--line-2:#cfc8b6;
---ink:#1a1d21;--ink-2:#4d545c;--ink-3:#7c848c;
+--ink:#1a1d21;--ink-2:#4d545c;--ink-3:#5c646c;
 --signal:#0f5c37;--signal-ink:#0c4a2d;--signal-wash:#dcefe1;--ok-border:#9cc6aa;
 --bad:#8a2318;--bad-wash:#f5c9c2;--danger-border:#d59f96;
 --warn:#6b4a00;--warn-wash:#f2dbaa;--warn-border:#cbab72;
@@ -738,6 +744,9 @@ button:hover,select:hover,summary:hover{background:var(--paper-2)}
 button:active{transform:translateY(1px)}
 button.primary{background:var(--signal);border-color:var(--signal-ink);color:#fff;box-shadow:0 1px 2px rgba(12,74,45,.3)}
 button.primary:hover{background:var(--signal-ink)}
+/* dark signal green is light: white label fails 1.4.3; ink on green keeps ≥4.5:1 */
+body.dark button.primary{color:#06130d;box-shadow:none}
+body.dark button.primary:hover{filter:brightness(1.06);background:var(--signal)}
 button[disabled]{opacity:.45;cursor:not-allowed;transform:none}
 input{cursor:text;font-weight:400;font-variant-numeric:tabular-nums;padding:8px 10px}
 #ncand{width:3.2rem;text-align:center}
@@ -757,16 +766,16 @@ details input{width:4.4rem}
 #layerbox+details{margin-left:0}
 #layers .lbl{display:block;font-size:.68rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:6px 0 4px}
 #layers .row{display:flex;flex-wrap:wrap;gap:4px}
-#layers label{display:inline-flex;align-items:center;gap:4px;font:.75rem var(--mono);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:pointer}
+#layers label{display:inline-flex;align-items:center;gap:4px;font:.75rem var(--mono);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:6px 10px;min-height:24px;cursor:pointer}
 #layers label.on{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink);font-weight:600}
 #layers label.off{color:var(--ink-3);text-decoration:line-through}
 #layers input{width:auto;margin:0;accent-color:var(--signal)}
-#layersall{margin-top:8px;font-size:.78rem;padding:5px 10px}
+#layersall{margin-top:8px;font-size:.78rem;padding:6px 10px;min-height:24px}
 #partbar{display:flex;gap:6px;align-items:center;padding-bottom:6px;border-bottom:1px solid var(--line)}
 #partfilter{width:100%;font-size:.82rem;padding:5px 8px}
-#parthide,#partshow{font-size:.75rem;padding:4px 8px}
+#parthide,#partshow{font-size:.75rem;padding:6px 10px;min-height:24px}
 #partlist{max-height:15rem;overflow:auto;margin-top:4px}
-#partlist label{display:flex;align-items:center;gap:6px;font:.8rem var(--mono);padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap}
+#partlist label{display:flex;align-items:center;gap:6px;font:.8rem var(--mono);padding:6px 4px;min-height:24px;border-radius:4px;cursor:pointer;white-space:nowrap}
 #partlist label:hover{background:var(--paper-2)}
 #partlist label.hidden{color:var(--ink-3);text-decoration:line-through}
 #partlist input{width:auto;margin:0;accent-color:var(--signal)}
@@ -821,7 +830,7 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 .scanstage .bx.unc{fill:rgba(231,76,60,.14);stroke:#e74c3c}
 .scanstage text{font:11px var(--mono);paint-order:stroke;stroke:#000;stroke-width:3px}
 #scanparts{display:flex;flex-direction:column;gap:2px;margin-top:8px;max-height:220px;overflow:auto}
-.scanprow{display:flex;gap:8px;align-items:center;font:.8rem var(--mono);padding:2px 4px;border-radius:4px}
+.scanprow{display:flex;gap:8px;align-items:center;font:.8rem var(--mono);padding:6px 4px;min-height:28px;border-radius:4px}
 .scanprow.unc{background:rgba(231,76,60,.10)}
 .scanprow input{width:9ch}
 .scanprow select{max-width:12ch}
@@ -829,12 +838,12 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 #kbbar input,#kbadd input{flex:1;min-width:0}
 #kbstat{padding:8px 14px 0;font:.8rem var(--mono);color:var(--ink-2);min-height:1.3em}
 #kblist{flex:1;min-height:3rem;overflow:auto;padding:8px 14px}
-#kblist .kbrow{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-radius:4px}
+#kblist .kbrow{display:flex;gap:8px;align-items:baseline;padding:6px 4px;min-height:28px;border-radius:4px}
 #kblist .kbrow:hover{background:var(--paper-2)}
 /* quote rows wear the fab logo next to the name */
 #qout .qrow{display:flex;gap:8px;align-items:center;padding:2px 0}
 #qout .qlogo{border-radius:4px;flex:none;width:64px;height:21px;object-fit:contain;background:#fff}
-#kblist button.kbname{flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:var(--signal-ink);
+#kblist button.kbname{flex:1;min-width:0;background:none;border:0;padding:4px 0;min-height:24px;font:inherit;color:var(--signal-ink);
   cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #kblist .kbkind{color:var(--ink-3);font:.72rem var(--mono);font-variant-numeric:tabular-nums}
 #kblist .kbparts{margin-left:auto;color:var(--signal-ink);font:.72rem var(--mono)}
@@ -847,10 +856,13 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 #filetree{min-height:0;max-height:11rem}
 .side{min-height:0}
 #tree{flex:1;min-height:0;overflow:auto;padding:8px 10px;font:.85rem/1.5 var(--mono)}
-#tree div.trow{display:flex;gap:6px;align-items:baseline;padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap}
-#tree div.trow:hover{background:var(--paper-2)}
-#tree div.trow.active{background:var(--signal-wash);color:var(--signal-ink);font-weight:600}
-#tree div.tdir{color:var(--ink-3);cursor:default}
+#tree .trow{display:flex;gap:6px;align-items:baseline;width:100%;text-align:left;
+font:inherit;color:inherit;background:none;border:0;padding:6px 8px;min-height:28px;
+border-radius:4px;cursor:pointer;white-space:nowrap}
+#tree .trow:hover{background:var(--paper-2)}
+#tree .trow.active{background:var(--signal-wash);color:var(--signal-ink);font-weight:600}
+#tree .trow.tdir{color:var(--ink-3);cursor:pointer}
+#tree .trow:disabled,#tree .trow.tdir:disabled{cursor:default;opacity:1}
 #tree .tsize{color:var(--ink-3);font-size:.72rem;margin-left:auto;font-variant-numeric:tabular-nums}
 #msgs{overflow:auto;padding:10px 12px;flex:1;min-height:4rem}
 .msg{margin:0 0 10px;font-size:.9rem;line-height:1.55}
@@ -886,8 +898,10 @@ label.auto input{width:auto;padding:0}
 .prop pre{margin:0;max-height:16rem;overflow:auto;padding:8px 10px;font:.78rem/1.55 var(--mono);background:var(--term);color:var(--term-text)}
 .dl-add{color:var(--term-ok)}.dl-del{color:var(--term-bad)}.dl-at{color:var(--term-faint)}
 #vcs{overflow:auto;padding:6px 12px 12px;font:.85rem/1.7 var(--mono);max-height:16rem}
-#vcs div.rev{display:flex;gap:10px;align-items:baseline;padding:2px 0;cursor:pointer;white-space:nowrap}
-#vcs div.rev:hover{color:var(--signal-ink)}
+#vcs .rev{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;
+font:inherit;color:inherit;background:none;border:0;padding:6px 4px;min-height:28px;
+cursor:pointer;white-space:nowrap}
+#vcs .rev:hover{color:var(--signal-ink)}
 #vcs .rh{color:var(--signal-ink);font-weight:600}
 #vcs .rd{color:var(--ink-3)}
 #vcs .rs{overflow:hidden;text-overflow:ellipsis}
@@ -901,10 +915,12 @@ body.chatty #chat{display:flex}
   border:1px solid var(--term-line);border-radius:var(--r-control);padding:9px 13px;font:.85rem var(--mono);
   box-shadow:var(--shadow);max-width:40ch;overflow:hidden;text-overflow:ellipsis}
 #gal{display:flex;gap:14px;overflow-x:auto;padding:14px}
-#gal canvas{width:190px;height:140px;border:1px solid var(--line-2);border-radius:6px;background:var(--card);cursor:pointer}
-#gal figure{margin:0;text-align:center;font-size:.8rem}
-#gal figcaption{color:var(--ink-3);font-variant-numeric:tabular-nums;padding-top:4px}
-#gal figure:hover canvas{border-color:var(--signal)}
+#gal canvas{width:190px;height:140px;border:1px solid var(--line-2);border-radius:6px;background:var(--card);pointer-events:none}
+#gal button.galpick{margin:0;padding:0;border:0;background:none;cursor:pointer;text-align:center;
+font:inherit;color:inherit;font-size:.8rem;border-radius:6px}
+#gal button.galpick:hover canvas{border-color:var(--signal)}
+#gal button.galpick:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+#gal .galcap{display:block;color:var(--ink-3);font-variant-numeric:tabular-nums;padding-top:4px}
 #ed{overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;word-break:break-all;padding:14px 16px;outline:none;flex:1;min-height:0;background:var(--term);color:var(--term-text);font:.82rem/1.7 var(--mono);tab-size:2}
 #ed:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
 #pcbwrap .platewrap{position:relative;flex:1;min-height:0;background:var(--paper-2);border-radius:0 0 var(--r) var(--r);overflow:hidden}
@@ -939,8 +955,9 @@ body.dark #ed{background:#0a0d11}
 body.dark #composer{background:var(--paper-2)}
 /* view tabs: Flux's Docs/Schematic/Layout/3D row, our panels underneath */
 #viewtabs{display:flex;gap:4px;margin-left:8px}
-#viewtabs button{font-size:.8rem;padding:5px 12px}
+#viewtabs button{font-size:.8rem;padding:8px 12px;min-height:32px}
 #viewtabs button.on{background:var(--signal);border-color:var(--signal-ink);color:#fff}
+body.dark #viewtabs button.on{color:#06130d}
 body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{display:none}
 body.tabs[data-view=pcb] #pcbwrap{display:flex}
 body.tabs[data-view=sch] #schwrap{display:flex}
@@ -954,8 +971,8 @@ body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{grid-c
 <span id=room role=status aria-live=polite class=pill title="who else is on this board right now">solo</span>
 <span id=me class=pill title="logged in as"></span>
 <button id=logoutbtn title="log out of the studio">log out</button>
-<button id=themebtn title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
-<nav id=viewtabs role=tablist aria-label="views" title="click a view; double-click any tab to show all panels"><button data-v=pcb role=tab title="PCB layout — double-click to show all panels">Layout</button><button data-v=sch role=tab title="schematic — double-click to show all panels">Schematic</button><button data-v=t3d role=tab title="3D preview — double-click to show all panels">3D</button><button data-v=docs role=tab title="notes and datasheets — double-click to show all panels">Docs</button></nav>
+<button id=themebtn type=button aria-pressed=false title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
+<nav id=viewtabs role=tablist aria-label="views" title="click a view; double-click any tab to show all panels"><button data-v=pcb role=tab aria-selected=false tabindex=0 title="PCB layout — double-click to show all panels">Layout</button><button data-v=sch role=tab aria-selected=false tabindex=-1 title="schematic — double-click to show all panels">Schematic</button><button data-v=t3d role=tab aria-selected=false tabindex=-1 title="3D preview — double-click to show all panels">3D</button><button data-v=docs role=tab aria-selected=false tabindex=-1 title="notes and datasheets — double-click to show all panels">Docs</button></nav>
 /*__TOOLBAR__*/
 </div></header>
 <main>
@@ -979,7 +996,7 @@ function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy
 const TRACECOLS=['#8a2318','#1d5fa8','#0f5c37','#6b3fa0']; // net hues: red/blue/green/violet
 // canvas palette: paper ground, ink marks, one signal green (matches the sheet)
 // dark theme re-points these at paint time (readTheme), never at draw time.
-const C={paper:'#f7f5f0',paper2:'#efece4',card:'#fffdf8',line:'#e2ddd0',line2:'#cfc8b6',ink:'#1a1d21',ink2:'#4d545c',ink3:'#7c848c',
+const C={paper:'#f7f5f0',paper2:'#efece4',card:'#fffdf8',line:'#e2ddd0',line2:'#cfc8b6',ink:'#1a1d21',ink2:'#4d545c',ink3:'#5c646c',
   signal:'#0f5c37',wash:'#dcefe1',bad:'#8a2318',warn:'#6b4a00',copper:'#9a7134',
   pad:'#d9a821',padline:'#8a6d00'}; // pad copper: same pair the SVG/PNG renders use
 const CDARK={paper:'#101418',paper2:'#1a2129',card:'#161c22',line:'#2a333d',line2:'#3a4550',ink:'#d8e2dc',ink2:'#aeb8c0',ink3:'#7f8b94',
@@ -1598,9 +1615,10 @@ document.addEventListener('keydown',e=>{
 // --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
 let galSeed=0;
 function thumb(cand,i){
-  const fig=document.createElement('figure');
+  const fig=document.createElement('button');fig.type='button';fig.className='galpick';
+  fig.setAttribute('aria-label',`adopt candidate ${i}, cost ${cand.cost}`);
   const cv=document.createElement('canvas');cv.width=300;cv.height=220;fig.appendChild(cv);
-  const cap=document.createElement('figcaption');cap.textContent=`#${i} cost ${cand.cost}`;fig.appendChild(cap);
+  const cap=document.createElement('span');cap.className='galcap';cap.textContent=`#${i} cost ${cand.cost}`;fig.appendChild(cap);
   fig.onclick=()=>pickCand(i);
   const ctx=cv.getContext('2d'),W=300,H=220,s=Math.min(W/S.bw,H/S.bh),ox=(W-S.bw*s)/2,oy=(H-S.bh*s)/2;
   ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
@@ -2132,11 +2150,13 @@ $('ed').addEventListener('keydown',e=>{
 // --- project files: browse, open, and say which file is the board -------
 let TREE=[],SRCREL='',VC={},DIR='.',ROOTREL='.';
 function treeRow(e,depth){
-  const d=document.createElement('div');
+  const d=document.createElement('button');d.type='button';
   d.className='trow '+(e.kind==='dir'?'tdir':'tfile')+(e.path===SRCREL?' active':'');
-  d.style.paddingLeft=(4+depth*13)+'px';
+  d.style.paddingLeft=(8+depth*13)+'px';
   d.textContent=e.kind==='dir'?e.name+'/':e.name;
   d.title=e.kind==='dir'?'folder — click to open it':e.path;
+  d.setAttribute('aria-label',e.kind==='dir'
+    ?('open folder '+e.name):('open '+e.name));
   if(e.kind==='file'){
     if(e.bytes){const s=document.createElement('span');s.className='tsize';
       s.textContent=(+e.bytes/1024).toFixed(1)+'k';d.appendChild(s);}
@@ -2151,7 +2171,8 @@ function renderTree(){
   // one level at a time: this directory, then a way back up while inside root
   if(DIR!=='.'){const up=DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.';
     t.appendChild(treeRow({name:'.. ('+(up==='.'?ROOTREL:up)+')',path:up,kind:'dir'},0));}
-  if(!TREE.length){const e=document.createElement('div');e.className='trow tdir';e.textContent='(no text files)';t.appendChild(e);}
+  if(!TREE.length){const e=document.createElement('div');e.className='trow tdir';
+    e.setAttribute('role','status');e.textContent='(no text files)';t.appendChild(e);}
   TREE.forEach(e=>t.appendChild(treeRow(e,1)));
 }
 async function loadTree(dir){
@@ -2326,7 +2347,8 @@ async function loadVCS(){
   const box=$('vcs');box.innerHTML='';
   if(!VC.repo){box.textContent='commit from the toolbar once this directory is a repo';return;}
   (r.log||[]).forEach(c=>{
-    const d=document.createElement('div');d.className='rev';
+    const d=document.createElement('button');d.type='button';d.className='rev';
+    d.setAttribute('aria-label','show diff for '+c.hash+' '+c.subject);
     const h=document.createElement('span');h.className='rh';h.textContent=c.hash;
     const dt=document.createElement('span');dt.className='rd';dt.textContent=c.date;
     const s=document.createElement('span');s.className='rs';s.textContent=c.subject;
@@ -2350,7 +2372,9 @@ async function commitBoard(){
   loadVCS();
 }
 function toast(t){
-  const b=document.createElement('div');b.className='toast';b.textContent=t;
+  const b=document.createElement('div');b.className='toast';
+  b.setAttribute('role','status');b.setAttribute('aria-live','polite');
+  b.textContent=t;
   document.body.appendChild(b);
   setTimeout(()=>b.remove(),4200);
 }
@@ -2391,11 +2415,33 @@ async function boot(){
   // cockpit ↔ tabs: double-click a tab returns to the all-at-once cockpit
   document.querySelectorAll('#viewtabs button').forEach(b=>b.ondblclick=()=>{
     document.body.classList.remove('tabs');
-    document.querySelectorAll('#viewtabs button').forEach(x=>x.classList.remove('on'));});
+    const tabs=[...document.querySelectorAll('#viewtabs button')];
+    tabs.forEach((x,i)=>{
+      x.classList.remove('on');
+      x.setAttribute('aria-selected','false');
+      x.tabIndex=i===0?0:-1;});});
+  // tablist: arrow keys move selection (APG pattern); Home/End jump ends
+  $('viewtabs').addEventListener('keydown',e=>{
+    const tabs=[...$('viewtabs').querySelectorAll('[role=tab]')];
+    const i=tabs.indexOf(document.activeElement);
+    if(i<0)return;
+    let n=-1;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown')n=(i+1)%tabs.length;
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp')n=(i-1+tabs.length)%tabs.length;
+    else if(e.key==='Home')n=0;
+    else if(e.key==='End')n=tabs.length-1;
+    else if(e.key==='Enter'||e.key===' '){e.preventDefault();setView(tabs[i].dataset.v);return;}
+    if(n<0)return;
+    e.preventDefault();
+    if(document.body.classList.contains('tabs')){setView(tabs[n].dataset.v);}
+    else{tabs.forEach((t,j)=>t.tabIndex=j===n?0:-1);}
+    tabs[n].focus();
+  });
 }
 function setDark(on){
   document.body.classList.toggle('dark',on);
   $('themebtn').textContent=on?'paper':'dark';
+  $('themebtn').setAttribute('aria-pressed',on?'true':'false');
   try{localStorage.setItem('ocd-studio-dark',on?'1':'0');}catch(e){}
   markDirty();
 }
@@ -2406,7 +2452,8 @@ function setView(v){
   document.body.dataset.view=v;
   document.querySelectorAll('#viewtabs button').forEach(b=>{
     const on=b.dataset.v===v;b.classList.toggle('on',tabs&&on);
-    b.setAttribute('aria-selected',on?'true':'false');});
+    b.setAttribute('aria-selected',tabs&&on?'true':'false');
+    b.tabIndex=tabs&&on?0:-1;});
   try{localStorage.setItem('ocd-studio-view',v);}catch(e){}
   renderAll();markDirty();
 }
@@ -2430,6 +2477,7 @@ $('chatbtn').onclick=()=>{
   document.body.classList.toggle('chatty');
   const on=document.body.classList.contains('chatty');
   $('chatbtn').classList.toggle('primary',on);
+  $('chatbtn').setAttribute('aria-pressed',on?'true':'false');
   if(on)$('ask').focus();
 };
 (async()=>{await boot();})();
@@ -2459,8 +2507,11 @@ async function watch(){try{
   if(p.hash===lastHash||$('extbanner'))return;
   if(p.clean)return;  // our own save (or untouched) — nothing external
   lastHash=p.hash;
-  const b=document.createElement('div');
-  b.id='extbanner';b.style.cssText='background:#7a3;color:#fff;padding:4px 8px;cursor:pointer';
+  const b=document.createElement('button');b.type='button';
+  b.id='extbanner';
+  b.style.cssText='width:100%;border:0;border-radius:0;background:var(--signal);color:#fff;'
+    +'padding:10px 14px;min-height:40px;cursor:pointer;font:600 .9rem var(--sans);text-align:left';
+  if(document.body.classList.contains('dark'))b.style.color='#06130d';
   b.textContent='file changed on disk — click to reload (your edits stay in undo)';
   b.onclick=async()=>{const r=await api('/reload',{});setEditor(r.text);applyState(r,false);b.remove();lastHash=null;};
   document.body.prepend(b);
