@@ -43,7 +43,13 @@ SCALES = tuple(2.0 ** (i / 8.0) for i in range(-12, 13))  # 0.35x .. 2.83x
 ROTS = tuple(range(0, 360, 10))
 COARSE = 96            # pyramid base: basins this wide swallow a grid step
 TOPK = 5               # grid candidates carried into the refine
-TILE = 64              # parallax tile size, canvas pixels
+TILE = 32              # parallax tile size, canvas pixels. Must be finer
+                       # than the parts being measured, or a part's tile is
+                       # diluted by the flat board around it and reads as
+                       # no standoff. Measured on a pinhole-rendered board
+                       # with four known heights: 64 -> 4/5 orderings and a
+                       # part at 0.05 (flat), 48 and 32 -> 5/5, 24 -> 4/5
+                       # (too little texture per tile to correlate).
 SIDES = ("top", "bottom")
 
 
@@ -1351,6 +1357,69 @@ def demo() -> None:
     on = float(relief[onmask].mean())
     off = float(relief[~onmask].mean())
     assert on > off * 2.5, f"standoff not detected (parts {on:.3f} vs board {off:.3f})"
+
+    # Real 3D: a pinhole camera moving over a board with parts at DIFFERENT
+    # known heights. The earlier check only proves "something stands off";
+    # this proves the height map ranks parts correctly, which is what the
+    # splat is for. Parallax here is z/(camz-z) * camera offset, the real
+    # relation, not a hand-applied pixel shift.
+    _bh, _bw, _camz, _f3 = 520, 520, 420.0, 900.0
+    _plane = np.zeros((_bh, _bw, 3), dtype=np.float32)
+    _plane[..., 0], _plane[..., 1], _plane[..., 2] = 24, 92, 46
+    for _i in range(16):
+        _y = 18 + _i * 31
+        _plane[_y:_y + 6, 20:_bw - 20] = (196, 152, 64)
+    _plane = np.clip(_plane + rng.normal(0, 3, _plane.shape), 0, 255)
+    # (cy, cx, half_h, half_w, height_px): tall, short, medium
+    # the medium part is deliberately narrower than a coarse tile: that is
+    # the case a too-large TILE swallows into the surrounding flat board.
+    _parts3 = [(110, 130, 34, 46, 46.0), (110, 380, 22, 30, 16.0),
+               (330, 150, 26, 60, 30.0), (350, 400, 30, 34, 46.0)]
+
+    def _shoot3(ox: float, oy: float) -> Any:
+        im = _plane.copy()
+        for _cy, _cx, _hh, _hw, _z in sorted(_parts3, key=lambda q: q[4]):
+            sh = _z / (_camz - _z)          # parallax of a raised face
+            mg = _camz / (_camz - _z)       # and it looks slightly larger
+            _dy, _dx = int(round(-oy * sh)), int(round(-ox * sh))
+            ya, yb = int(_cy - _hh * mg) + _dy, int(_cy + _hh * mg) + _dy
+            xa, xb = int(_cx - _hw * mg) + _dx, int(_cx + _hw * mg) + _dx
+            ya, yb = max(0, ya), min(_bh, yb)
+            xa, xb = max(0, xa), min(_bw, xb)
+            if yb > ya and xb > xa:
+                im[ya:yb, xa:xb] = (30, 30, 32)
+                im[ya + 4:ya + 13, xa + 4:min(xb - 3, xa + 30)] = (228, 228, 224)
+        return np.clip(im + rng.normal(0, 3, im.shape), 0, 255)
+
+    _views3 = [_shoot3(ox, oy) for ox, oy in
+               ((0, 0), (-70, 0), (70, 0), (0, -60), (0, 60), (-50, 45),
+                (55, -40))]
+    _rg3 = gray(_views3[0])
+    _xf3 = [dict(ident)] + [register(_rg3, gray(v)) for v in _views3[1:]]
+    assert all(t["peak"] > 0.3 for t in _xf3[1:]), \
+        f"3D views did not register: {[round(t['peak'], 2) for t in _xf3]}"
+    _hm3 = height_field(_views3, _xf3, _bw, _bh)
+    _meas = [float(_hm3[c - h:c + h, x - w2:x + w2].mean())
+             for c, x, h, w2, _z in _parts3]
+    _true = [q[4] for q in _parts3]
+    _n3 = len(_parts3)
+    _pairs = [(i, j) for i in range(_n3) for j in range(i + 1, _n3)
+              if abs(_true[i] - _true[j]) > 4.0]
+    _ok = sum(1 for i, j in _pairs
+              if (_true[i] < _true[j]) == (_meas[i] < _meas[j]))
+    assert _ok == len(_pairs), (
+        f"height ranking wrong ({_ok}/{len(_pairs)}): true {_true} "
+        f"measured {[round(m, 3) for m in _meas]} — TILE may be coarser "
+        "than the parts")
+    # every part must read above the bare board: a coarse tile reports a
+    # narrow part as flat, which is the failure this case exists to catch.
+    _bare3 = float(np.mean([_hm3[250:300, 40:120].mean(),
+                            _hm3[430:500, 200:300].mean()]))
+    assert min(_meas) > 0.05, (
+        f"a part read as flat: {[round(m, 3) for m in _meas]} — TILE is "
+        "probably coarser than the parts")
+    assert _bare3 < min(_meas) / 2, (
+        f"bare board {_bare3:.3f} not clearly below parts {_meas}")
 
     same = [np.nan_to_num(warp(flat, 1.0, 0.0, dx, dy, pw, ph), nan=20.0)
             for dx, dy in ((0, 0), (3, -2), (-4, 3))]
