@@ -320,6 +320,7 @@ def main() -> None:
         assert any(t.get("name") == "blinky_555.ocd" for t in _templates), _sh
         _nb = post(base, "/shelf/new", {"name": "hello"})
         assert not _nb.get("error"), _nb
+        assert _nb.get("name") == "hello", _nb  # stem for /?board= open
         _boards = _nb.get("boards")
         assert isinstance(_boards, list)
         assert any(isinstance(b, dict) and b.get("name") == "hello.ocd"
@@ -328,8 +329,10 @@ def main() -> None:
         assert "already on your shelf" in str(_nb2.get("error")), _nb2
         _slug = post(base, "/shelf/new", {"name": "A wifi sensor node!"})
         assert not _slug.get("error"), _slug  # prose degrades to a slug
+        assert _slug.get("name") == "a-wifi-sensor-node", _slug
         _tmpl = post(base, "/shelf/from_template", {"name": "blinky_555.ocd"})
         assert not _tmpl.get("error"), _tmpl  # template opens a copy
+        assert _tmpl.get("name") == "blinky_555", _tmpl
         _bad = post(base, "/shelf/from_template", {"name": "../../etc/passwd"})
         assert "error" in _bad, _bad
         import base64 as _b64
@@ -339,17 +342,23 @@ def main() -> None:
         assert "error" in _trav, _trav  # never writes outside fp/
         _lp = urllib.request.urlopen(base + "/").read().decode()  # logged out → landing
         for frag in ("id=newprojbtn", "id=newproj", "id=npsearch",
-                     "id=npgrid", "id=npblank", "npRender", "_npcache"):
+                     "id=npgrid", "id=npblank", "npRender", "_npcache",
+                     "openShelfBoard"):
             assert frag in _lp, f"new-project modal missing: {frag}"
         _w = get(base, "/").decode()  # still authed: workshop
         assert "id=ed" in _w, _w[:200]
+        assert "withBusy" in _w, "long-action busy feedback missing"
+        assert "download ${key}" in _w or "download ${" in _w, "download label must stay a word"
+        assert "sim ${simWhat}" in _w or "sim ${" in _w, "sim label must stay a word"
         # modal lives on the landing page, but its data path is the shelf:
         # template copy + blank-from-search-text both work while authed
         _t2 = post(base, "/shelf/from_template", {"name": "psu.ocd"})
         assert not _t2.get("error"), _t2
+        assert _t2.get("name") == "psu", _t2
         _np = post(base, "/shelf/new", {"name": "modal blank"})
         _np_boards = cast(list[dict[str, object]], _np["boards"])
         assert any(b.get("name") == "modal-blank.ocd" for b in _np_boards), _np
+        assert _np.get("name") == "modal-blank", _np
         _lo = post(base, "/auth/logout", {})
         assert _lo.get("ok") is True, _lo
         _JAR.pop(base, None)

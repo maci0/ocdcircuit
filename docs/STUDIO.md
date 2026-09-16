@@ -11,8 +11,9 @@ OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
 ```
 
 First visit: create a local Studio account (`.ocd-users` beside the boards),
-then open a board from the shelf (or the launch file). Collab still needs
-that session cookie.
+then open a board from the shelf (or the launch file). Creating a blank board,
+starting from the prompt, or picking a template opens the workshop immediately
+(no second click on the new card). Collab still needs that session cookie.
 
 ## The loop
 

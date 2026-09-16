@@ -579,9 +579,14 @@ $('swap').onclick=()=>setMode(mode==='signup'?'login':'signup');
 $('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';
 const u=$('u').value.trim(),p=$('p').value;
 if(!u){$('err').textContent="Username can't be blank!";return;}
+const go=$('go');go.disabled=true;
+try{
 const r=await api(mode==='signup'?'/auth/signup':'/auth/login',{user:u,password:p});
 if(r.error){$('err').textContent=r.error;return;}
-me=r.user||u;showShelf();};
+me=r.user||u;showShelf();
+}finally{go.disabled=false;}};
+function openShelfBoard(name){ // every create path lands in the workshop
+  if(!name)return;location.href='/?board='+encodeURIComponent(String(name).replace(/\.ocd$/,''));}
 async function showShelf(){$('f').style.display='none';
 document.body.classList.add('shelf');  // one class reveals every shelf-only control
 const me0=await api('/auth/me',{});
@@ -592,25 +597,25 @@ $('sub').textContent='Pick a board to open the workshop, or start a new one.';
 const r=await api('/shelf',{});
 const box=$('shelf');box.innerHTML='';box.classList.add('has');
 $('newboard').classList.add('has');
-if(!r.boards.length){box.innerHTML='<span class=fine>no boards yet — name one below</span>';}
+if(!r.boards.length){box.innerHTML='<span class=fine>no boards yet — describe one above, or New project</span>';}
 cardSec(box,'Your boards',r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
   s:b.blurb||`${b.parts} parts · ${b.nets} nets`,
   m:`${b.name} · ${b.mtime}`,
-  go:()=>location.href='/?board='+encodeURIComponent(b.name.replace(/\.ocd$/,''))})));
+  go:()=>openShelfBoard(b.name)})));
 cardSec(box,'Templates',(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
   s:t.blurb||'starter board',
-  m:'template — opens a copy on your shelf',
+  m:'template — opens a copy in the workshop',
   go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
-    if(x.error){$('err').textContent=x.error;return;}showShelf();}})));
+    if(x.error){$('err').textContent=x.error;return;}openShelfBoard(x.name);}})));
 _npcache={boards:r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
   s:b.blurb||`${b.parts} parts · ${b.nets} nets`,
   m:`${b.name} · ${b.mtime}`,
-  go:()=>location.href='/?board='+encodeURIComponent(b.name.replace(/\.ocd$/,''))})),
+  go:()=>openShelfBoard(b.name)})),
   templates:(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
-  s:t.blurb||'starter board',m:'template — opens a copy on your shelf',
+  s:t.blurb||'starter board',m:'template — opens a copy in the workshop',
   go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
     if(x.error){$('err').textContent=x.error;return;}
-    if($('newproj').open)$('newproj').close();showShelf();}}))};
+    if($('newproj').open)$('newproj').close();openShelfBoard(x.name);}}))};
 }
 function cardSec(box,h,cards){
   if(!cards.length)return;
@@ -626,7 +631,7 @@ $('promptbox').onsubmit=async e=>{e.preventDefault();
   const q=$('promptq').value.trim();if(!q)return;
   const r=await api('/shelf/new',{name:q});
   if(r.error){$('err').textContent=r.error+' — try a shorter name';return;}
-  showShelf();};
+  openShelfBoard(r.name);};
 $('profgo').onclick=async()=>{
   const r=await api('/auth/profile',{display:$('profin').value});
   if(r.error){$('err').textContent=r.error;return;}
@@ -634,7 +639,7 @@ $('profgo').onclick=async()=>{
 $('newboard').onsubmit=async e=>{e.preventDefault();
 const r=await api('/shelf/new',{name:$('nbname').value});
 if(r.error){$('err').textContent=r.error;return;}
-showShelf();};
+openShelfBoard(r.name);};
 // new-project modal: the shelf's own lists, filtered client-side. Reuses
 // cardSec cards; blank reuses /shelf/new with the search text as the name.
 let _npcache={boards:[],templates:[]};
@@ -645,7 +650,7 @@ $('npblank').onclick=async()=>{
   const q=$('npsearch').value.trim()||'untitled';
   const r=await api('/shelf/new',{name:q});
   if(r.error){$('err').textContent=r.error;return;}
-  $('newproj').close();showShelf();};
+  $('newproj').close();openShelfBoard(r.name);};
 function npRender(){
   const q=$('npsearch').value.trim().toLowerCase();
   const box=$('npgrid');box.innerHTML='';
@@ -658,7 +663,8 @@ boot();
 </script></body></html>
 """
 
-PAGE = r"""<!doctype html><html><head><meta charset=utf-8><title>OCD Studio</title>
+PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
 <link rel=icon href="data:,">
 <style>
 /* Paper spec sheet, one terminal. Tokens follow the recompile.online design
@@ -936,7 +942,7 @@ body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{grid-c
 <span id=me class=pill title="logged in as"></span>
 <button id=logoutbtn title="log out of the studio">log out</button>
 <button id=themebtn title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
-<nav id=viewtabs role=tablist aria-label="views"><button data-v=pcb role=tab title="PCB layout">Layout</button><button data-v=sch role=tab title="schematic">Schematic</button><button data-v=t3d role=tab title="3D preview">3D</button><button data-v=docs role=tab title="notes and datasheets">Docs</button></nav>
+<nav id=viewtabs role=tablist aria-label="views" title="click a view; double-click any tab to show all panels"><button data-v=pcb role=tab title="PCB layout — double-click to show all panels">Layout</button><button data-v=sch role=tab title="schematic — double-click to show all panels">Schematic</button><button data-v=t3d role=tab title="3D preview — double-click to show all panels">3D</button><button data-v=docs role=tab title="notes and datasheets — double-click to show all panels">Docs</button></nav>
 /*__TOOLBAR__*/
 </div></header>
 <main>
@@ -1324,7 +1330,13 @@ function animate(frames,traces,done){
       if(k<N)anim=requestAnimationFrame(tw);else{for(const r in to)S.cur.parts[r]={...S.cur.parts[r],x:to[r][0],y:to[r][1]};i++;step();}})();}
   step();
 }
-function statMsg(txt,ok){const el=$('stat');el.textContent=txt||'';el.className=!txt?'':ok?'ok':'err';}
+function statMsg(txt,ok){const el=$('stat');el.textContent=txt||'';el.title=txt||'';el.className=!txt?'':ok?'ok':'err';}
+async function withBusy(btn,label,fn){ // long actions: disable + say what is happening
+  if(!btn||btn.disabled)return;
+  const was=btn.textContent;btn.disabled=true;
+  if(label){btn.textContent=label;statMsg(label,true);}
+  try{return await fn();}
+  finally{btn.disabled=false;btn.textContent=was;}}
 let deb=null, pulseq=0; // monotonic: a slow build must not land on a newer board
 function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
 $('ed').addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(push,400);});
@@ -1424,9 +1436,10 @@ function collabStart(){
     }catch(err){}
   },5000);
   const sh=$('sharebtn');
-  if(sh)sh.onclick=()=>{
-    try{navigator.clipboard.writeText(location.href);}catch(err){}
-    toast('link copied — send it to your collaborator');
+  if(sh)sh.onclick=async()=>{
+    try{await navigator.clipboard.writeText(location.href);
+      toast('link copied — send it to your collaborator');}
+    catch(err){toast('copy failed — select the URL from the address bar');}
   };
 }
 function drawFeas(r){
@@ -1590,19 +1603,24 @@ async function genCands(){
   if(!S)return;
   const n=Math.max(1,Math.min(8,parseInt($('ncand').value||'4',10)));
   galSeed=(galSeed+1)%1000;
-  const r=await api('/candidates',{placer:$('placer').value,n,seed:galSeed,iters:400});
-  if(r.error){statMsg(r.error);return;}
-  galMeta={n,seed:galSeed};
-  const g=$('gal');g.innerHTML='';r.candidates.forEach((c,i)=>g.appendChild(thumb(c,i)));
-  $('galwrap').style.display='';
-  drawFeas({feasible:r.feasible,layers:r.layers});
+  await withBusy($('dice'),`generating ${n}…`,async()=>{
+    const r=await api('/candidates',{placer:$('placer').value,n,seed:galSeed,iters:400});
+    if(r.error){statMsg(r.error);return;}
+    galMeta={n,seed:galSeed};
+    const g=$('gal');g.innerHTML='';r.candidates.forEach((c,i)=>g.appendChild(thumb(c,i)));
+    $('galwrap').style.display='';
+    drawFeas({feasible:r.feasible,layers:r.layers});
+    statMsg(`${n} candidates — click one to pick`,true);
+  });
 }
 let galMeta={n:4,seed:0};
 async function pickCand(i){
-  const r=await api('/pick',{placer:$('placer').value,router:$('router').value,
-    index:i,n:galMeta.n,seed:galMeta.seed,iters:400,silk:$('silk').value});
-  if(r.error){statMsg(r.error);return;}
-  statMsg('');$('galwrap').style.display='none';applyState(r,true);
+  await withBusy($('dice'),`picking #${i}…`,async()=>{
+    const r=await api('/pick',{placer:$('placer').value,router:$('router').value,
+      index:i,n:galMeta.n,seed:galMeta.seed,iters:400,silk:$('silk').value});
+    if(r.error){statMsg(r.error);return;}
+    statMsg('');$('galwrap').style.display='none';applyState(r,true);
+  });
 }
 function drawDRC(r){
   const d=$('drc');let h='';
@@ -1734,20 +1752,28 @@ c.addEventListener('contextmenu',e=>{ // right-click: rotate here, unpin there
   const o=S.cur.parts[r].owner;
   rotRefs(new Set(o?Object.keys(S.cur.parts).filter(k=>S.cur.parts[k].owner===o):[r]));});
 })();
-$('solve').onclick=async()=>{const r=await api('/solve',{placer:$('placer').value,router:$('router').value,full:true});if(r.error){statMsg(r.error);return;}statMsg('');applyState(r,true);};
+$('solve').onclick=async()=>{
+  await withBusy($('solve'),'solving…',async()=>{
+    const r=await api('/solve',{placer:$('placer').value,router:$('router').value,full:true});
+    if(r.error){statMsg(r.error);return;}
+    statMsg('');applyState(r,true);
+  });
+};
 $('dice').onclick=genCands;
 $('fab_dl').onclick=async()=>{
-  const r=await api('/export',{});
-  if(r.error){statMsg(r.error);return;}
-  const a=document.createElement('a');
-  a.href='data:application/zip;base64,'+r.zip;a.download=r.name;a.click();
-  statMsg(`${r.name} (${(r.bytes/1024).toFixed(0)}KB)`,true);
+  await withBusy($('fab_dl'),'building zip…',async()=>{
+    const r=await api('/export',{});
+    if(r.error){statMsg(r.error);return;}
+    const a=document.createElement('a');
+    a.href='data:application/zip;base64,'+r.zip;a.download=r.name;a.click();
+    statMsg(`${r.name} (${(r.bytes/1024).toFixed(0)}KB)`,true);
+  });
 };
 $('dl').onclick=async()=>{ // cycle svg → sch → png → xray (shift-click backwards)
   const keys=['svg','sch','png','xray'];
   dlIdx=(dlIdx+((window.event&&window.event.shiftKey)?-1:1)+keys.length)%keys.length;
   const key=keys[dlIdx];
-  $('dl').textContent=`⤓ ${key}`;
+  $('dl').textContent=`download ${key}`; // keep a word label (glyph alone is not a label)
   const r=await api('/render',{key});
   if(r.error){statMsg(r.error);return;}
   const a=document.createElement('a');
@@ -1760,7 +1786,7 @@ let dlIdx=0;
 let simWhat='dc';
 $('simbtn').onclick=async()=>{ // dc ⇄ tran on shift-click
   if(window.event&&window.event.shiftKey)simWhat=simWhat==='dc'?'tran':'dc';
-  $('simbtn').textContent=`⚡ ${simWhat}`;
+  $('simbtn').textContent=`sim ${simWhat}`;
   const r=await api('/simulate',{what:simWhat});
   if(r.error){statMsg(r.error);return;}
   if(r.sim&&Object.keys(r.sim).length)S.sim=r.sim;
@@ -1778,12 +1804,15 @@ function calcLive(){
 }
 ['ca','cdt','dv','drt','drb'].forEach(id=>$(id).addEventListener('input',calcLive));
 if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open board
-  const q=Math.max(1,parseInt($('qqty').value)||5);
-  const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
-  if(r.error){$('qout').textContent=r.error;return;}
-  $('qout').innerHTML=(r.rows||[]).map(x=>
-    `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="${x.fab} logo" width=64 height=21>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
-    +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
+  await withBusy($('qgo'),'comparing…',async()=>{
+    const q=Math.max(1,parseInt($('qqty').value)||5);
+    const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
+    if(r.error){$('qout').textContent=r.error;statMsg(r.error);return;}
+    $('qout').innerHTML=(r.rows||[]).map(x=>
+      `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="${x.fab} logo" width=64 height=21>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
+      +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
+    statMsg('');
+  });
 };
 $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
   if(!$('doc').open||$('docout').dataset.done)return;
@@ -2310,7 +2339,7 @@ async function commitBoard(){
 function toast(t){
   const b=document.createElement('div');b.className='toast';b.textContent=t;
   document.body.appendChild(b);
-  setTimeout(()=>b.remove(),2600);
+  setTimeout(()=>b.remove(),4200);
 }
 async function loadBoard(){ // parse + route what is on disk; never re-place
   const r=await api('/load',{});
@@ -3821,7 +3850,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     else:
                         with open(full, "w", encoding="utf8") as f:
                             f.write(STARTER_OCD.format(name=name))
-                        self._send({"ok": True, "boards": _shelf(user)})
+                        # name is the stem the landing page opens via /?board=
+                        self._send({"ok": True, "name": name,
+                                    "boards": _shelf(user)})
             elif self.path == "/shelf/from_template":
                 assert user is not None  # gated above
                 raw = str(req.get("name", ""))
@@ -3840,7 +3871,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     dst = os.path.join(_user_dir(user), f"{stem}-{n}.ocd")
                 import shutil
                 shutil.copy2(src, dst)
-                self._send({"ok": True, "boards": _shelf(user)})
+                # open the copy, not the template catalogue again
+                out = os.path.basename(dst)[:-4]
+                self._send({"ok": True, "name": out, "boards": _shelf(user)})
             elif self.path == "/init":
                 self._send(self._build(H.src_text, True))
             elif self.path == "/collab/sync":
