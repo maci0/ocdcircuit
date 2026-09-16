@@ -63,7 +63,11 @@ def apply_golden(b: object, g: dict[str, tuple[float, float]]) -> None:
 def overlaps(b: object) -> int:
     from ocdcircuit.circuit import Board
     assert isinstance(b, Board)
-    errs = b.check()["errors"]
+    r = b.check()
+    oc = r.get("overlap_count")
+    if isinstance(oc, int):
+        return oc
+    errs = r["errors"]
     return sum(1 for e in errs if str(e).startswith("overlap"))
 
 

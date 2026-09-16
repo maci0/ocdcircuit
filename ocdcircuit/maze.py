@@ -353,6 +353,7 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                     for ll in range(nl):
                         blocked.discard((gx, gy, ll))
     own: set[tuple[int, int, int]] = set()
+    before = len(new)
     for (_, a), (_, b) in legs:
         s = (min(nx - 1, max(0, int(a[0] / grid))),
              min(ny - 1, max(0, int(a[1] / grid))), layer)
@@ -376,8 +377,8 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                     halo.add((hx, hy, ll))
     if frames is not None:
         frames.append({"net": net.name, "layer": layer,
-                       "segs": [(s.x1, s.y1, s.x2, s.y2) for s in new
-                                if s.net == net.name]})
+                       "segs": [(s.x1, s.y1, s.x2, s.y2)
+                                for s in new[before:]]})
     return True
 
 
@@ -450,13 +451,17 @@ def _meander(board: Board, new: list[Seg], grid: float,
     from typing import cast
     from .circuit import Seg as S
 
+    by_net: dict[str, list[S]] = {}
+    for s in new:
+        by_net.setdefault(s.net, []).append(s)
+
     def _len(nm: str) -> float:
         return sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1)
-                   for s in new if s.net == nm)
+                   for s in by_net.get(nm, ()))
 
     def _bump(nm: str, short: float) -> bool:
         runs = sorted(
-            (s for s in new if s.net == nm and (s.x1 == s.x2 or s.y1 == s.y2)),
+            (s for s in by_net.get(nm, ()) if (s.x1 == s.x2 or s.y1 == s.y2)),
             key=lambda s: abs(s.x2 - s.x1) + abs(s.y2 - s.y1), reverse=True)
         if not runs:
             return False
@@ -480,14 +485,21 @@ def _meander(board: Board, new: list[Seg], grid: float,
             if any(cc in copper for cc in cells):
                 continue
             new.remove(s)
+            by_net[nm].remove(s)
             if horiz:
-                new.append(S(nm, s.x1, s.y1, s.x1, ny, s.layer, s.width))
-                new.append(S(nm, s.x1, ny, s.x2, ny, s.layer, s.width))
-                new.append(S(nm, s.x2, ny, s.x2, s.y2, s.layer, s.width))
+                added = [
+                    S(nm, s.x1, s.y1, s.x1, ny, s.layer, s.width),
+                    S(nm, s.x1, ny, s.x2, ny, s.layer, s.width),
+                    S(nm, s.x2, ny, s.x2, s.y2, s.layer, s.width),
+                ]
             else:
-                new.append(S(nm, s.x1, s.y1, nx, s.y1, s.layer, s.width))
-                new.append(S(nm, nx, s.y1, nx, s.y2, s.layer, s.width))
-                new.append(S(nm, nx, s.y2, s.x2, s.y2, s.layer, s.width))
+                added = [
+                    S(nm, s.x1, s.y1, nx, s.y1, s.layer, s.width),
+                    S(nm, nx, s.y1, nx, s.y2, s.layer, s.width),
+                    S(nm, nx, s.y2, s.x2, s.y2, s.layer, s.width),
+                ]
+            new.extend(added)
+            by_net[nm].extend(added)
             return True
         return False
 

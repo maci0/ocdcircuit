@@ -50,9 +50,9 @@
   "segs": 463
  },
  "pico_tmc2209.ocd/hierarchical/maze/2L": {
-  "hash": "314d000367fee634",
+  "hash": "f99ecad9592ace4d",
   "parts": 20,
-  "segs": 491
+  "segs": 563
  },
  "pico_tmc2209.ocd/multilevel/maze/2L": {
   "hash": "afbce43d7e2379ee",

@@ -52,7 +52,11 @@ def _dense_src(n: int, seed: int = 7) -> str:
 
 
 def _overlap_count(board: Board) -> int:
-    errs = board.check()["errors"]
+    r = board.check()
+    oc = r.get("overlap_count")
+    if isinstance(oc, int):
+        return oc
+    errs = r["errors"]
     assert isinstance(errs, list)
     return sum(1 for e in errs if str(e).startswith("overlap"))
 

@@ -833,112 +833,70 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
             p.x = rng.uniform(pw / 2 + m, board.width - pw / 2 - m)
             p.y = rng.uniform(ph / 2 + m, board.height - ph / 2 - m)
     # --- level 2: rigid-body diffusion (translate instances, deform nothing) ---
+    # Same core as multilevel: spatial-hash repulsion + net membership index.
+    # The old inline O(parts×nets) + O(parts²) loop was the slow twin of
+    # `_rigid_diffuse` kept around for free-part interleaving; free parts
+    # still move each iter when `free=True`.
     fx = _fixed(board)
     for r, (x, y) in fx.items():
         if r in board.parts:
             board.parts[r].x, board.parts[r].y = x, y
-    for t in range(iters):
-        T = 1 - t / iters
-        step = (0.25 + 0.65 * T) * (0.3 + 0.7 * T)
-        # packing geometry for this iteration (mirrors _rigid_diffuse:
-        # boxes are fixed within an iteration, read each part's once).
-        # ponytail: rotation is static here, so this could hoist out of
-        # the loop — kept per-iteration to match _rigid_diffuse exactly.
-        hw: dict[str, float] = {}
-        hh: dict[str, float] = {}
-        for _r, _q in board.parts.items():
-            _w, _h = _q.wh()
-            hw[_r] = _w
-            hh[_r] = _h
-        # move whole owners by centroid force
-        for owner, refs in groups.items():
-            if any(r in fx for r in refs):
-                continue  # pinned instance stays
-            cx = sum(board.parts[r].x for r in refs) / len(refs)
-            cy = sum(board.parts[r].y for r in refs) / len(refs)
-            Fx = Fy = 0.0
-            for ref in refs:
-                p = board.parts[ref]
-                # net springs toward external (non-group) pins
-                for n, net in board.nets.items():
-                    mypins = [(r, q) for r, q in net.pins if r == ref]
-                    if not mypins:
-                        continue
-                    ext = [board.pad_pos(r, q) for r, q in net.pins
-                           if r in board.parts and board.parts[r].owner != owner]
-                    if ext:
-                        ex = sum(q[0] for q in ext) / len(ext)
-                        ey = sum(q[1] for q in ext) / len(ext)
-                        Fx += pull * (ex - p.x) / max(1, len(refs))
-                        Fy += pull * (ey - p.y) / max(1, len(refs))
-                # repulsion vs everything outside the instance
-                for o in board.parts.values():
-                    if o.owner == owner:
-                        continue
-                    dx, dy = p.x - o.x, p.y - o.y
-                    d = (dx * dx + dy * dy) ** 0.5
-                    pw, ph = p.wh()
-                    qw, qh = o.wh()
-                    need = ((pw + qw) / 2 + 0.6 + (ph + qh) / 2 + 0.6) / 2
-                    if d < 1e-6:
-                        dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
-                    if d < need * 2.2:
-                        f = spread * (3.2 * (1 - d / (need * 2.2)) + (1.6 if d < need else 0))
-                        Fx += f * dx / d
-                        Fy += f * dy / d
-            # instance-vs-instance centroid push (joined power nets attract
-            # all instances to one spot; this keeps them apart as units).
-            # small-N path (hierarchical): plain O(G^2) is fine.
-            cx = sum(board.parts[r].x for r in refs) / len(refs)
-            cy = sum(board.parts[r].y for r in refs) / len(refs)
-            for other, orefs in groups.items():
-                if other == owner:
-                    continue
-                ox = sum(board.parts[r].x for r in orefs) / len(orefs)
-                oy = sum(board.parts[r].y for r in orefs) / len(orefs)
-                dx, dy = cx - ox, cy - oy
-                d = (dx * dx + dy * dy) ** 0.5 or 1.0
-                if d < 25.0:
-                    push = spread * 6.0 * (1 - d / 25.0)
-                    Fx += push * dx / d
-                    Fy += push * dy / d
-            Fx += rng.gauss(0, 1) * 1.4 * T
-            Fy += rng.gauss(0, 1) * 1.4 * T
-            # rigid translate with INSTANCE-level clamp (per-part clamp would
-            # deform the block when one part touches the edge first)
-            dx0, dy0 = step * Fx, step * Fy
-            # Per-part clamp, deliberately not hoisted to a group max: the
-            # clamp is what keeps a rigid body inside the board and hoisting
-            # it moved every placement (the snapshot gate caught it).
-            lo_x = max(-(board.parts[r].x - board.parts[r].wh()[0] / 2 - m) for r in refs)
-            hi_x = min((board.width - board.parts[r].wh()[0] / 2 - m) - board.parts[r].x for r in refs)
-            lo_y = max(-(board.parts[r].y - board.parts[r].wh()[1] / 2 - m) for r in refs)
-            hi_y = min((board.height - board.parts[r].wh()[1] / 2 - m) - board.parts[r].y for r in refs)
-            dx0 = min(max(dx0, lo_x), hi_x) if lo_x <= hi_x else 0.0
-            dy0 = min(max(dy0, lo_y), hi_y) if lo_y <= hi_y else 0.0
-            for ref in refs:
-                p = board.parts[ref]
-                p.x += dx0
-                p.y += dy0
-        # free parts move normally (single diffusion step each)
-        for ref, p in board.parts.items():
-            if p.owner or ref in fx:
+    _rigid_diffuse(board, groups, iters, rng, m, pull, spread, frames, every,
+                   free=True)
+    # Free parts can still land on a stamped instance (group repulsion is
+    # one-sided during the Gauss-Seidel scan). Nudge only owner-less parts
+    # so instance rigidity stays intact.
+    _repair_free(board, rng)
+
+
+def _repair_free(board: Board, rng: random.Random, rounds: int = 24) -> None:
+    """Min-conflict moves for owner-less parts only (hierarchical post-pass)."""
+    fx = _fixed(board)
+    lib = board._lib()
+    m = edge_margin(board)
+    free = [p for r, p in board.parts.items() if not p.owner and r not in fx]
+    if not free:
+        return
+    pads = _pad_cache(board)
+
+    def overlapping(p: Part) -> bool:
+        pw, ph = p.wh()
+        for q in board.parts.values():
+            if q is p:
                 continue
-            Fx = Fy = 0.0
-            for n, net in board.nets.items():
-                if not any(r == ref for r, _ in net.pins):
-                    continue
-                pts = [board.pad_pos(r, q) for r, q in net.pins if r in board.parts]
-                if len(pts) > 1:
-                    Fx += pull * (sum(q[0] for q in pts) / len(pts) - p.x)
-                    Fy += pull * (sum(q[1] for q in pts) / len(pts) - p.y)
-            Fx += rng.gauss(0, 1) * 1.4 * T
-            Fy += rng.gauss(0, 1) * 1.4 * T
+            qw, qh = q.wh()
+            if (abs(p.x - q.x) < (pw + qw) / 2 + 0.4 and
+                    abs(p.y - q.y) < (ph + qh) / 2 + 0.4):
+                return True
+        return False
+
+    for _ in range(rounds):
+        moved = False
+        for p in free:
+            if not overlapping(p):
+                continue
             pw, ph = p.wh()
-            p.x = min(max(p.x + step * Fx, pw / 2 + m), board.width - pw / 2 - m)
-            p.y = min(max(p.y + step * Fy, ph / 2 + m), board.height - ph / 2 - m)
-        if frames is not None and (t % every == 0 or t == iters - 1):
-            frames.append(_snap(board))
+            bx, by = p.x, p.y
+            best: tuple[float, float, float] | None = None  # cost, x, y
+            lo_x, hi_x = pw / 2 + m, board.width - pw / 2 - m
+            lo_y, hi_y = ph / 2 + m, board.height - ph / 2 - m
+            if lo_x > hi_x or lo_y > hi_y:
+                continue
+            for _try in range(64):
+                p.x = rng.uniform(lo_x, hi_x)
+                p.y = rng.uniform(lo_y, hi_y)
+                if overlapping(p):
+                    continue
+                c = cost(board, pads)
+                if best is None or c < best[0]:
+                    best = (c, p.x, p.y)
+                    moved = True
+            if best is not None:
+                p.x, p.y = best[1], best[2]
+            else:
+                p.x, p.y = bx, by
+        if not moved:
+            return
 
 
 def _coarsen(board: Board, groups: dict[str, list[str]],
@@ -1018,18 +976,20 @@ def _pad_cache(board: Board) -> dict[tuple[str, str], XY]:
 def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
                    rng: random.Random, m: float,
                    pull: float, spread: float,
-                   frames: list[Frame] | None, every: int) -> None:
+                   frames: list[Frame] | None, every: int,
+                   free: bool = False) -> None:
     """Rigid-body diffusion over arbitrary groups (level-2 core, reused by
     multilevel). Translates whole groups, deforms nothing.
+    free=True also Langevin-steps owner-less parts each iter (hierarchical).
     # ponytail: spatial hash (CELL=4mm) keeps repulsion ~O(n); net index
     # avoids the per-part × per-net scan."""
     fx = _fixed(board)
     # net membership index (built once — board topology is fixed)
-    mem: dict[str, list[str]] = {}
+    mem_all: dict[str, list[str]] = {}
     for net in board.nets.values():
         for ref, _ in net.pins:
             if ref in board.parts:
-                mem.setdefault(ref, []).append(net.name)
+                mem_all.setdefault(ref, []).append(net.name)
     CELL = 4.0
     pads = _pad_cache(board)
     # giant rails carry no placement signal (centroid ≈ board center) —
@@ -1037,7 +997,10 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
     small_nets = {n for n, net in board.nets.items()
                   if n not in BIG_RAILS and len(net.pins) <= 32}
     mem = {r: [n for n in ns if n in small_nets]
-           for r, ns in mem.items()}
+           for r, ns in mem_all.items()}
+    # free-part springs keep every net (matches the old hierarchical loop)
+    free_parts = ([p for r, p in board.parts.items() if not p.owner and r not in fx]
+                  if free else [])
 
     def wpos(ref: str, pin: str) -> XY:
         p = board.parts[ref]
@@ -1156,6 +1119,40 @@ def _rigid_diffuse(board: Board, groups: dict[str, list[str]], iters: int,
                 p.x += dx0
                 p.y += dy0
             cent.pop(owner, None)  # this group moved: cached centroid is stale
+        # free parts: net springs + nearby repulsion + noise (hierarchical
+        # used to spring-only; without a push, free connectors sit on top
+        # of stamped instances after the spatial-hash group pass).
+        for p in free_parts:
+            Fx = Fy = 0.0
+            for nname in mem_all.get(p.ref, []):
+                net = board.nets[nname]
+                pts = [wpos(r, q) for r, q in net.pins if r in board.parts]
+                if len(pts) > 1:
+                    Fx += pull * (sum(q[0] for q in pts) / len(pts) - p.x)
+                    Fy += pull * (sum(q[1] for q in pts) / len(pts) - p.y)
+            gx, gy = int(p.x / CELL), int(p.y / CELL)
+            for ix in (gx - 1, gx, gx + 1):
+                for iy in (gy - 1, gy, gy + 1):
+                    for oref in grid.get((ix, iy), []):
+                        if oref == p.ref:
+                            continue
+                        o = board.parts[oref]
+                        dx, dy = p.x - o.x, p.y - o.y
+                        d = (dx * dx + dy * dy) ** 0.5
+                        need = ((hw[p.ref] + hw[oref]) / 2 + 0.6
+                                + (hh[p.ref] + hh[oref]) / 2 + 0.6) / 2
+                        if d < 1e-6:
+                            dx, dy, d = rng.uniform(-1, 1), rng.uniform(-1, 1), 1.0
+                        if d < need * 2.2:
+                            f = spread * (3.2 * (1 - d / (need * 2.2))
+                                          + (1.6 if d < need else 0))
+                            Fx += f * dx / d
+                            Fy += f * dy / d
+            Fx += rng.gauss(0, 1) * 1.4 * T
+            Fy += rng.gauss(0, 1) * 1.4 * T
+            pw, ph = hw[p.ref], hh[p.ref]
+            p.x = min(max(p.x + step * Fx, pw / 2 + m), board.width - pw / 2 - m)
+            p.y = min(max(p.y + step * Fy, ph / 2 + m), board.height - ph / 2 - m)
         if frames is not None and (t % every == 0 or t == iters - 1):
             frames.append(_snap(board))
 
@@ -1341,6 +1338,7 @@ def route(board: Board, frames: list[Frame] | None = None) -> int:
             continue
         layer = net.layer if net.layer is not None else 0
         hub = pts[0][1]
+        mark = len(new)
         for _, pt in pts[1:]:
             # L via mid: pick orientation with shorter stub to hub-x first
             mid: XY
@@ -1354,8 +1352,8 @@ def route(board: Board, frames: list[Frame] | None = None) -> int:
                 new.append(Seg(net.name, mid[0], mid[1], pt[0], pt[1], layer, net.width))
         if frames is not None:
             frames.append({"net": net.name, "layer": layer,
-                           "segs": [(s.x1, s.y1, s.x2, s.y2) for s in new
-                                    if s.net == net.name]})
+                           "segs": [(s.x1, s.y1, s.x2, s.y2)
+                                    for s in new[mark:]]})
 
     def _do() -> None:
         board.traces[:] = new

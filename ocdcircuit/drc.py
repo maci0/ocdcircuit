@@ -203,18 +203,26 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
     sizes = [p.wh() for p in parts]
     boxes = [(p.x - w / 2 - 0.1, p.y - h / 2 - 0.1, p.x + w / 2 + 0.1, p.y + h / 2 + 0.1)
              for p, (w, h) in zip(parts, sizes)]
+    # Bound formatted overlap rows; full count is returned as overlap_count.
+    OVERLAP_DETAIL = 64
+    overlap_n = 0
+    overlap_detail: list[str] = []
     for i, j in _grid_pairs(boxes, 5.0):
         a, b = parts[i], parts[j]
         aw, ah = sizes[i]
         bw, bh = sizes[j]
         if (abs(a.x - b.x) < (aw + bw) / 2 + 0.1 and
                 abs(a.y - b.y) < (ah + bh) / 2 + 0.1):
-            # ponytail: formats a message per overlapping pair — 14.7M rows
-            # / 291MB on a scrambled 5,420-part board, and callers only ever
-            # count them or show the first few. Bounded formatting (keep the
-            # count, format the first N) needs a count/list split in the
-            # return contract; do it when a caller needs more than len().
-            errors.append(f"overlap {a.ref}-{b.ref}")
+            # Cap formatted rows: 14.7M unique strings / ~291MB on a scrambled
+            # 5,420-part board, and every caller only counts them or shows the
+            # first few. Full count lives on `overlap_count`; detail stays
+            # the first OVERLAP_DETAIL pairs (stable _grid_pairs order).
+            overlap_n += 1
+            if len(overlap_detail) < OVERLAP_DETAIL:
+                overlap_detail.append(f"overlap {a.ref}-{b.ref}")
+    errors.extend(overlap_detail)
+    if overlap_n > OVERLAP_DETAIL:
+        errors.append(f"overlap … ({overlap_n} total)")
     lib = board._lib()
     for p in parts:
         if lib.get(p.fp, {}).get("edge"):
@@ -367,7 +375,10 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                              (sb.x1, sb.y1, sb.x2, sb.y2)) < _need(sa.net, sb.net):
                     warnings.append(f"clearance {sa.net}-{sb.net}")
                     break
-    return {"errors": errors, "warnings": warnings, "fab": key}
+    out: dict[str, object] = {"errors": errors, "warnings": warnings, "fab": key}
+    if overlap_n:
+        out["overlap_count"] = overlap_n
+    return out
 
 
 def erc(board: Board) -> dict[str, object]:

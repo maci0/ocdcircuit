@@ -299,6 +299,7 @@ class AllDrc(Plugin[dict[str, object]]):
         errors: list[str] = []
         warnings: list[str] = []
         ran: list[str] = []
+        overlap_n = 0
         cands = list(keys) if keys is not None else board.plugins().list("drc")
         for key in cands:
             if not isinstance(key, str) or key == "all":
@@ -311,9 +312,15 @@ class AllDrc(Plugin[dict[str, object]]):
                 errors.append(f"{key}: {e}" if not str(e).startswith(f"{key}:") else str(e))
             for w in cast(list[object], r.get("warnings", [])):
                 warnings.append(f"{key}: {w}" if not str(w).startswith(f"{key}:") else str(w))
+            oc = r.get("overlap_count")
+            if isinstance(oc, int):
+                overlap_n = max(overlap_n, oc)
             ran.append(key)
-        return {"errors": errors, "warnings": warnings, "ran": ran,
-                "fab": board.fab}
+        out: dict[str, object] = {"errors": errors, "warnings": warnings, "ran": ran,
+                                  "fab": board.fab}
+        if overlap_n:
+            out["overlap_count"] = overlap_n
+        return out
 
 
 class JlcExporter(Plugin[list[str]]):

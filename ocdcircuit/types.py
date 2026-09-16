@@ -31,9 +31,12 @@ class DrcReport(TypedDict):
     ``errors`` and ``warnings`` are always present (possibly empty).
     ``fab`` is set when a fab profile was applied; ``ran`` lists sibling
     keys when ``check("all")`` merges multiple DRC plugins.
+    ``overlap_count`` is the full part-overlap total when overlaps were
+    found (``errors`` may only keep the first few detail rows).
     """
 
     errors: list[str]
     warnings: list[str]
     fab: NotRequired[str]
     ran: NotRequired[list[str]]
+    overlap_count: NotRequired[int]
