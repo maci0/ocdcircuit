@@ -36,6 +36,8 @@ if TYPE_CHECKING:
 MAXDIM = 1600          # working resolution of the stitched canvas
 TILE_MAXDIM = 1600     # per-tile cap: must exceed canvas/grid or tiles
                        # carry no more detail than the overview
+MAX_REQUEST_MB = 24.0  # drop zoom tiles rather than post a request the
+                       # endpoint refuses (deepseek answers 413 near 30 MB)
 REG = 512              # registration works on this, ~40x fewer pixels
 SCALES = tuple(2.0 ** (i / 8.0) for i in range(-12, 13))  # 0.35x .. 2.83x
 ROTS = tuple(range(0, 360, 10))
@@ -901,17 +903,32 @@ def extract_questions(reply: str) -> list[str]:
     return out[:5]
 
 
-def _b64_arr(img: Any) -> str:
-    """uint8 array -> PNG data URI."""
+def _b64_arr(img: Any, quality: int = 85) -> str:
+    """uint8 array -> data URI, JPEG when Pillow is available.
+
+    These are photographs, so PNG's lossless guarantee buys nothing but
+    bytes: measured 2.9 MB vs 0.6 MB for the same 1400 px board view, and a
+    zoomed scan of both sides is ~30 images. That is the difference between
+    a request an endpoint accepts and an HTTP 413. Falls back to PNG (the
+    stdlib encoder) when Pillow is missing, which stays correct but large.
+    """
     import base64
     np = _numpy()
-    from .raster import _png
     a = np.clip(np.nan_to_num(np.asarray(img)), 0, 255).astype(np.uint8)
     if a.ndim == 2:
         a = np.repeat(a[..., None], 3, axis=2)
-    h, w = a.shape[:2]
-    return ("data:image/png;base64,"
-            + base64.b64encode(_png(w, h, bytearray(a.tobytes()))).decode())
+    try:
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.fromarray(a).save(buf, "JPEG", quality=quality)
+        return ("data:image/jpeg;base64,"
+                + base64.b64encode(buf.getvalue()).decode())
+    except ImportError:
+        from .raster import _png
+        h, w = a.shape[:2]
+        return ("data:image/png;base64,"
+                + base64.b64encode(_png(w, h, bytearray(a.tobytes()))).decode())
 
 
 def _b64_png(path: str, maxdim: int = 1024) -> str:
@@ -1009,6 +1026,20 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
                                  f"ZOOM {where} (native resolution)")
     if not images:
         raise ValueError("nothing to analyse — run scan() first")
+    budget = float(os.environ.get("OCD_SCAN_MAX_MB", MAX_REQUEST_MB))
+    total = sum(len(u) for u in images) / 1e6
+    while total > budget and zoom > 1:
+        # too big for the endpoint (HTTP 413 is the usual answer): drop the
+        # zoom tiles before dropping the overviews, since an analysis with
+        # less detail beats a request that never lands.
+        zoom -= 1
+        return analyse(manifest, views=views, note=note, docs=docs,
+                       answers=answers, zoom=zoom, timeout=timeout)
+    if total > budget:
+        raise ValueError(
+            f"scan payload is {total:.0f} MB, over the {budget:.0f} MB "
+            "budget even without zoom tiles — lower maxdim on the scan, or "
+            "raise OCD_SCAN_MAX_MB if your endpoint accepts more")
     text = (PROMPT + footprint_menu() + "\n\nScan report:\n"
             + "\n".join(lines) + context_block(note, docs, answers))
     return llm.vision(text, images, timeout=timeout)
@@ -1256,7 +1287,8 @@ def demo() -> None:
     assert len(_tiles) == 4, f"2x2 grid gave {len(_tiles)} tiles"
     assert [w for w, _ in _tiles] == ["top-left", "top-right",
                                       "bottom-left", "bottom-right"]
-    assert all(u.startswith("data:image/png;base64,") for _, u in _tiles)
+    assert all(u.startswith("data:image/") and ";base64," in u
+               for _, u in _tiles)
     # each tile must be a real crop: more than a quarter of the board
     # (overlap) but not the whole thing
     _t0 = _tf2.NamedTemporaryFile(suffix=".png", delete=False)
@@ -1291,6 +1323,21 @@ def demo() -> None:
     assert len(tile_uris(_tp, 3)) == 9
     os.unlink(_t0.name)
     os.unlink(_tp)
+
+    # images must be JPEG when Pillow is present: a zoomed both-sides scan is
+    # ~30 photos, and PNG made that a 53 MB request the endpoint answered
+    # with HTTP 413.
+    _shot = np.clip(rng.normal(128, 40, (400, 400, 3)), 0, 255).astype(np.uint8)
+    _uri = _b64_arr(_shot)
+    try:
+        import PIL  # noqa: F401
+        assert _uri.startswith("data:image/jpeg;base64,"), "not JPEG with Pillow"
+        from .raster import _png as _pngenc
+        _png_bytes = len(_pngenc(400, 400, bytearray(_shot.tobytes())))
+        assert len(_uri) * 2 < _png_bytes, (
+            f"JPEG uri {len(_uri)} is not much smaller than PNG {_png_bytes}")
+    except ImportError:
+        assert _uri.startswith("data:image/png;base64,"), "no PNG fallback"
 
     # the prompt must name real footprints, read from the live library
     menu = footprint_menu()
