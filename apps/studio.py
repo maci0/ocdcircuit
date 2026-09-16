@@ -315,19 +315,18 @@ BASE = os.path.dirname(SRC)
 # the product (live board canvas, traces + glow dots, no stock photo, no
 # invented stats). STORY: visitor gets the offer in one viewport, starts
 # designing via the account form, lands on the shelf. FIRST VIEWPORT: nav,
-# hook, glowing prompt card over the board visual, single CTA. FORM: Persuade
-# surface in the established world, no seed roll (brief-pinned).
-# FINISH: unreviewed and undocumented is unfinished; this build ends with the
-# finish review, the verdict, and DESIGN.md
+# hook, glowing prompt card over the board visual, single CTA; collab strip
+# + AI engine story sit below. FORM: Persuade surface in the established
+# world, no seed roll (brief-pinned). FINISH: DESIGN.md is the authority.
 LOGIN_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio — two engineers, one board</title>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <meta name=description content="Open a board, send the link, co-edit it live. Two cursors, one schematic, zero merge conflicts — with an AI engine that drafts, places and routes beside you.">
-<link rel=icon href="data:,">
+<link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='4' fill='%23101418'/%3E%3Crect x='2' y='2' width='16' height='16' rx='4' fill='none' stroke='%23d8e2dc' stroke-width='1.8'/%3E%3Cpath d='M6.5 7.2 9.3 10l-2.8 2.8' fill='none' stroke='%235fd894' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='11' y1='12.8' x2='14' y2='12.8' stroke='%235fd894' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root{
 --term:#101418;--term-2:#1a2129;--term-line:#2a333d;--term-text:#d8e2dc;
 --term-faint:#7f8b94;--term-bad:#ff7364;--term-ok:#5fd894;--term-key:#ffd8a0;
---sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
 --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
 *{box-sizing:border-box}
@@ -461,6 +460,10 @@ font:.72rem/1.7 var(--mono);color:var(--term-text);padding:.6rem .7rem;
 white-space:pre;overflow-x:auto}  /* pre would overflow the card on narrow screens */
 .person small{display:block;margin-top:.6rem;font:.75rem var(--mono);color:var(--term-faint)}
 .person small b{color:var(--term-ok);font-weight:600}
+/* below the fold: AI engine story — never inside the hero CTA card */
+.aistory{max-width:34rem;margin:2.4rem auto 0;color:var(--term-faint);
+font-size:.95rem;line-height:1.65;text-wrap:balance}
+.aistory b{color:var(--term-text);font-weight:600}
 a{color:var(--term-ok)}
 /* supported-fabs strip: real vendor tiles, links out to capabilities */
 .fabstrip{display:flex;gap:.4rem .8rem;justify-content:center;align-items:center;flex-wrap:wrap;
@@ -473,9 +476,8 @@ border:1px solid var(--term-line);border-radius:9px;padding:.3rem}
 .fabcell img{display:block;border-radius:5px;width:96px;height:32px;object-fit:contain}
 @media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}
 .hero{padding:1rem 1.1rem 2.5rem}.herobody{padding-top:2rem}
-/* on a phone the two proof cards stack to 412px and pushed the CTA below the
-fold — the offer and its button come first, the proof follows. */
-.collab{order:2;margin-top:1.8rem}.flowline{order:3}
+/* offer + CTA first; collab proof and AI story follow below the fold */
+.collab{order:2;margin-top:1.8rem}.aistory{order:3}.fabstrip{order:4}
 .mini{white-space:pre-wrap}}
 /* reduced motion keeps the authored frame — paint() already stops after one
 pass, so hiding the canvas threw away the visual instead of the animation. */
@@ -488,7 +490,10 @@ pass, so hiding the canvas threw away the visual instead of the animation. */
 <button id=topcta type=button>Start a board together</button></nav>
 <div class=herobody>
 <h1>Your whole team. One board. Zero merge conflicts.</h1>
-<p class=dek>Open a board, send the link, co-edit it live — every cursor, every part move, every net, in real time.</p>
+<p class=dek>Open a board, send the link, you're co-editing — every cursor, every part move, every net, in real time.</p>
+<div class=prompt><p>Open a board, send the link — same schematic, two cursors, zero merge conflicts.</p>
+<button id=herogo type=button>Start a board together</button></div>
+<ol class=flowline><li><b>1</b> idea</li><li><b>2</b> schematic</li><li><b>3</b> layout</li><li><b>4</b> make</li></ol>
 <div class=collab role=group aria-label="three engineers editing one board live">
 <div class=person><b class=who><i style="background:#5fd894"></i>maya</b>
 <p>dragging the regulator into place</p>
@@ -509,10 +514,7 @@ keep U1 near C1 3
 power VCC GND</div>
 <small><b>● live</b> · rev 42 · pushing</small></div>
 </div>
-<div class=prompt><p>Plus an AI engine beside you — it drafts the schematic,
-places parts, routes traces. You stay the lead engineer.</p>
-<button id=herogo type=button>Start a board together</button></div>
-<ol class=flowline><li><b>1</b> idea</li><li><b>2</b> schematic</li><li><b>3</b> layout</li><li><b>4</b> make</li></ol>
+<p class=aistory><b>AI beside you</b> — drafts the schematic, places parts, routes traces. You stay the lead engineer.</p>
 /*__FABS__*/
 </div>
 </header>
@@ -520,14 +522,14 @@ places parts, routes traces. You stay the lead engineer.</p>
 <button id=back type=button class=backlink><span aria-hidden=true>←</span> Back to the overview</button>
 <div class=brand><svg width=24 height=24 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></div>
 <h2 id=title>Create your Studio account</h2>
-<p class=sub id=sub>Create an account to start building hardware, from anywhere.</p>
+<p class=sub id=sub>Local account beside your boards — then open one and send the link.</p>
 <p id=err role=alert aria-live=polite tabindex=-1></p>
 <form id=f><label>Username<input id=u autocomplete=username maxlength=32 required aria-describedby=err></label>
 <label>Password<input id=p type=password autocomplete=current-password minlength=8 required aria-describedby=err></label>
 <button id=go type=submit>Create account</button>
 <button id=swap type=button class=ghost>Have an account? Log in</button></form>
 <div id=shelf role=group aria-label="your boards"></div>
-<form id=promptbox><input id=promptq aria-label="describe a board to start" placeholder="What do you want to build today?"><button type=submit>Start</button></form>
+<form id=promptbox><input id=promptq aria-label="describe a board to start" placeholder="e.g. 555 blinky, USB-C breakout, 2-layer sensor"><button type=submit>Start</button></form>
 <button id=newprojbtn type=button class=ghost>New project…</button>
 <dialog id=newproj aria-label="new project"><h3>New project</h3>
 <input id=npsearch type=search aria-label="search boards and templates" placeholder="Search boards and templates">
@@ -558,7 +560,7 @@ x.fillRect((i*97.3)%W,(i*57.7)%H,1.2,1.2);}
 x.globalAlpha=1;
 const bw=Math.max(200,W*.62),bh=Math.max(140,H*.42),ox=(W-bw)/2,oy=(H-bh)/2+20;
 x.strokeStyle='rgba(95,216,148,.35)';x.lineWidth=1.5;x.strokeRect(ox,oy,bw,bh);
-const cols=['#c0392b','#3a7bd5','#5fd894','#9b7bd5'];
+const cols=['#c0392b','#3a7bd5','#5fd894','#ffd8a0']; // red/blue/signal/key — no category purple
 for(let i=0;i<4;i++){const y0=oy+20+i*(bh-40)/3;
 x.strokeStyle=cols[i];x.lineWidth=3;x.globalAlpha=.8;
 x.beginPath();x.moveTo(ox,y0);
@@ -586,7 +588,7 @@ async function boot(){const r=await api('/auth/me',{});
 if(r.user){me=r.user;gate();showShelf();}else setMode(r.needs_setup?'signup':'login',false);}
 function setMode(m,show=true){mode=m;if(show)gate();
 $('title').textContent=m==='signup'?'Create your Studio account':'Welcome back';
-$('sub').textContent=m==='signup'?'Start building hardware from anywhere — no install, no licence.'
+$('sub').textContent=m==='signup'?'Local account beside your boards — then open one and send the link.'
   :'Log in to open your shelf and pick up where you left off.';
 $('go').textContent=m==='signup'?'Create account':'Log in';
 $('p').setAttribute('autocomplete',m==='signup'?'new-password':'current-password');
@@ -686,7 +688,7 @@ boot();
 
 PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio</title>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<link rel=icon href="data:,">
+<link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='4' fill='%23f7f5f0'/%3E%3Crect x='2' y='2' width='16' height='16' rx='4' fill='none' stroke='%231a1d21' stroke-width='1.8'/%3E%3Cpath d='M6.5 7.2 9.3 10l-2.8 2.8' fill='none' stroke='%230f5c37' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='11' y1='12.8' x2='14' y2='12.8' stroke='%230f5c37' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 /* Paper spec sheet, one terminal. Tokens follow the recompile.online design
    system: warm paper ground, white cards, one signal green, one dark surface
@@ -701,7 +703,7 @@ PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Stu
 --term:#101418;--term-2:#1a2129;--term-line:#2a333d;--term-text:#d8e2dc;
 --term-faint:#7f8b94;--term-key:#ffd8a0;--term-ok:#5fd894;--term-bad:#ff7364;
 --r:10px;--r-control:9px;--shadow:0 1px 2px rgba(26,29,33,.06),0 8px 24px -12px rgba(26,29,33,.18);
---sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
 --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
 *{box-sizing:border-box}

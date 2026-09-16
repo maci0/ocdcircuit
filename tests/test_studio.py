@@ -221,7 +221,10 @@ def main() -> None:
         assert _rg.getheader("Cache-Control") == "no-cache"
         _plain = _gz.decompress(_gz_body).decode()
         assert "Your whole team. One board." in _plain
-        assert 'src="/fab-logo/' in _plain and "data:image" not in _plain, _plain[:400]
+        assert 'src="/fab-logo/' in _plain, _plain[:400]
+        # fab tiles stay on /fab-logo/*; brand favicon may be a tiny SVG data URI
+        assert "data:image/png" not in _plain, _plain[:400]
+        assert 'rel=icon href="data:image/svg+xml,' in _plain, _plain[:500]
         assert len(_plain) < 40_000, len(_plain)  # was ~120 KB with inlined tiles
         assert len(_gz_body) < len(_plain) * 0.5, (len(_gz_body), len(_plain))
         print(f"landing gzip: {len(_plain)} -> {len(_gz_body)} bytes")

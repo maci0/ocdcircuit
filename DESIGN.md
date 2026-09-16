@@ -25,14 +25,16 @@ Dark cosmos (`--term` family, green primary `--term-ok #5fd894`): nav, hook
 link, you're co-editing"), glowing board card (signal-green border + glow,
 never category purple) over the live collab canvas (cursors, traces arc,
 glow dots travel, deterministic starfield, gold pads — authored, never a
-stock photo), one CTA ("Start a board together"). Below the fold: the AI
+stock photo), one CTA ("Start a board together"). Below the fold: the collab
+strip (maya + leo + priya, rev 42 — realtime story in one row) and the AI
 engine story (copilot drafts schematic → places → routes, you stay lead).
 Honest flow strip (1 idea → 2 schematic → 3 layout → 4 make — no invented
 counts). Known exception: the board card carries a signal-green glow on dark
 (detector dark-glow) — deliberate, it is the hero's one authored moment,
 in-world, not decoration. The gate keeps the split-screen
-form + shelf behind the CTA. The hero carries the collab strip (live miniature edits, maya + leo + priya, rev 42) — the realtime story told in one row, same tokens. Mobile collapses to form-only;
-`prefers-reduced-motion` kills the canvas.
+form + shelf behind the CTA. Mobile collapses to form-only;
+`prefers-reduced-motion` kills the canvas. Brand mark is the favicon (SVG data
+URI) on both landing and workshop — never an empty `data:,` icon.
 
 ## Contracts
 - Every control carries a visible word; a glyph alone is not a label.
