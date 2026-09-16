@@ -180,7 +180,7 @@ stated as a word in a pill.
   that is a large fraction of a coarse search grid and used to vanish
   silently — on a 20-photo mixed-zoom shoot only 5/18 registered. The
   search now retries wider when the coarse pass finds nothing, giving
-  11/18. By tier it is honest: overviews 4/4, medium 2/4, tight close-ups
+  12/18. By tier it is honest: overviews 4/4, medium 2/4, tight close-ups
   1/3 — and every miss scores below the drop gate, so a bad frame is
   discarded rather than median-blended into the stitch.
 
