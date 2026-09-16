@@ -17,7 +17,8 @@ _NETKEYS = ("net", "nets", "p", "n")
 # ... with numeric ranges worth a second glance
 _RANGES = {"width": ("width", 0.05, 3.0), "bend": ("r", 0.5, 50.0),
            "hole": ("d", 0.1, 10.0), "keepout": ("d", 0.2, 200.0),
-           "stiffener": ("th", 0.05, 3.0), "edge": ("margin", 0.0, 20.0)}
+           "stiffener": ("th", 0.05, 3.0), "edge": ("margin", 0.0, 20.0),
+           "route-grid": ("grid", 0.05, 5.0)}
 
 
 def _strs(v: object) -> list[str]:
@@ -145,7 +146,10 @@ def lint(board: Board) -> dict[str, object]:
             except (TypeError, ValueError):
                 err(f"{t} has non-numeric {k} {c.get(k)!r}")
                 continue
-            if not lo <= num <= hi:
+            if t == "route-grid" and (not (num > 0) or num != num):
+                # zero/NaN divides every maze cell index; warn-range is not enough
+                err(f"route-grid grid={num!r} must be positive")
+            elif not lo <= num <= hi:
                 warn(f"{t} {k}={num:g} outside sane range [{lo:g}..{hi:g}]")
         if t == "pour" and str(c.get("net", "")) in board.nets:
             try:

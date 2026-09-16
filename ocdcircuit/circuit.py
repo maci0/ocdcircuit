@@ -1039,6 +1039,12 @@ class Board(Component):
             m = c.get("margin", 0.5)
             if not isinstance(m, (int, float)) or not math.isfinite(m) or m < 0:
                 raise ValueError(f"edge has bad margin {m!r}")
+        if t == "route-grid":
+            # zero/NaN grid ZeroDivisions every maze cell index and the
+            # gridsnap score residual (`x % grid`).
+            g = c.get("grid", 0.25)
+            if not isinstance(g, (int, float)) or not math.isfinite(g) or g <= 0:
+                raise ValueError(f"route-grid has bad grid {g!r}")
         self._constrain_raw(c)
 
     def _constrain_raw(self, c: Constraint) -> None:

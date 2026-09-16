@@ -187,11 +187,14 @@ def _t7_align(board: Board) -> float | None:
 
 def _t8_gridsnap(board: Board) -> float | None:
     """Mean residual to the board's route-grid multiple (RAW mm)."""
+    import math
     from .maze import GRID
     grid = GRID
     for c in board.constraints:
         if c.get("t") == "route-grid":
-            grid = float(c.get("grid", GRID))  # type: ignore[arg-type]
+            g = float(c.get("grid", GRID))  # type: ignore[arg-type]
+            if math.isfinite(g) and g > 0:
+                grid = g
     parts = list(board.parts.values())
     if not parts:
         return None

@@ -32,9 +32,14 @@ def via_amps(drill: float, temp_rise: float = 10.0) -> float:
 
 def divider(vin: float, r_top: float, r_bot: float) -> float:
     """Vout of a resistive divider."""
-    return vin * r_bot / (r_top + r_bot)
+    den = r_top + r_bot
+    if den == 0:
+        raise ValueError("divider resistors sum to zero")
+    return vin * r_bot / den
 
 
 def divider_pick(vin: float, vout: float, r_bot: float = 10000.0) -> float:
     """Top resistor for target Vout given bottom resistor."""
+    if vout == 0:
+        raise ValueError("vout must be nonzero")
     return r_bot * (vin / vout - 1.0)

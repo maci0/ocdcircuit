@@ -24,10 +24,15 @@ VIA_COST = 8.0
 
 
 def _constraints(board: Board) -> dict[str, float]:
+    import math
     grid, bend, via = GRID, BEND, VIA_COST
     for c in board.constraints:
         if c.get("t") == "route-grid":
-            grid = float(cast(float, c.get("grid", GRID)))
+            g = float(cast(float, c.get("grid", GRID)))
+            # file parser accepts junk for lint; zero/NaN would ZeroDivision
+            # every cell index below — fall back to the default grid.
+            if math.isfinite(g) and g > 0:
+                grid = g
         elif c.get("t") == "route-penalty":
             bend = float(cast(float, c.get("bend", BEND)))
             via = float(cast(float, c.get("via", VIA_COST)))

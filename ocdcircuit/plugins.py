@@ -1792,8 +1792,8 @@ class CalcPlugin(Plugin[dict[str, object]]):
                                           _pos(k.get("rbot", 4700.0), "rbot"))}
         if what == "pick":
             _vo = _f(k.get("vout", 5.0))
-            if _vo == 0:
-                raise ValueError("calc vout must be nonzero (got 0)")
+            if not math.isfinite(_vo) or _vo == 0:
+                raise ValueError(f"calc vout must be nonzero (got {_vo!r})")
             return {"rtop": _calc.divider_pick(_f(k.get("vin", 9.0)),
                                                _vo,
                                                _pos(k.get("rbot", 10000.0), "rbot"))}

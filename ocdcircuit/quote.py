@@ -14,12 +14,26 @@ money in USD. qty = boards ordered; per-board = total/qty.
 """
 from __future__ import annotations
 import math
+from decimal import Decimal, ROUND_HALF_UP
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .circuit import Board
 
 STAMP = "2026-09"  # when the model numbers were fit — re-verify before ordering
+
+# Money: binary floats hold the published schedule constants and live unit
+# prices, but every total/per-board that leaves this module is rounded in
+# decimal cents (half-up) so `parts_per_board * qty + fees` reconciles.
+_CENTS = Decimal("0.01")
+
+
+def _D(x: float | int | str | Decimal) -> Decimal:
+    return x if isinstance(x, Decimal) else Decimal(str(x))
+
+
+def _usd(d: Decimal) -> float:
+    return float(d.quantize(_CENTS, rounding=ROUND_HALF_UP))
 
 # Bare-PCB model per fab: total USD for `qty` boards of `area` cm², `layers`.
 # JLC/PCBWay/NextPCB/ALLPCB: Chinese proto flat-rate + area slope; PCBWay's
@@ -116,24 +130,27 @@ def bare(board: Board, fab: str, qty: int = 5) -> dict[str, object]:
         raise ValueError(f"{fab} doesn't do {board.layers}L "
                          f"(has {sorted(layers_supported)})")
     base, slope, step, minq, _name = BARE[fab]
-    area = board.width * board.height / 100.0  # mm² → cm²
+    area = _D(board.width) * _D(board.height) / _D(100)  # mm² → cm²
     layers = board.layers
     if fab == "oshpark":
         # per-in² pricing, 4L doubles, qty snaps to 3-packs
-        total = area / 6.4516 * (5.0 if layers <= 2 else 10.0)
+        total = area / _D("6.4516") * (_D(5) if layers <= 2 else _D(10))
         packs = math.ceil(qty / 3)
-        return {"total": round(total * packs, 2),
-                "per_board": round(total * packs / (packs * 3), 2),
-                "boards": packs * 3, "note": "3-packs, free US ship, no assembly"}
+        order = total * packs
+        boards = packs * 3
+        return {"total": _usd(order),
+                "per_board": _usd(order / boards),
+                "boards": boards, "note": "3-packs, free US ship, no assembly"}
     n = max(qty, minq)
-    total = base + slope * area + step * max(0, (layers - 2) // 2)
+    total = (_D(base) + _D(slope) * area
+             + _D(step) * max(0, (layers - 2) // 2))
     if fab in ("sierra", "advanced", "eurocircuits", "aisler"):
         note = "US/EU proto shop: setup-heavy, no assembly model"
     elif fab == "jlc-flex":
         note = "flex surcharge baked into base"
     else:
         note = "proto flat-rate; ENIG/tariffs/shipping extra"
-    return {"total": round(total, 2), "per_board": round(total / n, 2),
+    return {"total": _usd(total), "per_board": _usd(total / n),
             "boards": n, "note": note}
 
 
@@ -141,10 +158,13 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     """JLC assembly adders over bare: fees + parts. Only JLC has a published
     fee schedule; every other fab gets bare-only (their assembly is per-quote)."""
     from typing import cast
+    if qty < 1:
+        raise ValueError(f"qty {qty!r} must be ≥1")
     rows = assembly_parts(board)
     joints = sum(cast(int, r["pins"]) for r in rows)
-    fees = JLC_SETUP + JLC_STENCIL + JLC_CONFIRM + joints * JLC_SMT_JOINT
-    parts_total = 0.0
+    fees = (_D(JLC_SETUP) + _D(JLC_STENCIL) + _D(JLC_CONFIRM)
+            + _D(joints) * _D(JLC_SMT_JOINT))
+    parts_total = Decimal(0)
     unpriced: list[str] = []
     sources: dict[str, int] = {}
     for r in rows:
@@ -153,12 +173,13 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
         if v is None:
             unpriced.append(str(r["ref"]))
         else:
-            parts_total += v
+            parts_total += _D(v)
     ext = sum(1 for r in rows if not str(r.get("lcsc", "")).startswith("C"))
-    ext_fee = ext * JLC_EXTENDED_FEE if rows else 0.0
-    total = fees + ext_fee + parts_total * qty
-    return {"fees": round(fees + ext_fee, 2), "parts_per_board": round(parts_total, 2),
-            "total": round(total, 2), "per_board": round(total / qty, 2) if qty else 0.0,
+    ext_fee = _D(ext) * _D(JLC_EXTENDED_FEE) if rows else Decimal(0)
+    fee_total = fees + ext_fee
+    total = fee_total + parts_total * qty
+    return {"fees": _usd(fee_total), "parts_per_board": _usd(parts_total),
+            "total": _usd(total), "per_board": _usd(total / qty),
             "joints": joints, "parts": len(rows), "unpriced": unpriced,
             "sources": sources, "extended_parts": ext,
             "note": "JLC Economic PCBA single-side; parts from live JLC or price= attr"}
@@ -191,9 +212,10 @@ def compare(board: Board, qty: int = 5, fabs: list[str] | None = None,
                                   "boards": b["boards"], "note": b["note"],
                                    "logo": _fab.logo(f)}
         if f == "jlc" and asm is not None:
-            atotal = float(cast(float, asm["total"]))
-            row["asm_total"] = round(float(cast(float, b["total"])) + atotal, 2)
-            row["asm_per_board"] = round(float(cast(float, row["asm_total"])) / qty, 2)
+            atotal = _D(cast(float, asm["total"]))
+            asm_total = _D(cast(float, b["total"])) + atotal
+            row["asm_total"] = _usd(asm_total)
+            row["asm_per_board"] = _usd(asm_total / qty)
             row["asm"] = asm
         rows.append(row)
     priced = sorted((r for r in rows if "bare_total" in r),

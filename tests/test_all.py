@@ -563,6 +563,16 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
+try:
+    _qq.assembled(_qb, qty=0)
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
+try:
+    _qq.assembled(_qb, qty=-1)
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
 _ql1 = agent.loads("board q1 40x30 1L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
 try:
     _qq.bare(_ql1, "oshpark")  # oshpark is 2,4L only

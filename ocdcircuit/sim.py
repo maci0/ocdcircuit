@@ -140,7 +140,10 @@ def _solve_dc(passives: list[dict[str, object]], sources: list[dict[str, object]
     for p in passives:
         if p["t"] != "R":
             continue
-        g = 1.0 / _f(p["v"], 1.0)
+        rv = _f(p["v"], 1.0)
+        if not math.isfinite(rv) or rv <= 0:
+            raise ValueError(f"resistor value must be positive (got {rv})")
+        g = 1.0 / rv
         a = idx.get(str(p["a"]), -1)
         b = idx.get(str(p["b"]), -1)
         if a >= 0:
@@ -230,6 +233,8 @@ def tran(board: Board, t_end: float | None = None,
         ihist: dict[int, float] = {}
         for p in caps:
             C = _f(p["v"], 1e-9)
+            if not math.isfinite(C) or C <= 0:
+                raise ValueError(f"capacitor value must be positive (got {C})")
             Geq = C / dt
             eff.append({"t": "R", "a": p["a"], "b": p["b"], "v": 1.0 / Geq})
             ihist[id(p)] = Geq * vc[id(p)]
@@ -249,7 +254,10 @@ def tran(board: Board, t_end: float | None = None,
         N = n + nv
         A = [[0.0] * (N + 1) for _ in range(N)]
         for p in eff:
-            g = 1.0 / _f(p["v"], 1.0)
+            rv = _f(p["v"], 1.0)
+            if not math.isfinite(rv) or rv <= 0:
+                raise ValueError(f"resistor value must be positive (got {rv})")
+            g = 1.0 / rv
             a = idx.get(str(p["a"]), -1)
             b = idx.get(str(p["b"]), -1)
             if a >= 0:
