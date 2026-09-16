@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 MAXDIM = 1600          # working resolution of the stitched canvas
+TILE_MAXDIM = 1600     # per-tile cap: must exceed canvas/grid or tiles
+                       # carry no more detail than the overview
 REG = 512              # registration works on this, ~40x fewer pixels
 SCALES = tuple(2.0 ** (i / 8.0) for i in range(-12, 13))  # 0.35x .. 2.83x
 ROTS = tuple(range(0, 360, 10))
@@ -918,7 +920,7 @@ def _b64_png(path: str, maxdim: int = 1024) -> str:
     return _b64_arr(fit(load(path), maxdim))
 
 
-def tile_uris(path: str, grid: int = 2, maxdim: int = 1024,
+def tile_uris(path: str, grid: int = 2, maxdim: int = TILE_MAXDIM,
               overlap: float = 0.08) -> list[tuple[str, str]]:
     """Cut an artifact into `grid`x`grid` overlapping crops at native
     resolution: [(label, data-uri), ...].
@@ -930,6 +932,11 @@ def tile_uris(path: str, grid: int = 2, maxdim: int = 1024,
 
     Tiles overlap so a net crossing a seam is whole in at least one crop;
     labels carry the quadrant so the model can say where it looked.
+
+    `maxdim` must exceed the crop size or tiling buys nothing: a 2400 px
+    canvas cut 2x2 yields ~1400 px crops, and capping those at the
+    overview's own 1024 px hands the model the same detail it already had
+    (measured: exactly 1.00x). The default is sized for that.
     """
     np = _numpy()
     img = np.asarray(load(path))
@@ -1259,7 +1266,26 @@ def demo() -> None:
     _th, _tw = load(_t0.name).shape[:2]
     assert 400 <= _tw < 800, f"tile width {_tw} is not a crop of 800"
     assert 300 <= _th < 600, f"tile height {_th} is not a crop of 600"
-    # tiling must not silently downscale below the overview's own detail
+    # tiling must not silently downscale below the overview's own detail.
+    # This is the bug that made zoom worthless once: a per-tile cap equal to
+    # the overview cap hands back exactly the same pixels per millimetre.
+    _canvas = np.zeros((2400, 2400, 3), dtype=np.uint8)
+    _canvas[::30, :] = 255
+    _cp = os.path.join(_tf2.mkdtemp(), "canvas.png")
+    write_png(_cp, _canvas)
+    _ov_px = fit(load(_cp), 1024).shape[1]
+    _tile_uri = tile_uris(_cp, 2)[0][1]
+    _tf3 = _tf2.NamedTemporaryFile(suffix=".png", delete=False)
+    _tf3.write(_b64m.b64decode(_tile_uri.split(",", 1)[1]))
+    _tf3.close()
+    _tile_px = load(_tf3.name).shape[1]
+    # each 2x2 tile covers ~half the board, so detail gain is px / (ov/2)
+    _gain = _tile_px / (_ov_px / 2)
+    assert _gain > 1.5, (
+        f"zoom tiles give only {_gain:.2f}x the overview's detail — "
+        "TILE_MAXDIM is capping them below the crop size")
+    os.unlink(_tf3.name)
+    os.unlink(_cp)
     assert _tw / 800 > 0.5, "tile keeps less than half the source width"
     assert [w for w, _ in tile_uris(_tp, 1)] == ["whole"]
     assert len(tile_uris(_tp, 3)) == 9
