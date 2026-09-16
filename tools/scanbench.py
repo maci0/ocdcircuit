@@ -68,7 +68,8 @@ def ground_truth(sch: str) -> list[tuple[str, str]]:
     return sorted(set(hits))
 
 
-def shoot(P: Any, cache: str, out: str) -> dict[str, dict[str, float]]:
+def shoot(P: Any, cache: str, out: str,
+          work: int = WORK) -> dict[str, dict[str, float]]:
     """Simulate a handheld shoot from the real photos: random scale,
     rotation and offset per frame, plus the nuisances that actually break
     registration — exposure swings, white balance drift, a specular glare
@@ -78,7 +79,7 @@ def shoot(P: Any, cache: str, out: str) -> dict[str, dict[str, float]]:
     os.makedirs(out, exist_ok=True)
     gt: dict[str, dict[str, float]] = {}
     for side in ("top", "bottom"):
-        src = P.fit(P.load(os.path.join(cache, f"{side}.jpg")), WORK)
+        src = P.fit(P.load(os.path.join(cache, f"{side}.jpg")), work)
         h, w = src.shape[:2]
         for n in range(SHOTS):
             s = float(rng.uniform(0.65, 1.45))
@@ -215,13 +216,17 @@ def main(argv: list[str]) -> int:
         def cast_list(v: object) -> list[object]:
             return list(v) if isinstance(v, list) else []
 
+        def cast_paths(v: object) -> list[str] | None:
+            return [str(x) for x in v] if isinstance(v, list) else None
+
         def score(tag: str, **kw: Any) -> None:
             """Recall of the schematic's reference designators, plus whether
             the named parts survive into the draft."""
             t0 = time.time()
             out = os.path.join(root, f"scan-{tag}")
+            shots_in = cast_paths(kw.pop("photos", None)) or photos
             try:
-                r = P.reverse(photos, out, board_mm=100.0, **kw)
+                r = P.reverse(shots_in, out, board_mm=100.0, **kw)
             except Exception as e:        # noqa: BLE001 - report, keep going
                 print(f"  {tag:10s} FAILED: {type(e).__name__}: {e}")
                 return
@@ -229,17 +234,34 @@ def main(argv: list[str]) -> int:
             found = [x for x in refs if x in rep]
             vals = [v for _, v in gtc
                     if v and v.split()[0][:6].upper() in rep.upper()]
+            traced = sum(1 for ln in rep.splitlines()
+                         if "<-->" in ln and "guess" not in ln.lower())
             print(f"  {tag:10s} {time.time() - t0:5.0f}s  "
                   f"refs {len(found):2d}/{len(refs)}  parts {len(vals):2d}/{len(gtc)}"
                   f"  draft {r.get('draft_parts', '-')}p/{r.get('draft_nets', '-')}n"
+                  f"  traced {traced:2d}"
                   f"  asked {len(cast_list(r.get('questions')))}")
             if r.get("draft_error"):
                 print(f"             draft_error: {r['draft_error']}")
 
-        print(f"  ground truth: {len(refs)} refs, model={os.environ.get('OCD_LLM_MODEL', '?')}")
-        score("bare")
-        score("noted", note="Ethernet thin client, VGA out, pulled from a dead unit.")
-        score("manual", note="Ethernet thin client.", docs=[manual])
+        print(f"  ground truth: {len(refs)} refs, "
+              f"model={os.environ.get('OCD_LLM_MODEL', '?')}")
+        score("bare", zoom=1)
+        score("noted", note="Ethernet thin client, VGA out, pulled from a dead unit.",
+              zoom=1)
+        score("manual", note="Ethernet thin client.", docs=[manual], zoom=1)
+        # zoom tiles are the only images where a trace is more than a couple
+        # of pixels wide, so they are scored as their own arm
+        # zoom needs pixels to zoom into: the simulated captures above are
+        # WORK px, so this arm re-shoots from the full-resolution originals.
+        # Scoring zoom against down-sampled captures measures nothing.
+        hires = os.path.join(root, "shoot-hi")
+        if not os.path.isdir(hires):
+            shoot(P, cache, hires, work=2600)
+        hi_photos = sorted(os.path.join(hires, f) for f in os.listdir(hires)
+                           if f.endswith(".png"))
+        score("zoomed", note="Ethernet thin client.", docs=[manual],
+              zoom=2, maxdim=2400, photos=hi_photos)
     print("\nbenchmark done")
     return 0
 
