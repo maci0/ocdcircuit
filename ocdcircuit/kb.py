@@ -43,6 +43,30 @@ UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
 LCSC_RE = re.compile(r"^C\d+$")
 TEXT_EXT = {".md", ".txt", ".rst", ".csv", ".tsv", ".json", ".log", ".toml",
             ".fp", ".ocd", ".srv", ".cfg", ".ini"}
+PREFS_FILE = "PREFS.md"
+PREFS_HEAD = ("# Preferences — what the agent should do without being told\n"
+              "# one rule per line: `when <situation> :: <preference>`\n"
+              "# approved rules are injected into every agent turn; the rest\n"
+              "# wait below until approved. Edit by hand or from the panel.\n")
+
+
+def prefs_parse(body: str) -> list[dict[str, object]]:
+    """PREFS.md lines → [{when, text, approved}]. `# ok` suffix approves."""
+    out: list[dict[str, object]] = []
+    for line in body.splitlines():
+        s = line.strip()
+        if not s.startswith("when ") or "::" not in s:
+            continue
+        when, _, text = s[5:].partition("::")
+        when, text = when.strip(), text.strip()
+        if not when or not text:
+            continue
+        approved = text.endswith("# ok")
+        if approved:
+            text = text[:-len("# ok")].strip()
+        out.append({"when": when, "text": text, "approved": approved,
+                    "line": line})
+    return out
 MAX_BYTES = 64 * 1024 * 1024
 LCSC_API = "https://wmsc.lcsc.com/ftps/wm/product/detail?productCode="
 CHUNK_CHARS = 1200   # passage size for embeddings: a datasheet table fits in
@@ -294,6 +318,68 @@ class KB:
                 d["source"] = org[name]
             out.append(d)
         return out
+
+    def prefs(self) -> list[dict[str, object]]:
+        """PREFS.md rules with stable ids (line index). Missing file = []."""
+        try:
+            body = self.text(PREFS_FILE)
+        except (ValueError, OSError):
+            return []
+        out = prefs_parse(body)
+        for i, p in enumerate(out):
+            p["id"] = i
+        return out
+
+    def prefs_approved(self) -> str:
+        """Approved rules as one prompt block (empty when none)."""
+        lines = [f"- when {p['when']}: {p['text']}"
+                 for p in self.prefs() if p["approved"]]
+        return ("Project preferences (follow without being asked):\n"
+                + "\n".join(lines)) if lines else ""
+
+    def prefs_set(self, id: int, approved: bool) -> dict[str, object]:
+        """Approve/reject rule `id` by toggling its `# ok` suffix. The file
+        is the store — no sidecar, nothing to go stale."""
+        ps = self.prefs()
+        if not 0 <= id < len(ps):
+            raise ValueError(f"no preference #{id}")
+        try:
+            body = self.text(PREFS_FILE).splitlines()
+        except (ValueError, OSError):
+            raise ValueError("no PREFS.md yet — add one from the panel")
+        n = 0
+        for i, ln in enumerate(body):
+            s = ln.strip()
+            if not s.startswith("when ") or "::" not in s:
+                continue
+            if n == id:
+                core = ln.rstrip()
+                has = core.rstrip().endswith("# ok")
+                if approved and not has:
+                    body[i] = core + " # ok"
+                elif not approved and has:
+                    body[i] = core[:core.rstrip().rfind("# ok")].rstrip()
+                p = os.path.join(self.dir, PREFS_FILE)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write("\n".join(body) + "\n")
+                return {"ok": True, "id": id, "approved": approved}
+            n += 1
+        raise ValueError(f"no preference #{id}")
+
+    def prefs_add(self, when: str, text: str) -> dict[str, object]:
+        """Append one rule (unapproved until approved)."""
+        when, text = when.strip(), text.strip()
+        if not when or not text or "\n" in when + text:
+            raise ValueError("a rule needs a when and a what, one line each")
+        p = os.path.join(self.dir, PREFS_FILE)
+        os.makedirs(self.dir, exist_ok=True)
+        if not os.path.isfile(p):
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(PREFS_HEAD)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(f"when {when} :: {text}\n")
+        ps = self.prefs()
+        return {"ok": True, "id": len(ps) - 1}
 
     def read(self, name: str, start: int = 1, lines: int = 200) -> dict[str, object]:
         """A window of a doc's text — page a datasheet instead of dumping 5k lines."""

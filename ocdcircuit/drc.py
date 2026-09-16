@@ -93,20 +93,54 @@ def _grid_pairs(bbox: list[tuple[float, float, float, float]],
     whose boxes overlap shares ≥1 cell, so callers testing a box-overlap
     precondition lose nothing.
     # ponytail: O(n·k) not O(n²); k = items per cell. cell ≈ typical size."""
+    # A few oversized boxes (a board outline, a big connector) span thousands
+    # of cells each and meet in every one of them, so the naive cell-product
+    # generated 30.2M candidate pairs to yield 73k unique ones on virgo —
+    # 413x waste, and the `seen` set still paid a tuple hash per duplicate.
+    # Split the two populations: boxes covering more cells than they are
+    # worth are tested against everything once (they nearly always overlap
+    # something anyway), and the rest keep the cheap uniform hash.
     grid: dict[tuple[int, int], list[int]] = {}
+    big: list[int] = []
+    spans: list[int] = []
     for i, (x0, y0, x1, y1) in enumerate(bbox):
+        gx0, gx1 = int(x0 // cell), int(x1 // cell)
+        gy0, gy1 = int(y0 // cell), int(y1 // cell)
+        spans.append((gx1 - gx0 + 1) * (gy1 - gy0 + 1))
+    # a box wider than this many cells is cheaper to pair by brute force
+    # than to insert (and then dedupe) cell by cell
+    limit = max(64, 4 * len(bbox))
+    for i, (x0, y0, x1, y1) in enumerate(bbox):
+        if spans[i] > limit:
+            big.append(i)
+            continue
         for gx in range(int(x0 // cell), int(x1 // cell) + 1):
             for gy in range(int(y0 // cell), int(y1 // cell) + 1):
                 grid.setdefault((gx, gy), []).append(i)
     seen: set[tuple[int, int]] = set()
     out: list[tuple[int, int]] = []
     for members in grid.values():
-        for ai in range(len(members)):
+        n = len(members)
+        for ai in range(n):
+            a = members[ai]
             for b in members[ai + 1:]:
-                pair = (members[ai], b)
+                pair = (a, b) if a < b else (b, a)
                 if pair not in seen:
                     seen.add(pair)
                     out.append(pair)
+    for i in big:  # oversized: pair against every other box, once
+        for j in range(len(bbox)):
+            if j == i:
+                continue
+            pair = (i, j) if i < j else (j, i)
+            if pair not in seen:
+                seen.add(pair)
+                out.append(pair)
+    # Sorted, not insertion-ordered: callers turn these into user-visible
+    # messages ("overlap A-B"), and grid iteration order is an artifact of
+    # which cell happened to be visited first. Sorting costs ~1% of the
+    # duplicate scan it replaces and keeps the report stable.
+    out.sort()
     return out
 
 
@@ -175,6 +209,11 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
         bw, bh = sizes[j]
         if (abs(a.x - b.x) < (aw + bw) / 2 + 0.1 and
                 abs(a.y - b.y) < (ah + bh) / 2 + 0.1):
+            # ponytail: formats a message per overlapping pair — 14.7M rows
+            # / 291MB on a scrambled 5,420-part board, and callers only ever
+            # count them or show the first few. Bounded formatting (keep the
+            # count, format the first N) needs a count/list split in the
+            # return contract; do it when a caller needs more than len().
             errors.append(f"overlap {a.ref}-{b.ref}")
     lib = board._lib()
     for p in parts:

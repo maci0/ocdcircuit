@@ -1006,6 +1006,12 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def _part_pins(board: Board, r: str) -> list[str]:
+    """Pin numbers a part exposes, sorted. Both schematic writers need it."""
+    return sorted({str(q) for _n, _nn in board.nets.items()
+                   for rr, q in _nn.pins if rr == r})
+
+
 def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.easyeda_sch.json (EasyEDA Std schematic, docType 1):
     LIB symbol per part on the shared sch_layout grid (P pins at absolute
@@ -1016,18 +1022,7 @@ def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
     from .plugins import sch_layout
     os.makedirs(outdir, exist_ok=True)
     lay = sch_layout(board)
-    order = lay["order"]
-    assert isinstance(order, list)
-    px = lay["px"]
-    assert isinstance(px, dict)
-    rail_y = lay["rail_y"]
-    assert isinstance(rail_y, dict)
-    from typing import cast
-    top = float(cast(float, lay["top"]))
-
-    def part_pins(r: str) -> list[str]:
-        return sorted({str(q) for _n, _nn in board.nets.items()
-                       for rr, q in _nn.pins if rr == r})
+    order, px, rail_y, top = lay.order, lay.px, lay.rail_y, float(lay.top)
 
     def lpins(i: int, n: int) -> tuple[float, float]:
         rows = max(1, (n + 1) // 2)
@@ -1047,7 +1042,7 @@ def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
     for r in order:
         assert isinstance(r, str)
         p = board.parts[r]
-        pins = part_pins(r)
+        pins = _part_pins(board, r)
         n = len(pins)
         x, y = float(px[r]), float(top - 20)
         kids: list[str] = []
@@ -1064,8 +1059,7 @@ def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
         shape.append(f"LIB~{x:.0f}~{y:.0f}~package`{p.fp}`name`{r}`"
                      f"spicePre`{r[0] if r else 'U'}`~~0~{_gid('g')}"
                      + "".join("#@$" + k for k in kids))
-    nets = lay["nets"]
-    assert isinstance(nets, list)
+    nets = lay.nets
     for nname in nets:
         y = float(rail_y[str(nname)])
         xs = sorted(pin_pos.get((r, str(q)), (float(px[r]), y))[0]
@@ -1099,14 +1093,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
     from .plugins import sch_layout
     os.makedirs(outdir, exist_ok=True)
     lay = sch_layout(board)
-    order = lay["order"]
-    assert isinstance(order, list)
-    px = lay["px"]
-    assert isinstance(px, dict)
-    rail_y = lay["rail_y"]
-    assert isinstance(rail_y, dict)
-    from typing import cast
-    top = float(cast(float, lay["top"]))
+    order, px, rail_y, top = lay.order, lay.px, lay.rail_y, float(lay.top)
     # KiCad schematic units are mm; our layout is ~px — scale down
     S = 0.25
     L: list[str] = []
@@ -1120,11 +1107,7 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
         j = i if i < rows else i - rows
         return (round(side * 7.62, 2), round(1.27 * (rows - 1 - 2 * j), 2))
 
-    def part_pins(r: str) -> list[str]:
-        return sorted({str(q) for _n, _nn in board.nets.items()
-                       for rr, q in _nn.pins if rr == r})
-
-    counts = sorted({len(part_pins(r)) for r in order})
+    counts = sorted({len(_part_pins(board, r)) for r in order})
     A('(kicad_sch (version 20250114) (generator "ocdcircuit") (generator_version "10.0")')
     A(f'  (uuid "{_uuid_mod.uuid4()}")')
     A('  (paper "A4")')
@@ -1162,13 +1145,12 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
         dx, dy = lib_pin(i, n)
         return (round(cx + dx, 2), round(cy + dy, 2))
 
-    nets = lay["nets"]
-    assert isinstance(nets, list)
+    nets = lay.nets
     pin_pos: dict[tuple[str, str], tuple[float, float]] = {}
     for r in order:
         assert isinstance(r, str)
         p = board.parts[r]
-        pins = part_pins(r)
+        pins = _part_pins(board, r)
         n = len(pins)
         sym = f"ocd:box{n}" if n else "ocd:box0"
         x, y = g(float(px[r]) * S), g(float(top - 20) * S)
@@ -1191,10 +1173,10 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
             A(f'    (pin "{i + 1}" (uuid "{_uuid_mod.uuid4()}"))')
             pin_pos[(r, q)] = pin_xy(i, n, x, y)
         A("  )")
-    for i, n in enumerate(nets):
-        y = g(float(rail_y[str(n)]) * S)
+    for i, nn in enumerate(nets):
+        y = g(float(rail_y[str(nn)]) * S)
         xs = sorted(pin_pos.get((r, str(q)), (g(float(px[r]) * S), y))[0]
-                    for r, q in board.nets[str(n)].pins if r in px)
+                    for r, q in board.nets[str(nn)].pins if r in px)
         if not xs:
             continue
         # ponytail: rail as chained segments — KiCad ERC does not
@@ -1203,10 +1185,10 @@ def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
             A(f'  (wire (pts (xy {xa:.2f} {y:.2f}) (xy {xb:.2f} {y:.2f}))'
               ' (stroke (width 0.254) (type default))'
               f' (uuid "{_uuid_mod.uuid4()}"))')
-        A(f'  (global_label "{n}" (shape input) (at {xs[0]:.2f} {y:.2f} 180)'
+        A(f'  (global_label "{nn}" (shape input) (at {xs[0]:.2f} {y:.2f} 180)'
           ' (effects (font (size 1.27 1.27)))'
           f' (uuid "{_uuid_mod.uuid4()}"))')
-        for r, q in board.nets[str(n)].pins:
+        for r, q in board.nets[str(nn)].pins:
             if (r, str(q)) not in pin_pos:
                 continue
             ex, ey = pin_pos[(r, str(q))]

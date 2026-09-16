@@ -30,19 +30,20 @@ OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
 The chrome is a paper spec sheet with one terminal: warm paper ground, white
 panel cards, the `.ocd` editor as the single dark surface, one signal green
 for actions and live state. Every control carries a visible word (a glyph
-alone is not a label), grouped as `engines` / `build` / `history` / `output`,
-with the state pills on the right.
+alone is not a label). The header is a menubar, not a button strip: `solve`
+stays top-level (it is the one action you reach for constantly), everything
+else lives in a named menu — `Board` (candidates, stamp, fab zip, render) ·
+`Edit` (undo, redo, diff, commit, with kbd hints) · `Engines`
+(placer/router/fab/silk) · `Simulate` (sim dc, shift-click tran) · `Tools`
+(chat, auto-apply, calc, health, quote) · `Share` (live roster + invite
+link) — with the state pills on the right. Alt+B/E/G/S/T jumps to a menu,
+Esc closes.
 
-- **engines:** placer · router · fab · silk dropdowns.
-- **build:** `solve` (full quality, Ctrl+Enter) · `candidates` + count ·
-  `sim dc` (shift-click toggles tran; needs `sim` lines or it says so) ·
-  `stamp` (another copy of the hovered instance).
-- **history:** undo (Ctrl+Z) · redo (Ctrl+Y) · `diff` (what changed since the
-  previous revision).
-- **output:** `fab zip` (the whole bundle, one download) · `svg` (cycles
-  svg → sch → png, shift-click backwards) · `calc` (trace/via/divider
-  calculators, instant) · `health` (python, ngspice, plugins — lazy-checks on
-  first open).
+- **live presence first:** the header carries the room pill (`2 here: maya,
+  leo`) right after the brand — collab is the headline, not a corner.
+- **quote wears logos:** every price row shows its fab's real logo
+  (vendor tile from `ocdcircuit/assets/fabs/`, served by `fab.logo()`
+  as a data URI) next to the name.
 - **status pills:** `cost` (wirelength) · `OCD nn/100 (grade)` neatness ·
   routing feasibility per layer count (`1L routable`, `2L unroutable (this
   board)`) — wirelength is a hint, the real verdict is the DRC panel.
@@ -72,8 +73,26 @@ parser accepts (`<-->`-joined, attrs preserved).
 `/init /build /solve /candidates /pick /render /export /diff_prev`
 `/simulate /doctor /undo /redo` (POST JSON) · `/kb/list /kb/read /kb/search
 /kb/ask /kb/add /kb/fetch` (the board's knowledgebase; `/kb/fetch` runs in a
-worker thread and reports through `/kb/list`) · `/slots` (plugin inventory). Any failure
+worker thread and reports through `/kb/list`) · `/slots` (plugin inventory).
+`/collab/sync /collab/push /collab/cursor /collab/op` (POST JSON) +
+`/collab/events` (SSE): realtime multiplayer, one room per board —
+rev-guarded pushes (stale loser reloads), presence pills + PCB rings,
+structured ops through the `collab` plugin. Any failure
 returns `{"error": "Type: msg"}` — the server never 500s the UI thread.
+
+## Realtime collab (Google-docs-shaped, N engineers)
+
+Open the same board in any number of browsers: the room pill in the header
+reads `4 here: maya, leo, priya +1` (first three names, then the overflow —
+the full roster is one hover away), selecting a part rings it in your color
+on everyone's PCB (stacked tags when cursors collide), and an edit on any
+side rebuilds all of them (~14ms push on blinky). A rev mismatch means
+someone else edited first — their text wins, yours stays in undo. `Share`
+(in the menubar) shows the live roster and copies the invite link. No
+accounts to merge, no invites, no seat cap: sign up, open the same board,
+you're co-editing.
+
+Screengrabs (`docs/shots/`): `collab-landing.png` (hero strip, three live), `collab-crowd.png` (4-user room pill), `collab-live.png` (the room pill), `collab-ring.png` (both editors open), `fab-strip.png` (landing fab badges), `fab-quote.png` (quote rows with badges).
 
 ## Perf contract (enforced by `tests/test_studio.py`)
 

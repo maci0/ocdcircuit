@@ -420,14 +420,23 @@ def slot_of(fp: str, pin: PinLike,
 
 
 def pin_offset(fp: str, pin: PinLike, lib: dict[str, Footprint] | None = None) -> XY:
-    """Pad center."""
-    return pads_of(fp, lib)[str(pin)]
+    """Pad center.
+
+    Direct lookup, not pads_of()[pin]: building the whole merged pad dict to
+    read one key made every per-pin caller O(pins) per pin — O(pins²) per
+    part, and wirelength() walks every pin of every net per cost() call
+    (467k pads_of calls in one 20-iter virgo placement). Same precedence as
+    pads_of (slots > holes > pads) and the same KeyError on a bad fp/pin."""
+    meta = (lib or FOOTPRINTS)[fp]
+    k = str(pin)
+    for section in ("slots", "holes", "pads"):
+        spec = meta.get(section)
+        if spec is not None:
+            v = cast(dict[str, tuple[float, ...]], spec).get(k)
+            if v is not None:
+                return (v[0], v[1])
+    raise KeyError(k)
 
 
 def bodies_of(fp: str, lib: dict[str, Footprint] | None = None) -> list[Footprint]:
     return cast(list[Footprint], (lib or FOOTPRINTS)[fp].get("bodies", []))
-
-
-def courtyard(fp: str) -> tuple[float, float]:
-    m = FOOTPRINTS[fp]
-    return (cast(float, m["w"]), cast(float, m["h"]))

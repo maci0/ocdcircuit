@@ -48,3 +48,4 @@ Drives EasyEDA Pro through CDP (no extension): create project/PCB,
 push Pro source, screenshot the canvas — for visually verifying our
 exports inside the real editor. `python -m tools.easyeda_live
 boards/blinky_555.ocd`. Needs xvfb + the EasyEDA client; not in CI.
+

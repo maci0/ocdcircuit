@@ -5,11 +5,13 @@ Every metric returns 0..1 (higher = tidier), RAW (physical units), or None
 (undefined input — aggregators skip it). Stdlib only.
 """
 from __future__ import annotations
+from .util import numpy as _numpy
 import math
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from .circuit import Board, Seg
+    from .circuit import Board, Part, Seg
 
 EPS = 0.1  # T7 alignment tolerance, mm (placeholder per doc — uncalibrated)
 
@@ -20,13 +22,14 @@ def _routed(board: Board) -> bool:
     return any(not s.jumper for s in board.traces)
 
 
-def _t1_crossings(board: Board) -> int | None:
-    """Same-layer foreign-net crossings, RAW count. Vias exempt (own layer)."""
-    if not _routed(board):
-        return None
+def _foreign_pairs(board: Board) -> Iterator[tuple[Seg, Seg, float]]:
+    """Same-layer foreign-net segment pairs and their separation.
+
+    T1 (crossings) and T5 (clearance headroom) walked the identical spatial
+    hash and differed only in what they did with `d`; this yields the pairs
+    once so each metric is its own two-line loop."""
     from .drc import _seg_dist
     segs = [s for s in board.traces if not s.jumper]
-    n = 0
     by_layer: dict[int, list[int]] = {}
     for i, s in enumerate(segs):
         by_layer.setdefault(s.layer, []).append(i)
@@ -38,10 +41,31 @@ def _t1_crossings(board: Board) -> int | None:
             A, B = segs[members[a]], segs[members[b]]
             if A.net == B.net:
                 continue
-            d = _seg_dist((A.x1, A.y1, A.x2, A.y2), (B.x1, B.y1, B.x2, B.y2))
-            if d < 1e-9 and _cross(A, B):
-                n += 1
-    return n
+            yield A, B, _seg_dist((A.x1, A.y1, A.x2, A.y2),
+                                  (B.x1, B.y1, B.x2, B.y2))
+
+
+def _t1_t5(board: Board) -> tuple[int, float]:
+    """Crossing count and closest foreign-pair separation in ONE walk.
+
+    T1 and T5 are both folds over the same generator, so asking for them
+    separately paid for the spatial hash, the box build and ~120k
+    _seg_dist calls twice (0.73s of a 0.80s virgo scorecard)."""
+    n = 0
+    best = float("inf")
+    for A, B, d in _foreign_pairs(board):
+        if d < best:
+            best = d
+        if d < 1e-9 and _cross(A, B):
+            n += 1
+    return n, best
+
+
+def _t1_crossings(board: Board) -> int | None:
+    """Same-layer foreign-net crossings, RAW count. Vias exempt (own layer)."""
+    if not _routed(board):
+        return None
+    return _t1_t5(board)[0]
 
 
 def _cross(a: Seg, b: Seg) -> bool:
@@ -114,26 +138,14 @@ def _t5_headroom(board: Board) -> float | None:
     Single global min_space — no net-class split (future work)."""
     if not _routed(board):
         return None
+    return _headroom_of(board, _t1_t5(board)[1])
+
+
+def _headroom_of(board: Board, best: float) -> float | None:
+    """T5 from an already-computed closest separation."""
     from .fab import get
-    from .drc import _seg_dist
     P = get(board.fab or "jlc")
     ms = float(P["min_space"])  # type: ignore[arg-type]
-    segs = [s for s in board.traces if not s.jumper]
-    best = float("inf")
-    by_layer: dict[int, list[int]] = {}
-    for i, s in enumerate(segs):
-        by_layer.setdefault(s.layer, []).append(i)
-    for members in by_layer.values():
-        boxes = [(min(segs[i].x1, segs[i].x2), min(segs[i].y1, segs[i].y2),
-                  max(segs[i].x1, segs[i].x2), max(segs[i].y1, segs[i].y2))
-                 for i in members]
-        for a, b in _grid_pairs(boxes, 5.0):
-            A, B = segs[members[a]], segs[members[b]]
-            if A.net == B.net:
-                continue
-            d = _seg_dist((A.x1, A.y1, A.x2, A.y2), (B.x1, B.y1, B.x2, B.y2))
-            if d < best:
-                best = d
     return best / ms if best != float("inf") else None
 
 
@@ -188,16 +200,36 @@ def _t8_gridsnap(board: Board) -> float | None:
     return round(res, 4)
 
 
+def _nn_gaps(parts: list[Part]) -> list[float]:
+    """Nearest-neighbour distance per part.
+
+    The scalar form was an O(n²) python scan (349k generator steps on
+    virgo); chunked like _repel_block so a dense board never materialises
+    an n×n array. Falls back to the scalar scan without numpy."""
+    n = len(parts)
+    np = _numpy()
+    if np is None or n < 64:
+        return [min(float(((p.x - q.x) ** 2 + (p.y - q.y) ** 2) ** 0.5)
+                    for j, q in enumerate(parts) if j != i)
+                for i, p in enumerate(parts)]
+    xs = np.fromiter((p.x for p in parts), float, n)
+    ys = np.fromiter((p.y for p in parts), float, n)
+    out = np.empty(n)
+    step = max(64, 50_000 // max(1, n))
+    for i0 in range(0, n, step):
+        i1 = min(n, i0 + step)
+        d = np.sqrt((xs[i0:i1, None] - xs[None, :]) ** 2
+                    + (ys[i0:i1, None] - ys[None, :]) ** 2)
+        out[i0:i1] = d.min(1)
+    return [float(v) for v in out]
+
+
 def _t9_spacing(board: Board) -> float | None:
     """1 − CV of nearest-neighbor gaps. None if <2 parts or mean gap 0."""
     parts = list(board.parts.values())
     if len(parts) < 2:
         return None
-    gaps: list[float] = []
-    for i, p in enumerate(parts):
-        d = min(float(((p.x - q.x) ** 2 + (p.y - q.y) ** 2) ** 0.5)
-                for j, q in enumerate(parts) if j != i)
-        gaps.append(d)
+    gaps = _nn_gaps(parts)
     mean = sum(gaps) / len(gaps)
     if mean == 0:
         return None
@@ -347,12 +379,9 @@ def _t13_schematic(board: Board) -> dict[str, object] | None:
     changes per net (rails are straight by construction → always 0)."""
     from .plugins import sch_layout
     lay = sch_layout(board)
-    px = lay["px"]
-    rail_y = lay["rail_y"]
-    assert isinstance(px, dict) and isinstance(rail_y, dict)
+    px, rail_y = lay.px, lay.rail_y
     crossings = 0
-    from typing import cast
-    top = float(cast(int, lay["top"])) - 4
+    top = float(lay.top) - 4
     span: dict[str, tuple[float, float]] = {}
     yof: dict[str, float] = {}
     for m, y in rail_y.items():
@@ -360,30 +389,38 @@ def _t13_schematic(board: Board) -> dict[str, object] | None:
         if xs:
             span[m] = (min(xs), max(xs))
             yof[m] = float(y)
+    # The inner "how many of this net's drop-lines fall inside that rail's
+    # x-span" was a linear scan per (net, rail) pair — 1.44M x-tests on
+    # virgo. Sorting each net's drop x-coordinates once turns it into two
+    # binary searches: same count, same inclusive [lo, hi] bounds.
+    from bisect import bisect_left, bisect_right
     for n, net in board.nets.items():
         if n not in rail_y:
             continue
         y0 = float(rail_y[n])
         lo0, hi0 = min(top, y0), max(top, y0)
-        xs0 = [float(px[ref]) for ref, _ in net.pins if ref in px]
+        xs0 = sorted(float(px[ref]) for ref, _ in net.pins if ref in px)
+        if not xs0:
+            continue
         for m, (lo, hi) in span.items():
             if m == n or not lo0 < yof[m] < hi0:
                 continue
-            for x0 in xs0:
-                if lo <= x0 <= hi:
-                    crossings += 1
+            crossings += bisect_right(xs0, hi) - bisect_left(xs0, lo)
     return {"crossings": crossings, "jogs": 0}
 
 
 def tidy(board: Board) -> dict[str, object]:
     """Full scorecard: {metric: value|None} + coverage. No scalar."""
     nets = len(board.traces)
+    # T1 and T5 fold the same foreign-pair walk: do it once for both.
+    routed = _routed(board)
+    t1, closest = _t1_t5(board) if routed else (0, float("inf"))
     m: dict[str, object] = {
-        "T1_crossings": _t1_crossings(board),
+        "T1_crossings": t1 if routed else None,
         "T2_bends_per_mm": _t2_bends(board),
         "T3_orthogonality": _t3_ortho(board),
         "T4_vias": _t4_vias(board),
-        "T5_headroom": _t5_headroom(board),
+        "T5_headroom": _headroom_of(board, closest) if routed else None,
         "T6_skew": _t6_skew(board),
         "T7_alignment": _t7_align(board),
         "T8_gridsnap_mm": _t8_gridsnap(board),

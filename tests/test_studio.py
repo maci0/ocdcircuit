@@ -9,7 +9,6 @@ import json
 import os
 import shutil
 import socket
-import struct
 import subprocess
 import sys
 import tempfile
@@ -98,63 +97,6 @@ def login(base: str) -> str:
     return _JAR[base]
 
 
-def png_brightness(path: str, x0: int, y0: int, x1: int, y1: int,
-                   thr: int = 80) -> tuple[float, int, int]:
-    """Bright-pixel fraction in a crop. Minimal PNG reader (non-interlaced
-    truecolor); raises on anything else — screenshots are that shape."""
-    d = open(path, "rb").read()
-    assert d[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
-    pos, w, h, ctype, idat = 8, 0, 0, 0, b""
-    while pos < len(d):
-        (ln,) = struct.unpack(">I", d[pos:pos + 4])
-        typ = d[pos + 4:pos + 8]
-        if typ == b"IHDR":
-            w, h, _bd, ctype, _cp, _fl, _iv = struct.unpack(">IIBBBBB", d[pos + 8:pos + 21])
-            assert ctype in (2, 6), f"ctype {ctype}"
-        elif typ == b"IDAT":
-            idat += d[pos + 8:pos + 8 + ln]
-        pos += 12 + ln
-    ch = 3 if ctype == 2 else 4
-    raw = zlib.decompress(idat)
-    stride = w * ch
-    n = t = 0
-    prev = bytearray(stride)
-    p = 0
-    for y in range(h):
-        f = raw[p]
-        p += 1
-        line = bytearray(raw[p:p + stride])
-        p += stride
-        if f == 1:
-            for i in range(ch, stride):
-                line[i] = (line[i] + line[i - ch]) & 255
-        elif f == 2:
-            for i in range(stride):
-                line[i] = (line[i] + prev[i]) & 255
-        elif f == 3:
-            for i in range(stride):
-                a = line[i - ch] if i >= ch else 0
-                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
-        elif f == 4:
-            for i in range(stride):
-                a = line[i - ch] if i >= ch else 0
-                b = prev[i]
-                c = prev[i - ch] if i >= ch else 0
-                pp = a + b - c
-                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
-                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                line[i] = (line[i] + pr) & 255
-        prev = line
-        if y0 <= y < y1:
-            for x in range(x0, x1):
-                o = x * ch  # line is the current row, not the image
-                t += 1
-                if max(line[o:o + 3]) > thr:
-                    n += 1
-    # walk remaining rows without storing the whole image
-    return (n / t if t else 0.0), w, h
-
-
 def main() -> None:
     # --help answers usage without booting a server (mcp + studio)
     mh = subprocess.run([sys.executable, "-m", "apps.mcp", "--help"],
@@ -241,7 +183,7 @@ def main() -> None:
         # landing replaces the logged-out screen: hero up top, login one
         # click behind, shelf after. No cookie → hero + POSTs refused.
         _gate = urllib.request.urlopen(base + "/").read().decode()
-        assert "Design PCBs with AI" in _gate, _gate[:200]
+        assert "Your whole team. One board." in _gate, _gate[:200]
         assert "id=herogo" in _gate and "id=ed" not in _gate, _gate[:200]
         _refused = post(base, "/build", {"text": "x"})
         assert _refused.get("login") is True, _refused
@@ -274,6 +216,17 @@ def main() -> None:
                      "contextmenu", "rotRefs", "unpinRefs"):
             assert frag in _pjs, f"flux work missing: {frag}"
         assert "followups:empty" in _in, "flux work missing: followups:empty"
+        # proper menus: solve stays top-level, the rest lives in named menus
+        for frag in ("id=m-board", "id=m-edit", "id=m-engines", "id=m-sim",
+                      "id=m-tools", "id=m-live", "id=roomnote"):
+            assert frag in _in, f"menu missing: {frag}"
+        # every action keeps its id (handlers never rebind)
+        for frag in ("id=solve", "id=dice", "id=stamp", "id=fab_dl", "id=dl",
+                      "id=undo", "id=redo", "id=diffprev", "id=commit",
+                      "id=placer", "id=router", "id=fab", "id=silk",
+                      "id=simbtn", "id=chatbtn", "id=chatauto",
+                      "id=sharebtn", "id=room"):
+            assert frag in _in, f"control id missing: {frag}"
         print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
         assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh
@@ -313,9 +266,9 @@ def main() -> None:
         _lo = post(base, "/auth/logout", {})
         assert _lo.get("ok") is True, _lo
         _JAR.pop(base, None)
-        _lp = urllib.request.urlopen(base + "/").read().decode()  # logged out: landing
-        _out = urllib.request.urlopen(base + "/").read().decode()
-        assert "Design PCBs with AI" in _out, _out[:200]
+        _out = urllib.request.urlopen(base + "/").read().decode()  # logged out: landing
+        assert "Your whole team. One board." in _out, _out[:200]
+        assert _out.count("class=fabcell") == 11, _out.count("class=fabcell")
         # users persist on disk, so re-signup refuses — log back in instead
         import http.client as _hc2
         from urllib.parse import urlparse as _up2
@@ -421,6 +374,24 @@ def main() -> None:
         _cur_users = cast(list[dict[str, object]], _cur.get("users"))
         _names = {str(u.get("name")) for u in _cur_users}
         assert {"tester", "teammate"} <= _names, _cur["users"]
+        # a third cursor joins the same room: presence is N-wide, colors differ
+        _c4 = _hc3.HTTPConnection(_u3.hostname, _u3.port, timeout=30)
+        _c4.request("POST", "/auth/signup",
+                    json.dumps({"user": "third", "password": "testtest12"}),
+                    {"Content-Type": "application/json"})
+        _r4 = _c4.getresponse()
+        _ck4 = _r4.getheader("Set-Cookie", "")
+        assert "ocd_user=" in _ck4, _ck4
+        _third = _ck4.split(";")[0].strip()
+        _r4.read()
+        _cur3 = post(base, "/collab/cursor", {"x": 1, "y": 1, "ref": "R2"},
+                     cookie=_third)
+        _names3 = {str(u.get("name"))
+                   for u in cast(list[dict[str, object]], _cur3.get("users"))}
+        assert {"tester", "teammate", "third"} <= _names3, _cur3["users"]
+        _cols = {str(u.get("color"))
+                 for u in cast(list[dict[str, object]], _cur3.get("users"))}
+        assert len(_cols) == 3, _cur3["users"]  # stable color per user
         _cop = post(base, "/collab/op", {"rev": _rev1,
             "op": {"ops": [{"op": "move_part", "ref": "R1", "x": 7, "y": 8}]}},
             cookie=_mate)
@@ -683,6 +654,12 @@ def main() -> None:
             assert "id=xraygo" in page and "id=xrayfile" in page, "xray controls missing"
             assert "id=quote" in page, "quote panel missing from the page"
             assert "id=qgo" in page and "id=qqty" in page, "quote controls missing"
+            _qq0 = post(kbase, "/quote", {"qty": 5, "no_parts": True})
+            assert not _qq0.get("error"), _qq0.get("error")
+            _q0rows = cast(list[dict[str, object]], _qq0["rows"])
+            assert len(_q0rows) == 11, len(_q0rows)
+            assert all(str(r.get("logo", "")).startswith("data:image/png;base64,")
+                       for r in _q0rows), "every quote row wears its fab logo"
             slots = json.loads(urllib.request.urlopen(kbase + "/slots", timeout=5).read())
             assert "kb" in slots["view"], slots
             kl = post(kbase, "/kb/list", {})

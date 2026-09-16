@@ -510,10 +510,13 @@ from ocdcircuit import fab
 assert fab.get("oshpark")["min_drill"] == 0.508
 assert fab.get("jlc-flex")["layers"] == (1, 2, 4)
 assert fab.get("jlc-flex")["finishes"] == ("ENIG",)
-# every fab has a monogram badge; logo() renders it as an inline-SVG data URI
+# every fab has a monogram fallback; logo() serves the vendor tile as a
+# PNG data URI when assets/fabs/ has one, else the inline-SVG monogram
 assert sorted(fab.MARKS) == fab.list_fabs(), (sorted(fab.MARKS), fab.list_fabs())
-_lsvg = fab.logo("oshpark")
-assert _lsvg.startswith("data:image/svg+xml,") and "OSH" in _lsvg, _lsvg[:80]
+_lpng = fab.logo("oshpark")
+assert _lpng.startswith("data:image/png;base64,"), _lpng[:40]
+import base64 as _b64l
+assert _b64l.b64decode(_lpng.split(",", 1)[1])[:8] == b"\x89PNG\r\n\x1a\n"
 try:
     fab.logo("nope")
     assert False, "logo must KeyError like get()"
@@ -3294,5 +3297,66 @@ for _ in range(60):
     assert len({frozenset(p) for p in _gpgot}) == len(_gpgot), "duplicate pair"
     assert _gp_naive(_gpbox, 5.0) <= {frozenset(p) for p in _gpgot}, \
         "_grid_pairs dropped a candidate pair (missed DRC error)"
+
+# score fast paths must agree with the scalar forms they replaced: these
+# feed the studio scorecard AND tidy_ga's fitness, so drift is invisible.
+from ocdcircuit import score as _psc  # noqa: E402
+from ocdcircuit.plugins import sch_layout as _psl  # noqa: E402
+from ocdcircuit.circuit import Seg as _Seg  # noqa: E402
+
+# Placed + routed + two deliberately crossing segments: every metric below
+# must be NON-ZERO, or the guard asserts 0 == 0 and catches nothing.
+_scsrc = "board s 50x40 2L\n" + "".join(f"part R{i} R0805 1k\n" for i in range(80))
+for _scn in range(14):
+    _scsrc += f"net N{_scn}: " + " ".join(
+        f"R{(_scn * 7 + _sck) % 80}.{1 + (_sck % 2)}" for _sck in range(6)) + "\n"
+_scb = agent.loads(_scsrc, base=EX)
+_scb.place("diffusion", seeds=1, iters=25, seed=3)
+_scb.route_board("lroute")
+_scb.traces.append(_Seg(x1=5.0, y1=5.0, x2=45.0, y2=5.0, net="N0", layer=0, width=0.3))
+_scb.traces.append(_Seg(x1=25.0, y1=1.0, x2=25.0, y2=35.0, net="N1", layer=0, width=0.3))
+_sct1 = _psc._t1_crossings(_scb)
+assert _sct1 is not None and _sct1 > 0, "degenerate fixture"
+assert _psc._t9_spacing(_scb), "degenerate fixture"
+assert _psc._t13_schematic(_scb) != {"crossings": 0, "jogs": 0}, "degenerate fixture"
+
+# _nn_gaps: vector nearest-neighbour == scalar scan (>=64 parts => numpy path)
+_nnp = list(_scb.parts.values())
+assert len(_nnp) >= 64, "need the vector path"
+_nn_scalar = [min(float(((p.x - q.x) ** 2 + (p.y - q.y) ** 2) ** 0.5)
+                  for j, q in enumerate(_nnp) if j != i)
+              for i, p in enumerate(_nnp)]
+assert max(abs(a - b) for a, b in zip(_nn_scalar, _psc._nn_gaps(_nnp))) < 1e-9, \
+    "vector nearest-neighbour gaps drifted from the scalar scan"
+
+# _t1_t5: the merged walk must equal the two separate folds
+_card = _psc.tidy(_scb)
+assert _card["T1_crossings"] == _psc._t1_crossings(_scb), "merged T1 drifted"
+assert _card["T5_headroom"] == _psc._t5_headroom(_scb), "merged T5 drifted"
+
+# _t13_schematic: bisect range-count == the linear scan it replaced
+_lay13 = _psl(_scb)
+_px13, _ry13, _top13 = _lay13.px, _lay13.rail_y, float(_lay13.top) - 4
+_span13: dict[str, tuple[float, float]] = {}
+_yof13: dict[str, float] = {}
+for _m13, _y13 in _ry13.items():
+    _xs13 = [float(_px13[r]) for r, _ in _scb.nets[_m13].pins if r in _px13]
+    if _xs13:
+        _span13[_m13] = (min(_xs13), max(_xs13))
+        _yof13[_m13] = float(_y13)
+_cross13 = 0
+for _n13, _net13 in _scb.nets.items():
+    if _n13 not in _ry13:
+        continue
+    _y013 = float(_ry13[_n13])
+    _lo013, _hi013 = min(_top13, _y013), max(_top13, _y013)
+    for _x013 in [float(_px13[r]) for r, _ in _net13.pins if r in _px13]:
+        for _mm13, (_lo13, _hi13) in _span13.items():
+            if _mm13 == _n13 or not _lo013 < _yof13[_mm13] < _hi013:
+                continue
+            if _lo13 <= _x013 <= _hi13:
+                _cross13 += 1
+assert _psc._t13_schematic(_scb) == {"crossings": _cross13, "jogs": 0}, \
+    "bisect rail-crossing count drifted from the linear scan"
 
 print("ALL OK")

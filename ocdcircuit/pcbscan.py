@@ -324,19 +324,27 @@ def register(ref_g: Any, img_g: Any, *, scales: tuple[float, ...] = SCALES,
     # the higher-resolution levels have the evidence to decide.
     cands = grid[:TOPK]
 
-    step_r0 = float(rots[1] - rots[0]) if len(rots) > 1 else 10.0
+    # Refinement halves the step each pass. Tying the step to res/coarse
+    # broke when the search started at full resolution: the loop then ran a
+    # single pass at the full 10-degree grid step and never converged, which
+    # is what made a full-resolution start look catastrophically bad. The
+    # schedule now depends on the pass number, so any starting level lands
+    # at the same final precision.
+    step_r = float(rots[1] - rots[0]) if len(rots) > 1 else 10.0
+    step_s = 0.09
     res = coarse
     while True:
-        step_r = step_r0 * coarse / res
-        step_s = 0.09 * coarse / res
         cands = [max([c] + [probe(c["scale"] * (1 + ds), c["rot"] + dr, res)
                             for ds in (-step_s, 0.0, step_s)
                             for dr in (-step_r, 0.0, step_r)
                             if (ds, dr) != (0.0, 0.0)],
                      key=lambda x: x["peak"])
                  for c in cands]
+        step_r, step_s = step_r / 2.0, step_s / 2.0
         if res >= REG:
-            break
+            if step_r < 0.5:
+                break
+            continue
         res = min(REG, res * 2)
         cands = sorted((probe(c["scale"], c["rot"], res) for c in cands),
                        key=lambda c: -c["peak"])[:max(1, len(cands) // 2)]

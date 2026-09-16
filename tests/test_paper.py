@@ -6,7 +6,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ocdcircuit.core import (Component, Context, Entry, Fiber, InactiveAccess,
-                             UndeclaredAccess, classify, execute, stale_entries)
+                             Registry, UiSlots, UndeclaredAccess, classify,
+                             execute, stale_entries)
 
 # Alg 1: effect folds yielded inverses LIFO, dispose fires once
 ctx = Context()
@@ -440,5 +441,90 @@ for _ls in (11, 77):
     assert all(f.state == Fiber.ACTIVE for f in _live), \
         [f.state for f in _live]
     assert all(f.ctx.get("bus") is not None for f in _live)
+
+# --- CORDIS review: every inverse reverts what its effect did ---
+
+# set/unset inverses notify: a restored binding must re-reconcile dependents,
+# a reverted one must deactivate them (Alg 2 + Alg 3 are one step).
+_nc = Context()
+_nlog: list[str] = []
+
+def _note(c: Context) -> object:
+    _nlog.append("load")
+    return lambda: _nlog.append("unload")
+
+_nf = _nc.use(("k",), _note)
+_nsnap = _nc.snapshot()
+_nc.set("k", 1)
+assert _nf.state == Fiber.ACTIVE
+_nc.rollback(_nsnap)
+assert _nf.state == Fiber.INACTIVE, "set inverse must deactivate dependents"
+
+_uc = Context()
+_uc.set("k", 1)
+_uf = _uc.use(("k",), lambda c: lambda: None)
+assert _uf.state == Fiber.ACTIVE
+_usnap = _uc.snapshot()
+_uc.unset("k")
+assert _uf.state == Fiber.INACTIVE
+_uc.rollback(_usnap)
+assert _uf.state == Fiber.ACTIVE, "unset inverse must re-activate dependents"
+assert _uc.get("k") == 1
+
+# a raising apply parks FAILED with no live effects left behind
+_pc = Context()
+_plog: list[str] = []
+
+def _on() -> object:
+    _plog.append("on")
+    return lambda: _plog.append("off")
+
+def _half(c: Context) -> object:
+    c.effect(_on)
+    raise RuntimeError("half-applied")
+
+_pc.set("k", 1)
+_pf = _pc.use(("k",), _half)
+assert _pf.state == Fiber.FAILED
+assert _plog == ["on", "off"], f"partial apply leaked effects: {_plog}"
+
+# registry failure memory dies with the entry it judged
+_rg = Registry()
+_rg._add("zz", "boom", object())
+_rg.fail("zz", "boom", "RuntimeError: x")
+_rg._drop("zz", "boom")
+_rg._add("zz", "boom", object())
+assert _rg.get("zz", "boom") is not None, "stale failure outlived the entry"
+
+# UI slot: dispose clears the crash verdict, so a reload renders again
+_slots = UiSlots()
+_sd = _slots.register("toolbar", "x", lambda st: 1 / 0)
+assert _slots.render("toolbar", None) == ""
+_sd()
+_slots.register("toolbar", "x", lambda st: "<ok>")
+assert _slots.render("toolbar", None) == "<ok>", "crash verdict outlived entry"
+
+# loader intercept converges on the spec: a dropped key leaves
+class _Nop(Component):
+    def mount(self, ctx: Context, *a: object, **k: object) -> None:
+        pass
+
+    def unmount(self, ctx: Context) -> None:
+        pass
+
+def _nop_factory() -> Component:
+    return _Nop("nop")
+
+_ic = Context()
+_il = Loader(_ic)
+_il.declare([{"id": "a", "factory": _nop_factory,
+              "intercept": {"svc": {"hidden": True}}}])
+_ie = _il.entries["a"]
+assert _ie.fiber is not None and _ie.fiber.ctx._intercept == {"svc": {"hidden": True}}
+_il.declare([{"id": "a", "factory": _nop_factory}])
+assert _ie.fiber.ctx._intercept == {}, "dropped intercept survived its removal"
+_il.declare([{"id": "a", "factory": _nop_factory,
+              "intercept": {"svc": {"other": 1}}}])
+assert _ie.fiber.ctx._intercept == {"svc": {"other": 1}}
 
 print("CORE PAPER OK")

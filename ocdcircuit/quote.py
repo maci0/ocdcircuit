@@ -188,7 +188,8 @@ def compare(board: Board, qty: int = 5, fabs: list[str] | None = None,
             continue
         row: dict[str, object] = {"fab": f, "bare_total": b["total"],
                                   "bare_per_board": b["per_board"],
-                                  "boards": b["boards"], "note": b["note"]}
+                                  "boards": b["boards"], "note": b["note"],
+                                   "logo": _fab.logo(f)}
         if f == "jlc" and asm is not None:
             atotal = float(cast(float, asm["total"]))
             row["asm_total"] = round(float(cast(float, b["total"])) + atotal, 2)

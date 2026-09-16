@@ -1,0 +1,26 @@
+# TMC2209 stepper-driver channel (proven on boards/pico_tmc2209/).
+# use lib/tmc2209.ocd, then: instance tmc2209 as Z1 join VM GND V3V3
+# STEP/DIR/EN/SGND stay private per instance (Z1_STEP, ...); join them up top.
+board tmc2209 10x10
+block tmc2209 ports VM GND V3V3
+part U QFN28
+part Cv C0805 100nF
+part Ccp C0805 22nF
+part Ra R1206 0.11
+part Rb R1206 0.11
+part J PINHD4
+net VM: U.22 Cv.1
+net GND: U.3 Cv.2
+net CPO: U.4 Ccp.1
+net CPI: U.5 Ccp.2
+net OA: U.24 Ra.1 J.1
+net OA2: U.25 J.2
+net OB: U.26 Rb.1 J.3
+net OB2: U.1 U.27 J.4
+net SGND: Ra.2 Rb.2
+net STEP: U.13
+net DIR: U.19
+net EN: U.2
+net V3V3: U.15
+net VM: U.22 U.28 Cv.1
+end

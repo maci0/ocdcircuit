@@ -16,6 +16,7 @@ glide, traces grow. Headless callers pay nothing (default off).
 from __future__ import annotations
 from .util import numpy as _numpy
 import random
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 from .circuit import Part, Seg
 from .types import BBox, Frame, XY
@@ -508,13 +509,15 @@ def _snap(board: Board) -> Frame:
             "pos": {r: (round(q.x, 2), round(q.y, 2)) for r, q in board.parts.items()}}
 
 
-def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
-             frames: list[Frame] | None = None, every: int = 10,
-             pull: float = 0.08, spread: float = 1.0,
-             edge: float | None = None, thermal: bool = False) -> float:
-    """Multi-seed diffusion; whole run is one undoable effect. Returns cost.
-    frames: optional list to append animation snapshots to.
-    pull/spread/edge/thermal: objective knobs (see placer plugins)."""
+def _best_of_seeds(board: Board, seeds: int, frames: list[Frame] | None,
+                   run_once: Callable[[int], None],
+                   repair: bool = False) -> float:
+    """Run `run_once(s)` per seed, keep the cheapest layout, and leave
+    exactly one undoable effect behind. Returns the winning cost.
+
+    optimize/hierarchical/multilevel differed only in the per-seed body;
+    the keep-best, restore-best, reset-traces and emit(do, undo) scaffold
+    around it was copied three times."""
     snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
     old_traces = list(board.traces)
     best: float = 0.0
@@ -523,15 +526,15 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
     for s in range(seeds):
         if frames is not None:
             frames.append({"seed": s})
-        _diffuse_once(board, iters, seed + s, frames=frames, every=every,
-                      pull=pull, spread=spread, edge=edge, thermal=thermal)
+        run_once(s)
         c = cost(board)
         if first or c < best:
             first = False
             best, best_pos = c, {r: (q.x, q.y) for r, q in board.parts.items()}
     for r, (x, y) in best_pos.items():
         board.parts[r].x, board.parts[r].y = x, y
-    _repair(board)
+    if repair:
+        _repair(board)
     board.traces = old_traces
     final = {r: (p.x, p.y) for r, p in board.parts.items()}
 
@@ -547,6 +550,20 @@ def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
 
     board.emit(_do, _undo)
     return best
+
+def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
+             frames: list[Frame] | None = None, every: int = 10,
+             pull: float = 0.08, spread: float = 1.0,
+             edge: float | None = None, thermal: bool = False) -> float:
+    """Multi-seed diffusion; whole run is one undoable effect. Returns cost.
+    frames: optional list to append animation snapshots to.
+    pull/spread/edge/thermal: objective knobs (see placer plugins)."""
+
+    def _once(s: int) -> None:
+        _diffuse_once(board, iters, seed + s, frames=frames, every=every,
+                      pull=pull, spread=spread, edge=edge, thermal=thermal)
+
+    return _best_of_seeds(board, seeds, frames, _once, repair=True)
 
 
 def candidates(board: Board, n: int = 4, key: str | None = None,
@@ -740,37 +757,11 @@ def hierarchical(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
         return optimize(board, seeds=seeds, iters=iters, seed=seed,
                         frames=frames, every=every, pull=pull, spread=spread,
                         edge=edge, thermal=thermal)
-    snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
-    old_traces = list(board.traces)
-    best: float = 0.0
-    best_pos: dict[str, XY] = {}
-    first = True
-    for s in range(seeds):
-        if frames is not None:
-            frames.append({"seed": s})
+    def _once(s: int) -> None:
         _hier_once(board, groups, iters, seed + s, frames, every,
                    pull, spread, edge, thermal)
-        c = cost(board)
-        if first or c < best:
-            first = False
-            best, best_pos = c, {r: (q.x, q.y) for r, q in board.parts.items()}
-    for r, (x, y) in best_pos.items():
-        board.parts[r].x, board.parts[r].y = x, y
-    board.traces = old_traces
-    final = {r: (p.x, p.y) for r, p in board.parts.items()}
 
-    def _do() -> None:
-        for r, (x, y) in final.items():
-            if r in board.parts:  # parts added/removed since still undo
-                board.parts[r].x, board.parts[r].y = x, y
-
-    def _undo() -> None:
-        for r, (x, y) in snap_pos.items():
-            if r in board.parts:
-                board.parts[r].x, board.parts[r].y = x, y
-
-    board.emit(_do, _undo)
-    return best
+    return _best_of_seeds(board, seeds, frames, _once)
 
 
 def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int,
@@ -1163,15 +1154,9 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
         return hierarchical(board, seeds=seeds, iters=iters, seed=seed,
                             frames=frames, every=every, pull=pull,
                             spread=spread, edge=edge, thermal=thermal)
-    snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
-    old_traces = list(board.traces)
-    best: float = 0.0
-    best_pos: dict[str, XY] = {}
-    first = True
     m = edge if edge is not None else edge_margin(board)
-    for s in range(seeds):
-        if frames is not None:
-            frames.append({"seed": s})
+
+    def _once(s: int) -> None:
         rng = random.Random(seed + s)
         # level 1: prototype offsets per BLOCK TYPE (identical instances
         # share one solve — 1725 owners but only a handful of blocks).
@@ -1242,27 +1227,7 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
             _diffuse_once(board, max(10, iters // 10), seed + s, frames=None,
                           every=every, pull=pull * 0.5, spread=spread,
                           edge=edge, thermal=thermal)
-        c = cost(board)
-        if first or c < best:
-            first = False
-            best, best_pos = c, {r: (q.x, q.y) for r, q in board.parts.items()}
-    for r, (x, y) in best_pos.items():
-        board.parts[r].x, board.parts[r].y = x, y
-    board.traces = old_traces
-    final = {r: (p.x, p.y) for r, p in board.parts.items()}
-
-    def _do() -> None:
-        for r, (x, y) in final.items():
-            if r in board.parts:  # parts added/removed since still undo
-                board.parts[r].x, board.parts[r].y = x, y
-
-    def _undo() -> None:
-        for r, (x, y) in snap_pos.items():
-            if r in board.parts:
-                board.parts[r].x, board.parts[r].y = x, y
-
-    board.emit(_do, _undo)
-    return best
+    return _best_of_seeds(board, seeds, frames, _once)
 
 
 def assign_layers(board: Board) -> None:

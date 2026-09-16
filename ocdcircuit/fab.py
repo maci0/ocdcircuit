@@ -100,6 +100,63 @@ PROFILES: dict[str, FabProfile] = {
 
 DEFAULT = "jlc"  # the fallback profile when a board names none
 
+# Monogram badges: (initials, bg, fg) per fab. Fallback identity when no
+# vendor tile exists — logo() prefers the scraped tile in assets/fabs/.
+MARKS: dict[str, tuple[str, str, str]] = {
+    "jlc": ("JLC", "#0b5cab", "#ffffff"),
+    "pcbway": ("PW", "#0e9f6e", "#ffffff"),
+    "jlc-flex": ("FPC", "#073a6b", "#ffd8a0"),
+    "oshpark": ("OSH", "#5e2b97", "#ffffff"),
+    "seeed": ("SEE", "#00875a", "#ffffff"),
+    "aisler": ("AIS", "#14b8a6", "#06281f"),
+    "eurocircuits": ("EC", "#d9480f", "#ffffff"),
+    "nextpcb": ("NPC", "#1f2937", "#fbbf24"),
+    "allpcb": ("ACB", "#0891b2", "#ffffff"),
+    "sierra": ("SC", "#7c2d12", "#ffd8a0"),
+    "advanced": ("ADV", "#b91c1c", "#ffffff"),
+}
+
+# Vendor tiles scraped from the fabs' own sites (ocdcircuit/assets/fabs/),
+# normalized to 192×64 transparent PNGs. SOURCES below records where each
+# came from; logos are their owners' trademarks, used nominatively to name
+# the fab a quote row / strip cell points at.
+SOURCES: dict[str, str] = {
+    "jlc": "https://rs.jlcpcb.com/static/image/homepage/jlcpcb-logo.webp",
+    "jlc-flex": "same JLCPCB wordmark (flex is a JLC process, not a brand)",
+    "pcbway": "https://www.pcbway.com/img/images/iconspirit.png (logo sprite @0,0 141x41)",
+    "oshpark": "https://oshpark.com apple-touch-icon (gear mark)",
+    "seeed": "https://media-cdn.seeedstudio.com/.../logo_2018_horizontal.png",
+    "aisler": "https://cdn.aisler.net/packs/static/images/logo_medium-....png",
+    "eurocircuits": "https://www.eurocircuits.com/.../build/img/logo.png",
+    "nextpcb": "https://static.nextpcb.com/images/newNavIcon/logo2025.svg",
+    "allpcb": "https://www.allpcb.com/img/img/logo.webp",
+    "sierra": "https://fbfa5ace.delivery.rocketcdn.me/.../logo.svg (sierra-circuits theme)",
+    "advanced": "https://www.advancedpcb.com/getattachment/.../Advanced-PCB-logo.svg",
+}
+
+
+def logo(key: str = DEFAULT) -> str:
+    """Fab logo as a data URI: the vendor tile from assets/fabs/ when we
+    have one, else the MARKS monogram rendered inline-SVG. Data URIs keep
+    the strip + quote rows dependency-free (no static route, no CDN).
+    KeyError on unknown fab, like get()."""
+    from urllib.parse import quote as _q
+    if key not in PROFILES:
+        raise KeyError(f"unknown fab {key!r} (have {sorted(PROFILES)})")
+    try:
+        import importlib.resources as _res
+        raw = _res.files("ocdcircuit.assets.fabs").joinpath(f"{key}.png").read_bytes()
+        import base64 as _b64
+        return "data:image/png;base64," + _b64.b64encode(raw).decode()
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        pass
+    initials, bg, fg = MARKS[key]
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="48" height="28">'
+           f'<rect width="48" height="28" rx="6" fill="{bg}"/>'
+           f'<text x="24" y="19" font-family="Arial,sans-serif" font-size="12"'
+           f' font-weight="bold" text-anchor="middle" fill="{fg}">{initials}</text></svg>')
+    return "data:image/svg+xml," + _q(svg, safe="")
+
 
 def get(key: str = DEFAULT) -> FabProfile:
     try:

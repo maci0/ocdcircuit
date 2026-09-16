@@ -4,10 +4,11 @@ from __future__ import annotations
 from .util import as_float as _f, as_int as _i
 import re
 import sys
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 
 from .core import Plugin, Registry
+from .parts import pin_offset as _std_pin_offset
 from .types import Constraint, Footprint, Frame, PinLike, XY
 
 if TYPE_CHECKING:
@@ -22,11 +23,13 @@ class StdParts(Plugin[dict[str, Footprint]]):
         return FOOTPRINTS
 
     def pin_offset(self, fp: str, pin: PinLike, lib: object = None) -> XY:
-        from typing import cast
-        from .parts import pin_offset
-        from .types import Footprint
+        # Imports hoisted to module scope: this is called once per pin per
+        # cost() (467k times in one 20-iter virgo placement) and the three
+        # in-function imports cost ~0.9M importlib lookups. `cast` and
+        # `Footprint` are already imported above; `parts` does not import
+        # `plugins`, so the module-level import below is cycle-free.
         assert lib is None or isinstance(lib, dict)
-        return pin_offset(fp, pin, cast(dict[str, Footprint] | None, lib))
+        return _std_pin_offset(fp, pin, cast(dict[str, Footprint] | None, lib))
 
 
 class DiffusionPlacer(Plugin[float]):
@@ -695,7 +698,20 @@ class AssemblyRenderer(Plugin[str]):
         return "\n".join(el)
 
 
-def sch_layout(board: Board) -> dict[str, object]:
+class SchLayout(NamedTuple):
+    """Shared schematic geometry. Typed, so the five consumers stop
+    re-asserting the shape of an `object`-valued dict on every field."""
+    order: list[str]
+    nets: list[str]
+    px: dict[str, float]
+    rail_y: dict[str, float]
+    col_w: int
+    top: int
+    W: int
+    H: int
+
+
+def sch_layout(board: Board) -> SchLayout:
     """Shared schematic geometry (renderer + studio canvas draw the same
     picture): barycenter-ordered part columns, one rail row per net."""
     refs = sorted(board.parts)
@@ -705,22 +721,36 @@ def sch_layout(board: Board) -> dict[str, object]:
         for r, _ in net.pins:
             if r in pin_nets:
                 pin_nets[r].add(n)
+    # Adjacency once, from the net→parts inversion: the sweep below used to
+    # rebuild each part's neighbour list by scanning every OTHER part and
+    # intersecting net sets — O(n²) set intersections per sweep, six sweeps
+    # (2.1M pair tests on virgo vs 143k to invert). Neighbours never change
+    # during the sweeps; only the positions do.
+    nb_of: dict[str, set[str]] = {r: set() for r in refs}
+    for net in board.nets.values():
+        ms = {r for r, _ in net.pins if r in pin_nets}
+        if len(ms) > 1:
+            for r in ms:
+                nb_of[r] |= ms
+    for r, s in nb_of.items():
+        s.discard(r)
     # barycenter sweeps: order parts so shared-net neighbors sit close
     order = list(refs)
     pos = {r: float(i) for i, r in enumerate(order)}
     for _ in range(6):
         for r in order:
-            nb = [q for q in refs if q != r and pin_nets[r] & pin_nets[q]]
+            nb = nb_of[r]
             if nb:
                 pos[r] = sum(pos[q] for q in nb) / len(nb)
         order.sort(key=lambda r: pos[r])
     col_w, top = 120, 70
-    return {"order": order, "nets": nets,
-            "px": {r: 10 + i * col_w + col_w / 2 for i, r in enumerate(order)},
-            "rail_y": {n: top + 20 + i * 26 for i, n in enumerate(nets)},
-            "col_w": col_w, "top": top,
-            "W": max(1, len(order)) * col_w + 20,
-            "H": top + len(nets) * 26 + 30 + 40}
+    return SchLayout(
+        order=order, nets=nets,
+        px={r: 10 + i * col_w + col_w / 2 for i, r in enumerate(order)},
+        rail_y={n: top + 20 + i * 26 for i, n in enumerate(nets)},
+        col_w=col_w, top=top,
+        W=max(1, len(order)) * col_w + 20,
+        H=top + len(nets) * 26 + 30 + 40)
 
 
 def _cap(sym: dict[str, object], p: object) -> str:
@@ -748,13 +778,8 @@ class SchRenderer(Plugin[str]):
         th = THEMES.get(theme, THEMES["dark"])
         layers = cast(list[str], th["layers"])
         lay = sch_layout(board)
-        order = cast(list[str], lay["order"])
-        nets = cast(list[str], lay["nets"])
-        px = cast(dict[str, float], lay["px"])
-        rail_y = cast(dict[str, float], lay["rail_y"])
-        top = int(cast(int, lay["top"]))
-        W = int(cast(int, lay["W"]))
-        H = int(cast(int, lay["H"]))
+        order, nets, px, rail_y = lay.order, lay.nets, lay.px, lay.rail_y
+        top, W, H = lay.top, lay.W, lay.H
         el = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
               f'viewBox="0 0 {W} {H}">',
               f'<rect x="0" y="0" width="{W}" height="{H}" fill="{th["panel"]}"/>']

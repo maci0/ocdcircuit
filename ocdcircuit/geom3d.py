@@ -11,7 +11,6 @@ import io
 import json
 import math
 import struct
-import zlib
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -159,20 +158,14 @@ def build(board: Board, thick: float = 1.6, tagged: bool = False) -> list[Tri]:
 def _tex(c1: tuple[int, int, int], c2: tuple[int, int, int],
          n: int = 64) -> str:
     """Procedural checker PNG (base64 data URI): subtle two-tone weave so
-    PBR surfaces read as textured, not flat plastic. Stdlib (zlib)."""
-    raw = bytearray()
+    PBR surfaces read as textured, not flat plastic."""
+    from .raster import _png  # one PNG encoder, lives with the rasterizer
+    px = bytearray()
     for y in range(n):
-        raw.append(0)
         for x in range(n):
-            c = c1 if (x // 8 + y // 8) % 2 == 0 else c2
-            raw += bytes(c)
-    ihdr = struct.pack(">IIBBBBB", n, n, 8, 2, 0, 0, 0)
-    def chunk(t: bytes, d: bytes) -> bytes:
-        c = t + d
-        return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c))
-    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
-           + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b""))
-    return "data:image/png;base64," + base64.b64encode(png).decode()
+            px += bytes(c1 if (x // 8 + y // 8) % 2 == 0 else c2)
+    return ("data:image/png;base64,"
+            + base64.b64encode(_png(n, n, px)).decode())
 
 
 # per-material texture tones (base, weave) — soldermask weave is the

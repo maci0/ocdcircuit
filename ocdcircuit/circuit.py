@@ -26,8 +26,8 @@ CONSTRAINT_TYPES = frozenset({
 
 class _AttrDict(dict[str, str]):
     """Part.attrs with geometry-cache invalidation. attrs is written
-    directly everywhere (tests, agents, undo closures via clear/update) —
-    invalidating only in set_attr goes stale, and stale rotation feeds
+    directly everywhere (tests, agents, undo closures via clear/update), so
+    invalidating at one setter method goes stale, and stale rotation feeds
     wrong geometry to DRC. Every mutating method drops the owner's cache."""
 
     def __init__(self, owner: Part, src: dict[str, str] | None = None) -> None:
@@ -97,8 +97,8 @@ class Part:
     # Cached rotation geometry. The placer/router inner loops ask for these
     # tens of millions of times per dense board (34M `rot` + 32M `wh` calls
     # was ~11s of a 41s discrete6502 placement); _AttrDict drops the cache
-    # on EVERY attrs mutation, not just set_attr (direct writes are the
-    # norm: tests, agents, undo closures).
+    # on EVERY attrs mutation (direct writes are the norm: tests, agents,
+    # undo closures).
     _rot: int | None = field(default=None, init=False, repr=False, compare=False)
     _wh: tuple[float, float] | None = field(default=None, init=False, repr=False, compare=False)
 
@@ -119,12 +119,6 @@ class Part:
                 r = 0
             self._rot = r
         return r
-
-    def set_attr(self, key: str, value: str) -> None:
-        """Set an attribute and drop the geometry cached from it."""
-        self.attrs[key] = value
-        self._rot = None
-        self._wh = None
 
     @property
     def size(self) -> tuple[float, float]:
@@ -231,6 +225,10 @@ class Board(Component):
         self._block_ports: list[str] = []  # ports of the open block
         self._block_lines: list[str] | None = None
         self._lib_cache: dict[str, dict[str, object]] | None = None
+        # (fp, pin) → offset, keyed on the identity of the lib it resolved
+        # against (see _pin_offset); both cleared together when lib changes.
+        self._pin_off_cache: dict[tuple[str, str], XY] | None = None
+        self._pin_off_lib: object = None
         self._lib_parts_key: str | None = None
         self._reg: Registry | None = None
         self.ctx.set("plugins", Registry())
@@ -495,6 +493,14 @@ class Board(Component):
         assert isinstance(out, str)
         return out
 
+    def collab(self, key: str | None = None, **k: object) -> dict[str, object]:
+        """One realtime op: collab(op={ops:[...]}) — structured edits,
+        undoable. Fixable input errors propagate unfenced, like every
+        other dispatch."""
+        out = self._run("collab", key, **k)
+        assert isinstance(out, dict)
+        return out
+
     def xray(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Fab x-ray vs design: xray(png=path|bytes) → score + divergences."""
         out = self._run("xray", key, **k)
@@ -624,14 +630,34 @@ class Board(Component):
         return _sym.sized(s)
 
     def _pin_offset(self, fp: str, pin: PinLike) -> XY:
+        """(fp, pin) → footprint-frame offset, memoized per resolved lib.
+
+        Every caller (wirelength, maze, geom3d, raster, export) asks per pin
+        per net per iteration — 467k calls in one 20-iter virgo placement —
+        and each one re-resolved the plugin and re-merged the lib dict for a
+        value that is static for the whole run. _lib() returns a fresh dict
+        object whenever the library changes (add_footprint and its undo both
+        clear _lib_cache), so the dict's identity IS the generation token:
+        a stale entry cannot survive a library change.
+        """
+        lib = self._lib()
+        cache = self._pin_off_cache
+        if cache is None or self._pin_off_lib is not lib:
+            cache = self._pin_off_cache = {}
+            self._pin_off_lib = lib
+        key = (fp, str(pin))
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
         try:
             plug = self.plugins().get("parts")
             assert isinstance(plug, Plugin)
             meth = getattr(plug, "pin_offset")
-            out: XY = meth(fp, pin, self._lib())
-            return out
+            out: XY = meth(fp, pin, lib)
         except (KeyError, TypeError):
-            return _std_pin_offset(fp, pin, self._lib())
+            out = _std_pin_offset(fp, pin, lib)
+        cache[key] = out
+        return out
 
     # -- parts --
     def add_part(self, ref: str, fp: str, value: str = "",

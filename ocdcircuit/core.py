@@ -198,10 +198,15 @@ class Context:
         raise UndeclaredAccess(f"no fiber declares {key!r}")
 
     def set(self, key: str, value: object) -> Undo:
-        """Paper Alg 2 set(k,v): effect-tracked provision + notify."""
+        """Paper Alg 2 set(k,v): effect-tracked provision + notify.
+        The inverse restores the prior binding AND its provider row, then
+        notifies: an unnotified inverse leaves dependents committed to a
+        provider that no longer resolves (paper Alg 3 — a context change
+        is only composed once its dependents have reconciled)."""
         realm = self._realm_of(key)
         had = realm in self._store
         old = self._store.get(realm)
+        prev = self._root()._providers.get(key)
 
         def _cb() -> object:
             self._store[realm] = value
@@ -213,6 +218,9 @@ class Context:
                 else:
                     self._store.pop(realm, None)
                 self._unregister_provider(key, realm)
+                if prev is not None:
+                    self._root()._providers[key] = prev
+                self.notify([key])
 
             return _inv
 
@@ -393,6 +401,9 @@ class Context:
             def _inv() -> None:
                 if had:
                     self._store[realm] = old
+                if cur is not None:
+                    self._root()._providers[name] = cur
+                self.notify([name])  # dependents re-activate on restore
 
             return _inv
 
@@ -500,8 +511,19 @@ class Fiber:
             committed[key] = self.ctx.get(key)
         self.committed = committed
         snap = self.ctx.snapshot()
-        recover = execute(lambda: self.apply(self.ctx),
-                          lambda: self.target == t0)
+        try:
+            recover = execute(lambda: self.apply(self.ctx),
+                              lambda: self.target == t0)
+        except Exception:
+            # Partial apply (paper §3): a raising apply still installed the
+            # effects it got through, and refresh() parks the fiber FAILED
+            # with target ⊥ — a FAILED fiber holding live effects is a leak
+            # no dispose path can reach. Run them LIFO, then fail.
+            span = self.ctx._undos[snap:]
+            del self.ctx._undos[snap:]
+            for u in reversed(span):
+                u()
+            raise
         if self.capture:
             span = self.ctx._undos[snap:]
             del self.ctx._undos[snap:]
@@ -580,9 +602,14 @@ class UiSlots:
         cells.append(cell)
         cells.sort(key=lambda c: (float(str(c["order"])), str(c["id"])))
 
+        self.crashed.discard((slot, id))  # fresh contribution, fresh verdict
+
         def _dispose() -> None:
             if cell in self.cells.get(slot, []):
                 self.cells[slot].remove(cell)
+            # the crash verdict is this contribution's state: dropping the
+            # row without it leaves a reloaded plugin permanently blank.
+            self.crashed.discard((slot, id))
 
         return _dispose
 
@@ -620,6 +647,10 @@ class Registry:
 
     def _drop(self, kind: str, key: str) -> None:
         self.items.pop((kind, key), None)
+        # failure memory belongs to the mounted entry: leaving it behind
+        # makes _add the non-inverse of _drop, so a fresh mount of the same
+        # kind:key stays refused forever (paper §3 temporal composability).
+        self.failed.pop((kind, key), None)
         if self.active.get(kind) == key:
             rest = sorted(k for (k, _kk) in self.items if k == kind)
             if rest:
@@ -985,12 +1016,19 @@ class Loader:
         elif new.intercept != entry.intercept:
             entry.intercept = dict(new.intercept)
             if entry.fiber is not None:
+                # Rebuild from the inherited base, never merge onto the live
+                # table: declare() is a keyed diff, so a key the new spec
+                # drops must leave. Merging made the old value survive its
+                # own removal (paper §5.2.1 — the entry is the identity, the
+                # spec is the whole truth about it).
+                fctx = entry.fiber.ctx
+                base = dict(fctx._parent._intercept) if fctx._parent else {}
                 for k, m in entry.intercept.items():
                     assert isinstance(m, dict)
-                    merged = dict(cast(dict[str, object],
-                                       entry.fiber.ctx._intercept.get(k, {})))
+                    merged = dict(cast(dict[str, object], base.get(k, {})))
                     merged.update(cast(dict[str, object], m))
-                    entry.fiber.ctx._intercept[k] = merged
+                    base[k] = merged
+                fctx._intercept = base
             changed = 1  # in place: consulted at read time, no reload
         if new.config != entry.config:
             entry.config = new.config

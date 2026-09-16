@@ -58,19 +58,19 @@ def unload_ui() -> None:
 
 def fab_strip() -> str:
     """Supported-fabs logo strip for the landing page, built from fab.py
-    (MARKS + profile urls) — one source of truth, never a stale copy."""
-    from ocdcircuit.fab import MARKS, PROFILES, logo
+    (tiles + profile urls) — one source of truth, never a stale copy."""
+    from ocdcircuit.fab import PROFILES, logo
     cells = []
     for key in sorted(PROFILES):
         name = str(PROFILES[key].get("name", key))
         url = str(PROFILES[key].get("url", ""))
-        mark = MARKS.get(key, (key[:3].upper(), "#333333", "#ffffff"))[0]
         cells.append(
             f'<a class=fabcell href="{url}" title="{name} — capabilities">'
-            f'<img src="{logo(key)}" alt="{name} logo" width=48 height=28>'
-            f'<span>{mark}</span></a>')
+            f'<img src="{logo(key)}" alt="{name} logo" width=96 height=32>'
+            f'</a>')
     return ('<div class=fabstrip aria-label="supported fabs">'
-            '<span class=fabkicker>ships to</span>' + "".join(cells) + "</div>")
+            '<span class=fabkicker>ships to</span>' + "".join(cells)
+            + '<span class=fabfine>logos belong to their owners</span></div>')
 MENUS = (
     '<nav class=menubar aria-label="board menus">'
     '<button id=solve class=primary title="full solve, 5 seeds x 500 iters (Ctrl+Enter)">solve</button>'
@@ -431,15 +431,15 @@ white-space:pre;overflow-x:auto}  /* pre would overflow the card on narrow scree
 .person small{display:block;margin-top:.6rem;font:.75rem var(--mono);color:var(--term-faint)}
 .person small b{color:var(--term-ok);font-weight:600}
 a{color:var(--term-ok)}
-/* supported-fabs strip: badge + monogram per fab, links out to capabilities */
+/* supported-fabs strip: real vendor tiles, links out to capabilities */
 .fabstrip{display:flex;gap:.4rem .8rem;justify-content:center;align-items:center;flex-wrap:wrap;
 margin:2.6rem auto 0;max-width:62rem}
 .fabkicker{font:.72rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint)}
-.fabcell{display:inline-flex;align-items:center;gap:.4rem;text-decoration:none;
-border:1px solid var(--term-line);border-radius:9px;padding:.3rem .55rem .3rem .3rem}
+.fabfine{font:.72rem var(--mono);color:var(--term-faint);opacity:.7}
+.fabcell{display:inline-flex;align-items:center;text-decoration:none;
+border:1px solid var(--term-line);border-radius:9px;padding:.3rem}
 .fabcell:hover{border-color:var(--term-ok)}
-.fabcell img{display:block;border-radius:5px}
-.fabcell span{font:.72rem var(--mono);color:var(--term-text)}
+.fabcell img{display:block;border-radius:5px;width:96px;height:32px;object-fit:contain}
 @media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}
 .hero{padding:1rem 1.1rem 2.5rem}.herobody{padding-top:2rem}
 /* on a phone the two proof cards stack to 412px and pushed the CTA below the
@@ -780,9 +780,9 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 #kblist{flex:1;min-height:3rem;overflow:auto;padding:8px 14px}
 #kblist .kbrow{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-radius:4px}
 #kblist .kbrow:hover{background:var(--paper-2)}
-/* quote rows wear the fab badge next to the name */
+/* quote rows wear the fab logo next to the name */
 #qout .qrow{display:flex;gap:8px;align-items:center;padding:2px 0}
-#qout .qlogo{border-radius:4px;flex:none}
+#qout .qlogo{border-radius:4px;flex:none;width:64px;height:21px;object-fit:contain;background:#fff}
 #kblist button.kbname{flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:var(--signal-ink);
   cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #kblist .kbkind{color:var(--ink-3);font:.72rem var(--mono);font-variant-numeric:tabular-nums}
@@ -1750,7 +1750,7 @@ if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open boa
   const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
   if(r.error){$('qout').textContent=r.error;return;}
   $('qout').innerHTML=(r.rows||[]).map(x=>
-    `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="" width=48 height=28>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
+    `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="${x.fab} logo" width=64 height=21>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
     +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
 };
 $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open

@@ -353,9 +353,6 @@ def main(argv: list[str]) -> int:
                       "USB, PHY does the network, DataFlash holds the FPGA\n"
                       "configuration, SDRAM is the framebuffer.\n")
 
-        def cast_list(v: object) -> list[object]:
-            return list(v) if isinstance(v, list) else []
-
         def cast_paths(v: object) -> list[str] | None:
             return [str(x) for x in v] if isinstance(v, list) else None
 
