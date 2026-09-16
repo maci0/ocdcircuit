@@ -27,6 +27,28 @@ def _split(tail: str) -> list[str]:
     """shlex-split an attr-bearing segment (inverse of _q quoting)."""
     return shlex.split(tail)
 
+
+def _strip_comment(raw: str) -> str:
+    """Drop a trailing `#` comment without cutting inside a quoted value.
+
+    `raw.split("#", 1)` looked right and was wrong: a legitimate
+    `part U3 QFP128 "EP1C6 # see note" x=1` lost its closing quote and died
+    as "bad quoting". Quotes are tracked so only a `#` outside them ends
+    the line.
+    """
+    out: list[str] = []
+    quote = ""
+    for ch in raw:
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            break
+        out.append(ch)
+    return "".join(out).strip()
+
 if TYPE_CHECKING:
     from .circuit import Board
 
@@ -570,7 +592,7 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
             if not (b is not None and b._block_open is not None):
                 comments.append(raw.rstrip())
             continue
-        line = raw.split("#", 1)[0].strip()
+        line = _strip_comment(raw)
         if not line:
             continue
 
@@ -919,7 +941,7 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
     child = _Board("__block__", dispatch=False)
     child.custom_fp.update(parent.custom_fp)  # blocks may use parent's `fp` files
     for raw in parent.blocks[block].lines:
-        line = raw.split("#", 1)[0].strip()
+        line = _strip_comment(raw)
         if not line:
             continue
         kw = line.split(None, 1)[0].lower()

@@ -3168,6 +3168,14 @@ for _ws, _want in (("route 5V  on 1", "layer"), ("power  VCC  GND", "power"),
 assert agent.parse_constraint("route 5V on 1") == {"t": "layer", "net": "5V",
                                                    "layer": 1}
 
+# a `#` inside a quoted value is data, not a comment: stripping comments
+# with a bare split() cut the line in half and reported "bad quoting".
+_hash = agent.loads('board t 40x30 2L\npart U1 SOIC8 "abc # def" x=1 y=2\n'
+                    "part U2 SOIC8 plain x=5 y=5   # a real comment\n")
+assert _hash.parts["U1"].value == "abc # def", _hash.parts["U1"].value
+assert _hash.parts["U2"].value == "plain", _hash.parts["U2"].value
+assert "#" in agent.dumps(_hash), "quoted hash did not round-trip"
+
 # an out-of-range route layer is a lint error, but the router must survive
 # it: it used to die on a bare `KeyError: 9` from a dict keyed by layer.
 _oob = agent.loads("board t 40x30 2L\npart R1 R0805 1k\npart R2 R0805 1k\n"
