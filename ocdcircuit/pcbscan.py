@@ -1602,6 +1602,26 @@ def demo() -> None:
     # unterminated questions block (token cap) still yields what was asked
     assert extract_questions("```questions\nOnly one?") == ["Only one?"]
 
+    # Refinement must reach a fine step from ANY starting level. The step
+    # used to be tied to res/coarse, so a search beginning at full
+    # resolution ran a single pass at the whole 10-degree grid step. On the
+    # mixed-zoom shoot fixing this moved medium-framing shots from 3/6 to
+    # 4/6; end to end it is masked by polish(), which re-solves the angle
+    # afterwards, so the schedule itself is what gets asserted here.
+    _sched_r, _sched_s, _sched_res = 10.0, 0.09, REG
+    _passes = 0
+    while True:
+        _sched_r, _sched_s = _sched_r / 2.0, _sched_s / 2.0
+        _passes += 1
+        if _sched_res >= REG and _sched_r < 0.5:
+            break
+        _sched_res = min(REG, _sched_res * 2)
+        assert _passes < 40, "refinement schedule does not terminate"
+    assert _passes >= 5, (
+        f"a search starting at full resolution refines only {_passes} times "
+        f"(final step {_sched_r * 2:.2f} deg) — it cannot converge between "
+        "the 10-degree grid points")
+
     # A real shoot mixes framings: overviews plus close-ups of one corner.
     # An off-centre close-up needs a translation that is a large fraction of
     # a coarse grid, and at COARSE the true cell can be invisible (0.06 vs
