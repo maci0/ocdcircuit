@@ -123,7 +123,10 @@ def _sample(img: Any, xs: Any, ys: Any) -> Any:
     stitch median never averages in an edge that was never photographed."""
     np = _numpy()
     h, w = img.shape[:2]
-    src = img.astype(np.float32)
+    # Every producer on the hot path (gray, bandpass, fit) already yields
+    # float32, so this was a full-array copy per sample call — 41 of them per
+    # polish, each over a megapixel. Copy only when the dtype really differs.
+    src = img if img.dtype == np.float32 else img.astype(np.float32)
     x0 = np.floor(xs).astype(np.int64)
     y0 = np.floor(ys).astype(np.int64)
     fx = (xs - x0).astype(np.float32)
@@ -134,8 +137,14 @@ def _sample(img: Any, xs: Any, ys: Any) -> Any:
         fx, fy, ok3 = fx[..., None], fy[..., None], ok[..., None]
     else:
         ok3 = ok
-    top = src[yc, xc] * (1 - fx) + src[yc, xc + 1] * fx
-    bot = src[yc + 1, xc] * (1 - fx) + src[yc + 1, xc + 1] * fx
+    # One flat index computed once, then four offset reads off it. The four
+    # `src[y, x]` gathers below each did their own 2-D index arithmetic over
+    # a megapixel; this computes the base address once. Identical values —
+    # the clip above already guarantees base + w + 1 stays in bounds.
+    flat = src.reshape(-1, src.shape[-1]) if src.ndim == 3 else src.reshape(-1)
+    base = yc * w + xc
+    top = flat[base] * (1 - fx) + flat[base + 1] * fx
+    bot = flat[base + w] * (1 - fx) + flat[base + w + 1] * fx
     return np.where(ok3, top * (1 - fy) + bot * fy, np.nan)
 
 
@@ -178,13 +187,19 @@ def warp(img: Any, scale: float, rot: float, dx: float, dy: float,
 # ----------------------------------------------------------- registration
 
 
-def _phase(a: Any, b: Any) -> tuple[float, float, float]:
+def _phase(a: Any, b: Any, *, a_fft: Any = None) -> tuple[float, float, float]:
     """Phase correlation: the (dy, dx) that slides b onto a, plus the peak
-    height (how much to believe it). Subpixel by parabolic interpolation."""
+    height (how much to believe it). Subpixel by parabolic interpolation.
+
+    `a_fft` lets a caller that correlates the SAME reference many times hand
+    in its windowed spectrum. The grid search does exactly that — one
+    reference against ~900 rotated candidates — and recomputing its FFT per
+    cell was half the FFT work in the pipeline's hot path.
+    """
     np = _numpy()
     h, w = a.shape
     win = (np.hanning(h)[:, None] * np.hanning(w)[None, :]).astype(np.float32)
-    A = np.fft.rfft2(np.nan_to_num(a) * win)
+    A = np.fft.rfft2(np.nan_to_num(a) * win) if a_fft is None else a_fft
     B = np.fft.rfft2(np.nan_to_num(b) * win)
     R = A * np.conj(B)
     R /= np.abs(R) + 1e-9
@@ -285,6 +300,22 @@ def register(ref_g: Any, img_g: Any, *, scales: tuple[float, ...] = SCALES,
         return b, b - float(np.mean(b)), w2, h2
 
     cache: dict[int, tuple[Any, Any, int, int]] = {}
+    # Two pure-function caches. bandpass(resize(img_g, sw, sh)) depends on
+    # the source SIZE, never on the rotation, so the grid's ~36 rotations at
+    # one scale were each rebuilding the identical array: measured 3866
+    # calls for 62 distinct results, and it was the pipeline's largest cost.
+    # The reference spectrum is likewise identical at every cell of a level.
+    src_cache: dict[tuple[int, int], Any] = {}
+    spec_cache: dict[int, Any] = {}
+
+    def ref_spec(res: int) -> Any:
+        if res not in spec_cache:
+            _ref_b, ref_c, _w2, _h2 = cache[res]
+            h, w = ref_c.shape
+            win = (np.hanning(h)[:, None]
+                   * np.hanning(w)[None, :]).astype(np.float32)
+            spec_cache[res] = np.fft.rfft2(np.nan_to_num(ref_c) * win)
+        return spec_cache[res]
 
     def probe(s: float, rot: float, res: int) -> dict[str, float]:
         """Score one (scale, rotation) cell at one pyramid level."""
@@ -296,10 +327,15 @@ def register(ref_g: Any, img_g: Any, *, scales: tuple[float, ...] = SCALES,
         sh = max(8, int(ih * base * s * f))
         if sw > w2 * 4 or sh > h2 * 4:
             return {"scale": s, "rot": rot, "dx": 0.0, "dy": 0.0, "peak": -1.0}
-        cand = warp(bandpass(resize(img_g, sw, sh)), 1.0, rot, 0.0, 0.0, w2, h2)
+        src = src_cache.get((sw, sh))
+        if src is None:
+            src = bandpass(resize(img_g, sw, sh))
+            src_cache[(sw, sh)] = src
+        cand = warp(src, 1.0, rot, 0.0, 0.0, w2, h2)
         seen = np.isfinite(cand)
         filled = np.where(seen, cand, 0.0)
-        dy, dx, _pk = _phase(ref_c, filled - float(np.mean(filled)))
+        dy, dx, _pk = _phase(ref_c, filled - float(np.mean(filled)),
+                             a_fft=ref_spec(res))
         iy, ix = int(round(dy)), int(round(dx))
         rolled = np.roll(np.roll(filled, iy, axis=0), ix, axis=1)
         vmask = np.roll(np.roll(seen, iy, axis=0), ix, axis=1)
@@ -376,6 +412,14 @@ def polish(ref_g: Any, img_g: Any, t: dict[str, float]) -> dict[str, float]:
     rh, rw = ref_g.shape[:2]
     ref_b = bandpass(ref_g)
     ref_c = ref_b - float(np.mean(ref_b))
+    # ref_c is fixed for the whole descent and the Hanning window depends only
+    # on the shape, so its spectrum is the same for every trial. Computing it
+    # per score() call was one of the two FFTs on polish's hot path, 41 times
+    # over — and polish is ~70% of registration.
+    _ph, _pw = ref_c.shape
+    _pwin = (np.hanning(_ph)[:, None]
+             * np.hanning(_pw)[None, :]).astype(np.float32)
+    ref_spec = np.fft.rfft2(np.nan_to_num(ref_c) * _pwin)
 
     def score(scale: float, rot: float) -> dict[str, float]:
         cand = warp(img_g, scale, rot, 0.0, 0.0, rw, rh)
@@ -384,7 +428,8 @@ def polish(ref_g: Any, img_g: Any, t: dict[str, float]) -> dict[str, float]:
             return {"scale": scale, "rot": rot, "dx": 0.0, "dy": 0.0,
                     "peak": -1.0}
         filled = np.where(seen, bandpass(np.where(seen, cand, 0.0)), 0.0)
-        dy, dx, _pk = _phase(ref_c, filled - float(np.mean(filled)))
+        dy, dx, _pk = _phase(ref_c, filled - float(np.mean(filled)),
+                             a_fft=ref_spec)
         iy, ix = int(round(dy)), int(round(dx))
         return {"scale": scale, "rot": rot, "dx": float(dx), "dy": float(dy),
                 "peak": _ncc(ref_b,
