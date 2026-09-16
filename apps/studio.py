@@ -240,7 +240,8 @@ _slot("view", "scan",
                          '<input id=scandocs type=file multiple accept=".pdf,.txt,.md" '
                          'aria-label="manual or datasheet"></div>'
                          '<div id=scanstat role=status aria-live=polite>'
-                         'name files with &ldquo;top&rdquo; / &ldquo;bottom&rdquo; so the sides are split</div>'
+                         'name files with &ldquo;top&rdquo; / &ldquo;bottom&rdquo; so the sides are split &middot; '
+                         'shoot whole-board frames plus mid-range ones; very tight close-ups often fail to line up</div>'
                          '<div id=scanq></div>'
                          '<pre id=scanout></pre>'
                          '</section>',
@@ -1782,6 +1783,10 @@ if($('scango'))$('scango').onclick=async()=>{
     const sides=Object.entries(r.sides||{}).map(([k,v])=>
       `${k}: ${v.used}/${v.photos} registered, coverage ${v.coverage_mean}`).join(' · ');
     $('scanstat').textContent=sides||'scan done';
+    Object.entries(r.sides||{}).forEach(([k,v])=>{
+      Object.entries(v.dropped_why||{}).forEach(([nm,why])=>{
+        const d=document.createElement('div');d.className='panel-note';
+        d.textContent=`dropped ${k}/${nm}: ${why}`;$('scanq').appendChild(d);});});
     $('scanout').textContent=r.analysis||r.draft_error||'(no analysis)';
     if(r.draft){const b=document.createElement('button');b.type='button';
       b.className='primary';b.textContent='open this draft in the editor';
@@ -2325,8 +2330,8 @@ def _sch_state(b: Board) -> dict[str, object]:
                 "skipped": "board is dense — the schematic is not laid out"}
     from ocdcircuit.plugins import sch_layout
     lay = sch_layout(b)
-    return {"order": lay["order"], "px": lay["px"], "rail_y": lay["rail_y"],
-            "top": lay["top"], "W": lay["W"]}
+    return {"order": lay.order, "px": lay.px, "rail_y": lay.rail_y,
+            "top": lay.top, "W": lay.W}
 
 
 def board_state(b: Board, text: str, frames: list[dict[str, object]],
