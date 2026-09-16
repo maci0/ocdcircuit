@@ -167,9 +167,20 @@ stated as a word in a pill.
   | + `--zoom 2`       | **13/13** | **13/13** | **4** |
 
   Answering the model's own questions and re-running lifts part
-  identification 0/5 -> 4/5 with no new photos. Netlist tracing stays the
-  weak axis: naming a part from its markings is far easier than following
-  0.2 mm copper through vias and under packages.
+  identification 0/5 -> 4/5 with no new photos.
+
+  The scan also *measures* exposed pads from the copper mask (count, sizes
+  in mm, spread, spacing) and hands those to the model as fact. That is what
+  fixes board geometry: with the measurements the drafted board size lands
+  within **1 mm** of the real 100 mm across three runs; withholding them
+  (same photos, same context) gives 67x67 and 85x88 — up to 33 mm out.
+
+  Netlist tracing stays the weak axis, and pad measurement does not rescue
+  it (4 vs 3 traced connections, spreads fully overlapping). On a finished
+  board the traces run *under* soldermask: thresholding copper yields ~5400
+  speckle fragments whose largest covers 0.1% of the board. Exposed metal —
+  pads, vias, fingers — is all a photograph physically contains, so that is
+  all this measures.
 - **Fab price comparison** (`quote:std`): bare PCB per fab + JLC assembly
   with parts (`ocd quote board.ocd 5`, studio quote dropdown, MCP `quote`).
   Estimates from published pricing — parts via knoll's live JLC lookup or
