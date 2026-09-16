@@ -437,6 +437,9 @@ def convert(projdir: str, outdir: str) -> str:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("usage: python -m tools.atopile <atopile-projdir> <outdir>")
+        raise SystemExit(0)
     if len(sys.argv) != 3:
         print("usage: python -m tools.atopile <atopile-projdir> <outdir>", file=sys.stderr)
         raise SystemExit(1)

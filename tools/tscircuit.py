@@ -251,7 +251,10 @@ def convert(projdir: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("usage: python -m tools.tscircuit <project-dir>")
+        raise SystemExit(0)
+    if len(sys.argv) != 2:
         print("usage: python -m tools.tscircuit <project-dir>", file=sys.stderr)
         raise SystemExit(1)
     try:

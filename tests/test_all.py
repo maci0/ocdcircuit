@@ -1719,15 +1719,15 @@ with _tf.TemporaryDirectory() as _td:
                for f in os.listdir(os.path.join(_np, "out")))
     assert _ocd.cmd_xray(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
                                         os.path.join(_np, "nope.png")]) == 1
-    assert _ocd.main(["ocd", "xray", "--help"]) == 1
+    assert _ocd.main(["ocd", "xray", "--help"]) == 0
     # ocd quote: cheapest-first table (+ JLC assembly), bad fab is exit 1
     assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"), "5"]) == 0
     assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
                                          "--bare", "--fab", "jlc", "--fab", "oshpark"]) == 0
     assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
                                          "--fab", "nope"]) == 1
-    assert _ocd.cmd_quote(_ocd._boot(), ["--help"]) == 1
-    assert _ocd.main(["ocd", "quote", "--help"]) == 1
+    assert _ocd.cmd_quote(_ocd._boot(), ["--help"]) == 0
+    assert _ocd.main(["ocd", "quote", "--help"]) == 0
     # main() dispatch: shorthand, flags, help, usage errors (README quickstart)
     assert _ocd.main(["ocd", os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.main(["ocd", "run", "--placer", "compact", "--router", "maze",
@@ -1735,13 +1735,13 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.main(["ocd", "--help"]) == 0
     assert _ocd.main(["ocd"]) == 1
     assert _ocd.main(["ocd", "frobnicate"]) == 1
-    # every file-taking command answers --help (not "No such file")
-    assert _ocd.cmd_status(_ocd._boot(), ["--help"]) == 1
-    assert _ocd.cmd_score(_ocd._boot(), ["--help"]) == 1
-    assert _ocd.cmd_diff(_ocd._boot(), ["--help", "b.ocd"]) == 1
-    assert _ocd.cmd_plugins(_ocd._boot(), ["--help"]) == 1
-    assert _ocd.main(["ocd", "doctor", "--help"]) == 1
-    assert _ocd.main(["ocd", "plugins", "--help"]) == 1
+    # every file-taking command answers --help (not "No such file"); exit 0
+    assert _ocd.cmd_status(_ocd._boot(), ["--help"]) == 0
+    assert _ocd.cmd_score(_ocd._boot(), ["--help"]) == 0
+    assert _ocd.cmd_diff(_ocd._boot(), ["--help", "b.ocd"]) == 0
+    assert _ocd.cmd_plugins(_ocd._boot(), ["--help"]) == 0
+    assert _ocd.main(["ocd", "doctor", "--help"]) == 0
+    assert _ocd.main(["ocd", "plugins", "--help"]) == 0
     # flags parse leading or trailing (GNU either way); last wins; dangling stays
     assert _ocd._flags(["--fab", "jlc", "b.ocd"]) == ("jlc", None, None, None, ["b.ocd"])
     assert _ocd._flags(["b.ocd", "--fab", "jlc"]) == ("jlc", None, None, None, ["b.ocd"])

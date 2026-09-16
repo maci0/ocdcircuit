@@ -257,6 +257,9 @@ benchmark that only ever sees synthetic camera motion is lying to itself:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] in ("-h", "--help"):
+        print("usage: python -m tools.scanbench [workdir]")
+        return 0
     root = argv[1] if len(argv) > 1 else os.path.join(
         tempfile.gettempdir(), "scanbench")
     cache, shots = os.path.join(root, "board"), os.path.join(root, "shoot")
@@ -264,7 +267,7 @@ def main(argv: list[str]) -> int:
     try:
         from ocdcircuit import pcbscan as P
     except RuntimeError as e:
-        print(f"scanbench needs numpy: {e}")
+        print(f"scanbench needs numpy: {e}", file=sys.stderr)
         return 1
     import numpy as np
 

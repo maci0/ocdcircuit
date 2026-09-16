@@ -104,8 +104,12 @@ canvas{{display:block;cursor:grab}}</style></head><body>
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+    if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
         print("usage: python -m ocdcircuit.view3d <board.ocd>  # writes preview3d.html")
+        raise SystemExit(0)
+    if len(sys.argv) != 2:
+        print("usage: python -m ocdcircuit.view3d <board.ocd>  # writes preview3d.html",
+              file=sys.stderr)
         raise SystemExit(1)
     from ocdcircuit import agent
     from ocdcircuit.geom3d import to_gltf

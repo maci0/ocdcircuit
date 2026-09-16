@@ -324,6 +324,9 @@ def _std_fallback(name: str) -> str:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("usage: python -m tools.mitox <mitox-projdir> <outdir>")
+        raise SystemExit(0)
     if len(sys.argv) != 3:
         print("usage: python -m tools.mitox <mitox-projdir> <outdir>", file=sys.stderr)
         raise SystemExit(1)

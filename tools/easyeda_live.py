@@ -259,6 +259,13 @@ def render_board(ocd_path: str, out_png: str, port: int = 9223) -> str:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("usage: python -m tools.easyeda_live <board.ocd> [out.png]")
+        raise SystemExit(0)
+    if len(sys.argv) < 2:
+        print("usage: python -m tools.easyeda_live <board.ocd> [out.png]",
+              file=sys.stderr)
+        raise SystemExit(1)
     _out = (sys.argv[2] if len(sys.argv) > 2
             else os.path.join(tempfile.gettempdir(), "ez.png"))
     print(render_board(sys.argv[1], _out))

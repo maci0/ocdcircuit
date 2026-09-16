@@ -228,8 +228,12 @@ def compare(board: Board, qty: int = 5, fabs: list[str] | None = None,
 if __name__ == "__main__":
     import os
     import sys
-    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+    if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
         print("usage: python -m ocdcircuit.quote <board.ocd>  # bare-PCB table, qty 5")
+        raise SystemExit(0)
+    if len(sys.argv) != 2:
+        print("usage: python -m ocdcircuit.quote <board.ocd>  # bare-PCB table, qty 5",
+              file=sys.stderr)
         raise SystemExit(1)
     from ocdcircuit import agent
     from ocdcircuit.util import read_text
