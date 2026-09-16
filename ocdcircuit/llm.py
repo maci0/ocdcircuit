@@ -17,11 +17,12 @@ withheld until chat()/models() is called, no inverse claimed.
 """
 from __future__ import annotations
 import json
-import os
 import re
 import urllib.error
 import urllib.request
 from typing import Any, Callable, cast
+
+from . import envcfg
 
 MAX_STEPS = 6  # tool rounds before we stop and hand back what we have
 # Completion budget: without this a runaway reply bills for the whole context
@@ -63,18 +64,22 @@ class LLMError(RuntimeError):
 
 def cfg() -> dict[str, str]:
     """Endpoint settings from the environment. Empty key is allowed: local
-    servers (Ollama, LM Studio) usually need none."""
+    servers (Ollama, LM Studio) usually need none. Bad OCD_LLM_BASE raises
+    EnvError at first use (fail-fast, not a cryptic URLError later)."""
     return {
-        "base": os.environ.get("OCD_LLM_BASE", "http://127.0.0.1:11434/v1").rstrip("/"),
-        "key": os.environ.get("OCD_LLM_KEY", ""),
-        "model": os.environ.get("OCD_LLM_MODEL", "qwen3.5:latest"),
+        "base": envcfg.llm_base(),
+        "key": envcfg.llm_key(),
+        "model": envcfg.llm_model(),
     }
 
 
 def models(timeout: float = 10.0) -> list[str]:
     """Ids the endpoint serves — named in the error when the configured model
     is not one of them (a 404 that lists nothing is a wasted round trip)."""
-    c = cfg()
+    try:
+        c = cfg()
+    except envcfg.EnvError:
+        return []
     req = urllib.request.Request(c["base"] + "/models", headers=(
         {"Authorization": f"Bearer {c['key']}"} if c["key"] else {}))
     try:
@@ -88,18 +93,10 @@ def models(timeout: float = 10.0) -> list[str]:
 def _max_tokens() -> int | None:
     """Completion cap from the environment, or MAX_TOKENS. None omits the
     field (some local servers reject unknown keys when set to 0)."""
-    raw = os.environ.get("OCD_LLM_MAX_TOKENS", "").strip()
-    if raw == "0":
-        return None
-    if raw:
-        try:
-            n = int(raw)
-        except ValueError as e:
-            raise LLMError(f"OCD_LLM_MAX_TOKENS={raw!r} is not an int") from e
-        if n < 1:
-            raise LLMError(f"OCD_LLM_MAX_TOKENS must be >= 1 (got {n})")
-        return n
-    return MAX_TOKENS
+    try:
+        return envcfg.llm_max_tokens(MAX_TOKENS)
+    except envcfg.EnvError as e:
+        raise LLMError(str(e)) from e
 
 
 def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
@@ -109,7 +106,10 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
     `content` is a string for text, or the OpenAI content-part list when a
     message carries images (see vision()). `max_tokens` defaults to
     OCD_LLM_MAX_TOKENS / MAX_TOKENS; pass None to omit the cap."""
-    c = cfg()
+    try:
+        c = cfg()
+    except envcfg.EnvError as e:
+        raise LLMError(str(e)) from e
     payload: dict[str, Any] = {"model": c["model"], "messages": messages,
                                "temperature": temperature}
     cap = _max_tokens() if max_tokens == -1 else max_tokens
@@ -167,14 +167,17 @@ def vision(text: str, images: list[str], *, temperature: float = 0.2,
 
 def embed_model() -> str:
     """Embedding model id (same endpoint as chat; Ollama serves both)."""
-    return os.environ.get("OCD_LLM_EMBED", "nomic-embed-text")
+    return envcfg.llm_embed()
 
 
 def embed(texts: list[str], *, model: str | None = None,
           timeout: float = 120.0) -> list[list[float]]:
     """Embeddings for a batch of strings. Raises LLMError with the endpoint's
     own words — callers that can fall back (kb recall) catch it."""
-    c = cfg()
+    try:
+        c = cfg()
+    except envcfg.EnvError as e:
+        raise LLMError(str(e)) from e
     mid = model or embed_model()
     body = json.dumps({"model": mid, "input": texts}).encode()
     req = urllib.request.Request(

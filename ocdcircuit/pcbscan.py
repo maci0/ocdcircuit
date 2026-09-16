@@ -1356,7 +1356,11 @@ def analyse(manifest: dict[str, object], *, views: tuple[str, ...] = VIEWS,
                                  f"ZOOM {where} (native resolution)")
     if not images:
         raise ValueError("nothing to analyse — run scan() first")
-    budget = float(os.environ.get("OCD_SCAN_MAX_MB", MAX_REQUEST_MB))
+    from . import envcfg
+    try:
+        budget = envcfg.scan_max_mb(MAX_REQUEST_MB)
+    except envcfg.EnvError as e:
+        raise ValueError(str(e)) from e
     total = sum(len(u) for u in images) / 1e6
     while total > budget and zoom > 1:
         # too big for the endpoint (HTTP 413 is the usual answer): drop the

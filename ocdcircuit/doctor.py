@@ -1,11 +1,14 @@
 """Doctor: is the tooling itself healthy? Python version (≥3.14, pinned
-in `.python-version`), optional binaries (ngspice, chromium, …), and the
-plugin registry (every kind has an active). No board needed — pass None.
+in `.python-version`), optional binaries (ngspice, chromium, …), the
+plugin registry (every kind has an active), and a redacted dump of the
+process env knobs (see ocdcircuit.envcfg / `.env.example`). No board
+needed — pass None.
 
-`ok` is True when required checks pass (Python + mounted plugins). Optional
-tools still appear as ✗ rows when missing so a contributor sees the gap
-up front; they degrade a feature, they do not fail the gate. One check
-behind means one degraded feature, never a mystery traceback later."""
+`ok` is True when required checks pass (Python + mounted plugins +
+well-formed env values). Optional tools still appear as ✗ rows when
+missing so a contributor sees the gap up front; they degrade a feature,
+they do not fail the gate. One check behind means one degraded feature,
+never a mystery traceback later."""
 from __future__ import annotations
 import shutil
 import sys
@@ -15,7 +18,9 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 # Host tools / packages the code imports opportunistically. Missing → feature
-# falls back; required gate is Python + plugin registry only.
+# falls back; required gate is Python + plugin registry only. Env rows are
+# never optional: a typo'd OCD_LLM_BASE must fail doctor so it is fixed
+# before the first chat request.
 _OPTIONAL = frozenset({
     "numpy", "rich", "pillow", "ngspice", "kicad-cli", "pdftotext", "chromium",
 })
@@ -70,5 +75,8 @@ def doctor(board: Board | None = None) -> dict[str, object]:
                 add(f"plugin:{kind}", True, f"{kind}:{active.key}")
             except (KeyError, AssertionError) as e:
                 add(f"plugin:{kind}", False, str(e))
+    from . import envcfg
+    for row in envcfg.summary():
+        add(str(row["name"]), bool(row["ok"]), str(row["detail"]))
     ok = all(c["ok"] for c in checks if str(c["name"]) not in _OPTIONAL)
     return {"ok": ok, "checks": checks}

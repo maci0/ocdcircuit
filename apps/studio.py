@@ -40,6 +40,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = ROOT
 
 from ocdcircuit import agent  # noqa: E402
+from ocdcircuit import envcfg as _envcfg  # noqa: E402
 from ocdcircuit import fab as _fab  # noqa: E402
 from ocdcircuit.circuit import Board  # noqa: E402
 from ocdcircuit.types import DrcReport  # noqa: E402
@@ -2762,12 +2763,8 @@ SKIP_DIR = {"__pycache__", ".git", ".mypy_cache", ".ruff_cache", ".pytest_cache"
             "node_modules", ".venv", "venv", "out", "outputs", ".scratch",
             ".users"}
 GITIGNORE_AUTH = ".ocd-users\n.users/\n"
-ROOT = os.path.abspath(os.environ.get("OCD_ROOT") or BASE)
+ROOT = _envcfg.studio_root(BASE)
 START_DIR = BASE  # the board directory as launched, before any /fs/open
-if not os.path.isdir(ROOT):  # a bad OCD_ROOT must not take the studio down
-    print(f"studio: OCD_ROOT {os.environ.get('OCD_ROOT')!r} is not a directory, "
-          f"using {BASE}", file=sys.stderr)
-    ROOT = BASE
 
 
 # --- accounts: local users with salted passwords, cookie sessions -----------
@@ -4845,12 +4842,7 @@ def main() -> None:
     H.root = ROOT        # project browser/agent root (OCD_ROOT or the board's dir)
     H.props = []         # no proposals pending
     H.rev = 0            # revision 1 is the genesis commit above
-    try:
-        port = int(os.environ.get("OCD_PORT", "8077"))
-    except ValueError:
-        print(f"studio: bad OCD_PORT {os.environ.get('OCD_PORT')!r}, using 8077",
-              file=sys.stderr)
-        port = 8077
+    port = _envcfg.studio_port()
     # Threading: one SSE stream per collaborator blocks its handler for
     # minutes — on a single-threaded server the second user could never even
     # log in while the first one's stream was open. Threads share H/rooms;

@@ -17,3 +17,8 @@ boards/*/STATUS.md
 # derived text/vector caches are ignored.
 boards/*/kb/.cache/
 boards/kb/.cache/
+
+# Local secrets / operator overrides (never commit)
+.env
+.env.local
+.ocd-users

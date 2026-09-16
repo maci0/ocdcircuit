@@ -1818,7 +1818,9 @@ def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
     import importlib.util
     import math
     import os
-    for cand in (os.environ.get("KNOLL_SRC"), os.path.expanduser("~/Desktop/knoll/src")):
+    from . import envcfg
+    cands = [envcfg.knoll_src(), os.path.expanduser("~/Desktop/knoll/src")]
+    for cand in cands:
         if not cand:
             continue
         mod = os.path.join(cand, "knoll", "stock.py")
@@ -1870,9 +1872,8 @@ def _jlc_api_creds() -> tuple[str, str, str] | None:
     The secrets file holds access/secret lines; the app id rides alongside
     (env JLCPCB_APP_ID or the file's AppID line when present)."""
     import os
-    app = os.environ.get("JLCPCB_APP_ID", "")
-    acc = os.environ.get("JLCPCB_API_KEY", "")
-    sec = os.environ.get("JLCPCB_API_SECRET", "")
+    from . import envcfg
+    app, acc, sec = envcfg.jlc_env_creds()
     if acc and sec:
         return (app, acc, sec)
     try:

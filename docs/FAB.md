@@ -45,7 +45,8 @@ $3.07). Parts price through the `price` provider chain: `price:std`
 (`price=` attr, then the offline JLC SQLite when populated), then
 `price:jlc-api` (official JLCPCB parts API — creds from `JLCPCB_APP_ID` /
 `JLCPCB_API_KEY` / `JLCPCB_API_SECRET` env or `~/.secrets/jlcpcb`, never
-committed; unpriced until JLC approves the app), then `price:knoll`
+committed; placeholders in `.env.example`; unpriced until JLC approves the
+app), then `price:knoll`
 (knoll's live JLC lookup by `lcsc=`/`mpn=`, needs network + knoll's
 checkout via `KNOLL_SRC`), else unpriced-and-named. Swap providers
 with `b.use("price", "knoll")`; a crashing provider is fenced and the next

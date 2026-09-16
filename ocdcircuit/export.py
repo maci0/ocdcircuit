@@ -440,7 +440,8 @@ def export_bundle(board: Board, outdir: str = "out") -> list[str]:
     files += export_eagle(board, outdir)
     zfn = os.path.join(outdir, f"{board.name}-fab.zip")
     # ZIP local headers reject pre-1980; clamp so SOURCE_DATE_EPOCH=0 still works.
-    epoch = max(int(os.environ.get("SOURCE_DATE_EPOCH", "0")), 315532800)
+    from . import envcfg
+    epoch = max(envcfg.source_date_epoch(), 315532800)
     stamp = time.gmtime(epoch)
     date_time = (stamp.tm_year, stamp.tm_mon, stamp.tm_mday,
                  stamp.tm_hour, stamp.tm_min, stamp.tm_sec)
@@ -499,7 +500,8 @@ def _model_for(fp: str) -> str | None:
     are probed against the local model dir; first hit wins, else a
     static fallback (pads + silk still render)."""
     M = "${KICAD10_3DMODEL_DIR}"
-    local = os.environ.get("KICAD10_3DMODEL_DIR", "/usr/share/kicad/3dmodels")
+    from . import envcfg
+    local = envcfg.kicad_3d_dir()
 
     def pick(d: str, *cands: str) -> str | None:
         for c in cands:

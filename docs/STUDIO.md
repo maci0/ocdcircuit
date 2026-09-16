@@ -8,7 +8,14 @@ and committed to a 100-deep undo history.
 make run                            # :8077, blinky_555
 BOARD=boards/psu.ocd make run       # another board
 OCD_PORT=8078 python -m apps.studio boards/blinky_555.ocd   # custom port
+OCD_ROOT=/path/to/project python -m apps.studio …           # file-browser root
 ```
+
+Studio binds `127.0.0.1` only. A bad `OCD_PORT` / `OCD_ROOT` prints a
+stderr note and falls back (default port 8077 / the board's directory) so a
+typo does not kill the session. All process env knobs — LLM endpoint, scan
+budget, JLCPCB creds, `SOURCE_DATE_EPOCH`, … — are listed in `.env.example`
+and checked (secrets redacted) by `ocd doctor`.
 
 First visit: create a local Studio account (`.ocd-users` beside the boards),
 then open a board from the shelf (or the launch file). Creating a blank board,

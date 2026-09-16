@@ -3236,6 +3236,13 @@ assert any(str(c.get("name")) == "plugin:diff"
 assert "kicad-cli" in _doc_names and "chromium" in _doc_names
 assert "pdftotext" in _doc_names
 assert "pillow" in _doc_names and "numpy" in _doc_names and "rich" in _doc_names
+assert "env:OCD_LLM_BASE" in _doc_names and "env:OCD_LLM_KEY" in _doc_names
+_key_row = next(c for c in _doc_checks if c.get("name") == "env:OCD_LLM_KEY")
+assert _key_row["detail"] in ("set", "unset")  # never the raw secret
+assert _key_row["ok"] is True
+# envcfg self-check: empty ≡ unset, bad values raise, secrets stay redacted
+from ocdcircuit import envcfg as _envcfg
+_envcfg._selfcheck()
 import shutil as _shutil_doc
 _real_which = _shutil_doc.which
 def _no_optionals(name: str) -> str | None:

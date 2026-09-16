@@ -26,6 +26,9 @@ Run the suite you touched, not the whole gate:
 Full gate before push: `make check` (~2 min here; CI already has Chrome
 and installs poppler so the studio browser half and PDF kb path run).
 
+Process env knobs (`OCD_PORT`, `OCD_LLM_*`, `JLCPCB_*`, …) are listed in
+`.env.example` and shown redacted by `make doctor` / `ocd doctor`.
+
 ## CI parity (optional locally)
 
 CI (`.github/workflows/check.yml`) relies on:

@@ -377,7 +377,11 @@ def main(argv: list[str]) -> int:
         def cast_paths(v: object) -> list[str] | None:
             return [str(x) for x in v] if isinstance(v, list) else None
 
-        reps = int(os.environ.get("SCANBENCH_REPS", "1"))
+        from ocdcircuit import envcfg
+        try:
+            reps = envcfg.scanbench_reps()
+        except envcfg.EnvError as e:
+            raise SystemExit(f"scanbench: {e}") from e
 
         def cast_int(v: object) -> int:
             return v if isinstance(v, int) else 99
@@ -442,7 +446,7 @@ def main(argv: list[str]) -> int:
                   f"{spread}")
 
         print(f"  ground truth: {len(refs)} refs, "
-              f"model={os.environ.get('OCD_LLM_MODEL', '?')}")
+              f"model={envcfg.llm_model()}")
         score("bare", zoom=1)
         score("noted", note="Ethernet thin client, VGA out, pulled from a dead unit.",
               zoom=1)
