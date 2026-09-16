@@ -123,6 +123,7 @@ stated as a word in a pill.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.
+- **Realtime multiplayer** (`collab:std` plugin + SSE rooms): two engineers, one board, ~14ms pushes — presence pills, PCB selection rings, rev-guarded merges. See `docs/STUDIO.md`.
 - **Agents are first-class**: `apps/mcp.py` is an MCP stdio server (30 tools:
   load/solve/patch/set_state/undo/context/place/candidates/apply_candidate/feasible/route/check/score/diff/export/render/xray/quote/footprints/fabs/…)
   — any MCP client can drive boards, gallery-pick layouts, probe routability,
@@ -145,9 +146,15 @@ stated as a word in a pill.
   better-informed pass. Context is evidence, not authority: where a manual
   and the board disagree, the model is told to believe the board.
   Measured on a real board with a published schematic
-  (`python -m tools.scanbench`): 83% of handheld frames lock to 0.04°/0.03%,
-  the gated stitch lands 2.1x closer to the true board than the sharpest
-  single photo, and enhancement lifts local contrast up to 2.7x.
+  (`python -m tools.scanbench`, NComputing L130): 83% of handheld frames
+  lock to 0.04°/0.03%, the gated stitch lands 2.1x closer to the true board
+  than the sharpest single photo, and enhancement lifts local contrast up to
+  2.7x. With `SCANBENCH_LLM=1` it also scores the reverse-engineering itself
+  against the schematic — context is what moves that number
+  (deepseek-flash, component recall): photos alone 7/13 refs and 2/13 parts,
+  `--note` 10/13 and 3/13, `--doc manual.txt` **13/13 and 13/13**, each arm
+  emitting a draft that loads. Answering the model's own questions and
+  re-running lifts part identification 0/5 -> 4/5 with no new photos.
 - **Fab price comparison** (`quote:std`): bare PCB per fab + JLC assembly
   with parts (`ocd quote board.ocd 5`, studio quote dropdown, MCP `quote`).
   Estimates from published pricing — parts via knoll's live JLC lookup or
