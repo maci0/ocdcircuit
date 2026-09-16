@@ -1266,14 +1266,30 @@ def _guarded_add(board: Board, name: str, meta: object, path: str) -> None:
     board.add_footprint(name, cast(Footprint, meta), path)
 
 
+def _import_path(k: dict[str, object]) -> str:
+    path = k.get("path", "")
+    assert isinstance(path, str) and path
+    return path
+
+
+def _import_foreign_fps(board: Board, path: str) -> dict[str, object]:
+    """KiCad/Eagle/etc.: load_foreign sniffs the file; both plugin keys share
+    this body so format-named dispatch stays without a duplicated loop."""
+    from .foreign import load_foreign
+    names = []
+    for name, meta in load_foreign(path):
+        _guarded_add(board, name, meta, path)
+        names.append(name)
+    return {"names": names}
+
+
 class SymImporter(Plugin[dict[str, object]]):
     """Symbol importer: native .sym (custom schematic bodies)."""
     kind, key = "importer", "sym"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from . import symbol as _sym
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         name, meta = _sym.load_file(path)
         board.add_symbol(name, meta, path)
         return {"name": name}
@@ -1286,8 +1302,7 @@ class SchLibImporter(Plugin[dict[str, object]]):
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .foreign import _bin_schlib
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         with open(path, "rb") as f:
             pairs = _bin_schlib(f.read())
         names = []
@@ -1303,8 +1318,7 @@ class FpImporter(Plugin[dict[str, object]]):
     kind, key = "importer", "fp"
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .footprint import load_file
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         name, meta = load_file(path)
         _guarded_add(board, name, meta, path)
         return {"name": name}
@@ -1315,14 +1329,7 @@ class KicadImporter(Plugin[dict[str, object]]):
     kind, key = "importer", "kicad"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
-        from .foreign import load_foreign
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
-        names = []
-        for name, meta in load_foreign(path):
-            _guarded_add(board, name, meta, path)
-            names.append(name)
-        return {"names": names}
+        return _import_foreign_fps(board, _import_path(k))
 
 
 class EagleImporter(Plugin[dict[str, object]]):
@@ -1330,14 +1337,7 @@ class EagleImporter(Plugin[dict[str, object]]):
     kind, key = "importer", "eagle"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
-        from .foreign import load_foreign
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
-        names = []
-        for name, meta in load_foreign(path):
-            _guarded_add(board, name, meta, path)
-            names.append(name)
-        return {"names": names}
+        return _import_foreign_fps(board, _import_path(k))
 
 
 class TscircuitImporter(Plugin[dict[str, object]]):
@@ -1346,9 +1346,8 @@ class TscircuitImporter(Plugin[dict[str, object]]):
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         import json
-        from .foreign import easyeda_doc, load_foreign
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        from .foreign import easyeda_doc
+        path = _import_path(k)
         with open(path) as f:
             text = f.read()
         try:
@@ -1364,11 +1363,7 @@ class TscircuitImporter(Plugin[dict[str, object]]):
             for name, meta in pairs:
                 _guarded_add(board, name, meta, path)
             return {"names": [n for n, _ in pairs]}
-        names = []
-        for name, meta in load_foreign(path):
-            _guarded_add(board, name, meta, path)
-            names.append(name)
-        return {"names": names}
+        return _import_foreign_fps(board, path)
 
 
 class PcbImporter(Plugin[dict[str, object]]):
@@ -1378,8 +1373,7 @@ class PcbImporter(Plugin[dict[str, object]]):
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .foreign import altium_ascii, eagle_brd, kicad_pcb_netlist, kicad_sch_netlist, pcad_ascii
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         with open(path, encoding="latin-1") as f:
             text = f.read()
         s = text.lstrip()
@@ -1404,8 +1398,7 @@ class AltiumImporter(Plugin[dict[str, object]]):
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .foreign import _bin_pcbdoc, _OLE_MAGIC, altium_ascii, pcad_ascii
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         with open(path, "rb") as f:
             raw = f.read()
         if raw[:8] == _OLE_MAGIC:
@@ -1428,8 +1421,7 @@ class AltiumSchImporter(Plugin[dict[str, object]]):
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         import os
         from .foreign import _bin_schdoc, _OLE_MAGIC
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         with open(path, "rb") as f:
             raw = f.read()
         if raw[:8] != _OLE_MAGIC:
@@ -1445,8 +1437,7 @@ class EagleBoardImporter(Plugin[dict[str, object]]):
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         from .foreign import eagle_brd
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         with open(path) as f:
             ir = eagle_brd(f.read())
         return _board_ir_into(board, ir)
@@ -1461,8 +1452,7 @@ class EasyedaImporter(Plugin[dict[str, object]]):
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         import json
         from .foreign import easyeda_doc, easyeda_sch
-        path = k.get("path", "")
-        assert isinstance(path, str) and path
+        path = _import_path(k)
         with open(path) as f:
             doc = json.load(f)
         assert isinstance(doc, dict)

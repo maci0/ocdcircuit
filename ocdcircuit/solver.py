@@ -526,6 +526,24 @@ def _snap(board: Board) -> Frame:
             "pos": {r: (round(q.x, 2), round(q.y, 2)) for r, q in board.parts.items()}}
 
 
+def _emit_positions(board: Board, final: dict[str, XY],
+                    snap_pos: dict[str, XY]) -> None:
+    """One undoable effect that applies `final` and restores `snap_pos`.
+    Skips refs removed since the snapshot (parts added/removed still undo)."""
+
+    def _do() -> None:
+        for r, (x, y) in final.items():
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
+
+    def _undo() -> None:
+        for r, (x, y) in snap_pos.items():
+            if r in board.parts:
+                board.parts[r].x, board.parts[r].y = x, y
+
+    board.emit(_do, _undo)
+
+
 def _best_of_seeds(board: Board, seeds: int, frames: list[Frame] | None,
                    run_once: Callable[[int], None],
                    repair: bool = False) -> float:
@@ -553,19 +571,8 @@ def _best_of_seeds(board: Board, seeds: int, frames: list[Frame] | None,
     if repair:
         _repair(board)
     board.traces = old_traces
-    final = {r: (p.x, p.y) for r, p in board.parts.items()}
-
-    def _do() -> None:
-        for r, (x, y) in final.items():
-            if r in board.parts:  # parts added/removed since still undo
-                board.parts[r].x, board.parts[r].y = x, y
-
-    def _undo() -> None:
-        for r, (x, y) in snap_pos.items():
-            if r in board.parts:
-                board.parts[r].x, board.parts[r].y = x, y
-
-    board.emit(_do, _undo)
+    _emit_positions(board, {r: (p.x, p.y) for r, p in board.parts.items()},
+                    snap_pos)
     return best
 
 def optimize(board: Board, seeds: int = 4, iters: int = 400, seed: int = 0,
@@ -594,7 +601,6 @@ def candidates(board: Board, n: int = 4, key: str | None = None,
     from typing import cast
     snap = board.ctx.snapshot()
     snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
-    old_traces = list(board.traces)
     out: list[dict[str, object]] = []
     for i in range(max(1, n)):
         board.place(key, seed=seed + i, seeds=seeds, iters=iters, **k)
@@ -603,19 +609,8 @@ def candidates(board: Board, n: int = 4, key: str | None = None,
                     "pos": {r: (round(q.x, 2), round(q.y, 2))
                             for r, q in board.parts.items()}})
     board.ctx.rollback(snap)  # inner place() effects discarded; one below
-    final = {r: (p.x, p.y) for r, p in board.parts.items()}
-
-    def _do() -> None:
-        for r, (x, y) in final.items():
-            if r in board.parts:  # parts added/removed since still undo
-                board.parts[r].x, board.parts[r].y = x, y
-
-    def _undo() -> None:
-        for r, (x, y) in snap_pos.items():
-            if r in board.parts:
-                board.parts[r].x, board.parts[r].y = x, y
-
-    board.emit(_do, _undo)
+    _emit_positions(board, {r: (p.x, p.y) for r, p in board.parts.items()},
+                    snap_pos)
     out.sort(key=lambda c: cast(float, c["cost"]))
     return out
 
@@ -626,18 +621,7 @@ def restore_candidate(board: Board, cand: dict[str, object]) -> None:
     snap_pos = {r: (p.x, p.y) for r, p in board.parts.items()}
     final = {r: (float(xy[0]), float(xy[1])) for r, xy in pos.items()
              if r in board.parts}
-
-    def _do() -> None:
-        for r, (x, y) in final.items():
-            if r in board.parts:  # parts added/removed since still undo
-                board.parts[r].x, board.parts[r].y = x, y
-
-    def _undo() -> None:
-        for r, (x, y) in snap_pos.items():
-            if r in board.parts:
-                board.parts[r].x, board.parts[r].y = x, y
-
-    board.emit(_do, _undo)
+    _emit_positions(board, final, snap_pos)
 
 
 def feasible(board: Board, layers: list[int] | None = None) -> dict[int, dict[str, object]]:

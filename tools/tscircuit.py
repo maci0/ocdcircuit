@@ -140,9 +140,6 @@ def convert(projdir: str) -> str:
     def intent(name: str) -> dict[str, str]:
         if name in tmpl:
             return tmpl[name]
-        for suffix in ("Z1", "Z2", "Z3"):
-            if name.startswith(suffix) or name.endswith(("v", "cp", "a", "b")) and name[1:] in ("",):
-                pass
         # template keys look like "Cv", "RZa", "J" (name=${name} stripped)
         core = name
         for pre in ("Z1", "Z2", "Z3"):

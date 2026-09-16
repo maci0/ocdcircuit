@@ -767,6 +767,48 @@ def _remap_net(n: str, pre: str, joins: set[str], join: str | None) -> str:
     return pre + n
 
 
+def _merge_nets(parent: Board, child: Board, pre: str,
+                joins: set[str], join: str | None) -> None:
+    """Connect child's nets onto parent under prefix/join rules."""
+    for n, net in child.nets.items():
+        target = _remap_net(n, pre, joins, join)
+        for ref, pin in net.pins:
+            parent.connect(target, pre + ref, pin)
+        if net.attrs:
+            parent.nets[target].attrs.update(dict(net.attrs))
+
+
+def _merge_constraints(parent: Board, child: Board, pre: str,
+                       joins: set[str], join: str | None, *,
+                       dedupe_power: bool = False) -> None:
+    """Remap near/power/layer/width/pour from child; drop fixed placement.
+    Other kinds stay board-global (put them at top level)."""
+    for c in child.constraints:
+        t = c.get("t")
+        if t == "fixed":
+            continue
+        if t == "near":
+            parent._constrain_raw({"t": "near", "a": pre + str(c["a"]),
+                                   "b": pre + str(c["b"]),
+                                   "w": _f(c.get("w", 2.0)), "owner": pre})
+        elif t == "power":
+            nets = cast(list[str], c["nets"])
+            merged = [_remap_net(n, pre, joins, join) for n in nets]
+            if dedupe_power and any(
+                    x.get("t") == "power"
+                    and sorted(cast(list[str], x["nets"])) == sorted(merged)
+                    for x in parent.constraints):
+                continue
+            parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
+        elif t in ("layer", "width", "pour"):
+            # layer/width live on constraints, not net.layer/net.width
+            # (those are solver scratch after assign_layers)
+            cc = dict(c)
+            cc["net"] = _remap_net(str(c["net"]), pre, joins, join)
+            cc["owner"] = pre
+            parent._constrain_raw(cc)
+
+
 def _include(parent: Board, path: str, prefix: str | None, join: str | None,
              base: str, stack: tuple[str, ...], err: ErrFn) -> None:
     """Merge a child .ocd into parent. Child board/layers/fix ignored;
@@ -799,34 +841,8 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
         from .circuit import Block as _Block
         parent.blocks[bname] = _Block(bname, blk.lines, blk.ports)
         parent.block_src[bname] = path
-    for n, net in child.nets.items():
-        # explicit `join` wins; power-style nets auto-join; rest prefixed
-        target = _remap_net(n, pre, joins, join)
-        for ref, pin in net.pins:
-            parent.connect(target, pre + ref, pin)
-        if net.attrs:
-            parent.nets[target].attrs.update(dict(net.attrs))
-    for c in child.constraints:
-        t = c.get("t")
-        if t == "fixed":
-            continue  # child placement ignored — parent places everything
-        if t == "near":
-            parent._constrain_raw({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
-                              "w": _f(c.get("w", 2.0)), "owner": pre})
-        elif t == "power":
-            nets = cast(list[str], c["nets"])
-            merged = [_remap_net(n, pre, joins, join) for n in nets]
-            if not any(x.get("t") == "power"
-                       and sorted(cast(list[str], x["nets"])) == sorted(merged)
-                       for x in parent.constraints):
-                parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
-        elif t in ("layer", "width", "pour"):
-            # same remap as _instance — layer/width live on constraints, not
-            # net.layer/net.width (those are solver scratch after assign_layers)
-            cc = dict(c)
-            cc["net"] = _remap_net(str(c["net"]), pre, joins, join)
-            cc["owner"] = pre
-            parent._constrain_raw(cc)
+    _merge_nets(parent, child, pre, joins, join)
+    _merge_constraints(parent, child, pre, joins, join, dedupe_power=True)
     parent.includes.append({"path": path, "prefix": prefix or child.name,
                             "join": sorted(joins)})
     if child.parts:
@@ -987,32 +1003,8 @@ def _instance(parent: Board, block: str, prefix: str, join: str | None,
             raise err(f"ref clash: {new!r} (instance prefixes must differ)")
         parent.add_part(new, p.fp, p.value, attrs=dict(p.attrs) or None)
         parent.parts[new].owner = pre
-    for n, net in child.nets.items():
-        target = _remap_net(n, pre, joins, join)
-        for ref, pin in net.pins:
-            parent.connect(target, pre + ref, pin)
-        if net.attrs:
-            parent.nets[target].attrs.update(dict(net.attrs))
-
-    for c in child.constraints:
-        t = c.get("t")
-        if t == "fixed":
-            continue  # block-local placement ignored — two-level placer owns it
-        # remapped: near/power/layer/width/pour. Dropped: class/match/diff/
-        # keepout/sim/... — board-global or position-dependent; put them at
-        # top level (a block has no position to anchor them to).
-        if t == "near":
-            parent._constrain_raw({"t": "near", "a": pre + str(c["a"]), "b": pre + str(c["b"]),
-                              "w": _f(c.get("w", 2.0)), "owner": pre})
-        elif t == "power":
-            nets = cast(list[str], c["nets"])
-            merged = [_remap_net(x, pre, joins, join) for x in nets]
-            parent._constrain_raw({"t": "power", "nets": merged, "owner": pre})
-        elif t in ("layer", "width", "pour"):
-            cc = dict(c)
-            cc["net"] = _remap_net(str(c["net"]), pre, joins, join)
-            cc["owner"] = pre
-            parent._constrain_raw(cc)
+    _merge_nets(parent, child, pre, joins, join)
+    _merge_constraints(parent, child, pre, joins, join)
     parent.instances.append({"block": block, "prefix": prefix, "join": sorted(joins)})
     parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
     # The scratch board above was a real owner: its parse installed effects on
