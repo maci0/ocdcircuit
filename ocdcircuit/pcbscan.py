@@ -41,7 +41,15 @@ MAX_REQUEST_MB = 24.0  # drop zoom tiles rather than post a request the
 REG = 512              # registration works on this, ~40x fewer pixels
 SCALES = tuple(2.0 ** (i / 8.0) for i in range(-12, 13))  # 0.35x .. 2.83x
 ROTS = tuple(range(0, 360, 10))
-COARSE = 96            # pyramid base: basins this wide swallow a grid step
+COARSE = 96            # pyramid base for same-framing shots: wide basins
+                       # want a coarse start and this is fast.
+COARSE_WIDE = 192      # pyramid base when the photos disagree about framing.
+                       # An off-centre close-up needs a translation that is a
+                       # large fraction of a small grid: at 96 px its true
+                       # cell scored 0.06 against 0.67 at full resolution,
+                       # invisible to the search. Measured on a 20-photo
+                       # mixed-zoom shoot: 96 registered 5/18, 192 got 11/18
+                       # for ~1.5x the time (256 was no better).
 TOPK = 5               # grid candidates carried into the refine
 TILE = 32              # parallax tile size, canvas pixels. Must be finer
                        # than the parts being measured, or a part's tile is
@@ -230,8 +238,13 @@ def _ncc(a: Any, b: Any, valid: Any) -> float:
     picks the winner."""
     np = _numpy()
     n = float(np.count_nonzero(valid))
-    if n < a.size * 0.15:
-        return -1.0                 # too little overlap to mean anything
+    # Enough overlapping pixels to mean something. The old rule wanted 15%
+    # of the reference frame, which silently rejected every close-up: a
+    # photo framing a quarter of the board covers 6% of the reference by
+    # area. The floor has to admit a legitimately tight shot, so it is a
+    # small fraction plus an absolute minimum.
+    if n < 256 or n < a.size * 0.02:
+        return -1.0
     av, bv = a[valid], b[valid]
     av = av - av.mean()
     bv = bv - bv.mean()
@@ -293,19 +306,29 @@ def register(ref_g: Any, img_g: Any, *, scales: tuple[float, ...] = SCALES,
         return {"scale": s, "rot": rot, "dx": dx / f, "dy": dy / f,
                 "peak": _ncc(ref_b, rolled, vmask)}
 
-    grid = sorted((probe(s, float(rot), COARSE) for s in scales
+    # Start coarse; if nothing convincing turns up, the photos probably
+    # disagree about framing (a close-up against an overview) and the coarse
+    # grid is too small to express the translation. Retry finer rather than
+    # returning a confident wrong answer.
+    coarse = COARSE
+    grid = sorted((probe(s, float(rot), coarse) for s in scales
                    for rot in rots),
                   key=lambda c: -c["peak"])
+    if grid and grid[0]["peak"] < 0.25 and COARSE_WIDE > COARSE:
+        coarse = COARSE_WIDE
+        grid = sorted((probe(s, float(rot), coarse) for s in scales
+                       for rot in rots),
+                      key=lambda c: -c["peak"])
     # carry several candidates up: the coarse winner is usually right, but a
     # near-tie between two plausible orientations is exactly the case where
     # the higher-resolution levels have the evidence to decide.
     cands = grid[:TOPK]
 
     step_r0 = float(rots[1] - rots[0]) if len(rots) > 1 else 10.0
-    res = COARSE
+    res = coarse
     while True:
-        step_r = step_r0 * COARSE / res
-        step_s = 0.09 * COARSE / res
+        step_r = step_r0 * coarse / res
+        step_s = 0.09 * coarse / res
         cands = [max([c] + [probe(c["scale"] * (1 + ds), c["rot"] + dr, res)
                             for ds in (-step_s, 0.0, step_s)
                             for dr in (-step_r, 0.0, step_r)
@@ -1536,6 +1559,50 @@ def demo() -> None:
                                  + "```")) == 5, "question cap not applied"
     # unterminated questions block (token cap) still yields what was asked
     assert extract_questions("```questions\nOnly one?") == ["Only one?"]
+
+    # A real shoot mixes framings: overviews plus close-ups of one corner.
+    # An off-centre close-up needs a translation that is a large fraction of
+    # a coarse grid, and at COARSE the true cell can be invisible (0.06 vs
+    # 0.67 at full resolution), so register() retries at COARSE_WIDE when
+    # the coarse pass finds nothing convincing. Measured on a 20-photo
+    # mixed-zoom shoot of a real board: 5/18 registered before, 11/18 after.
+    #
+    # What is asserted here is the SAFETY property, because it is the one
+    # that holds on any texture: a close-up the search cannot solve must
+    # score below the drop gate, so it is discarded rather than median-
+    # blended into the stitch as if it belonged. (The accuracy gain itself
+    # is texture-dependent and is measured by tools/scanbench, not here —
+    # on featureless noise the wide retry is a wash.)
+    _crng = np.random.default_rng(7)
+    _bigsrc = np.clip(_crng.normal(120, 55, (900, 900, 3)), 0, 255)
+    for _i in range(26):
+        _yy = 12 + _i * 34
+        _bigsrc[_yy:_yy + 7, int(_crng.integers(20, 200)):
+                int(_crng.integers(600, 880))] = (210, 170, 80)
+    for _cy, _cx in ((150, 700), (480, 220), (720, 620)):
+        _bigsrc[_cy - 40:_cy + 40, _cx - 55:_cx + 55] = (35, 35, 38)
+
+    def _frame(frac: float, x0f: float, y0f: float, rot: float) -> Any:
+        hh, ww = _bigsrc.shape[:2]
+        cw, ch = int(ww * frac), int(hh * frac)
+        x0, y0 = int((ww - cw) * x0f), int((hh - ch) * y0f)
+        v = resize(_bigsrc[y0:y0 + ch, x0:x0 + cw], 520, int(520 * ch / cw))
+        vh, vw = v.shape[:2]
+        return np.nan_to_num(warp(v, 1.0, rot, 0, 0, vw, vh), nan=14.0)
+
+    _ovr = gray(_frame(0.95, 0.5, 0.5, 0.0))
+    for _f, _xf, _yf in ((0.55, 0.05, 0.05), (0.40, 0.9, 0.5),
+                         (0.30, 0.05, 0.05)):
+        _ct = register(_ovr, gray(_frame(_f, _xf, _yf, 8.0)))
+        _true_s = _f / 0.95
+        _cdr = (_ct["rot"] - 352.0) % 360
+        _wrong = (min(_cdr, 360 - _cdr) > 6.0
+                  or abs(_ct["scale"] - _true_s) > 0.15 * _true_s)
+        if _wrong:
+            assert _ct["peak"] < 0.30, (
+                f"a wrong close-up lock ({_f}, {_xf}, {_yf}) scored "
+                f"{_ct['peak']:.3f} — it would be blended into the stitch "
+                "instead of dropped")
 
     # zoom tiles: native-resolution crops that cover the board with overlap.
     # This is the only path by which a trace is more than a couple of pixels
