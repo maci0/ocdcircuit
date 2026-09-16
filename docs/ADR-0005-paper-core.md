@@ -1,6 +1,12 @@
 # ADR-0005 — Cordis paper (§5) in `core.py`: what landed, what didn't
 
+Status: Accepted
+
 Paper: [arXiv:2608.25512](https://arxiv.org/abs/2608.25512) (Table 2, Algs 1–10).
+
+## Decision
+Land Cordis paper §5 primitives in `core.py` as enumerated below; gaps
+stay listed under Open until closed or explicitly deferred.
 
 ## Landed
 

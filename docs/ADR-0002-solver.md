@@ -1,12 +1,16 @@
 # ADR-0002 — Constraint solver: diffusion + maze, not ILP/MILP
 
+Status: Accepted
+
 ## Decision
 Placement = Langevin diffusion (net-spring drift + repulsion + decaying
 noise, multi-seed best-of) on
 `wirelength + overlap×BIG + edge penalties` (+ keepout as maze soft
 preferential cost + DRC warnings, not a placer term); layer assignment =
-greedy bbox-overlap minimization; routing = ordered L-routes, A* maze
-default (MST trunk legs + gated 2-round rip-up). Zero dependencies.
+greedy bbox-overlap minimization; routing = ordered L-routes + A* maze
+(MST trunk legs + gated 2-round rip-up). Project default router is maze
+(`board.toml` / `ocd new`); registry first-active fallback is `lroute`.
+Zero dependencies.
 
 ## Why
 Boards here are tens of parts: an ILP solver dependency buys nothing v0.

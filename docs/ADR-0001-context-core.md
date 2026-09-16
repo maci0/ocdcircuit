@@ -1,5 +1,7 @@
 # ADR-0001 — Context paradigm as the core model
 
+Status: Accepted
+
 ## Decision
 All board mutations go through one unified `Context` (`ocdcircuit/core.py`):
 every effect carries its inverse (temporal composability), every fiber declares
