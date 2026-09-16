@@ -22,19 +22,19 @@ Run the suite you touched, not the whole gate:
 | placement / routing geometry | `python tests/test_snapshot.py` (`SNAP=1` to re-pin) |
 | studio / HTTP / UI | `python tests/test_studio.py` |
 
-Full gate before push: `make check` (~2 min here; CI adds chromium +
-poppler so the studio browser half and PDF kb path actually run).
+Full gate before push: `make check` (~2 min here; CI already has Chrome
+and installs poppler so the studio browser half and PDF kb path run).
 
 ## CI parity (optional locally)
 
-CI (`.github/workflows/check.yml`) also installs:
+CI (`.github/workflows/check.yml`) relies on:
 
-- `chromium-browser` — studio screenshot + console-clean gate
-- `poppler-utils` (`pdftotext`) — kb/ datasheet PDF search
+- runner Google Chrome / Chromium — studio screenshot + console-clean gate
+- `poppler-utils` (`pdftotext`) — installed in CI for kb/ datasheet PDF search
 
-Without them, those halves skip or degrade; `make doctor` lists the gap.
-`make check` still passes on a correct Python + `requirements-dev.txt`
-setup.
+Without a browser or `pdftotext`, those halves skip or degrade; `make doctor`
+lists the gap. `make check` still passes on a correct Python +
+`requirements-dev.txt` setup.
 
 ## PR checklist
 

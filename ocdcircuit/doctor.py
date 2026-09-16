@@ -48,7 +48,7 @@ def doctor(board: Board | None = None) -> dict[str, object]:
              or shutil.which("google-chrome-stable"))
     add("chromium", chrom is not None,
         chrom or "missing (studio browser half skipped; "
-                 "CI installs chromium-browser)")
+                 "CI uses runner Google Chrome)")
     try:
         import rich  # noqa: F401
         add("rich", True, "pretty CLI on")

@@ -1,19 +1,30 @@
 name: check
 on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with: {persist-credentials: false}
       - uses: actions/setup-python@v5
-        with: {python-version-file: ".python-version"}
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
       - run: python -m pip install -r requirements-dev.txt
         # pinned, so the gate cannot change under us between runs; bump the pin
         # in requirements-dev.txt deliberately after a local `mypy` / `ruff check`
         # pass
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser poppler-utils
-        # studio gate skips its browser half when no chromium is found;
-        # the apt line keeps the full gate (screenshot + console-clean) live.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+        # ubuntu-24.04 runners already ship Google Chrome (+ Chromium); the
+        # studio gate finds them via google-chrome / chromium. Do not apt-install
+        # chromium-browser — on noble it is a snap shim and flakes on the store.
         # poppler-utils = pdftotext, so the kb/ datasheet-PDF path runs here
         # instead of being skipped.
       - run: make check

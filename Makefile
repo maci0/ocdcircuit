@@ -29,7 +29,7 @@ help:				# list contributor commands (default)
 	  '  python tests/test_studio.py     # studio smoke (+ chromium if present)' \
 	  '' \
 	  'Setup: python -m pip install -r requirements-dev.txt' \
-	  'CI also wants: chromium-browser, poppler-utils (pdftotext).'
+	  'CI: runner Chrome + apt poppler-utils (pdftotext).'
 
 check: lint test			# everything green before commit
 lint:				# types + source lint (no place/route)
