@@ -54,31 +54,53 @@ def unload_ui() -> None:
     idempotent): the inverse of importing the studio's UI."""
     while _UI_DISPOSERS:
         _UI_DISPOSERS.pop()()
-TOOLBAR = (
-    '<div class="tbar">'
-    '<div class="grp"><span class=lbl>engines</span>'
-    '<select id=placer title="placement engine"></select>'
-    '<select id=router title="routing engine"></select>'
-    '<select id=fab title="fab rules (edge, clearance, min trace)"></select>'
-    '<select id=silk title="silkscreen density"></select></div>'
-    '<div class="grp"><span class=lbl>build</span>'
+
+
+def fab_strip() -> str:
+    """Supported-fabs logo strip for the landing page, built from fab.py
+    (MARKS + profile urls) — one source of truth, never a stale copy."""
+    from ocdcircuit.fab import MARKS, PROFILES, logo
+    cells = []
+    for key in sorted(PROFILES):
+        name = str(PROFILES[key].get("name", key))
+        url = str(PROFILES[key].get("url", ""))
+        mark = MARKS.get(key, (key[:3].upper(), "#333333", "#ffffff"))[0]
+        cells.append(
+            f'<a class=fabcell href="{url}" title="{name} — capabilities">'
+            f'<img src="{logo(key)}" alt="{name} logo" width=48 height=28>'
+            f'<span>{mark}</span></a>')
+    return ('<div class=fabstrip aria-label="supported fabs">'
+            '<span class=fabkicker>ships to</span>' + "".join(cells) + "</div>")
+MENUS = (
+    '<nav class=menubar aria-label="board menus">'
     '<button id=solve class=primary title="full solve, 5 seeds x 500 iters (Ctrl+Enter)">solve</button>'
-    '<button id=dice title="generate N candidate layouts side by side">candidates</button>'
-    '<input id=ncand value=4 size=1 aria-label="candidate count" title="candidate count">'
-    '<button id=simbtn title="simulate the current board (shift-click: tran)">sim dc</button>'
-    '<button id=stamp title="stamp another copy of the hovered instance">stamp</button></div>'
-    '<div class="grp"><span class=lbl>history</span>'
-    '<button id=undo title="undo (Ctrl+Z)">undo</button>'
-    '<button id=redo title="redo (Ctrl+Y)">redo</button>'
+    '<details class=menu id=m-board><summary title="board outputs and layouts">Board</summary><div class=mpop>'
+    '<div class=mrow><button id=dice title="generate N candidate layouts side by side">candidates</button>'
+    '<input id=ncand value=4 size=1 aria-label="candidate count" title="candidate count"></div>'
+    '<button id=stamp title="stamp another copy of the hovered instance">stamp instance</button>'
+    '<button id=fab_dl title="download the fab bundle as one zip">fab zip</button>'
+    '<button id=dl title="download a render (cycles svg, sch, png, xray; shift-click backwards)">download render</button>'
+    '</div></details>'
+    '<details class=menu id=m-edit><summary title="undo history and revisions">Edit</summary><div class=mpop>'
+    '<button id=undo title="undo (Ctrl+Z)">undo<span class=kbd>Ctrl+Z</span></button>'
+    '<button id=redo title="redo (Ctrl+Y)">redo<span class=kbd>Ctrl+Y</span></button>'
     '<button id=diffprev title="what changed since the previous revision">diff</button>'
-    '<button id=commit title="commit the open file to git (Ctrl+S)">commit</button></div>'
-    '<div class="grp"><span class=lbl>agent</span>'
+    '<button id=commit title="commit the open file to git (Ctrl+S)">commit<span class=kbd>Ctrl+S</span></button>'
+    '</div></details>'
+    '<details class=menu id=m-engines><summary title="placement, routing, fab and silk engines">Engines</summary><div class=mpop>'
+    '<label>placer<select id=placer title="placement engine"></select></label>'
+    '<label>router<select id=router title="routing engine"></select></label>'
+    '<label>fab<select id=fab title="fab rules (edge, clearance, min trace)"></select></label>'
+    '<label>silk<select id=silk title="silkscreen density"></select></label>'
+    '</div></details>'
+    '<details class=menu id=m-sim><summary title="simulate the current board">Simulate</summary><div class=mpop>'
+    '<button id=simbtn title="simulate the current board (shift-click: tran)">sim dc</button>'
+    '<div class=mnote>shift-click toggles dc/tran · needs sim lines</div>'
+    '</div></details>'
+    '<details class=menu id=m-tools><summary title="agent, calculators, prices, health">Tools</summary><div class=mpop>'
     '<button id=chatbtn title="show or hide the agent chat panel">chat</button>'
     '<label class=auto title="apply a proposal without asking, but only when '
-    'it builds DRC-clean"><input type=checkbox id=chatauto>auto</label></div>'
-    '<div class="grp"><span class=lbl>output</span>'
-    '<button id=fab_dl title="download the fab bundle as one zip">fab zip</button>'
-    '<button id=dl title="download a render (cycles svg, sch, png, xray; shift-click backwards)">svg</button>'
+    'it builds DRC-clean"><input type=checkbox id=chatauto>auto-apply clean proposals</label>'
     '<details id=calc title="trace width and divider calculators"><summary>calc</summary>'
     '<label>A <input id=ca size=4 value=1 aria-label="trace current A"></label>'
     '<label>dT <input id=cdt size=3 value=10 aria-label="temperature rise C"></label>'
@@ -93,21 +115,21 @@ TOOLBAR = (
     '<label>qty <input id=qqty value=5 size=3 aria-label="boards ordered"></label>'
     '<label><input type=checkbox id=qbare> bare only</label>'
     '<button id=qgo type=button class=primary title="compare fab prices for the open board">compare</button>'
-    '<div id=qout role=status aria-live=polite></div></details></div>'
-    '<div class="grp status"><span id=cost class=pill title="total wirelength">cost</span>'
+    '<div id=qout role=status aria-live=polite></div></details>'
+    '</div></details>'
+    '<div class=mastat><span id=cost class=pill title="total wirelength">cost</span>'
     '<span id=ocdscore class=pill title="OCD neatness, 0-100"></span>'
     '<span id=feas class=pill title="routing feasibility per layer count"></span>'
     '<span id=stat role=status aria-live=polite></span></div>'
-    '</div>')
-_slot("toolbar", "solver-selects",
-               lambda s: TOOLBAR,
+    '</nav>')
+_slot("toolbar", "menus",
+               lambda s: MENUS,
                order=1.0)
 _slot("toolbar", "collab",
-               lambda s: '<div class="grp"><span class=lbl>live</span>'
-                         '<span id=room role=status aria-live=polite class=pill '
-                         'title="who else is on this board right now">solo</span>'
-                         '<button id=sharebtn title="copy a link to this board">share</button></div>',
-               order=2.0)
+               lambda s: '<details class=menu id=m-live><summary title="who is on this board and how to invite">Share</summary><div class=mpop>'
+                         '<div class=mnote id=roomnote>live on this board</div>'
+                         '<button id=sharebtn title="copy a link to this board">copy invite link</button></div></details>',
+               order=0.5)
 _slot("view", "gallery",
                lambda s: '<section id=galwrap style="display:none">'
                          '<header class=panel-head><span class=panel-title>candidates</span>'
@@ -265,7 +287,9 @@ BASE = os.path.dirname(SRC)
 # surface in the established world, no seed roll (brief-pinned).
 # FINISH: unreviewed and undocumented is unfinished; this build ends with the
 # finish review, the verdict, and DESIGN.md
-LOGIN_PAGE = r"""<!doctype html><html><head><meta charset=utf-8><title>OCD Studio — design PCBs with AI</title>
+LOGIN_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio — two engineers, one board</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content="Open a board, send the link, co-edit it live. Two cursors, one schematic, zero merge conflicts — with an AI engine that drafts, places and routes beside you.">
 <link rel=icon href="data:,">
 <style>
 :root{
@@ -283,7 +307,8 @@ is atmosphere behind real content — never decoration. */
 padding:1rem 1.5rem 3.5rem;min-height:92vh;display:flex;flex-direction:column}
 .hero canvas{position:absolute;inset:0;width:100%;height:100%}
 .hero>*:not(canvas){position:relative}
-.nav{display:flex;align-items:center;gap:1rem;max-width:70rem;margin:0 auto;width:100%}
+.nav{display:flex;align-items:center;gap:.6rem 1rem;flex-wrap:wrap;
+max-width:70rem;margin:0 auto;width:100%}
 .brand{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.1rem;
 letter-spacing:-.02em;color:#fff;text-decoration:none}
 .brand em{font-style:normal;color:var(--term-ok)}
@@ -293,26 +318,39 @@ letter-spacing:-.02em;color:#fff;text-decoration:none}
 #loginbtn:hover{border-color:var(--term-ok)}
 #topcta{background:var(--term-ok);border:1px solid var(--term-ok);color:#06130d}
 #topcta:hover{filter:brightness(1.07)}
-h1{font-size:clamp(2.2rem,5vw,3.4rem);letter-spacing:-.03em;margin:12vh 0 .3rem;color:#fff}
-.dek{color:var(--term-faint);font-size:1.05rem;margin:0 0 2rem}
+/* one centred stack instead of a 12vh margin that pushed the hero past the
+fold on short viewports; auto margins centre it and the content sets the height. */
+.herobody{flex:1;display:flex;flex-direction:column;justify-content:center;
+max-width:70rem;margin:0 auto;width:100%;padding:3rem 0 0}
+
+h1{font-size:clamp(2.2rem,5vw,3.4rem);line-height:1.08;letter-spacing:-.03em;
+margin:0 0 .6rem;color:#fff;text-wrap:balance}
+.dek{color:var(--term-faint);font-size:clamp(1rem,1.6vw,1.15rem);margin:0 auto 2rem;max-width:34rem}
+/* the hero's one authored glow — signal green, the product's own colour,
+never a category purple that belongs to no token here. */
 .prompt{max-width:34rem;margin:0 auto;width:100%;background:rgba(16,20,24,.92);
-border:1px solid #7a3fd1;border-radius:14px;padding:1.1rem 1.2rem;text-align:left;
-box-shadow:0 0 0 1px rgba(122,63,209,.35),0 18px 60px -12px rgba(122,63,209,.55)}
+border:1px solid var(--term-ok);border-radius:14px;padding:1.1rem 1.2rem;text-align:left;
+box-shadow:0 0 0 1px rgba(95,216,148,.22),0 18px 60px -12px rgba(95,216,148,.45)}
 .prompt p{margin:0 0 .9rem;font-size:1.02rem;line-height:1.7;color:var(--term-text)}
 .prompt button{width:100%;font:600 1rem var(--sans);padding:.8rem;border-radius:9px;
 border:1px solid var(--term-ok);background:var(--term-ok);color:#06130d;cursor:pointer}
 .prompt button:hover{filter:brightness(1.07)}
-/* honest strip: the flow, never invented counts (no fake builders stat) */
-.flowline{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin:2.2rem 0 0;
-font:.82rem var(--mono);color:var(--term-faint)}
+/* honest strip: the flow, never invented counts (no fake builders stat).
+An ordered list, because that is what four numbered steps are; the arrow is
+CSS so screen readers hear the steps, not "right arrow" four times. */
+.flowline{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;
+margin:2.2rem 0 0;padding:0;list-style:none;font:.82rem var(--mono);color:var(--term-faint)}
+.flowline li{display:flex;align-items:center;gap:.6rem}
+.flowline li:not(:last-child)::after{content:"→";color:var(--term-line)}
 .flowline b{color:var(--term-ok);font-weight:600}
-/* proof strip: what the tool does, never invented counts */
 /* gate: the account form, one click behind the hero */
-.gate{display:none;min-height:100vh;grid-template-columns:minmax(22rem,34rem) 1fr}
+.gate{display:none;min-height:100dvh;grid-template-columns:minmax(0,34rem) 1fr}
 body.authed .hero,body.gating .hero{display:none}
 body.gating .gate{display:grid}
+/* min-width:0 — as a grid item it defaults to min-content, so a long board
+name in a shelf card stretched the whole column past a phone viewport. */
 .form{padding:clamp(2rem,6vh,4.5rem) clamp(1.5rem,4vw,3.5rem);display:flex;flex-direction:column;
-justify-content:center;gap:1rem;max-width:30rem;width:100%;margin:0 auto}
+justify-content:center;gap:1rem;max-width:30rem;width:100%;margin:0 auto;min-width:0}
 .form h2{font-size:1.6rem;letter-spacing:-.02em;margin:.5rem 0 0;color:#fff}
 .sub{color:var(--term-faint);font-size:.92rem;margin:0 0 .5rem}
 label{display:grid;gap:.3rem;font-size:.85rem;font-weight:600}
@@ -323,7 +361,22 @@ input:focus{outline:2px solid var(--term-ok);outline-offset:1px;border-color:var
 background:var(--term-ok);color:#06130d;cursor:pointer}
 .form button:hover{filter:brightness(1.07)}
 button.ghost{background:transparent;color:var(--term-text);border-color:var(--term-line)}
+button.ghost:hover{border-color:var(--term-ok);background:rgba(95,216,148,.06)}
+/* the credential form is a stack: full-width submit, then the mode swap.
+Inline-flow buttons sized themselves to their label and read as a mismatched pair. */
+#f{display:grid;gap:.85rem}
+/* shelf controls belong to a logged-in shelf, never to the signup form */
+#promptbox,#newprojbtn,.shelfonly{display:none}
+body.shelf #promptbox{display:flex}
+body.shelf #newprojbtn,body.shelf .shelfonly{display:block}
+:focus-visible{outline:2px solid var(--term-ok);outline-offset:2px}
+/* the gate was a one-way door: entering it hid the hero with no way back */
+.backlink{align-self:start;background:none;border:0;padding:.3rem 0;cursor:pointer;
+color:var(--term-faint);font:.85rem var(--sans)}
+.backlink:hover{color:var(--term-ok)}
+body.shelf .backlink{display:none}
 #err{color:var(--term-bad);font:.85rem var(--mono);min-height:1.4em;margin:0}
+#err:empty{min-height:0}
 #shelf{display:none;gap:.6rem}
 #shelf.has{display:grid}
 .scard{text-align:left;background:var(--term-2);color:var(--term-text);
@@ -332,12 +385,18 @@ border:1px solid var(--term-line);border-radius:10px;padding:.7rem .9rem;cursor:
 .scard b{display:block;font-size:.95rem}
 .scard span{display:block;font-size:.8rem;color:var(--term-faint)}
 .scard small{font:.75rem var(--mono);color:var(--term-faint)}
+/* board names and paths are user data: wrap them, never widen the layout */
+.scard b,.scard span,.scard small{overflow-wrap:anywhere}
 #newboard{display:none;gap:.5rem}
-#newboard.has{display:grid}
-.fine{color:var(--term-faint);font-size:.78rem}
+body.shelf #newboard.has{display:grid}
+#profrow{gap:.5rem}
+body.shelf #profrow{display:flex}
+#profrow input{flex:1;min-width:0}
+#profrow button{white-space:nowrap}
+.fine{color:var(--term-faint);font-size:.78rem;margin:.2rem 0 0}
 .tsec{font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint);margin:.6rem 0 0}
-#promptbox{display:flex;gap:.5rem;margin-bottom:.4rem}
-#promptbox input{flex:1}
+#promptbox{gap:.5rem;margin-bottom:.4rem}  /* display owned by body.shelf above */
+#promptbox input{flex:1;min-width:0}
 #promptbox button{white-space:nowrap}
 /* new-project modal: search + grid + blank CTA over the dimmed shelf.
 Native <dialog>: focus trap, Esc, backdrop — no library, no state. */
@@ -349,53 +408,83 @@ color:var(--term-text);padding:1.2rem;max-width:40rem;width:calc(100vw - 3rem)}
 #npgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.6rem;
 max-height:50vh;overflow:auto}
 #npblank{margin-top:.8rem;width:100%}
-.visual{position:relative;min-height:100vh;overflow:hidden;background:#0a0f14}
+.visual{position:relative;min-height:100dvh;overflow:hidden;background:#0a0f14;margin:0}
 .visual canvas{position:absolute;inset:0;width:100%;height:100%}
-.visual figcaption{position:absolute;left:1.5rem;bottom:1.2rem;right:1.5rem;color:#fff;
-font:.85rem var(--mono);opacity:.85}
-/* collab strip: two live cursors on one board, the realtime story in one row */
-.collab{display:flex;gap:1.2rem;justify-content:center;align-items:stretch;flex-wrap:wrap;
-margin:2.6rem auto 0;max-width:62rem;text-align:left}
-.person{flex:1 1 16rem;background:rgba(16,20,24,.92);border:1px solid var(--term-line);
-border-radius:14px;padding:1rem 1.1rem;position:relative}
-.person h3{margin:0 0 .2rem;font-size:.95rem;color:#fff;font-weight:700}
-.person h3 i{display:inline-block;width:.65rem;height:.65rem;border-radius:50%;margin-right:.45rem}
+/* the caption sat on bare canvas; a scrim keeps it legible over any frame */
+.visual figcaption{position:absolute;left:0;right:0;bottom:0;color:#fff;
+font:.85rem var(--mono);padding:3rem 1.5rem 1.2rem;
+background:linear-gradient(transparent,rgba(6,10,14,.85))}
+/* collab strip: a live crowd on one board, the realtime story in one row */
+/* min-width:0 all the way down: the .mini blocks are white-space:pre, so their
+min-content width (563px) would otherwise blow the grid past a phone viewport. */
+.collab{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(17rem,100%),1fr));
+gap:1.2rem;margin:2.6rem auto 0;max-width:62rem;width:100%;min-width:0;text-align:left}
+.person{background:rgba(16,20,24,.92);border:1px solid var(--term-line);
+border-radius:14px;padding:1rem 1.1rem;position:relative;min-width:0}
+.person b.who{display:block;margin:0 0 .2rem;font-size:.95rem;color:#fff;font-weight:700}
+.person b.who i{display:inline-block;width:.65rem;height:.65rem;border-radius:50%;margin-right:.45rem}
 .person p{margin:.15rem 0 .7rem;font-size:.85rem;color:var(--term-faint)}
 .mini{border:1px solid var(--term-line);border-radius:8px;background:#0a0f14;
-font:.72rem/1.7 var(--mono);color:var(--term-text);padding:.6rem .7rem;white-space:pre}
+font:.72rem/1.7 var(--mono);color:var(--term-text);padding:.6rem .7rem;
+white-space:pre;overflow-x:auto}  /* pre would overflow the card on narrow screens */
 .person small{display:block;margin-top:.6rem;font:.75rem var(--mono);color:var(--term-faint)}
 .person small b{color:var(--term-ok);font-weight:600}
 a{color:var(--term-ok)}
-@media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}}
-@media(prefers-reduced-motion:reduce){.hero canvas,.visual canvas{display:none}}
+/* supported-fabs strip: badge + monogram per fab, links out to capabilities */
+.fabstrip{display:flex;gap:.4rem .8rem;justify-content:center;align-items:center;flex-wrap:wrap;
+margin:2.6rem auto 0;max-width:62rem}
+.fabkicker{font:.72rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint)}
+.fabcell{display:inline-flex;align-items:center;gap:.4rem;text-decoration:none;
+border:1px solid var(--term-line);border-radius:9px;padding:.3rem .55rem .3rem .3rem}
+.fabcell:hover{border-color:var(--term-ok)}
+.fabcell img{display:block;border-radius:5px}
+.fabcell span{font:.72rem var(--mono);color:var(--term-text)}
+@media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}
+.hero{padding:1rem 1.1rem 2.5rem}.herobody{padding-top:2rem}
+/* on a phone the two proof cards stack to 412px and pushed the CTA below the
+fold — the offer and its button come first, the proof follows. */
+.collab{order:2;margin-top:1.8rem}.flowline{order:3}
+.mini{white-space:pre-wrap}}
+/* reduced motion keeps the authored frame — paint() already stops after one
+pass, so hiding the canvas threw away the visual instead of the animation. */
 </style></head><body>
 <!-- landing: hero first, account form one click behind, shelf after login -->
 <header class=hero><canvas id=art aria-hidden=true></canvas>
 <nav class=nav><span class=brand><svg width=22 height=22 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></span>
 <span class=sp></span><button id=loginbtn type=button>Log in</button>
-<button id=topcta type=button>Start designing</button></nav>
-<h1>Design PCBs with AI</h1>
-<p class=dek>What do you want to build today?</p>
-<div class=prompt><p>Describe your board — the copilot drafts the schematic,
-places parts, routes traces. You stay the lead engineer.</p>
-<button id=herogo type=button>Start designing with AI</button></div>
-<div class=flowline><span><b>1</b> idea</span><span>→</span><span><b>2</b> schematic</span><span>→</span><span><b>3</b> layout</span><span>→</span><span><b>4</b> make</span></div>
-<div class=collab aria-label="two engineers editing one board live">
-<div class=person><h3><i style="background:#5fd894"></i>maya</h3>
+<button id=topcta type=button>Start a board together</button></nav>
+<div class=herobody>
+<h1>Your whole team. One board. Zero merge conflicts.</h1>
+<p class=dek>Open a board, send the link, co-edit it live — every cursor, every part move, every net, in real time.</p>
+<div class=collab aria-label="three engineers editing one board live">
+<div class=person><b class=who><i style="background:#5fd894"></i>maya</b>
 <p>dragging the regulator into place</p>
 <div class=mini>fix U1 at 12.4 18.1
 part C3 C0805 100n
 GND :: U1.1 &lt;--&gt; C3.1</div>
 <small><b>● live</b> · rev 42 · pushing</small></div>
-<div class=person><h3><i style="background:#3a7bd5"></i>leo</h3>
+<div class=person><b class=who><i style="background:#3a7bd5"></i>leo</b>
 <p>wiring the sensor net</p>
 <div class=mini>net N_SDA :: U2.5 &lt;--&gt; J1.3
 net N_SCL :: U2.6 &lt;--&gt; J1.4
 route N_SDA on 0</div>
 <small><b>● live</b> · rev 42 · pushing</small></div>
+<div class=person><b class=who><i style="background:#8a2318"></i>priya</b>
+<p>pouring the ground plane</p>
+<div class=mini>pour GND on 0
+keep U1 near C1 3
+power VCC GND</div>
+<small><b>● live</b> · rev 42 · pushing</small></div>
+</div>
+<div class=prompt><p>Plus an AI engine beside you — it drafts the schematic,
+places parts, routes traces. You stay the lead engineer.</p>
+<button id=herogo type=button>Start a board together</button></div>
+<ol class=flowline><li><b>1</b> idea</li><li><b>2</b> schematic</li><li><b>3</b> layout</li><li><b>4</b> make</li></ol>
+/*__FABS__*/
 </div>
 </header>
 <main class=gate><div class=form>
+<button id=back type=button class=backlink><span aria-hidden=true>←</span> Back to the overview</button>
 <div class=brand><svg width=24 height=24 viewBox="0 0 20 20" aria-hidden=true><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#5fd894 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#5fd894 stroke-width=1.8 stroke-linecap=round></line></svg>OCD <em>Studio</em></div>
 <h2 id=title>Create your Studio account</h2>
 <p class=sub id=sub>Create an account to start building hardware, from anywhere.</p>
@@ -411,7 +500,7 @@ route N_SDA on 0</div>
 <input id=npsearch type=search aria-label="search boards and templates" placeholder="Search boards and templates">
 <div id=npgrid></div>
 <button id=npblank type=button>New blank project</button></dialog>
-<div id=profrow style="display:none"><input id=profin aria-label="display name" maxlength=40 placeholder="Display name"><button id=profgo type=button title="save how your name reads on boards and in rooms">Edit profile</button></div>
+<div id=profrow class=shelfonly><input id=profin aria-label="display name" maxlength=40 placeholder="Display name"><button id=profgo type=button title="save how your name reads on boards and in rooms">Save display name</button></div>
 <form id=newboard><label>New board<input id=nbname placeholder=blinky maxlength=32></label>
 <button type=submit>New board</button></form>
 <p class=fine>Local-first: accounts live in this studio only (.ocd-users beside the boards).</p>
@@ -450,16 +539,23 @@ x.fillRect(px-3,oy-5,6,4);x.fillRect(px-3,oy+bh+1,6,4);}
 if(!matchMedia('(prefers-reduced-motion: reduce)').matches)requestAnimationFrame(frame);}
 frame();}
 paint($('art'));paint($('art2'));
-function gate(){document.body.classList.add('gating');}
-$('herogo').onclick=gate;$('topcta').onclick=gate;
+function gate(){document.body.classList.add('gating');
+const f=$('u');if(f&&!f.value)f.focus();}
+$('herogo').onclick=()=>setMode('signup');$('topcta').onclick=()=>setMode('signup');
+$('back').onclick=()=>{document.body.classList.remove('gating');$('err').textContent='';};
 $('loginbtn').onclick=()=>{gate();setMode('login');};
 async function api(p,b){const r=await fetch(p,{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
 async function boot(){const r=await api('/auth/me',{});
-if(r.user){me=r.user;gate();showShelf();}else if(r.needs_setup){setMode('signup');}else setMode('login');}
-function setMode(m){mode=m;gate();
-$('title').textContent=m==='signup'?'Create your Studio account':'Log in to OCD Studio';
+// the hero is the landing page: only an existing session skips it. A logged-out
+// visitor keeps the hero and picks the mode the form will open in.
+if(r.user){me=r.user;gate();showShelf();}else setMode(r.needs_setup?'signup':'login',false);}
+function setMode(m,show=true){mode=m;if(show)gate();
+$('title').textContent=m==='signup'?'Create your Studio account':'Welcome back';
+$('sub').textContent=m==='signup'?'Start building hardware from anywhere — no install, no licence.'
+  :'Log in to open your shelf and pick up where you left off.';
 $('go').textContent=m==='signup'?'Create account':'Log in';
+$('p').setAttribute('autocomplete',m==='signup'?'new-password':'current-password');
 $('swap').textContent=m==='signup'?'Have an account? Log in':'New here? Create an account';}
 $('swap').onclick=()=>setMode(mode==='signup'?'login':'signup');
 $('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';
@@ -469,10 +565,11 @@ const r=await api(mode==='signup'?'/auth/signup':'/auth/login',{user:u,password:
 if(r.error){$('err').textContent=r.error;return;}
 me=r.user||u;showShelf();};
 async function showShelf(){$('f').style.display='none';
-$('promptbox').style.display='';$('profrow').style.display='';
+document.body.classList.add('shelf');  // one class reveals every shelf-only control
 const me0=await api('/auth/me',{});
-if(me0&&me0.display){$('me').textContent=me0.display;$('profin').value=me0.display;}
-$('title').textContent='Welcome, '+me;
+const who=(me0&&me0.display)||me;
+if(me0&&me0.display)$('profin').value=me0.display;
+$('title').textContent='Welcome, '+who;
 $('sub').textContent='Pick a board to open the workshop, or start a new one.';
 const r=await api('/shelf',{});
 const box=$('shelf');box.innerHTML='';box.classList.add('has');
@@ -515,7 +612,7 @@ $('promptbox').onsubmit=async e=>{e.preventDefault();
 $('profgo').onclick=async()=>{
   const r=await api('/auth/profile',{display:$('profin').value});
   if(r.error){$('err').textContent=r.error;return;}
-  $('me').textContent=r.display;$('err').textContent='saved';};
+  $('title').textContent='Welcome, '+r.display;$('err').textContent='saved';};
 $('newboard').onsubmit=async e=>{e.preventDefault();
 const r=await api('/shelf/new',{name:$('nbname').value});
 if(r.error){$('err').textContent=r.error;return;}
@@ -571,10 +668,34 @@ header.top .inner{display:flex;align-items:center;gap:20px;padding:10px 20px;fle
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:1.02rem;letter-spacing:-.02em;color:var(--ink)}
 .brand svg{color:var(--ink)}
 .brand i{font-style:normal;font-weight:400;color:var(--ink-3)}
-.tbar{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;flex:1}
-.grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.lbl{font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-right:2px}
-.grp.status{margin-left:auto}
+.menubar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;flex:1}
+.menubar>details.menu{position:relative;display:inline-block}
+.menubar>details.menu>summary{padding:9px 13px;list-style:none;display:inline-block;cursor:pointer;
+font:600 .9rem/1.3 var(--sans);color:var(--ink);background:var(--card);border:1px solid transparent;border-radius:var(--r-control)}
+.menubar>details.menu>summary::-webkit-details-marker{display:none}
+.menubar>details.menu>summary:hover{background:var(--paper-2)}
+.menubar>details.menu[open]>summary{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+.menubar .mpop{position:absolute;left:0;top:calc(100% + 6px);z-index:5;display:flex;flex-direction:column;
+gap:2px;align-items:stretch;background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+box-shadow:var(--shadow);padding:6px;min-width:15rem;max-width:22rem}
+.menubar .mpop>button{text-align:left;background:none;border:0;border-radius:6px;padding:8px 10px;
+display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.menubar .mpop>button:hover{background:var(--paper-2)}
+.menubar .mpop>label{display:flex;align-items:center;justify-content:space-between;gap:8px;
+font-size:.85rem;color:var(--ink-2);padding:6px 10px;border-radius:6px}
+.menubar .mpop>label:hover{background:var(--paper-2)}
+.menubar .mpop select{max-width:9rem}
+.menubar .mpop details{margin:0}
+.menubar .mpop details>summary{width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:6px}
+.menubar .mpop details>summary:hover{background:var(--paper-2)}
+.menubar .mpop details[open]>:not(summary){position:static;box-shadow:none;border:0;border-top:1px solid var(--line);
+border-radius:0;min-width:0;padding:10px}
+.mrow{display:flex;gap:6px;align-items:center;padding:2px 4px}
+.mrow button{flex:1}
+.mnote{font-size:.78rem;color:var(--ink-3);padding:4px 10px}
+.kbd{font:.72rem var(--mono);color:var(--ink-3);margin-left:auto;padding-left:1rem}
+.mastat{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap}
+.mlive{display:flex;align-items:center;gap:6px;margin-left:8px}
 button,select,input,summary{font:600 .9rem/1.3 var(--sans);color:var(--ink);background:var(--card);border:1px solid var(--line-2);border-radius:var(--r-control);padding:9px 13px;cursor:pointer}
 button:hover,select:hover,summary:hover{background:var(--paper-2)}
 button:active{transform:translateY(1px)}
@@ -658,6 +779,9 @@ section{background:var(--card);border:1px solid var(--line);border-radius:var(--
 #kblist{flex:1;min-height:3rem;overflow:auto;padding:8px 14px}
 #kblist .kbrow{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-radius:4px}
 #kblist .kbrow:hover{background:var(--paper-2)}
+/* quote rows wear the fab badge next to the name */
+#qout .qrow{display:flex;gap:8px;align-items:center;padding:2px 0}
+#qout .qlogo{border-radius:4px;flex:none}
 #kblist button.kbname{flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:var(--signal-ink);
   cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #kblist .kbkind{color:var(--ink-3);font:.72rem var(--mono);font-variant-numeric:tabular-nums}
@@ -751,7 +875,7 @@ canvas{width:100%;height:100%;display:block}
 @media(max-width:760px){main{grid-template-columns:minmax(0,1fr);padding:12px}
 #galwrap,#schwrap,#wrap3d,#vcswrap{grid-column:1}#edwrap,#pcbwrap{min-height:60vh}
 #srcpanels{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
-.grp.status{margin-left:0}}
+.mastat,.mlive{margin-left:0}}
 @media(min-width:1500px){#srcpanels{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-rows:minmax(0,1fr)}}
 /* Flux-dark: the same tokens, re-pointed. One class, no second stylesheet. */
 body.dark{--paper:#101418;--paper-2:#1a2129;--card:#161c22;--line:#2a333d;--line-2:#3a4550;
@@ -775,6 +899,7 @@ body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{grid-c
 <a class=skip href=#ed>skip to the job file</a>
 <header class=top><div class=inner>
 <span class=brand><svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect><path d="M6.5 7.2 9.3 10l-2.8 2.8" fill=none stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round stroke-linejoin=round></path><line x1=11 y1=12.8 x2=14 y2=12.8 stroke=#0f5c37 stroke-width=1.8 stroke-linecap=round></line></svg>OCD Studio <i>board &amp; PCB workshop</i></span>
+<span id=room role=status aria-live=polite class=pill title="who else is on this board right now">solo</span>
 <span id=me class=pill title="logged in as"></span>
 <button id=logoutbtn title="log out of the studio">log out</button>
 <button id=themebtn title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
@@ -958,13 +1083,18 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
     }
     if(edHl.has(r)){ctx.strokeStyle=C.signal;ctx.lineWidth=3; // editor text selection → ring
       ctx.strokeRect(X(p.x-p.w/2),Y(p.y+p.h/2),p.w*s,p.h*s);ctx.lineWidth=1;}
-    // collaborators: whoever has this part selected rings it in their color
+    // collaborators: whoever has this part selected rings it in their color.
+    // Several cursors can share one part — stack the name tags so N users
+    // stay readable instead of overprinting.
+    let stack=0;
     for(const u of collabUsers){if(u.ref!==r||u.name===collabMe)continue;
+      const pad=3+stack*2;
       ctx.strokeStyle=u.color||'#1d5fa8';ctx.lineWidth=2;ctx.setLineDash([4,3]);
-      ctx.strokeRect(X(p.x-p.w/2)-3,Y(p.y+p.h/2)-3,p.w*s+6,p.h*s+6);
+      ctx.strokeRect(X(p.x-p.w/2)-pad,Y(p.y+p.h/2)-pad,p.w*s+pad*2,p.h*s+pad*2);
       ctx.setLineDash([]);ctx.fillStyle=u.color||'#1d5fa8';
       ctx.font='10px ui-monospace,Menlo,monospace';ctx.textAlign='left';
-      ctx.fillText(u.name,X(p.x-p.w/2)-3,Y(p.y+p.h/2)-6);ctx.lineWidth=1;}}
+      ctx.fillText(u.name,X(p.x-p.w/2)-pad,Y(p.y+p.h/2)-pad-3-stack*11);ctx.lineWidth=1;
+      stack++;}}
   // instance groups (block stamping): shared dashed outline + tag, one hue per owner
   const groups={};
   for(const r in st.parts){if(!partShown(r,st))continue;
@@ -1205,11 +1335,16 @@ function collabPaint(users){
   collabUsers=users||[];
   const el=$('room');if(!el)return;
   const others=collabUsers.filter(u=>u.name!==collabMe);
-  el.textContent=others.length
-    ?`${others.length+1} here: `+collabUsers.map(u=>u.name).join(', ')
-    :((collabUsers.length?'solo · '+collabUsers.map(u=>u.name).join(', '):'solo'));
+  // the pill never grows past three names no matter the room size —
+  // the full roster lives in the tooltip.
+  const head=collabUsers.slice(0,3).map(u=>u.name).join(', ')
+    +(collabUsers.length>3?` +${collabUsers.length-3}`:'');
+  el.textContent=others.length?`${others.length+1} here: ${head}`
+    :((collabUsers.length?'solo · '+head:'solo'));
   el.className='pill'+(others.length?' ok':'');
   el.title=collabUsers.map(u=>`${u.name}${u.ref?' on '+u.ref:''}`).join('\n')||'no one else here yet';
+  const note=$('roomnote');
+  if(note)note.textContent=others.length?`live now: ${head}`:'just you here — copy the link to co-edit';
   markDirty();
 }
 let collabSyncSeq=0; // monotonic: a slow sync must not land on a newer room
@@ -1382,6 +1517,24 @@ document.addEventListener('keydown',e=>{
   if(e.target===$('ed')||e.target===$('ask'))return; // typing, not a shortcut
   if(e.key==='l'||e.key==='L'){$('layerbox').open=!$('layerbox').open;}
   else if(e.key==='p'||e.key==='P'){$('partbox').open=!$('partbox').open;}
+});
+// --- menubar: one menu open at a time, Esc closes, Alt+letter jumps -----
+// Native <details> for the popups (no library, same as calc/health/quote
+// before them): JS only enforces exclusivity + mnemonics. Shortcuts fire
+// the same handlers the buttons always had — ids unchanged.
+document.querySelectorAll('.menubar>details.menu').forEach(d=>{
+  d.addEventListener('toggle',()=>{
+    if(!d.open)return;
+    document.querySelectorAll('.menubar>details.menu').forEach(o=>{if(o!==d)o.open=false;});
+  });
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){document.querySelectorAll('.menubar>details.menu').forEach(d=>{d.open=false;});return;}
+  if(!e.altKey||e.ctrlKey||e.metaKey)return;
+  if(e.target===$('ed')||e.target===$('ask'))return;
+  const k=e.key.toLowerCase();
+  const map={b:'m-board',e:'m-edit',g:'m-engines',s:'m-sim',t:'m-tools'};
+  if(map[k]){e.preventDefault();const d=$(map[k]);d.open=!d.open;}
 });
 // --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
 let galSeed=0;
@@ -1596,7 +1749,7 @@ if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open boa
   const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
   if(r.error){$('qout').textContent=r.error;return;}
   $('qout').innerHTML=(r.rows||[]).map(x=>
-    `<div><span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
+    `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="" width=48 height=28>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
     +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
 };
 $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
@@ -1636,6 +1789,12 @@ if($('scango'))$('scango').onclick=async()=>{
       $('scanq').appendChild(b);}
     if(r.draft_error){const w=document.createElement('div');
       w.className='panel-note';w.textContent='draft did not parse: '+r.draft_error;
+      $('scanq').appendChild(w);}
+    if(r.draft&&!r.draft_error){const w=document.createElement('div');
+      w.className='panel-note';
+      const fl=(r.floating||[]).length;
+      w.textContent=`buildability: ${r.wired} parts wired, ${r.drc} DRC error(s)`
+        +(fl?` · ${fl} parts have no nets (photos cannot show them) — wire from the datasheet`:'');
       $('scanq').appendChild(w);}
     (r.questions||[]).forEach(q=>{
       const row=document.createElement('div');row.className='scanqa';
@@ -3125,7 +3284,7 @@ class H(http.server.BaseHTTPRequestHandler):
         # in a proxy, so `python -m apps.studio` is the whole setup.
         user = _authed(self.headers)
         if user is None:
-            body = LOGIN_PAGE.encode()
+            body = LOGIN_PAGE.replace("/*__FABS__*/", fab_strip()).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -3635,6 +3794,10 @@ class H(http.server.BaseHTTPRequestHandler):
                     "questions": r.get("questions", []),
                     "draft": draft, "analysis": report,
                     "draft_error": r.get("draft_error", ""),
+                    "wired": r.get("draft_wired", 0),
+                    "floating": r.get("draft_floating", []),
+                    "drc": r.get("draft_drc_errors", 0),
+                    "drc_lines": r.get("draft_drc", []),
                     "outdir": str(r.get("outdir", ""))})
             elif self.path == "/doctor":  # tooling health, no board needed
                 from ocdcircuit.circuit import Board as _B
