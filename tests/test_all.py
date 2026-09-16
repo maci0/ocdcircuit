@@ -2581,6 +2581,17 @@ assert {n: sorted(p for p in _krt.nets[n].pins) for n in _krt.nets} == \
 _ksb = Board("ksb", 40, 30)
 _ksr = _ksb.import_fp("pcb", path=_ksf)
 assert _ksr["parts"] == len(_ebb.parts) and _ksr["nets"] == len(_ebb.nets)
+# easyeda .sch export + import round-trip (docType 1: LIB/W/N → same nets)
+_esf = _ebb.export("easyeda-sch", outdir=tempfile.mkdtemp())[0]
+_esdoc = _json.loads(open(_esf).read())
+assert _esdoc["head"].startswith("1~")
+_ert = agent.from_ir(foreign.easyeda_sch(_esdoc))
+assert sorted(_ert.parts) == sorted(_ebb.parts)
+assert {n: sorted(p for p in _ert.nets[n].pins) for n in _ert.nets} == \
+    {n: sorted(p for p in _ebb.nets[n].pins) for n in _ebb.nets}
+_esb = Board("esb", 40, 30)
+_esr = _esb.import_fp("easyeda", path=_esf)
+assert _esr["parts"] == len(_ebb.parts) and _esr["nets"] == len(_ebb.nets)
 # lcsc/mpn ride as hidden properties (KiCad→JLC backup path)
 _kl = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcsc=C1 mpn=M1\n"
                   "part C1 C0805 100n\nN :: R1.1 C1.2\n", base=EX)

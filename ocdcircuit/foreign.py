@@ -835,6 +835,179 @@ def easyeda_doc(doc: dict[str, object]) -> object:
     return ir
 
 
+def _ez_sch_pins(raw: str) -> list[tuple[str, float, float]]:
+    """Pin (number, dot) list from a raw schematic LIB record. Each P child
+    splits by ^^ into config, pin-dot, pin-path, name, number — the number
+    text is field 4 of segment 4 (`1~655~29~0~1~start~~11pt`). Config x,y
+    are absolute sheet px (like W wires and N labels): the official cap
+    example puts its LIB at 220,140 with pins at 200,120 and 210,120 —
+    beside the body, not 200px away."""
+    pins: list[tuple[str, float, float]] = []
+    for child in raw.split("#@$")[1:]:
+        if not child.startswith("P~"):
+            continue
+        subs = child.split("^^")
+        cfg = subs[0].split("~")
+        if len(cfg) < 6:
+            continue
+        try:
+            dot = (float(cfg[4]), float(cfg[5]))
+        except ValueError:
+            continue
+        num = ""
+        if len(subs) > 4:
+            nf = subs[4].split("~")
+            if len(nf) > 4 and nf[4].strip():
+                num = nf[4].strip()
+        pins.append((num or str(len(pins) + 1), dot[0], dot[1]))
+    return pins
+
+
+def easyeda_sch(doc: dict[str, object]) -> dict[str, object]:
+    """EasyEDA Std schematic (docType 1) → board IR: LIB symbol instances
+    (package/name params) + W wires joined by shared endpoints + N
+    netlabels / F netflags naming their wire group. Symbol pins attach by
+    pin-dot proximity (10px). Units are sheet px — positions rescale onto a
+    40x30 board. Mirrors kicad_sch_netlist's contract."""
+    shape = doc.get("shape", [])
+    assert isinstance(shape, list)
+    lines: list[list[str]] = []
+    for s in shape:
+        if not isinstance(s, str):
+            continue
+        for seg in s.split("#@$"):
+            lines.append(seg.split("~"))
+    syms: list[dict[str, object]] = []
+    wires: list[tuple[float, float, float, float]] = []
+    labels: list[tuple[float, float, str]] = []
+    for s in shape:
+        if not isinstance(s, str) or not s.startswith("LIB~"):
+            continue
+        f = s.split("#@$")[0].split("~")
+        if len(f) < 4:
+            continue
+        try:
+            lx, ly = float(f[1]), float(f[2])
+        except ValueError:
+            continue
+        kv = f[3].split("`")
+        meta = dict(zip(kv[::2], kv[1::2])) if len(kv) >= 2 else {}
+        syms.append({"ref": meta.get("name", f"U{len(syms) + 1}"),
+                     "fp": meta.get("package", "unknown"),
+                     "value": meta.get("name", ""), "x": lx, "y": ly,
+                     "pins": _ez_sch_pins(s)})
+    for f in lines:
+        tag = f[0] if f else ""
+        if tag == "LIB" and len(f) >= 4:
+            continue
+        if tag == "W" and len(f) >= 2:
+            try:
+                xy = [float(v) for v in f[1].split()]
+            except ValueError:
+                continue
+            for k in range(0, len(xy) - 3, 2):
+                wires.append((xy[k], xy[k + 1], xy[k + 2], xy[k + 3]))
+        elif tag == "N" and len(f) >= 7:
+            try:
+                labels.append((float(f[1]), float(f[2]), f[5]))
+            except ValueError:
+                continue
+        elif tag == "F" and len(f) >= 2:
+            for seg in "~".join(f).split("^^")[1:]:
+                cf = seg.split("~")
+                if len(cf) >= 7 and cf[6] not in ("0", ""):
+                    try:
+                        labels.append((float(f[2]), float(f[3]), cf[0]))
+                    except ValueError:
+                        continue
+                    break
+    parent: dict[int, int] = {}
+
+    def _find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def _union(a: int, b: int) -> None:
+        parent[_find(a)] = _find(b)
+    pts: list[tuple[float, float]] = []
+    for x1, y1, x2, y2 in wires:
+        for ep in ((x1, y1), (x2, y2)):
+            parent[len(pts)] = len(pts)
+            pts.append(ep)
+
+    def _near(pp: tuple[float, float], tol: float = 2.0) -> list[int]:
+        return [j for j, q in enumerate(pts)
+                if abs(q[0] - pp[0]) < tol and abs(q[1] - pp[1]) < tol]
+    for x1, y1, x2, y2 in wires:
+        for ua in _near((x1, y1)):
+            for ub in _near((x2, y2)):
+                _union(ua, ub)
+    for j, qp in enumerate(pts):
+        for k in _near(qp):
+            _union(j, k)
+    groups: dict[int, list[int]] = {}
+    for j in range(len(pts)):
+        groups.setdefault(_find(j), []).append(j)
+    gname: dict[int, str] = {}
+    for g, js in groups.items():
+        gnm = next((t for x, y, t in labels
+                    if any(abs(pts[j][0] - x) < 5.0 and abs(pts[j][1] - y) < 5.0
+                           for j in js)), None)
+        if gnm is not None:
+            gname[g] = gnm
+    from typing import cast as _castezsch
+    nets: dict[str, dict[str, object]] = {}
+    for s in syms:
+        if not s["ref"]:
+            continue
+        for num, px, py in _castezsch(list[tuple[str, float, float]], s["pins"]):
+            best: str | None = None
+            for g, js in groups.items():
+                if g not in gname:
+                    continue
+                if any(abs(pts[j][0] - px) < 10.0 and abs(pts[j][1] - py) < 10.0
+                       for j in js):
+                    best = gname[g]
+                    break
+            if best is None:
+                continue
+            entry = nets.setdefault(best, {"pins": [], "layer": None, "width": 0.3})
+            pins_l = entry["pins"]
+            assert isinstance(pins_l, list)
+            pins_l.append([s["ref"], num])
+    xs = [float(str(s["x"])) for s in syms] or [0.0]
+    ys = [float(str(s["y"])) for s in syms] or [0.0]
+    sx = 40.0 / max(max(xs) - min(xs), 1.0)
+    sy = 30.0 / max(max(ys) - min(ys), 1.0)
+    parts: list[dict[str, object]] = []
+    fps: dict[str, Footprint] = {}
+    for s in syms:
+        ref = str(s["ref"])
+        fpname = str(s["fp"])
+        mypins = sorted({q for n, net in nets.items()
+                         for r, q in _castezsch(list[list[str]], net["pins"])
+                         if r == ref})
+        if not mypins:
+            mypins = [str(i + 1)
+                      for i in range(len(_castezsch(list[object], s["pins"])))]
+        fps.setdefault(fpname, {"w": max(2.0, len(mypins) * 1.27 + 2.0), "h": 5.0,
+                                "pads": {n: (0.0, 0.0, 1.0, 1.0) for n in mypins},
+                                "holes": {}, "bodies": []})
+        parts.append({"ref": ref, "fp": fpname, "value": str(s["value"]),
+                      "x": (float(str(s["x"])) - min(xs)) * sx,
+                      "y": (float(str(s["y"])) - min(ys)) * sy})
+    have = {str(p["ref"]) for p in parts}
+    nets = {n: v for n, v in nets.items()
+            if _castezsch(list[list[str]], v["pins"]) and
+            all(pin[0] in have for pin in _castezsch(list[list[str]], v["pins"]))}
+    return {"board": {"name": str(doc.get("title", "imported")),
+                      "w": 40.0, "h": 30.0, "layers": 2},
+            "parts": parts, "nets": nets, "constraints": [],
+            "_imported_fp": fps}
+
+
 def _sch_pin(p: bytes) -> tuple[str | None, str | None]:
     """Binary SchLib pin payload → (designator, name). Tail holds
     [nlen][name][01][desig]; scan for the 01 marker near the end

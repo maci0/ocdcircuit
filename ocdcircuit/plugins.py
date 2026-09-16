@@ -1428,16 +1428,21 @@ class EagleBoardImporter(Plugin[dict[str, object]]):
 
 
 class EasyedaImporter(Plugin[dict[str, object]]):
-    """Board importer: EasyEDA Std JSON (footprint or PCB doc)."""
+    """Board importer: EasyEDA Std JSON — schematic (docType 1), PCB
+    (docType 3), or footprint (docType 4), sniffed by head."""
     kind, key = "importer", "easyeda"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
         import json
-        from .foreign import easyeda_doc
+        from .foreign import easyeda_doc, easyeda_sch
         path = k.get("path", "")
         assert isinstance(path, str) and path
         with open(path) as f:
-            out = easyeda_doc(json.load(f))
+            doc = json.load(f)
+        assert isinstance(doc, dict)
+        if str(doc.get("head", "")).split("~")[0] == "1":
+            return _board_ir_into(board, easyeda_sch(doc))
+        out = easyeda_doc(doc)
         if isinstance(out, list):  # footprint doc → fp import
             for name, meta in out:
                 _guarded_add(board, name, meta, path)
@@ -1565,6 +1570,18 @@ class EasyedaExporter(Plugin[list[str]]):
         outdir = k.get("outdir", "out")
         assert isinstance(outdir, str)
         return export.export_easyeda(board, outdir)
+
+
+class EasyedaSchExporter(Plugin[list[str]]):
+    """EasyEDA Std schematic JSON (docType 1). Round-trips through
+    importer:easyeda (docType sniffed)."""
+    kind, key = "exporter", "easyeda-sch"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_easyeda_sch(board, outdir)
 
 
 class LintPlugin(Plugin[dict[str, object]]):
@@ -2050,7 +2067,8 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              GreedyLayers, LRouter, MazeRouter, CoarseRouter, WireMaskRouter,
              FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
-             EagleExporter, EasyedaExporter, AltiumExporter, PcadExporter,
+             EagleExporter, EasyedaExporter, EasyedaSchExporter,
+             AltiumExporter, PcadExporter,
              SchLibExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,

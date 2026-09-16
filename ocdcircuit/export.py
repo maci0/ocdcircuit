@@ -1006,6 +1006,91 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def export_easyeda_sch(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.easyeda_sch.json (EasyEDA Std schematic, docType 1):
+    LIB symbol per part on the shared sch_layout grid (P pins at absolute
+    sheet coords, pin numbers in the number-segments), W wires pin-to-rail
+    + chained rail segments, N netlabel per net. Mirrors what
+    foreign.easyeda_sch parses, so export→import round-trips."""
+    import json
+    from .plugins import sch_layout
+    os.makedirs(outdir, exist_ok=True)
+    lay = sch_layout(board)
+    order = lay["order"]
+    assert isinstance(order, list)
+    px = lay["px"]
+    assert isinstance(px, dict)
+    rail_y = lay["rail_y"]
+    assert isinstance(rail_y, dict)
+    from typing import cast
+    top = float(cast(float, lay["top"]))
+
+    def part_pins(r: str) -> list[str]:
+        return sorted({str(q) for _n, _nn in board.nets.items()
+                       for rr, q in _nn.pins if rr == r})
+
+    def lpins(i: int, n: int) -> tuple[float, float]:
+        rows = max(1, (n + 1) // 2)
+        side = -20.0 if i < rows else 20.0
+        j = i if i < rows else i - rows
+        return (side, 10.0 * (rows - 1 - 2 * j))
+
+    shape: list[str] = []
+    pin_pos: dict[tuple[str, str], tuple[float, float]] = {}
+    gid = 0
+
+    def _gid(p: str) -> str:
+        nonlocal gid
+        gid += 1
+        return f"{p}{gid}"
+
+    for r in order:
+        assert isinstance(r, str)
+        p = board.parts[r]
+        pins = part_pins(r)
+        n = len(pins)
+        x, y = float(px[r]), float(top - 20)
+        kids: list[str] = []
+        for i, q in enumerate(pins):
+            dx, dy = lpins(i, n)
+            ex, ey = x + dx, y + dy
+            pin_pos[(r, q)] = (ex, ey)
+            rot = "180" if dx < 0 else "0"
+            kids.append(f"P~show~0~{i + 1}~{ex:.0f}~{ey:.0f}~{rot}~{_gid('gp')}"
+                        f"^^{ex:.0f}~{ey:.0f}"
+                        f"^^M {ex:.0f} {ey:.0f} h {'-10' if dx < 0 else '10'}~#800"
+                        f"^^0~{ex:.0f}~{ey:.0f}~0~{q}~end~~"
+                        f"^^0~{ex:.0f}~{ey - 4:.0f}~0~{i + 1}~start~~")
+        shape.append(f"LIB~{x:.0f}~{y:.0f}~package`{p.fp}`name`{r}`"
+                     f"spicePre`{r[0] if r else 'U'}`~~0~{_gid('g')}"
+                     + "".join("#@$" + k for k in kids))
+    nets = lay["nets"]
+    assert isinstance(nets, list)
+    for nname in nets:
+        y = float(rail_y[str(nname)])
+        xs = sorted(pin_pos.get((r, str(q)), (float(px[r]), y))[0]
+                    for r, q in board.nets[str(nname)].pins if r in px)
+        if not xs:
+            continue
+        for xa, xb in zip(xs, xs[1:]):
+            shape.append(f"W~{xa:.0f} {y:.0f} {xb:.0f} {y:.0f}"
+                         f"~#008800~2~0~none~{_gid('gw')}")
+        shape.append(f"N~{xs[0]:.0f}~{y:.0f}~0~#FF0000~{nname}"
+                     f"~{_gid('gn')}~start~{xs[0] + 2:.0f}~{y:.0f}~Arial~")
+        for r, q in board.nets[str(nname)].pins:
+            if (r, str(q)) not in pin_pos:
+                continue
+            ex, ey = pin_pos[(r, str(q))]
+            shape.append(f"W~{ex:.0f} {ey:.0f} {ex:.0f} {y:.0f}"
+                         f"~#008800~2~0~none~{_gid('gw')}")
+    doc = {"head": "1~1.7.5", "canvas": "CA~1200~1200~#FFFFFF~yes~#CCCCCC~10~1200~1200~line~10~pixel~5~400~300",
+           "shape": shape, "title": board.meta.get("title", board.name)}
+    fn = os.path.join(outdir, f"{board.name}.easyeda_sch.json")
+    open(fn, "w").write(json.dumps(doc))
+    return [fn]
+    """Write <name>.kicad_sch: generic box symbols on the shared sch_layout
+    grid (same picture as the SVG canvas), one wire per pin-to-rail drop,
+    one global_label per net. Validated with `kicad-cli sch erc`."""
 def export_kicad_sch(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.kicad_sch: generic box symbols on the shared sch_layout
     grid (same picture as the SVG canvas), one wire per pin-to-rail drop,
