@@ -658,12 +658,43 @@ def feasible(board: Board, layers: list[int] | None = None) -> dict[int, dict[st
             board.layers = ll
             n = _route(board)
             wl = round(sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in board.traces), 1)
-            out[ll] = {"ok": True, "segs": n, "wirelength": wl}
+            out[ll] = {"ok": True, "segs": n, "wirelength": wl,
+                       "congestion": _congestion(board)}
         finally:
             board.layers = old_layers
             board.traces = old_traces
             board.ctx.rollback(snap)
     return out
+
+
+def _congestion(board: Board) -> dict[str, object]:
+    """Cheap pre-maze difficulty: crossings among the lroute estimate +
+    pin density. No maze burn — the traces are already in hand.
+    crossings/total pairs in [0,1]; dense when pins crowd the board."""
+    segs = [(s.x1, s.y1, s.x2, s.y2, s.layer) for s in board.traces]
+    cross = 0
+    pairs = 0
+    for i in range(len(segs)):
+        x1, y1, x2, y2, la = segs[i]
+        for j in range(i + 1, len(segs)):
+            x3, y3, x4, y4, lb = segs[j]
+            if la != lb:
+                continue
+            pairs += 1
+            # proper intersection of open segments (shared endpoints excluded)
+            d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3)
+            if d == 0:
+                continue
+            ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / d
+            ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / d
+            if 0.0 < ua < 1.0 and 0.0 < ub < 1.0:
+                cross += 1
+    pins = sum(len(net.pins) for net in board.nets.values())
+    area = max(1.0, board.width * board.height)
+    return {"crossings": cross,
+            "pairs": pairs,
+            "ratio": round(cross / pairs, 3) if pairs else 0.0,
+            "pins_per_mm2": round(pins / area, 3)}
 
 
 def _repair(board: Board, rounds: int = 8) -> None:

@@ -1537,7 +1537,8 @@ function drawFeas(r){
   // state is a word: the current layer count is marked, every count reads ok/unroutable
   el.innerHTML='routing feasibility per layer count: '+ks.map(L=>{
     const v=f[L],here=+L===r.layers;
-    return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ');
+    const cg=v.congestion?`, congestion ${v.congestion.crossings}/${v.congestion.pairs} crossings`:'' ;
+    return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}${cg}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ');
 }
 // --- layer and part visibility controls (view state, never a board edit) --
 function renderLayers(st){

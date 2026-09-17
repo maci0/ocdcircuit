@@ -1576,6 +1576,11 @@ assert _call("apply_candidate", {"index": 9, "n": 2, "seed": 3,
                                  "iters": 30})["applied"] is False
 assert cast(dict[str, dict[str, object]],
             _call("feasible", {})["feasible"])["2"]["ok"] is True
+_cg = cast(dict[str, object],
+           cast(dict[str, dict[str, object]],
+                _call("feasible", {})["feasible"])["2"]["congestion"])
+assert set(_cg) == {"crossings", "pairs", "ratio", "pins_per_mm2"}, _cg
+assert 0.0 <= cast(float, _cg["ratio"]) <= 1.0, _cg
 assert _call("apply_patch", {"ops": [{"op": "constrain",
         "c": {"t": "near", "a": "U1", "b": "R1", "w": 1}}]})["applied"] == 1
 # declarative set_state: idempotent, order-independent, atomic
