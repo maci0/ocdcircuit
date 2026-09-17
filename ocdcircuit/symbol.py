@@ -124,11 +124,7 @@ def pin_pos(sym: Symbol, num: str, n_extra: int = 0) -> tuple[float, float, str]
     x = {"left": 0.0, "right": w}.get(side, w / 2)
     y = {"top": 0.0, "bottom": h}.get(side, 1.0 + order * 2.0)
     if side in ("top", "bottom"):
-        counts: dict[int, int] = {}
-        for s, o, _l in pins.values():
-            if s == side:
-                counts[o] = counts.get(o, 0) + 1
-        n = max(len([1 for s, _o, _l in pins.values() if s == side]), 1)
+        n = max(sum(1 for s, _o, _l in pins.values() if s == side), 1)
         x = w * (order + 1) / (n + 1)
     return (x, y, side)
 
