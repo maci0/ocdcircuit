@@ -51,6 +51,44 @@ rec = execute(_cb2, lambda: armed["on"])
 rec()
 assert started == ["a", "b", "ub", "ua"], started
 
+def _check_failed_iterator_cleanup() -> None:
+    for use_fiber in (False, True):
+        context = Context()
+        resources: list[str] = []
+        released: list[str] = []
+        failure = RuntimeError("effect initialization failed")
+        snap = context.snapshot()
+
+        def release() -> None:
+            released.append(resources.pop())
+
+        def apply() -> Iterator[Callable[[], None]]:
+            resources.append("first")
+            yield release
+            resources.append("second")
+            yield release
+            raise failure
+
+        if use_fiber:
+            fiber = context.use((), lambda c: apply())
+            assert fiber.state == Fiber.FAILED
+            assert fiber.error is failure
+        else:
+            try:
+                context.effect(apply)
+            except RuntimeError as error:
+                assert error is failure
+            else:
+                raise AssertionError("failed effect must propagate its error")
+            assert context.snapshot() == snap
+        assert resources == [], resources
+        assert released == ["second", "first"], released
+        context.rollback(snap)
+        assert released == ["second", "first"], released
+
+
+_check_failed_iterator_cleanup()
+
 # Alg 2/6: get/set + proxy access
 c = Context()
 assert c.get("vcc") is None

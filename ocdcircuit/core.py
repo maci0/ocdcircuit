@@ -34,19 +34,25 @@ class UndeclaredAccess(RuntimeError):
 def execute(callback: Callable[[], object], guard: Guard) -> Undo:
     """Drive an effect iterator (paper Alg 1): run the callback, fold each
     yielded inverse into one LIFO composite. A plain callback returning its
-    inverse is the degenerate one-step iterator."""
+    inverse is the degenerate one-step iterator. Failed iteration recovers
+    already-yielded inverses before propagating the error."""
     res = callback()
     inverses: list[Undo] = []
-    if isinstance(res, Iterator):
-        while guard():
-            try:
-                v = next(res)
-            except StopIteration:
-                break
-            if callable(v):
-                inverses.append(cast(Undo, v))
-    elif callable(res):
-        inverses.append(cast(Undo, res))
+    try:
+        if isinstance(res, Iterator):
+            while guard():
+                try:
+                    v = next(res)
+                except StopIteration:
+                    break
+                if callable(v):
+                    inverses.append(cast(Undo, v))
+        elif callable(res):
+            inverses.append(cast(Undo, res))
+    except BaseException:
+        for inv in reversed(inverses):
+            inv()
+        raise
 
     def _recover() -> None:
         for inv in reversed(inverses):
