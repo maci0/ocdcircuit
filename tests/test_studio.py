@@ -825,6 +825,16 @@ def main() -> None:
         tr = cast(list[object], tran["VO"])
         assert len(tr) == 500 and abs(cast(float, tr[-1]) - 5.0) < 0.05, tr[-3:]
         print(f"simulate dc+tran ok (VO final={tr[-1]}V)")
+        # ac sweep: ngspice waves + f-range, or a clean error without it
+        _ac = post(base, "/simulate", {"what": "ac"})
+        if _ac.get("error"):
+            assert "ngspice" in str(_ac["error"]).lower() or \
+                "not found" in str(_ac["error"]).lower(), _ac
+            print("simulate ac ok (no ngspice here, clean error)")
+        else:
+            _acw = cast(dict[str, object], _ac["ac"])
+            assert _acw and _ac.get("f0") == 1.0, _ac
+            print(f"simulate ac ok ({len(cast(list[object], list(_acw.values())[0]))}pts)")
 
         gal = post(base, "/candidates", {"placer": "diffusion", "n": 2,
                                          "seed": 3, "iters": 30})

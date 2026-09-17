@@ -195,11 +195,11 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
   AtlasPCB's fab-side note applies to us too: manufacturers accept
   AI-generated Gerbers but flag aggressive minimum-feature use, copper
   imbalance, missing notes — our fab profiles + DFM honesty are the answer.
-- **Gaps, stated plainly:** no AC-sweep/Bode *UI* (ngspice `sim ac` exists
-  headless), no 340k model library, no live pricing/stock, no ODB++/IPC-2581/
-  STEP, no multiplayer, no datasheet→footprint, no panelization, no SI/PI
-  beyond skew reports, no interactive push-shove. §8 orders them by revenue
-  impact.
+- **Gaps, stated plainly:** no 340k model library, no live pricing/stock,
+  no ODB++/IPC-2581/STEP, no datasheet→footprint, no interactive
+  push-shove, no impedance/PDN solver (closed-form Z0/Zdiff estimates
+  only). Shipped since: AC-sweep/Bode UI, multiplayer, panelization.
+  §8 orders them by revenue impact.
 
 ## 7. Options
 
@@ -227,7 +227,7 @@ offer locally.
 2. Copilot-over-MCP reference config (Claude/DeepSeek system prompt +
    tool policy in-repo; proves the "better than Copilot" claim publicly).
 3. Live sourcing: LCSC price/stock on BOM (unblocks fab-affiliate revenue).
-4. AC-sweep/Bode + model upload in sim (closes the demo gap vs prompt-sim).
+4. ~~AC-sweep/Bode in sim~~ DONE (studio cycle + Bode readout) — model upload still open.
 5. ODB++/IPC-2581/STEP export (enterprise handoff unblock).
 6. Hosted studio (A) only when solve-credits prove demand.
 

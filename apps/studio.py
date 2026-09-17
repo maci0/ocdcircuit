@@ -1753,6 +1753,8 @@ function drawDRC(r){
   if(r.sim&&Object.keys(r.sim).length)h+='<div class=ok>⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')+'</div>';
   if(r.sim_problems&&r.sim_problems.length)h+=r.sim_problems.map(p=>`<div class=err>⚡✗ ${p}</div>`).join('');
   if(r.tran&&Object.keys(r.tran).length)h+='<div class=ok>⚡tran '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')+'</div>';
+  if(r.ac&&Object.keys(r.ac).length){const db=v=>20*Math.log10(Math.max(1e-12,Math.abs(v)));
+    h+='<div class=ok>⚡ac '+Object.entries(r.ac).map(([n,w])=>`${n} ${db(w[w.length-1]).toFixed(1)}dB@${r.f1||''}Hz [${db(Math.max(...w.map(Math.abs))).toFixed(1)}dB pk] (${w.length}pts)`).join(' · ')+'</div>';}
   d.innerHTML=h;
   drawTidy(r);
 }
@@ -1904,14 +1906,17 @@ $('dl').onclick=async()=>{ // cycle svg → sch → png → xray (shift-click ba
 };
 let dlIdx=0;
 let simWhat='dc';
-$('simbtn').onclick=async()=>{ // dc ⇄ tran on shift-click
-  if(window.event&&window.event.shiftKey)simWhat=simWhat==='dc'?'tran':'dc';
+$('simbtn').onclick=async()=>{ // dc → tran → ac cycle on shift-click
+  if(window.event&&window.event.shiftKey)
+    simWhat=simWhat==='dc'?'tran':simWhat==='tran'?'ac':'dc';
   $('simbtn').textContent=`sim ${simWhat}`;
+  $('simbtn').title=`simulate the current board (shift-click: ${simWhat==='dc'?'tran':simWhat==='tran'?'ac':'dc'})`;
   await withBusy($('simbtn'),`sim ${simWhat}…`,async()=>{
     const r=await api('/simulate',{what:simWhat});
     if(r.error){statMsg(r.error);return;}
     if(r.sim&&Object.keys(r.sim).length)S.sim=r.sim;
     if(r.tran&&Object.keys(r.tran).length)S.tran=r.tran;
+    if(r.ac&&Object.keys(r.ac).length)S.ac=r.ac;
     statMsg('',true);drawDRC(S);
   });
 };
@@ -4662,23 +4667,45 @@ class H(http.server.BaseHTTPRequestHandler):
                 except (ValueError, KeyError, AssertionError) as e:
                     self._send({"error": _exc_for_log(e)})
                     return
-            elif self.path == "/simulate":  # dc | tran on current text
+            elif self.path == "/simulate":  # dc | tran | ac on current text
                 what = str(req.get("what", "dc"))
                 b = agent.loads(H.src_text, base=BASE)
                 if not any(c.get("t") == "sim" for c in b.constraints):
                     self._send({"error": "no sim lines (e.g. `sim vcc VCC 9`)"})
+                elif what == "ac":
+                    try:
+                        res = b.simulate("ngspice", what="ac")
+                    except (ValueError, KeyError, AssertionError,
+                            RuntimeError, OSError) as e:
+                        self._send({"error": _exc_for_log(e)})
+                        return
+                    ac = res.get("ac")
+                    assert ac is None or isinstance(ac, dict)
+                    self._send({
+                        "sim": {},
+                        "tran": {},
+                        "ac": {str(k): [round(float(x), 3) for x in v]
+                               for k, v in ac.items()}
+                        if isinstance(ac, dict) else {},
+                        "f0": res.get("f0"), "f1": res.get("f1")})
                 else:
-                    res = b.simulate(what=what)
+                    res = b.simulate(**({"what": what} if what != "dc" else {}))
                     waves = res.get("waves")
                     assert waves is None or isinstance(waves, dict)
                     nets = res.get("nets")
                     assert nets is None or isinstance(nets, dict)
+                    ac = res.get("ac")
+                    assert ac is None or isinstance(ac, dict)
                     self._send({
                         "sim": {str(k): round(float(v), 3) for k, v in nets.items()}
                         if isinstance(nets, dict) else {},
                         "tran": {str(k): [round(float(x), 3) for x in v]
                                  for k, v in waves.items()}
-                        if isinstance(waves, dict) else {}})
+                        if isinstance(waves, dict) else {},
+                        "ac": {str(k): [round(float(x), 3) for x in v]
+                               for k, v in ac.items()}
+                        if isinstance(ac, dict) else {},
+                        "f0": res.get("f0"), "f1": res.get("f1")})
             elif self.path == "/undo":
                 if len(H.hist) < 2:
                     self._send({"error": "nothing to undo"})

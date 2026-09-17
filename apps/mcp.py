@@ -487,7 +487,7 @@ TOOLS: dict[str, object] = {
     "quote": (t_quote, {"qty?": 5, "fabs?": "[fab keys]", "no_parts?": "bare PCB only"}),
     "calc": (t_calc, {"what": "trace|amps|via|divider|pick|z0|zdiff",
                         "amps": 1.0}),
-    "simulate": (t_sim, {"what": "dc|tran", "key?": "mna|ngspice|gates",
+    "simulate": (t_sim, {"what": "dc|tran|ac", "key?": "mna|ngspice|gates",
                            "t_end?": "tran end", "steps?": "tran steps",
                            "ticks?": "gates ticks"}),
     "use_plugin": (t_use, {"kind": "kind", "key": "key"}),
