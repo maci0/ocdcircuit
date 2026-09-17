@@ -1450,7 +1450,9 @@ with tempfile.TemporaryDirectory() as _kbt:
     _err = os.path.join(_kbt, "errata.txt")
     open(_err, "w").write("rev B: R7 -> 0R\n")
     assert _kbs.add(_err)["added"] == "errata.txt"
-    assert _kbs.add(_err)["added"] == "errata-2.txt"  # a clash never clobbers
+    assert _kbs.add(_err)["added"] == "errata.txt"
+    open(_err, "w").write("rev C: R7 -> 1R\n")
+    assert _kbs.add(_err)["added"] == "errata-2.txt"
     _hits = cast(list[dict[str, object]], _kbs.search("pulldown")["hits"])
     assert len(_hits) == 1 and _hits[0]["doc"] == "NOTES.md" and _hits[0]["line"] == 2
     assert _kbs.search("zzz-nothing")["hits"] == []

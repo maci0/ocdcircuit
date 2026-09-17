@@ -21,6 +21,7 @@ through LCSC's public product endpoint. Anything else is left to the human.
 from __future__ import annotations
 from .util import numpy as _numpy
 import base64
+import filecmp
 import json
 import math
 from array import array
@@ -832,16 +833,43 @@ class KB:
             cand = f"{stem}-{i}{ext}"
         return os.path.join(d, cand)
 
+    def _copy_source(self, src: str, name: str) -> str:
+        n = _clean(name)
+        directory = self.ds if n.lower().endswith(".pdf") else self.dir
+        os.makedirs(directory, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".kb-", suffix=".tmp")
+        os.close(fd)
+        try:
+            shutil.copy2(src, tmp)
+            with open(tmp, "rb") as f:
+                os.fsync(f.fileno())
+            stem, ext = os.path.splitext(n)
+            candidate, i = n, 1
+            while True:
+                dest = os.path.join(directory, candidate)
+                try:
+                    os.link(tmp, dest)
+                    return dest
+                except FileExistsError:
+                    if (not os.path.islink(dest) and os.path.isfile(dest)
+                            and filecmp.cmp(tmp, dest, shallow=False)):
+                        return dest
+                i += 1
+                candidate = f"{stem}-{i}{ext}"
+        finally:
+            os.unlink(tmp)
+
     # cordis-boundary: file + network emission (outside-context by §6.1 — a
     # fetched datasheet cannot be un-emitted). Compensate by deleting the name
     # this returns; sources.tsv keeps the provenance to find it again.
     def add(self, src: str | None = None, name: str | None = None,
             text: str | None = None) -> dict[str, object]:
         """Bring a doc in: a URL (`https://…/ds.pdf`), a local path, or text
-        straight from the caller. URL/paths keep a sources.tsv line.
+        straight from the caller. URLs keep a sources.tsv line.
 
-        Re-adding the same URL returns the existing file — a retry must not
-        mint `name-2.pdf` and another sources.tsv row."""
+        Re-adding the same URL returns the existing file. Local files reuse
+        a matching name and content, including numbered collision variants;
+        different bytes get a new name without overwriting existing files."""
         if text is not None:
             dest = self._target(name or "note.md")
             os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -870,9 +898,7 @@ class KB:
             return {"added": rel, "bytes": size, "url": src}
         if not os.path.isfile(src):
             raise ValueError(f"no such file {src!r} (or pass an http(s) url)")
-        dest = self._target(name or src)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copy2(src, dest)
+        dest = self._copy_source(src, name or src)
         return {"added": os.path.relpath(dest, self.dir),
                 "bytes": os.path.getsize(dest), "from": os.path.abspath(src)}
 
@@ -951,7 +977,8 @@ if __name__ == "__main__":  # self-check: ingest → traverse → search → pag
         assert cast(list[object], k.search("zzz")["hits"]) == []
         r = k.read("NOTES.md", start=2, lines=1)
         assert r["text"] == "Q1 gate needs 10k pulldown" and r["total_lines"] == 2, r
-        # a second file with the same name must not clobber the first
+        assert k.add(note)["added"] == "errata.txt"
+        open(note, "w", encoding="utf-8").write("rev C: R7 must be 1R\n")
         assert k.add(note)["added"] == "errata-2.txt"
         try:
             k.read("../../etc/passwd")

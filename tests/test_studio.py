@@ -157,12 +157,13 @@ class KnowledgebaseImportTests(unittest.TestCase):
                         response = send.call_args.args[0]
                         if allowed:
                             self.assertNotIn("error", response)
+                            self.assertEqual(response["added"], "notes.md")
                             self.assertEqual(kb.text(response["added"]),
                                              "project notes\n")
                         else:
                             self.assertIn("outside the project root",
                                           response["error"])
-                self.assertEqual(len(kb.docs()), 2)
+                self.assertEqual(len(kb.docs()), 1)
 
 
 class UploadTests(unittest.TestCase):
@@ -2007,7 +2008,8 @@ def main() -> None:
             # lexical fallback: substring match only — "voltage" is not in
             # "volts", so empty passages here are correct, not a failure
             kadd = post(kbase, "/kb/add", {"src": os.path.join(kd, "kb", "NOTES.md")})
-            assert "NOTES-2.md" in str(kadd.get("added")), kadd  # never clobbers
+            assert kadd.get("added") == "NOTES.md", kadd
+            assert post(kbase, "/kb/list", {})["docs"] == kl["docs"]
             kbadadd = post(kbase, "/kb/add", {"src": "https://example.invalid/x.pdf"})
             assert "error" in kbadadd, kbadadd
             # fetch runs in a worker thread (this server is single-threaded) and
