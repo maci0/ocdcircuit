@@ -868,7 +868,7 @@ def main() -> None:
         assert "id=app" in _w, "mount point missing from the shell"
         assert "withBusy" in _wjs, "long-action busy feedback missing"
         assert "fromTemplate" in _lpjs, "template double-click guard missing"
-        assert "one turn at a time" in _wjs, "chat submit busy guard missing"
+        assert "if(!text||(go&&go.disabled)||$('chatclear').disabled)return false;" in _wjs, "chat submit busy guard missing"
         assert "download ${key}" in _wjs or "download ${" in _wjs, "download label must stay a word"
         assert "sim ${simWhat}" in _wjs or "sim ${" in _wjs, "sim label must stay a word"
         # modal lives on the landing page, but its data path is the shelf:
