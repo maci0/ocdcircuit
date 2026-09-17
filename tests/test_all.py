@@ -3728,6 +3728,14 @@ assert "pdftotext" in _doc_names
 assert "mypy" in _doc_names and "ruff" in _doc_names
 assert "pillow" in _doc_names and "numpy" in _doc_names and "rich" in _doc_names
 assert "env:OCD_LLM_BASE" in _doc_names and "env:OCD_LLM_KEY" in _doc_names
+# panel-fit: blinky fits its fab; an oversize panel fails the check
+assert any(str(c.get("name")) == "panel-fit" and c.get("ok")
+           for c in _doc_checks), _doc_checks
+_big = agent.loads("board t 300x300 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n"
+                   "panel 2x2 gap 2\n", base=EX)
+_bigr = cast(dict[str, object], _doc.run(_big))
+assert any(str(c.get("name")) == "panel-fit" and not c.get("ok")
+           for c in cast(list[dict[str, object]], _bigr["checks"])), _bigr
 _key_row = next(c for c in _doc_checks if c.get("name") == "env:OCD_LLM_KEY")
 assert _key_row["detail"] in ("set", "unset")  # never the raw secret
 assert _key_row["ok"] is True

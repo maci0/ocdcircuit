@@ -131,6 +131,24 @@ def doctor(board: Board | None = None) -> dict[str, object]:
                 add(f"plugin:{kind}", True, f"{kind}:{active.key}")
             except (KeyError, AssertionError) as e:
                 add(f"plugin:{kind}", False, str(e))
+        # panel fit: tiled outer dims must fit the board's fab max size
+        from . import fab as _fabmod
+        from .export import panel_offsets as _poffs
+        try:
+            prof = _fabmod.get(board.fab)
+            offs = _poffs(board)
+            pw = max(ox for ox, _ in offs) + board.width
+            ph = max(oy for _, oy in offs) + board.height
+            from typing import cast
+            mw = float(cast(float, prof.get("max_w", 0) or 0))
+            mh = float(cast(float, prof.get("max_h", 0) or 0))
+            fits = (not mw or pw <= mw) and (not mh or ph <= mh)
+            add("panel-fit", fits,
+                f"{pw:g}x{ph:g}mm vs {prof.get('name', board.fab)} "
+                f"max {mw:g}x{mh:g}mm" if mw and mh else
+                f"{pw:g}x{ph:g}mm (no fab max recorded)")
+        except (KeyError, ValueError) as e:
+            add("panel-fit", False, str(e))
     from . import envcfg
     for row in envcfg.summary():
         add(str(row["name"]), bool(row["ok"]), str(row["detail"]))
