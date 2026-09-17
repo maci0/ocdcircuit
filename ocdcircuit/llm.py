@@ -170,11 +170,25 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
                        f"{detail}{hint}. Set OCD_LLM_MODEL.") from e
     try:
         doc = json.loads(raw)
-        content = doc["choices"][0]["message"]["content"]
-        # some endpoints return null content on refusal / empty choice
-        if content is None:
-            raise LLMError(f"empty content from {c['base']} "
-                           f"(finish_reason={doc['choices'][0].get('finish_reason')!r})")
+        if not isinstance(doc, dict):
+            raise ValueError("response must be an object")
+        choices = doc.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("choices must be a nonempty list")
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            raise ValueError("choice must be an object")
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise ValueError("message must be an object")
+        reason = choice.get("finish_reason")
+        if reason is not None and reason != "stop":
+            raise LLMError(f"incomplete or unsupported completion from {c['base']}")
+        if message.get("refusal"):
+            raise LLMError(f"completion refused by {c['base']}")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise LLMError(f"expected nonempty text content from {c['base']}")
         # token counts are the only early signal of spend; surface them when
         # the endpoint reports usage (many local servers omit the field)
         usage = doc.get("usage")
@@ -186,7 +200,7 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
             print(f"llm: {c['model']} tokens "
                   f"prompt={pt} completion={ct} total={tt}",
                   file=sys.stderr)
-        return str(content)
+        return content
     except LLMError:
         raise
     except (ValueError, KeyError, IndexError, TypeError) as e:
@@ -509,6 +523,54 @@ def _selfcheck() -> None:
                {"fs.read": lambda _p, _b: "", "fs.list": lambda p, _b: ""},
                chat_fn=fake7)
     assert out7["reply"] == "ok", out7
+
+    from unittest.mock import Mock, patch
+
+    endpoint = {"base": "http://localhost/v1", "key": "", "model": "test"}
+    valid: dict[str, object] = {
+        "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}]}
+    with patch(__name__ + ".cfg", return_value=endpoint):
+        for response in (valid, {"choices": [{"message": {"content": "hello"}}]},
+                         {"choices": [{"message": {"content": "hello"},
+                                        "finish_reason": None}]}):
+            with patch(__name__ + "._post_json",
+                       return_value=json.dumps(response).encode("utf-8")):
+                assert chat([]) == "hello"
+        invalid: list[object] = [None, [], {}, {"choices": []},
+                                 {"choices": {}}, {"choices": [None]},
+                                 {"choices": [{"message": []}]}]
+        content: object
+        reason: object
+        for content in (None, "", " \n", 1, True, {}, ["hello"]):
+            invalid.append({"choices": [{"message": {"content": content},
+                                         "finish_reason": "stop"}]})
+        for reason in ("length", "content_filter", "tool_calls", "unknown", []):
+            invalid.append({"choices": [{"message": {"content": "partial"},
+                                         "finish_reason": reason}]})
+        invalid.append({"choices": [{"message": {"content": "hello",
+                                                  "refusal": "refused"},
+                                     "finish_reason": "stop"}]})
+        for doc in invalid:
+            with patch(__name__ + "._post_json",
+                       return_value=json.dumps(doc).encode("utf-8")):
+                try:
+                    chat([])
+                except LLMError:
+                    pass
+                else:
+                    raise AssertionError(f"chat accepted invalid response: {doc!r}")
+        partial = {"choices": [{"message": {
+            "content": "```fs.read: board.ocd\n```"}, "finish_reason": "length"}]}
+        read_tool = Mock(return_value="")
+        with patch(__name__ + "._post_json",
+                   return_value=json.dumps(partial).encode("utf-8")):
+            try:
+                run([], {"fs.read": read_tool})
+            except LLMError:
+                pass
+            else:
+                raise AssertionError("run accepted a truncated completion")
+            read_tool.assert_not_called()
 
 
 if __name__ == "__main__":
