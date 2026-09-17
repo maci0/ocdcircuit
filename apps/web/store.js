@@ -27,6 +27,11 @@ const state = {
   chatWhere: '',      // the open board's path, in the agent panel header
   msgs: [],           // agent log, ordered: msg | plan | log | prop entries
   followups: [],      // chips under the composer: [{label, title}]
+  vcsNote: '',        // "branch · clean|uncommitted" or the not-a-repo note
+  vcsRevs: [],        // [{hash, date, subject}]
+  vcsMsg: '',         // shown instead of the list when there is no repo
+  vcsOpen: '',        // hash whose diff is expanded
+  vcsDiff: '',        // that diff's text
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

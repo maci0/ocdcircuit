@@ -164,3 +164,21 @@ export const Toast = () => {
   const t = useUI().toast;
   return t ? html`<div class=toast role=status aria-live=polite>${t}</div>` : null;
 };
+
+// revisions: the git log of the board directory. Clicking a row asks the
+// server for that commit's diff; the diff <pre> is rendered right after the
+// row it belongs to, and only one is ever open.
+export const VcsPanel = () => {
+  const s = useUI();
+  return html`<section id=vcswrap>
+    <header class=panel-head><span class=panel-title>revisions</span>
+      <span class=panel-note id=vcsnote>${s.vcsNote}</span>
+      <span class=panel-note>git history of the board directory</span></header>
+    <div id=vcs>${s.vcsMsg
+      ? s.vcsMsg
+      : s.vcsRevs.map(c => html`<button type=button class=rev key=${c.hash}
+          data-hash=${c.hash} aria-label=${'show diff for ' + c.hash + ' ' + c.subject}
+          ><span class=rh>${c.hash}</span><span class=rd>${c.date}</span
+          ><span class=rs>${c.subject}</span></button>${s.vcsOpen === c.hash
+            ? html`<pre>${s.vcsDiff}</pre>` : ''}`)}</div></section>`;
+};

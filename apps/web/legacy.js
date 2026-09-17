@@ -1441,29 +1441,26 @@ $('chat').addEventListener('click',e=>{ // follow-up chip
 });
 async function loadVCS(){
   const r=await api('/vcs',{path:SRCREL||null});
-  if(r.error){$('vcsnote').textContent=r.error;return;}
+  if(r.error){ui.set({vcsNote:r.error,vcsRevs:[],vcsMsg:'',vcsOpen:'',vcsDiff:''});return;}
   VC=r.status||{};
-  $('vcsnote').textContent=VC.repo
+  const note=VC.repo
     ? `${VC.branch} · `+(VC.dirty?'uncommitted changes in '+VC.board:'clean')
     : 'not a git repository';
-  const box=$('vcs');box.innerHTML='';
-  if(!VC.repo){box.textContent='commit from the toolbar once this directory is a repo';return;}
-  (r.log||[]).forEach(c=>{
-    const d=document.createElement('button');d.type='button';d.className='rev';
-    d.setAttribute('aria-label','show diff for '+c.hash+' '+c.subject);
-    const h=document.createElement('span');h.className='rh';h.textContent=c.hash;
-    const dt=document.createElement('span');dt.className='rd';dt.textContent=c.date;
-    const s=document.createElement('span');s.className='rs';s.textContent=c.subject;
-    d.append(h,dt,s);
-    d.onclick=async()=>{
-      const x=await api('/vcs/diff',{hash:c.hash});
-      const pre=document.createElement('pre');pre.textContent=x.error||x.diff;
-      const old=box.querySelector('pre');if(old)old.remove();
-      d.after(pre);
-    };
-    box.appendChild(d);
-  });
+  if(!VC.repo){
+    ui.set({vcsNote:note,vcsRevs:[],vcsOpen:'',vcsDiff:'',
+      vcsMsg:'commit from the toolbar once this directory is a repo'});
+    return;
+  }
+  ui.set({vcsNote:note,vcsMsg:'',vcsOpen:'',vcsDiff:'',
+    vcsRevs:(r.log||[]).map(c=>({hash:c.hash,date:c.date,subject:c.subject}))});
 }
+// one diff at a time, rendered after the rev it belongs to
+$('vcs').addEventListener('click',async e=>{
+  const b=e.target.closest('button.rev');
+  if(!b)return;
+  const x=await api('/vcs/diff',{hash:b.dataset.hash});
+  ui.set({vcsOpen:b.dataset.hash,vcsDiff:x.error||x.diff});
+});
 async function commitBoard(){
   if(!VC.repo){statMsg('not a git repository');return;}
   const m=prompt('commit message',(SRCREL||'board')+': ');

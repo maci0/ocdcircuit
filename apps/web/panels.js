@@ -7,7 +7,7 @@
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
 import { ChatPanel, CuRows, MarkRows, PartBlock, DrcStrip, TidyBlock,
-         TreePanel } from './views.js';
+         TreePanel, VcsPanel } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
@@ -69,12 +69,6 @@ const InspectorPanel = () => html`<section id=wrap3d>
   <div id=xraystat role=status aria-live=polite></div>
   <div id=xraydivs></div>
   <${TidyBlock} /></section>`;
-
-const VcsPanel = () => html`<section id=vcswrap>
-  <header class=panel-head><span class=panel-title>revisions</span>
-    <span class=panel-note id=vcsnote></span>
-    <span class=panel-note>git history of the board directory</span></header>
-  <div id=vcs></div></section>`;
 
 const ScanPanel = () => html`<section id=scanwrap>
   <header class=panel-head><span class=panel-title>photo scan</span>

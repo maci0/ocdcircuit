@@ -278,6 +278,13 @@ def main() -> None:
     os.makedirs(os.path.join(troot, "sub"), exist_ok=True)
     open(os.path.join(troot, "notes.md"), "w").write("notes for the board\n")
     open(os.path.join(troot, "sub", "inner.md"), "w").write("inner\n")
+    # a real repo in the throwaway root: the revisions panel lists commits and
+    # shows a diff, so it needs history to render
+    for _g in (["init", "-q"], ["add", "-A"],
+               ["-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                "commit", "-q", "-m", "fixture: boards"]):
+        subprocess.run(["git", *_g], cwd=troot, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     env = dict(os.environ, OCD_PORT=str(port), OCD_ROOT=troot)
     srv = subprocess.Popen([sys.executable, "-m", "apps.studio",
                             os.path.join(troot, "blinky_555.ocd")],
@@ -1178,6 +1185,32 @@ def main() -> None:
                             break
                     else:
                         raise AssertionError("up-row did not return to the root")
+                    # revisions: the git log renders, a click asks for that
+                    # commit's diff, and only one diff is ever open
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#vcs button.rev').length"))) >= 1, \
+                        "revision rows missing"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#vcsnote').textContent")).strip(), \
+                        "revision note missing"
+                    _cdp.eval("(()=>{document.querySelector('#vcs button.rev').click();"
+                              "return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if int(str(_cdp.eval("document.querySelectorAll('#vcs pre').length"))):
+                            break
+                    else:
+                        raise AssertionError("revision diff never opened")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#vcs pre').textContent")).strip(), \
+                        "empty diff"
+                    # a second click moves the one diff, it does not add one
+                    _cdp.eval("(()=>{const r=document.querySelectorAll('#vcs button.rev');"
+                              "if(r.length>1)r[1].click();return 1;})()")
+                    time.sleep(1.5)
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#vcs pre').length"))) == 1, \
+                        "more than one diff open"
                     # the agent log and the tool readouts are components as
                     # well: the preview above must be one .msg with the agent's
                     # own name, and the calculators answer from state
