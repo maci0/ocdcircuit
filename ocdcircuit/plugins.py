@@ -408,6 +408,17 @@ class PcadExporter(Plugin[list[str]]):
         return export.export_pcad(board, outdir)
 
 
+class Ipc2581Exporter(Plugin[list[str]]):
+    """IPC-2581 subset XML (enterprise handoff — subset, see export)."""
+    kind, key = "exporter", "ipc2581"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_ipc2581(board, outdir)
+
+
 class BundleExporter(Plugin[list[str]]):
     """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready.
     cordis-boundary: file emission (outside-context by §6.1); withheld
@@ -2068,7 +2079,7 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
              EagleExporter, EasyedaExporter, EasyedaSchExporter,
-             AltiumExporter, PcadExporter,
+             AltiumExporter, PcadExporter, Ipc2581Exporter, StepExporter,
              SchLibExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,

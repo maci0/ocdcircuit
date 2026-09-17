@@ -196,9 +196,10 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
   AI-generated Gerbers but flag aggressive minimum-feature use, copper
   imbalance, missing notes — our fab profiles + DFM honesty are the answer.
 - **Gaps, stated plainly:** no 340k model library, no live pricing/stock,
-  no ODB++/IPC-2581/STEP, no datasheet→footprint, no interactive
+  no ODB++, no datasheet→footprint, no interactive
   push-shove, no impedance/PDN solver (closed-form Z0/Zdiff estimates
-  only). Shipped since: AC-sweep/Bode UI, multiplayer, panelization.
+  only). Shipped since: AC-sweep/Bode UI, multiplayer, panelization,
+  STEP, IPC-2581 subset.
   §8 orders them by revenue impact.
 
 ## 7. Options

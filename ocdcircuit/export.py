@@ -899,6 +899,85 @@ def export_altium(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def export_ipc2581(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.xml (IPC-2581 subset for enterprise handoff: header,
+    stackup, components, netlist, per-layer copper features, drill).
+    Subset, honestly labeled: no soldermask/paste/profile geometry, no
+    impedance tables — Gerbers stay the manufacturing source of truth."""
+    from xml.sax.saxutils import escape as _esc
+    from .parts import hole_drill, pad_size, pads_of
+    os.makedirs(outdir, exist_ok=True)
+    lib = board._lib()
+    L: list[str] = []
+    A = L.append
+    A('<?xml version="1.0" encoding="utf-8"?>')
+    A('<Content xmlns="http://www.ipc.org/2581" revision="B">')
+    A(f"<Header><Title>{_esc(board.name)}</Title>"
+      f"<Creator>ocdcircuit</Creator></Header>")
+    A("<LogisticHeader>")
+    A(f"<Board><Thickness>1.6</Thickness><OverallLayers>{board.layers}</OverallLayers></Board>")
+    for ll in range(board.layers):
+        nm = "TOP" if ll == 0 else "BOT" if ll == board.layers - 1 else f"IN{ll}"
+        A(f'<StackupLayer sequence="{ll + 1}" name="{nm}" type="COPPER"/>')
+    A("</LogisticHeader>")
+    A("<Ecad><CadHeader/>")
+    A("<Step name=\"1\">")
+    A("<Datum>MM</Datum>")
+    A("<Components>")
+    for p in sorted(board.parts.values(), key=lambda q: q.ref):
+        A(f'<Component refDes="{_esc(p.ref)}" packageRef="{_esc(p.fp)}" '
+          f'value="{_esc(p.value)}">'
+          f'<SetX>{p.x:.3f}</SetX><SetY>{p.y:.3f}</SetY></Component>')
+    A("</Components>")
+    A("<NetList>")
+    for n in sorted(board.nets):
+        net = board.nets[n]
+        A(f'<Net netNode="{_esc(n)}">')
+        for r, pin in sorted(net.pins):
+            A(f'<Pin refDes="{_esc(r)}" pinNumber="{_esc(str(pin))}"/>')
+        A("</Net>")
+    A("</NetList>")
+    for ll in range(board.layers):
+        A(f'<LayerFeature name="{"TOP" if ll == 0 else "BOT" if ll == board.layers - 1 else f"IN{ll}"}">')
+        for p in board.parts.values():
+            for pin in pads_of(p.fp, lib):
+                x, y = board.pad_pos(p.ref, pin)
+                pw, ph = pad_size(p.fp, pin, lib)
+                A(f'<Pad netNode="{_esc(_net_of(board, p.ref, pin))}" '
+                  f'x="{x:.3f}" y="{y:.3f}" width="{pw:.3f}" height="{ph:.3f}"/>')
+        for t in board.traces:
+            if t.layer % board.layers == ll:
+                A(f'<Trace netNode="{_esc(t.net)}" '
+                  f'x1="{t.x1:.3f}" y1="{t.y1:.3f}" '
+                  f'x2="{t.x2:.3f}" y2="{t.y2:.3f}" width="{t.width:.3f}"/>')
+        A("</LayerFeature>")
+    A("<Drill>")
+    seen: set[tuple[float, float, float]] = set()
+    for p in board.parts.values():
+        for pin in pads_of(p.fp, lib):
+            dr = hole_drill(p.fp, pin, lib)
+            if dr > 0:
+                x, y = board.pad_pos(p.ref, pin)
+                seen.add((round(x, 3), round(y, 3), dr))
+    for t in board.traces:
+        if t.via:
+            seen.add((round(t.x1, 3), round(t.y1, 3), 0.4))
+    for x, y, dr in sorted(seen):
+        A(f'<Hole x="{x:.3f}" y="{y:.3f}" diameter="{dr:.3f}"/>')
+    A("</Drill>")
+    A("</Step></Ecad></Content>")
+    fn = os.path.join(outdir, f"{board.name}.xml")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
+    return [fn]
+
+
+def _net_of(board: Board, ref: str, pin: object) -> str:
+    for n, net in board.nets.items():
+        if (ref, str(pin)) in [(r, str(q)) for r, q in net.pins]:
+            return n
+    return ""
+
+
 def export_pcad(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.pcb (P-CAD ASCII, ACCEL_ASCII — Altium's own interchange:
     File > Save As > P-CAD in Altium opens it). Patterns carry pad stacks,

@@ -112,8 +112,9 @@ stated as a word in a pill.
   hard box-penetration repulsion, multi-seed best-of. Streams animation
   frames. ([ADR-0002](docs/ADR-0002-solver.md))
 - **Everything is a hot-swappable plugin**: placers, routers, DRC, exporters
-  (Gerbers, KiCad, EasyEDA, `.ocd`, JSON), parts library (all with 3D
-  bodies), renderers (PCB/SCH SVG, PNG, STL, textured glTF, 3D HTML).
+  (Gerbers, KiCad, EasyEDA, `.ocd`, JSON, IPC-2581 subset, STEP), parts
+  library (all with 3D bodies), renderers (PCB/SCH SVG, PNG, STL,
+  textured glTF, 3D HTML).
 - **Fab profiles**: JLCPCB (+flex), PCBWay, OSH Park, Seeed, Aisler,
   Eurocircuits, NextPCB, ALLPCB, Sierra, Advanced Circuits — DRC checks
   your board against the factory you actually ordered from

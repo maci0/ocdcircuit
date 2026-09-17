@@ -1834,6 +1834,19 @@ _bf.export("jlc", outdir=tempfile.mkdtemp())
 assert "importer:eagle-brd" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "exporter:easyeda" in cast(list[str], _call("list_plugins", {})["plugins"])
+# IPC-2581 subset: well-formed XML, full component/net/trace coverage
+import xml.etree.ElementTree as _ETX
+_bx = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
+_bx.place(seeds=1, iters=30)
+_bx.route_board()
+_ixf = _bx.export("ipc2581", outdir=tempfile.mkdtemp())[0]
+assert _ixf.endswith(".xml"), _ixf
+_ixr = _ETX.parse(_ixf).getroot()
+_ixns = {"i": "http://www.ipc.org/2581"}
+assert len(_ixr.findall(".//i:Component", _ixns)) == len(_bx.parts)
+assert len(_ixr.findall(".//i:Net", _ixns)) == len(_bx.nets)
+assert len(_ixr.findall(".//i:Trace", _ixns)) == len(_bx.traces)
+assert len(_ixr.findall(".//i:Hole", _ixns)) >= 1
 assert "simulate:ngspice" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert cast(float, _call("calc", {"what": "divider", "vin": 9, "rtop": 10000,
                                   "rbot": 4700})["vout"]) > 2.8
