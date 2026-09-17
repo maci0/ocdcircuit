@@ -243,10 +243,19 @@ def get_room(key: str, text: str) -> Room:
         if room is None:
             room = Room(key, text)
             _ROOMS[key] = room
+        # Timed-out presence without a live SSE sub would otherwise pin the
+        # room (and its full board text) forever: heartbeat only prunes on
+        # access to *that* room, so a one-shot cursor/sync on board A then
+        # opening B never ran A's prune. Drop stale members here first.
+        now = time.monotonic()
         for k, r in list(_ROOMS.items()):
             if k == key:
                 continue
             with r._mu:
+                for n in [n for n, v in r._members.items()
+                          if now - float(cast(float, v.get("t", 0)))
+                          > HEARTBEAT_TIMEOUT]:
+                    del r._members[n]
                 empty = not r._members and not r._subs
             if empty:
                 _ROOMS.pop(k, None)
@@ -323,6 +332,17 @@ if __name__ == "__main__":
     assert r.snapshot()["users"] == []
     drop_room("demo")
     assert get_room("demo", "x").rev == 0  # fresh after unload
+    drop_room("demo")
+
+    # Timed-out members must not pin an idle room across get_room of another
+    # key: otherwise every briefly-opened board keeps its text forever.
+    r_stale = get_room("stale-a", "board stale-a 10x10\n")
+    r_stale.heartbeat("ghost")
+    with r_stale._mu:
+        r_stale._members["ghost"]["t"] = time.monotonic() - HEARTBEAT_TIMEOUT - 1
+    get_room("stale-b", "board stale-b 10x10\n")
+    assert "stale-a" not in _ROOMS, "timed-out room leaked across get_room"
+    drop_room("stale-b")
 
     # concurrent cas_set_text: exactly one of N racers at rev 0 adopts
     r2 = get_room("race", "base\n")

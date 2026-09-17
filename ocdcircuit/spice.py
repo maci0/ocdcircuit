@@ -212,16 +212,17 @@ def _run_ngspice(workdir: str, spice: str, cmds: list[str], dat: str,
         raise RuntimeError(f"ngspice failed: {err}")
     # wrdata writes each vector as a (scale, value) column pair
     cols: dict[str, list[float]] = {p: [] for p in probes}
-    for line in open(dat, encoding="utf-8"):
-        parts = line.split()
-        if len(parts) < 2 * len(probes):
-            continue
-        try:
-            vals = [float(parts[2 * i + 1]) for i in range(len(probes))]
-        except ValueError:
-            continue
-        for p, v in zip(probes, vals):
-            cols[p].append(v)
+    with open(dat, encoding="utf-8") as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) < 2 * len(probes):
+                continue
+            try:
+                vals = [float(parts[2 * i + 1]) for i in range(len(probes))]
+            except ValueError:
+                continue
+            for p, v in zip(probes, vals):
+                cols[p].append(v)
     if not any(cols.values()):
         raise RuntimeError(f"ngspice: no data parsed from wrdata output")
     return cols

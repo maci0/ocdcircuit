@@ -2977,7 +2977,8 @@ def _write_user(name: str, password: str) -> None:
     with _AUTH_MU:
         path = _users_path()
         try:
-            cur = open(path, encoding="utf-8").read()
+            with open(path, encoding="utf-8") as fh:
+                cur = fh.read()
         except FileNotFoundError:
             cur = ""
         # Refuse a duplicate under the same lock that writes — two concurrent
@@ -2993,7 +2994,11 @@ def _write_user(name: str, password: str) -> None:
     # secrets must never be committed: keep them out of git on first signup
     try:
         gi = os.path.join(ROOT, ".gitignore")
-        have = open(gi, encoding="utf-8").read() if os.path.isfile(gi) else ""
+        if os.path.isfile(gi):
+            with open(gi, encoding="utf-8") as fh:
+                have = fh.read()
+        else:
+            have = ""
         if _USERS_FILE not in have:
             with open(gi, "a", encoding="utf-8") as f:
                 if have and not have.endswith("\n"):
@@ -3270,7 +3275,8 @@ def _read(rel: object) -> str:
     if os.path.getsize(full) > 2_000_000:
         raise ValueError(f"{rel}: too large to edit")
     try:
-        return open(full, encoding="utf-8").read()
+        with open(full, encoding="utf-8") as fh:
+            return fh.read()
     except UnicodeDecodeError as e:
         raise ValueError(f"{rel}: not utf-8 text") from e
 
@@ -3507,13 +3513,21 @@ def _kb_fetch_start() -> dict[str, object]:
             with H._mu:
                 H.kb_log.append(f"error: {e}")
         finally:
-            if p is not None and p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    p.kill()
-                    p.wait()
+            if p is not None:
+                # Close the pipe before terminate: a full unread PIPE can
+                # block the child so wait() never returns until kill.
+                if p.stdout is not None:
+                    try:
+                        p.stdout.close()
+                    except OSError:
+                        pass
+                if p.poll() is None:
+                    p.terminate()
+                    try:
+                        p.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
+                        p.wait()
             with H._mu:
                 H.kb_busy = False
 
@@ -3557,6 +3571,9 @@ class H(http.server.BaseHTTPRequestHandler):
     kb_busy: bool = False
     # One LLM turn at a time: a double Enter / retry must not stack spend.
     chat_busy: bool = False
+    # One photo-scan at a time: each /scan mkdtemps multi-MB trees; stacking
+    # them under ThreadingHTTPServer would exhaust disk before any finishes.
+    scan_busy: bool = False
 
     @staticmethod
     def open_file(path: object) -> None:
@@ -4481,7 +4498,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 b = agent.loads(H.src_text, base=BASE)
                 with _tf.TemporaryDirectory() as td:
                     zfn = b.export("bundle", outdir=td)[0]
-                    zraw = open(zfn, "rb").read()
+                    with open(zfn, "rb") as zfh:
+                        zraw = zfh.read()
                 self._send({"zip": base64.b64encode(zraw).decode(),
                             "name": f"{b.name}-fab.zip",
                             "bytes": len(zraw)})
@@ -4569,6 +4587,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": "nothing to undo"})
                 else:
                     H.redo.append(H.hist.pop())
+                    H.redo = H.redo[-100:]
                     H.src_text = H.hist[-1]
                     serr = H.save()
                     from ocdcircuit import collab as _collab_u
@@ -4604,13 +4623,20 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": f"{len(shots)} photos is more than "
                                          "this endpoint takes (max 40)"})
                     return
+                with H._mu:
+                    if H.scan_busy:
+                        self._send({"error": "already scanning — wait for "
+                                             "the current upload to finish"})
+                        return
+                    H.scan_busy = True
                 # Photos + scan artifacts live under a temp dir the browser
                 # never opens (views are inlined as data URIs). Wipe it on
                 # every exit — success, bad base64, empty shots, scan error —
                 # or each /scan leaves multi-MB trees until the process dies.
                 import shutil
-                work = tempfile.mkdtemp(prefix="ocd-scan-")
+                work: str | None = None
                 try:
+                    work = tempfile.mkdtemp(prefix="ocd-scan-")
                     paths: list[str] = []
                     try:
                         for i, item in enumerate(shots):
@@ -4711,7 +4737,10 @@ class H(http.server.BaseHTTPRequestHandler):
                         "views": views,
                         "outdir": str(r.get("outdir", ""))})
                 finally:
-                    shutil.rmtree(work, ignore_errors=True)
+                    if work is not None:
+                        shutil.rmtree(work, ignore_errors=True)
+                    with H._mu:
+                        H.scan_busy = False
             elif self.path == "/doctor":  # tooling health, no board needed
                 from ocdcircuit.circuit import Board as _B
                 r = _B("doctor").doctor()
