@@ -374,6 +374,24 @@ try:
     raise AssertionError("missing should fail")
 except ValueError as e:
     assert "no such file" in str(e)
+# pinned includes: hash verifies, dumps round-trips, tampering fails loud
+import hashlib as _hlp
+with tempfile.TemporaryDirectory() as _tdp:
+    open(os.path.join(_tdp, "sub.ocd"), "w").write(
+        "board sub 30x20 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n")
+    _sha = _hlp.sha256(open(os.path.join(_tdp, "sub.ocd"), "rb").read()).hexdigest()
+    _pinb = agent.loads(f"board t 60x40 2L\nuse sub.ocd@{_sha[:12]} as S\n"
+                        "part X1 R0805 1k\nnet Q: X1.1 X1.2\n", base=_tdp)
+    assert "S_R1" in _pinb.parts
+    _pind = agent.dumps(_pinb)
+    assert f"sub.ocd@{_sha[:12]} as S" in _pind, _pind
+    assert agent.dumps(agent.loads(_pind, base=_tdp)) == _pind
+    open(os.path.join(_tdp, "sub.ocd"), "a").write("part C9 C0805 1n\n")
+    try:
+        agent.loads(f"board t 60x40 2L\nuse sub.ocd@{_sha[:12]} as S\n", base=_tdp)
+        raise AssertionError("tampered pin should fail")
+    except ValueError as e:
+        assert "changed since pin" in str(e) and "ocd pin" in str(e), e
 # includes carry part/net attrs + pours across (lcsc/dnp/class drive fab/widths)
 with tempfile.TemporaryDirectory() as _td:
     open(os.path.join(_td, "sub.ocd"), "w").write(

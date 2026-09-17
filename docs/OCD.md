@@ -154,6 +154,8 @@ DFF/JK; inputs in pin order, output = highest pin), then
 ```ocd
 use psu.ocd as PSU            # include board (child size/layers/fix ignored)
 use sub.ocd join VCC GND      # merge nets into parent (VCC/GND auto-join)
+use lib.ocd@a1b2c3d4e5f6      # pinned include: sha256 prefix verified at
+                              # load; `ocd pin f.ocd` rewrites pins in place
 block driver ports A B     # reusable unit; optional ports (join must be subset)
   part U QFN28             #   allowed inside: part/net/constraints only —
 end                        #   board/use/fp/instance/nested blocks rejected

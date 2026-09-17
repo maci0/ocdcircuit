@@ -28,6 +28,7 @@ USAGE = """usage:
   ocd run [--fab F] [--placer P] [--router R] [--sim dc|tran] <circuit.ocd>
   ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
+  ocd pin <circuit.ocd>          pin use lines to current file hashes
   ocd xray <board.ocd> <fab.png> fab x-ray vs design: score + divergences
   ocd scan [--out DIR] [--mm W] [--no-llm] [--note T] [--doc F]
            [--answer Q=A] <photo|dir|glob>...
@@ -398,6 +399,48 @@ def cmd_diff(agent: object, args: list[str]) -> int:
     except (OSError, ValueError, KeyError, AssertionError) as e:
         return _die(f"ocd: {_exc_msg(e)}")
     print(a.diff(b) or "identical")
+    return 0
+
+
+def cmd_pin(agent: object, args: list[str]) -> int:
+    if args and ("-h" in args or "--help" in args):
+        return _usage("usage: ocd pin <circuit.ocd>  "
+                      "rewrite use lines with current file hashes", requested=True)
+    if len(args) != 1 or args[0].startswith("-"):
+        return _usage("usage: ocd pin <circuit.ocd>")
+    import hashlib as _hl
+    import os as _os
+    import re as _re
+    path = args[0]
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError as e:
+        return _die(f"ocd: {e}")
+    base = _os.path.dirname(os.path.abspath(path))
+    changed = 0
+    for i, ln in enumerate(lines):
+        m = _re.match(r"^(\s*use\s+\S+?)(?:@[0-9a-fA-F]{8,64})?"
+                      r"((?:\s+as\s+\S+)?(?:\s+join\s+.+)?)$", ln, re.I)
+        if not m:
+            continue
+        pm = _re.match(r"^use\s+(\S+)", ln.strip(), re.I)
+        if not pm:
+            continue
+        fn = _os.path.normpath(_os.path.join(
+            base, pm.group(1).split("@", 1)[0]))
+        if not _os.path.isfile(fn):
+            return _die(f"ocd: no such file: {pm.group(1)!r}")
+        with open(fn, "rb") as f:
+            digest = _hl.sha256(f.read()).hexdigest()[:12]
+        lines[i] = f"{m.group(1)}@{digest}{m.group(2)}"
+        changed += 1
+    if not changed:
+        print("no use lines to pin")
+        return 0
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"pinned {changed} include(s) in {path}")
     return 0
 
 
@@ -902,6 +945,8 @@ def main(argv: list[str]) -> int:
         return cmd_status(agent, args[1:])
     if args[0] == "diff":
         return cmd_diff(agent, args[1:])
+    if args[0] == "pin":
+        return cmd_pin(agent, args[1:])
     if args[0] == "xray":
         return cmd_xray(agent, args[1:])
     if args[0] == "scan":

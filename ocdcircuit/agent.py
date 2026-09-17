@@ -400,7 +400,8 @@ def dumps(board: Board) -> str:
         L.extend(f"  {ln}" for ln in bl.lines)
         L.append("end")
     for inc in board.includes:
-        L.append(f"use {inc['path']}" + (f" as {inc['prefix']}" if inc.get("prefix") else "") +
+        _pin = f"@{inc['pin']}" if inc.get("pin") else ""
+        L.append(f"use {inc['path']}{_pin}" + (f" as {inc['prefix']}" if inc.get("prefix") else "") +
                  (f" join {' '.join(cast(list[str], inc['join']))}" if inc.get("join") else ""))
     for ins in board.instances:
         L.append(f"instance {ins['block']} as {ins['prefix']}" +
@@ -713,11 +714,13 @@ def _loads(text: str, base: str, stack: tuple[str, ...], top: bool = False) -> B
         if kw == "use":
             if b is None:
                 raise err("board header first")
-            m = re.match(r"^use\s+(\S+)(?:\s+as\s+(\S+))?(?:\s+join\s+(.+))?$",
+            m = re.match(r"^use\s+(\S+?)(?:@([0-9a-fA-F]{8,64}))?"
+                         r"(?:\s+as\s+(\S+))?(?:\s+join\s+(.+))?$",
                          line, re.I)
             if not m:
-                raise err("want: use PATH [as PREFIX] [join NET ...]")
-            _include(b, m.group(1), m.group(2), m.group(3), base, stack, err)
+                raise err("want: use PATH[@SHA] [as PREFIX] [join NET ...]")
+            _include(b, m.group(1), m.group(3), m.group(4), base, stack, err,
+                     pin=m.group(2))
             continue
         if kw == "board":
             m = re.match(r"^board\s+(\S+)\s+([\d.]+)x([\d.]+)(?:\s+(\d+)L)?$",
@@ -902,14 +905,23 @@ def _merge_constraints(parent: Board, child: Board, pre: str,
 
 
 def _include(parent: Board, path: str, prefix: str | None, join: str | None,
-             base: str, stack: tuple[str, ...], err: ErrFn) -> None:
+             base: str, stack: tuple[str, ...], err: ErrFn,
+             pin: str | None = None) -> None:
     """Merge a child .ocd into parent. Child board/layers/fix ignored;
-    refs, nets, near/keep grouped under prefix; join nets merge up."""
+    refs, nets, near/keep grouped under prefix; join nets merge up.
+    pin (from `use PATH@SHA`) verifies the file's sha256 prefix."""
     fn = os.path.normpath(os.path.join(base, path))
     if fn in stack:
         raise err(f"include cycle: {path!r}")
     if not os.path.isfile(fn):
         raise err(f"no such file: {path!r}")
+    if pin is not None:
+        import hashlib
+        with open(fn, "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        if not digest.startswith(pin.lower()):
+            raise err(f"include {path!r} changed since pin {pin} "
+                      f"(now {digest[:12]}…): re-pin with `ocd pin`")
     try:
         from .util import read_text
         text = read_text(fn)
@@ -938,8 +950,11 @@ def _include(parent: Board, path: str, prefix: str | None, join: str | None,
         parent.block_src[bname] = path
     _merge_nets(parent, child, pre, joins, join)
     _merge_constraints(parent, child, pre, joins, join, dedupe_power=True)
-    parent.includes.append({"path": path, "prefix": prefix or child.name,
-                            "join": sorted(joins)})
+    inc: dict[str, object] = {"path": path, "prefix": prefix or child.name,
+                                 "join": sorted(joins)}
+    if pin is not None:
+        inc["pin"] = pin.lower()
+    parent.includes.append(inc)
     if child.parts:
         parent._constrain_raw({"t": "near-group", "prefix": pre, "owner": pre})
 
