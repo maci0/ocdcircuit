@@ -240,12 +240,19 @@ def parse_constraint(text: str, *, layers: int = 2) -> Constraint | None:
             except ValueError:
                 cc[k] = v
         return cc
-    m = re.match(r"match ([\w ]+)$", t, re.I)
+    m = re.match(r"match ([\w ]+?)(?:\s+tol\s+([\d.]+))?$", t, re.I)
     if m:
-        return {"t": "match", "nets": m.group(1).split()}
-    m = re.match(r"diff (\w+) (\w+) gap ([\d.]+)$", t, re.I)
+        mc: Constraint = {"t": "match", "nets": m.group(1).split()}
+        if m.group(2) is not None:
+            mc["tol"] = float(m.group(2))
+        return mc
+    m = re.match(r"diff (\w+) (\w+) gap ([\d.]+)(?:\s+tol\s+([\d.]+))?$", t, re.I)
     if m:
-        return {"t": "diff", "p": m.group(1), "n": m.group(2), "gap": float(m.group(3))}
+        dc: Constraint = {"t": "diff", "p": m.group(1), "n": m.group(2),
+                          "gap": float(m.group(3))}
+        if m.group(4) is not None:
+            dc["tol"] = float(m.group(4))
+        return dc
     m = re.match(r"silk ([0-3])$", t, re.I)
     if m:
         return {"t": "silk", "level": int(m.group(1))}
@@ -529,9 +536,11 @@ def dumps(board: Board) -> str:
         elif t == "sim":
             L.append(_dump_sim(c))
         elif t == "match":
-            L.append(f"match {' '.join(cast(list[str], c['nets']))}")
+            L.append(f"match {' '.join(cast(list[str], c['nets']))}" +
+                     (f" tol {_f(c['tol']):g}" if c.get("tol") is not None else ""))
         elif t == "diff":
-            L.append(f"diff {c['p']} {c['n']} gap {_f(c['gap']):g}")
+            L.append(f"diff {c['p']} {c['n']} gap {_f(c['gap']):g}" +
+                     (f" tol {_f(c['tol']):g}" if c.get("tol") is not None else ""))
         elif t == "power":
             if c.get("owner"):
                 continue  # contributed by an include — comes back via `use`

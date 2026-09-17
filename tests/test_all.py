@@ -216,6 +216,15 @@ from ocdcircuit.solver import _net_length as _mlen
 _mskew = abs(_mlen(_mnd, "A") - _mlen(_mnd, "B"))
 assert _mskew < 1.0, _mskew  # converged (was ~13 without meander)
 assert _mnd.check()["errors"] == []
+# match tol= is teeth: asymmetric pair over tolerance errors, without tol warns only
+_mt = agent.loads("board t 80x40 2L\npart R1 R0805 10k x=3 y=5\npart C1 C0805 100n x=70 y=5\n"
+                  "part R2 R0805 10k x=3 y=35\npart C2 C0805 100n x=10 y=35\n"
+                  "A :: R1.1 C1.1\nB :: R2.1 C2.1\nGND :: R1.2 R2.2 C1.2 C2.2\n"
+                  "match A B tol 0.01\n", base=EX)
+_mt.place(seeds=1, iters=20)
+_mt.route_board()
+assert any("match skew" in e and "> tol 0.01mm" in e for e in _mt.check()["errors"]), \
+    _mt.check()["errors"]
 # codec fixpoint: every grammar production dumps→parses→dumps identically
 _pre = ("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")
@@ -227,6 +236,7 @@ assert agent.dumps(agent.loads(agent.dumps(_cmt), base=EX)) == agent.dumps(_cmt)
 for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6",
               "route-grid 0.2", "route-penalty bend 3 via 20", "power N GND", "class hv width=0.8",
               "match N GND", "diff N GND gap 0.5", "silk 2", "nc R1.1",
+              "match N GND tol 5", "diff N GND gap 0.5 tol 1",
               "pour GND on 0", "keepout 20 15 6x6", "keepout 20 15 d6",
               "keepout near R1 d4", "cutout 20 15 6x6", "hole 20 15 1.2",
               "bend 20 15 10x10 r2", "stiffener 20 15 10x6 FR4 0.4",

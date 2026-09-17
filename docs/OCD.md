@@ -94,7 +94,9 @@ route GND on 1                 # force net to layer (top/bottom also work)
 trace VCC 0.5                  # trace width mm
 power VCC GND                # widen nets to 0.5 (power)
 match A0 A1                  # length-match nets (placer cost + DRC skew report)
+match A0 A1 tol 0.5          # …with teeth: skew over tol is a build error
 diff DP DN gap 0.3           # diff pair: equal length + 0.3mm coupling gap
+diff DP DN gap 0.3 tol 0.1   # …same teeth for the pair skew
 ```
 
 ## Geometry (board features in mm, center x y)

@@ -336,13 +336,34 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             need = (10 if c.get("dynamic", True) else 6) * th
             if _f(c["r"]) < need:
                 errors.append(f"bend-radius {c['r']} < {need:g} (dynamic={c.get('dynamic', True)})")
-    from .solver import diff_cost, match_cost
+    from .solver import diff_cost, match_cost, _net_length
     mc = match_cost(board)
     if mc > 5.0:
         warnings.append(f"length-mismatch skew~{mc / 50.0:.1f}mm")
     dc = diff_cost(board)
     if dc > 10.0:
         warnings.append(f"diff-pair skew/gap dev~{dc / 100.0:.1f}mm")
+    # explicit tol= on match/diff is a build error when exceeded
+    for c in board.constraints:
+        if not isinstance(c, dict) or c.get("tol") is None:
+            continue
+        if c.get("t") == "match":
+            mnets = [mn for mn in cast(list[str], c.get("nets", []))
+                     if mn in board.nets]
+            if len(mnets) >= 2:
+                skew = max(_net_length(board, mn) for mn in mnets) - \
+                    min(_net_length(board, mn) for mn in mnets)
+                if skew > float(cast(float, c["tol"])):
+                    errors.append(f"match skew {skew:.2f}mm > tol "
+                                  f"{float(cast(float, c['tol'])):g}mm "
+                                  f"({' '.join(mnets)})")
+        elif c.get("t") == "diff":
+            dp, dn = str(c.get("p")), str(c.get("n"))
+            if dp in board.nets and dn in board.nets:
+                skew = abs(_net_length(board, dp) - _net_length(board, dn))
+                if skew > float(cast(float, c["tol"])):
+                    errors.append(f"diff skew {skew:.2f}mm > tol "
+                                  f"{float(cast(float, c['tol'])):g}mm ({dp}/{dn})")
     def _need(a: str, b: str) -> float:
         need = min_space
         for n in (a, b):
