@@ -153,11 +153,13 @@ def main() -> None:
     assert "kb" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
     assert "inspector" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
     assert "scan" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
-    assert len(_st_ui._UI_DISPOSERS) == 12, len(_st_ui._UI_DISPOSERS)
+    # toolbar chrome moved to apps/web/workshop.js (Preact); the server
+    # registry keeps the 10 panel/view contributions
+    assert len(_st_ui._UI_DISPOSERS) == 10, len(_st_ui._UI_DISPOSERS)
     _st_ui.unload_ui()
     assert _st_ui.SLOTS.report("view") == [] and _st_ui.SLOTS.report("toolbar") == []
     assert _st_ui._UI_DISPOSERS == []
-    print("ui slot dispose ok (12 contributions, LIFO, once)")
+    print("ui slot dispose ok (10 contributions, LIFO, once)")
 
     # session/auth caches: expired tokens must not crowd out live sessions,
     # and the rate-limit map must stay bounded under IP spray.
@@ -445,28 +447,35 @@ def main() -> None:
         _in = get(base, "/").decode()
         assert "id=ed" in _in, _in[:200]
         assert "id=importfile" in _in and "id=importstat" in _in, "import picker missing"
-        # static shell markers (in the HTML) …
-        for frag in ("id=viewtabs", "data-v=all", "data-v=pcb", "data-v=sch",
-                     "data-v=t3d", "data-v=docs", "id=themebtn"):
-            assert frag in _in, f"flux work missing: {frag}"
-        # …plus runtime-built pieces (in the inline script, created by JS)
-        # and the followups CSS rule (in <style>, not <script>)
-        _pjs = _in[_in.index("<script>") + 8:_in.index("</script>")]
+        # the frontend is three files under apps/web/: the panels ride in the
+        # shell as slot markup, the chrome is a preact module, the behaviour is
+        # a module, and the tokens are a stylesheet. Assert each where it lives.
+        _JS = os.path.join(ROOT, "apps", "web")
+        _chrome = open(os.path.join(_JS, "workshop.js")).read()
+        _wjs = open(os.path.join(_JS, "legacy.js")).read()
+        _wcss = open(os.path.join(_JS, "workshop.css")).read()
+        # the tab table is data now (VIEWS in workshop.js), so the row is the
+        # marker: one view id per tab, plus the toggle
+        for frag in ("id=viewtabs", "id=themebtn", "['all',", "['pcb',",
+                     "['sch',", "['t3d',", "['docs',"):
+            assert frag in _chrome, f"flux work missing: {frag}"
+        # …plus runtime-built pieces (created by JS)
+        # and the followups CSS rule (in the stylesheet)
         for frag in ("setDark", "setView", "showCockpit", "followups", "thought",
                      "contextmenu", "rotRefs", "unpinRefs"):
-            assert frag in _pjs, f"flux work missing: {frag}"
-        assert "followups:empty" in _in, "flux work missing: followups:empty"
+            assert frag in _wjs, f"flux work missing: {frag}"
+        assert "followups:empty" in _wcss, "flux work missing: followups:empty"
         # proper menus: solve stays top-level, the rest lives in named menus
         for frag in ("id=m-board", "id=m-edit", "id=m-engines", "id=m-sim",
                       "id=m-tools", "id=m-live", "id=roomnote"):
-            assert frag in _in, f"menu missing: {frag}"
+            assert frag in _chrome, f"menu missing: {frag}"
         # every action keeps its id (handlers never rebind)
         for frag in ("id=solve", "id=dice", "id=stamp", "id=fab_dl", "id=dl",
                       "id=undo", "id=redo", "id=diffprev", "id=commit",
                       "id=placer", "id=router", "id=fab", "id=silk",
                       "id=simbtn", "id=chatbtn", "id=chatauto",
                       "id=sharebtn", "id=room"):
-            assert frag in _in, f"control id missing: {frag}"
+            assert frag in _chrome, f"control id missing: {frag}"
         print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
         assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh
@@ -510,13 +519,17 @@ def main() -> None:
                      "id=npgrid", "id=npblank", "npcache",
                      "openShelfBoard", "fromTemplate"):
             assert frag in _lpjs, f"new-project modal missing: {frag}"
-        _w = get(base, "/").decode()  # still authed: workshop
+        _w = get(base, "/").decode()  # still authed: workshop shell
+        # the panels ride in the shell as slot markup (plugin contract), the
+        # behaviour rides in the module
         assert "id=ed" in _w, _w[:200]
-        assert "withBusy" in _w, "long-action busy feedback missing"
+        assert 'src=/web/workshop.js' in _w and 'src=/web/legacy.js' in _w, _w[:400]
+        assert "id=slots" in _w, "slot islands must ship with the shell"
+        assert "withBusy" in _wjs, "long-action busy feedback missing"
         assert "fromTemplate" in _lpjs, "template double-click guard missing"
-        assert "one turn at a time" in _w, "chat submit busy guard missing"
-        assert "download ${key}" in _w or "download ${" in _w, "download label must stay a word"
-        assert "sim ${simWhat}" in _w or "sim ${" in _w, "sim label must stay a word"
+        assert "one turn at a time" in _wjs, "chat submit busy guard missing"
+        assert "download ${key}" in _wjs or "download ${" in _wjs, "download label must stay a word"
+        assert "sim ${simWhat}" in _wjs or "sim ${" in _wjs, "sim label must stay a word"
         # modal lives on the landing page, but its data path is the shelf:
         # template copy + blank-from-search-text both work while authed
         _t2 = post(base, "/shelf/from_template", {"name": "psu.ocd"})
@@ -752,14 +765,14 @@ def main() -> None:
         assert "error" in _qqbad, _qqbad
         print(f"quote ok (cheapest={_qrows[0]['fab']} bare=${_qrows[0]['bare_total']})")
 
-        # the page ships as one inline script: syntax + the highlight wiring.
-        # node is dev-only here — skip rather than fail when it's absent.
+        # behaviour ships as a module (apps/web/legacy.js, served at /web/):
+        # syntax + the highlight wiring. node is dev-only here — skip rather
+        # than fail when it is absent.
         node = shutil.which("node")
+        pjs = _wjs
         if not node:
             print("no node: editor-highlight check skipped")
         else:
-            page = get(base, "/").decode()
-            pjs = page[page.index("<script>") + 8:page.index("</script>")]
             import re as _re
             _fnm: object = _re.search(r"function edHighlight\(\)\{.*?\n\}", pjs, _re.S)
             assert _fnm, "editor selection does not drive the highlight"
@@ -778,30 +791,43 @@ def main() -> None:
                                      timeout=60)
                 assert _rn.returncode == 0, _rn.stderr[-400:]
                 assert _rn.stdout.strip() == HL_EXPECT, _rn.stdout
-            assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
+            # every frontend module must parse as ESM: the browser half sees
+            # them only once authenticated, and a syntax error there is a
+            # blank page (this is the gate the inline page got for free)
+            for _mod in ("workshop.js", "legacy.js", "html.js", "api.js"):
+                _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
+                                      capture_output=True, text=True, timeout=60)
+                assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
             print("editor highlight → pcb/sch ok")
+        assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
+        # the chrome is a module too: menus, tabs and pills are htm now
+        for _frag in ("id=m-board", "id=m-edit", "id=m-engines", "id=m-tools",
+                      "id=viewtabs", "id=themebtn", "id=logoutbtn", "id=cost",
+                      "id=solve", "id=fab_dl"):
+            assert _frag in _chrome, f"chrome control missing: {_frag}"
 
         # gallery compare affordance ships + delta math holds on fixtures
-        _page2 = get(base, "/").decode()
-        assert "shift-click to compare" in _page2, "gallery compare hint missing"
-        assert "function galDelta(" in _page2, "galDelta missing from page"
-        assert "shift-drag a trace previews the shove" in _page2, \
+        assert "shift-click to compare" in pjs, "gallery compare hint missing"
+        assert "function galDelta(" in pjs, "galDelta missing from legacy.js"
+        # this hint is panel markup (studio.py slot), not behaviour
+        assert "shift-drag a trace previews the shove" in _in, \
             "seg-drag hint missing"
-        assert "function hitSeg(" in _page2, "hitSeg missing from page"
+        assert "function hitSeg(" in pjs, "hitSeg missing from legacy.js"
         if shutil.which("node"):
             with tempfile.TemporaryDirectory() as _td2:
                 _ent2 = os.path.join(_td2, "gal.js")
                 open(_ent2, "w").write(
                     "const $=()=>({});const S={};\n"
-                    + _page2[_page2.index("function galDelta("):
-                             _page2.index("function thumb(")])
+                    + pjs[pjs.index("function galDelta("):
+                          pjs.index("function thumb(")])
                 _djs = ("const a={cost:100,pos:{R1:[0,0],C1:[10,10]}};"
                         "const b={cost:95,pos:{R1:[0,0],C1:[15,10]}};"
                         "const d=galDelta(a,b);"
                         "if(d.dcost!==-5||d.moved!==1)throw new Error(JSON.stringify(d));"
                         "console.log('gal delta ok');")
                 open(_ent2, "a").write(_djs)
-                _rn2 = subprocess.run(["node", _ent2], capture_output=True,
+                assert node, "node vanished mid-test"
+                _rn2 = subprocess.run([node, _ent2], capture_output=True,
                                       text=True, timeout=60)
                 assert _rn2.returncode == 0, _rn2.stderr[-400:]
                 assert "gal delta ok" in _rn2.stdout, _rn2.stdout
@@ -955,6 +981,80 @@ def main() -> None:
             assert dom.count('class="fabcell"') == 11, dom.count('class="fabcell"')
             assert 'id="npgrid"' in dom, "new-project modal never rendered"
             print("landing DOM ok (hero + gate + 11 fab tiles)")
+
+            # The workshop is client-rendered as well, and it needs a session:
+            # drive a real browser with the cookie (the shot above is logged
+            # out), then assert the chrome, the slot islands and a painted PCB
+            # canvas. This is the only gate that would catch a module that
+            # loads but renders nothing.
+            from urllib.parse import urlparse as _upw
+            from tools.easyeda_live import CDP, wait_ready
+            _uw = _upw(base)
+            assert _uw.hostname and _uw.port
+            _ckw: str | None = _JAR.get(base)
+            if not _ckw:
+                import http.client as _hcw
+                _cw = _hcw.HTTPConnection(_uw.hostname, _uw.port, timeout=30)
+                _cw.request("POST", "/auth/login",
+                            json.dumps({"user": "tester",
+                                        "password": "testtest12"}),
+                            {"Content-Type": "application/json"})
+                _rw = _cw.getresponse()
+                _ckw = (_rw.getheader("Set-Cookie") or "").split(";")[0].strip()
+                _rw.read()
+            assert _ckw is not None and _ckw.startswith("ocd_user="), _ckw
+            _dbg = free_port()
+            _cdpdir = tempfile.mkdtemp(prefix="ocd-cdp-")
+            _cr = subprocess.Popen(
+                [chrom, "--headless=new", "--no-sandbox", "--disable-gpu",
+                 f"--remote-debugging-port={_dbg}", f"--user-data-dir={_cdpdir}",
+                 "about:blank"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                _cdp = CDP(wait_ready(_dbg, timeout=60))
+                try:
+                    for _m in ("Runtime.enable", "Page.enable", "Network.enable"):
+                        _cdp.call(_m)
+                    _cdp.call("Network.setCookie",
+                              {"name": "ocd_user",
+                               "value": str(_ckw).split("=", 1)[1],
+                               "domain": _uw.hostname, "path": "/"})
+                    _cdp.call("Page.navigate",
+                              {"url": f"http://{_uw.hostname}:{_uw.port}/"})
+                    _st: dict[str, object] = {}
+                    for _ in range(60):
+                        time.sleep(0.5)
+                        _raw = _cdp.eval(
+                            "JSON.stringify({pcb:!!document.querySelector('#pcb'),"
+                            "ed:!!document.querySelector('#ed'),"
+                            "menus:document.querySelectorAll('.menubar>details.menu').length,"
+                            "tabs:document.querySelectorAll('#viewtabs button').length,"
+                            "panels:document.querySelectorAll('main#panels>section').length,"
+                            "paint:(function(){var c=document.querySelector('#pcb');"
+                            "if(!c)return -1;var g=c.getContext('2d');"
+                            "var d=g.getImageData(0,0,c.width,c.height).data;var n=0;"
+                            "for(var i=3;i<d.length;i+=4*97){if(d[i])n++;}return n;})()})")
+                        try:
+                            _st = cast(dict[str, object], json.loads(str(_raw)))
+                        except ValueError:
+                            _st = {}
+                        if cast(int, _st.get("paint") or 0) > 0:
+                            break
+                    assert _st.get("pcb") and _st.get("ed"), _st
+                    assert _st.get("menus") == 6, _st   # Board/Edit/Engines/Sim/Tools/Share
+                    assert _st.get("tabs") == 5, _st
+                    assert cast(int, _st.get("panels") or 0) >= 6, _st
+                    assert cast(int, _st.get("paint") or 0) > 0, _st
+                    _badw = [e for e in _cdp.events
+                             if e.get("method") == "Runtime.exceptionThrown"]
+                    assert not _badw, json.dumps(_badw[:1])[:400]
+                finally:
+                    _cdp.close()
+            finally:
+                _cr.terminate()
+                shutil.rmtree(_cdpdir, ignore_errors=True)
+            print(f"workshop DOM ok ({_st['menus']} menus, {_st['panels']} panels, "
+                  f"{_st['paint']} canvas samples)")
     finally:
         srv.terminate()
         shutil.rmtree(troot, ignore_errors=True)
@@ -993,8 +1093,11 @@ def main() -> None:
             assert "id=kbprefsbtn" in page, "prefs button missing from the page"
             assert "id=xraybar" in page, "xray panel missing from the page"
             assert "id=xraygo" in page and "id=xrayfile" in page, "xray controls missing"
-            assert "id=quote" in page, "quote panel missing from the page"
-            assert "id=qgo" in page and "id=qqty" in page, "quote controls missing"
+            # quote lives in the Tools menu now, so it ships in the chrome
+            # module rather than in a panel slot
+            assert "id=quote" in _chrome, "quote menu missing from the chrome"
+            assert "id=qgo" in _chrome and "id=qqty" in _chrome, \
+                "quote controls missing"
             _qq0 = post(kbase, "/quote", {"qty": 5, "no_parts": True})
             assert not _qq0.get("error"), _qq0.get("error")
             _q0rows = cast(list[dict[str, object]], _qq0["rows"])

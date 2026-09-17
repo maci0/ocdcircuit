@@ -1924,8 +1924,9 @@ assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "13/15", _st["tidy"]
 assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch", "inspector"}
 assert "xraygo" in _studio.SLOTS.render("view", None)  # x-ray compare controls
-assert "id=m-board" in _studio.SLOTS.render("toolbar", None)  # menus, not buttons
-assert "fab_dl" in _studio.SLOTS.render("toolbar", None)  # export action kept
+# menubar lives in apps/web/workshop.js (Preact); server slots carry panels
+_wjs = open(os.path.join(HERE, "..", "apps", "web", "workshop.js")).read()
+assert "id=m-board" in _wjs and "fab_dl" in _wjs, "menubar missing from workshop"
 _spp = _studio.H._build("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n", False, {})
 assert cast(dict[str, object], _spp["pours"]) == {"GND": [0]}

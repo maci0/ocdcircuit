@@ -828,6 +828,11 @@ function rotRefs(refs){ // rotate 90°: bump rot= on the part line (add or +90)
   const miss=[...refs].filter(r=>!hit.has(r));
   if(miss.length){statMsg('no part line for '+miss.join(', '));return;}
   $('ed').innerText=out.join('\n');push();}
+// board-mm preview offset while shift-dragging a trace. Declared here, not
+// inside the drag IIFE below: drawPCB() (outer scope) reads it on every frame,
+// so an IIFE-local binding made the first frame with traces throw
+// "segDrag is not defined" and killed the render loop before it re-armed.
+let segDrag=null; // {seg, dx, dy}
 // drag parts on pcb
 (()=>{const c=$('pcb');let drag=null,dragGroup=null;
 function hit(mx,my){for(const r in S.cur.parts){
@@ -849,7 +854,6 @@ function hitSeg(mx,my){ // nearest segment object (for drag preview)
     const dd=(mx-x1-t*dx)**2+(my-y1-t*dy)**2;
     if(dd<bd){bd=dd;best=g;}}
   return best?{seg:best}:null;}
-let segDrag=null; // {seg, dx, dy} board-mm preview offset while shift-dragging
 c.addEventListener('mousedown',async e=>{if(!S)return;const R=c.getBoundingClientRect();
   if(e.altKey){ // alt-click a trace: rip + re-route that net
     const net=hitTrace(e.clientX-R.left,e.clientY-R.top);

@@ -256,20 +256,34 @@ BASE = os.path.dirname(SRC)
 # hook, glowing prompt card over the board visual, single CTA; collab strip
 # + AI engine story sit below. FORM: Persuade surface in the established
 # world, no seed roll (brief-pinned). FINISH: DESIGN.md is the authority.
-LOGIN_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio</title>
+LOGIN_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio — two engineers, one board</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content="Open a board, send the link, co-edit it live. Two cursors, one schematic, zero merge conflicts — with an AI engine that drafts, places and routes beside you.">
+<link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='4' fill='%23101418'/%3E%3Crect x='2' y='2' width='16' height='16' rx='4' fill='none' stroke='%23d8e2dc' stroke-width='1.8'/%3E%3Cpath d='M6.5 7.2 9.3 10l-2.8 2.8' fill='none' stroke='%235fd894' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='11' y1='12.8' x2='14' y2='12.8' stroke='%235fd894' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel=stylesheet href="/web/landing.css">
+</head><body>
+<div id=app></div>
+<noscript>OCD Studio needs JavaScript: the landing, the gate and the workshop are modules under /web/.</noscript>
+<script type=module src="/web/landing.js"></script>
+</body></html>
+"""
+# Workshop shell: the chrome and the behaviour are modules under /web/, the
+# slot JSON carries whatever the Python slot registry rendered (built-in
+# panels now, plugin panels always). Same head tokens, paper favicon.
+PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Studio</title>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='4' fill='%23f7f5f0'/%3E%3Crect x='2' y='2' width='16' height='16' rx='4' fill='none' stroke='%231a1d21' stroke-width='1.8'/%3E%3Cpath d='M6.5 7.2 9.3 10l-2.8 2.8' fill='none' stroke='%230f5c37' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='11' y1='12.8' x2='14' y2='12.8' stroke='%230f5c37' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel=stylesheet href="/web/workshop.css">
 </head><body>
 <a class=skip href=#ed>skip to the job file</a>
 <div id=app></div>
-<!-- plugin slot islands: built-in chrome is /web/workshop.js; whatever a UI
-     plugin registers comes back as markup here and is mounted once -->
 <script type=application/json id=slots>/*__SLOTS__*/</script>
-<script type=module src="/web/workshop.js"></script>
-<script type=module src="/web/legacy.js"></script>
+<script type=module src=/web/workshop.js></script>
+<script type=module src=/web/legacy.js></script>
 </body></html>
 """
+
+
 def _sch_state(b: Board) -> dict[str, object]:
     """Schematic geometry for the canvas: same sch_layout() the SVG
     renderer uses, so both pictures always agree. On a dense board the layout
@@ -1754,7 +1768,7 @@ class H(http.server.BaseHTTPRequestHandler):
             # the JS mounts them once (islands — preact never re-renders them).
             slots = {name: SLOTS.render(name, None) for name in ("toolbar", "view")}
             page = PAGE.replace("/*__SLOTS__*/",
-                                json.dumps(slots).replace("</", "<\\/"))
+                                      json.dumps(slots).replace("</", "<\\/"))
             body = page.encode("utf-8")
             self._write_bytes(200, body, "text/html; charset=utf-8", doc=True)
         finally:
