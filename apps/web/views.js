@@ -182,3 +182,51 @@ export const VcsPanel = () => {
           ><span class=rs>${c.subject}</span></button>${s.vcsOpen === c.hash
             ? html`<pre>${s.vcsDiff}</pre>` : ''}`)}</div></section>`;
 };
+
+// knowledgebase: the document list (or the search hits), the stat line, the
+// open document, and the preference rows. legacy.js pushes all of it and
+// delegates the clicks; the inputs stay legacy-wired (their values must
+// survive a re-render, so they carry no value prop here).
+const KbRow = ({r}) => html`<div class=kbrow title=${r.title || ''}
+  ><button class=kbname data-doc=${r.doc} data-start=${r.start}>${r.name}</button
+  ><span class=kbkind>${r.kind}</span><span class=kbparts>${r.tail || ''}</span></div>`;
+
+const KbPref = ({p}) => html`<div class=kbrow
+  ><span class=kbname>${'when ' + p.when + ' :: ' + p.text}</span
+  ><span class=kbkind>${p.approved ? 'approved' : 'pending'}</span
+  ><button data-pref=${p.id} data-approve=${p.approved ? '0' : '1'}
+    title=${p.approved ? 'stop following this' : 'follow this from now on'}
+    >${p.approved ? 'reject' : 'approve'}</button></div>`;
+
+export const KbPanel = () => {
+  const s = useUI();
+  return html`<section id=kbwrap>
+    <header class=panel-head><span class=panel-title>knowledgebase</span>
+      <span class=panel-note id=kbnote>${s.kbNote}</span>
+      <span class=panel-note>notes + datasheets · the agent reads the same files</span></header>
+    <div id=kbbar>
+      <input id=kbq type=search aria-label="ask the knowledgebase"
+        placeholder="ask: what is the input voltage range?  (or a search term)" />
+      <button id=kbask class=primary type=button title="passages that answer the question (embeddings)">ask</button>
+      <button id=kbgrep type=button title="exact term match, one line per hit">search</button>
+      <button id=kbans type=button title="also write an answer with the local model">answer</button></div>
+    <div id=kbadd>
+      <input id=kburl type=search aria-label="datasheet url or file path"
+        placeholder="https://…/datasheet.pdf  or  path/to/note.md" />
+      <button id=kbaddbtn type=button title="copy or download it into kb/">add</button>
+      <button id=kbfetch type=button title="download the datasheet for every datasheet= / lcsc= part">fetch datasheets</button>
+      <button id=kbprefsbtn type=button title="preferences the agent follows without being asked">preferences</button></div>
+    <div id=kbprefs style=${s.kbPrefsOpen ? '' : 'display:none'}
+      ><div id=kbprefslist>${s.kbPrefs.length
+        ? s.kbPrefs.map(p => html`<${KbPref} p=${p} key=${p.id} />`)
+        : 'no preferences yet — teach one below'}</div>
+      <div id=kbprefsadd><input id=kbwhen aria-label="when this applies" placeholder="when placing connectors" />
+        <input id=kbwhat aria-label="what to prefer" placeholder="put them on the board edge" />
+        <button id=kbprefsgo type=button title="save as a new preference">remember</button></div></div>
+    <div id=kbstat role=status aria-live=polite>${s.kbStat}</div>
+    <div id=kblist>${s.kbRows.length
+      ? s.kbRows.map(r => html`<${KbRow} r=${r} key=${r.doc + ':' + r.start} />`)
+      : 'nothing yet — add a url, or fetch datasheets'}${s.kbTail}</div>
+    <pre id=kbview>${s.kbView}</pre>
+    </section>`;
+};

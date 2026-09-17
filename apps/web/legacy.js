@@ -1611,109 +1611,98 @@ async function watch(){try{
   document.body.prepend(b);
 }catch(e){}}
 // --- knowledgebase panel: notes + datasheets, the agent's own files -----
+// The panel is a component (views.js KbPanel): this shapes what it shows and
+// keeps the fetches, the file writes and the preference calls.
 let KBDOCS=[];
-function kbRow(name,kind,tail){
-  const r=document.createElement('div');r.className='kbrow';
-  const b=document.createElement('button');b.className='kbname';b.textContent=name;
-  const k=document.createElement('span');k.className='kbkind';k.textContent=kind;
-  const t=document.createElement('span');t.className='kbparts';t.textContent=tail||'';
-  r.append(b,k,t);return {row:r,btn:b};
-}
 async function kbLoad(){
   const r=await api('/kb/list',{});
-  if(r.error){$('kbnote').textContent=r.error;return;}
+  if(r.error){ui.set({kbNote:r.error});return;}
   KBDOCS=r.docs||[];
   const parts=KBDOCS.reduce((n,d)=>n+(d.parts||[]).length,0);
-  $('kbnote').textContent=`${KBDOCS.length} document${KBDOCS.length===1?'':'s'} · `
-    +`${parts} part link${parts===1?'':'s'} · `+(r.dir||'kb/');
-  const box=$('kblist');box.innerHTML='';
-  KBDOCS.forEach(d=>{
-    const {row,btn}=kbRow(d.name,d.kind+(d.source?' · from url':''),
-                          (d.parts||[]).join(' '));
-    btn.title=d.source?('source: '+d.source):d.name;
-    btn.onclick=()=>kbOpen(d.name,1);
-    box.appendChild(row);
-  });
-  if(!KBDOCS.length)box.textContent='nothing yet — add a url, or fetch datasheets';
-  else if(r.total&&r.total>KBDOCS.length)
-    box.appendChild(document.createTextNode('… showing '+KBDOCS.length+' of '+r.total
-      +' documents — ask or search to reach the rest'));
-  if(r.busy)$('kbstat').textContent='fetching datasheets…';
-  else if((r.log||[]).length)$('kbstat').textContent=(r.log||[]).slice(-3).join(' · ');
+  ui.set({
+    kbNote:`${KBDOCS.length} document${KBDOCS.length===1?'':'s'} · `
+      +`${parts} part link${parts===1?'':'s'} · `+(r.dir||'kb/'),
+    kbRows:KBDOCS.map(d=>({doc:d.name,name:d.name,
+      kind:d.kind+(d.source?' · from url':''),tail:(d.parts||[]).join(' '),
+      title:d.source?('source: '+d.source):d.name,start:1})),
+    kbTail:(KBDOCS.length&&r.total&&r.total>KBDOCS.length)
+      ?`… showing ${KBDOCS.length} of ${r.total} documents — ask or search to reach the rest`
+      :'',
+    kbStat:r.busy?'fetching datasheets…'
+      :((r.log||[]).length?(r.log||[]).slice(-3).join(' · '):'')});
 }
 async function kbOpen(doc,start){
   const r=await api('/kb/read',{doc,start:start||1,lines:120});
-  if(r.error){$('kbstat').textContent=r.error;return;}
-  $('kbview').textContent=`${doc}  lines ${r.start}-${r.end} of ${r.total_lines}\n\n${r.text}`;
+  if(r.error){ui.set({kbStat:r.error});return;}
+  ui.set({kbView:`${doc}  lines ${r.start}-${r.end} of ${r.total_lines}\n\n${r.text}`});
 }
 async function kbGo(semantic,answer){
-  const q=$('kbq').value.trim();if(!q){$('kbstat').textContent='type a question first';return;}
-  $('kbstat').textContent=answer?'asking the local model…':'searching kb/…';
+  const q=$('kbq').value.trim();if(!q){ui.set({kbStat:'type a question first'});return;}
+  ui.set({kbStat:answer?'asking the local model…':'searching kb/…'});
   const r=await api(semantic?'/kb/ask':'/kb/search',{q,limit:8,answer:!!answer});
-  if(r.error){$('kbstat').textContent=r.error;return;}
+  if(r.error){ui.set({kbStat:r.error});return;}
   const hits=r.passages||r.hits||[];
-  $('kbstat').textContent=`${hits.length} hit${hits.length===1?'':'s'}`
-    +(r.method?' · '+r.method+(r.model?' · '+r.model:''):'')
-    +((r.note&&!r.answer)?' · '+r.note:'');
-  const box=$('kblist');box.innerHTML='';
-  hits.forEach(h=>{
-    const line=h.line!==undefined?h.line:h.start;
-    const {row,btn}=kbRow(h.doc||'(no doc)',line!==undefined?'line '+line:'passage',
-                          h.score!==undefined?String(h.score):'');
-    btn.onclick=()=>kbOpen(h.doc,Math.max(1,(line||1)-3));
-    row.title=String(h.text||'').slice(0,400);
-    box.appendChild(row);
-  });
-  if(r.answer)$('kbview').textContent='answer (from kb/ only)'
-    +(r.answer_note?'\n('+r.answer_note+')':'')
-    +'\n\n'+r.answer;
-  else if(r.answer_error)$('kbview').textContent='(no written answer: '+r.answer_error+')';
+  ui.set({
+    kbStat:`${hits.length} hit${hits.length===1?'':'s'}`
+      +(r.method?' · '+r.method+(r.model?' · '+r.model:''):'')
+      +((r.note&&!r.answer)?' · '+r.note:''),
+    kbRows:hits.map(h=>{
+      const line=h.line!==undefined?h.line:h.start;
+      return {doc:h.doc||'(no doc)',name:h.doc||'(no doc)',
+        kind:line!==undefined?'line '+line:'passage',
+        tail:h.score!==undefined?String(h.score):'',
+        title:String(h.text||'').slice(0,400),
+        start:Math.max(1,(line||1)-3)};}),
+    kbTail:'',
+    kbView:r.answer?('answer (from kb/ only)'
+      +(r.answer_note?'\n('+r.answer_note+')':'')+'\n\n'+r.answer)
+      :(r.answer_error?('(no written answer: '+r.answer_error+')'):'')});
 }
+// the rows name their document and line; the click comes back here
+$('kblist').addEventListener('click',e=>{
+  const b=e.target.closest('button.kbname[data-doc]');
+  if(b)kbOpen(b.dataset.doc,+(b.dataset.start||1));
+});
 $('kbask').onclick=()=>kbGo(true,false);
 $('kbgrep').onclick=()=>kbGo(false,false);
 $('kbans').onclick=()=>kbGo(true,true);
 $('kbaddbtn').onclick=async()=>{
   const src=$('kburl').value.trim();if(!src)return;
-  $('kbstat').textContent='adding '+src+'…';
+  ui.set({kbStat:'adding '+src+'…'});
   const r=await api('/kb/add',{src});
-  if(r.error){$('kbstat').textContent=r.error;return;}
-  $('kbstat').textContent=`added ${r.added} (${r.bytes} bytes)`;
+  if(r.error){ui.set({kbStat:r.error});return;}
+  ui.set({kbStat:`added ${r.added} (${r.bytes} bytes)`});
   $('kburl').value='';kbLoad();
 };
 $('kbfetch').onclick=async()=>{
   const r=await api('/kb/fetch',{});
-  $('kbstat').textContent=r.error||r.note||'fetch started';
+  ui.set({kbStat:r.error||r.note||'fetch started'});
   kbLoad();
 };
-// preferences: Flux's Knowledge approvals. The file is the store; the
-// buttons flip the `# ok` suffix and the agent reads what is approved.
+// preferences: Flux's Knowledge approvals. The file is the store; the buttons
+// flip the `# ok` suffix and the agent reads what is approved.
 $('kbprefsbtn').onclick=async()=>{
-  const box=$('kbprefs'),open=box.style.display!=='none';
-  box.style.display=open?'none':'';
+  const open=ui.state.kbPrefsOpen;
+  ui.set({kbPrefsOpen:!open});
   if(!open)kbPrefs();
 };
 async function kbPrefs(){
   const r=await api('/kb/prefs',{});
-  const box=$('kbprefslist');box.innerHTML='';
-  if(r.error){$('kbstat').textContent=r.error;return;}
-  (r.prefs||[]).forEach(p=>{
-    const d=document.createElement('div');d.className='kbrow';
-    const b=document.createElement('span');b.className='kbname';
-    b.textContent=`when ${p.when} :: ${p.text}`;
-    const k=document.createElement('span');k.className='kbkind';
-    k.textContent=p.approved?'approved':'pending';
-    const t=document.createElement('button');t.textContent=p.approved?'reject':'approve';
-    t.title=p.approved?'stop following this':'follow this from now on';
-    t.onclick=async()=>{
-      const x=await api('/kb/prefs/set',{id:p.id,approved:!p.approved});
-      if(x.error)$('kbstat').textContent=x.error;else kbPrefs();};
-    d.append(b,k,t);box.appendChild(d);});
-  if(!(r.prefs||[]).length)box.textContent='no preferences yet — teach one below';
+  if(r.error){ui.set({kbStat:r.error});return;}
+  ui.set({kbPrefs:(r.prefs||[]).map(p=>({id:p.id,when:p.when,
+    text:p.text,approved:!!p.approved}))});
 }
+$('kbprefslist').addEventListener('click',async e=>{
+  const b=e.target.closest('button[data-pref]');
+  if(!b)return;
+  const x=await api('/kb/prefs/set',
+    {id:+b.dataset.pref,approved:b.dataset.approve==='1'});
+  if(x.error)ui.set({kbStat:x.error});else kbPrefs();
+});
 $('kbprefsgo').onclick=async()=>{
   if($('kbprefsgo').disabled)return;$('kbprefsgo').disabled=true;
   try{const r=await api('/kb/prefs/add',{when:$('kbwhen').value,text:$('kbwhat').value});
-    if(r.error){$('kbstat').textContent=r.error;return;}
+    if(r.error){ui.set({kbStat:r.error});return;}
     $('kbwhen').value='';$('kbwhat').value='';kbPrefs();}
   finally{$('kbprefsgo').disabled=false;}
 };
@@ -1722,5 +1711,5 @@ $('kbq').addEventListener('keydown',e=>{
 $('kburl').addEventListener('keydown',e=>{
   if(e.key==='Enter'){e.preventDefault();$('kbaddbtn').click();}});
 kbLoad();
-setInterval(()=>{if($('kbstat').textContent.startsWith('fetching'))kbLoad();},3000);
+setInterval(()=>{if(ui.state.kbStat.startsWith('fetching'))kbLoad();},3000);
 setInterval(watch,2000);

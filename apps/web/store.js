@@ -32,6 +32,13 @@ const state = {
   vcsMsg: '',         // shown instead of the list when there is no repo
   vcsOpen: '',        // hash whose diff is expanded
   vcsDiff: '',        // that diff's text
+  kbNote: 'kb/ beside the board',   // header note: documents · part links · dir
+  kbRows: [],         // docs or search hits: [{doc, name, kind, tail, title, start}]
+  kbTail: '',         // "… showing N of M documents"
+  kbStat: 'click a document to read it',
+  kbView: '',         // the document / answer text under the list
+  kbPrefsOpen: false, // the preferences block is hidden until asked for
+  kbPrefs: [],        // [{id, when, text, approved}]
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

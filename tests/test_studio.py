@@ -278,6 +278,10 @@ def main() -> None:
     os.makedirs(os.path.join(troot, "sub"), exist_ok=True)
     open(os.path.join(troot, "notes.md"), "w").write("notes for the board\n")
     open(os.path.join(troot, "sub", "inner.md"), "w").write("inner\n")
+    # a knowledgebase beside the board: the kb panel lists it and opens it
+    os.makedirs(os.path.join(troot, "kb"), exist_ok=True)
+    open(os.path.join(troot, "kb", "NOTES.md"), "w").write(
+        "# notes\nInput supply must stay between 2.7 and 5.5 volts.\n")
     # a real repo in the throwaway root: the revisions panel lists commits and
     # shows a diff, so it needs history to render
     for _g in (["init", "-q"], ["add", "-A"],
@@ -1185,6 +1189,51 @@ def main() -> None:
                             break
                     else:
                         raise AssertionError("up-row did not return to the root")
+                    # knowledgebase: the document list renders, a row opens
+                    # the file, and the preference block starts hidden
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#kblist .kbrow').length"))) >= 1, \
+                        "kb document rows missing"
+                    assert "document" in str(_cdp.eval(
+                        "document.querySelector('#kbnote').textContent")), "kb note missing"
+                    assert str(_cdp.eval(
+                        "getComputedStyle(document.querySelector('#kbprefs')).display")) \
+                        == "none", "preferences block should start hidden"
+                    _cdp.eval("(()=>{document.querySelector('#kblist button.kbname')"
+                              ".click();return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "lines 1-" in str(_cdp.eval(
+                                "document.querySelector('#kbview').textContent")):
+                            break
+                    else:
+                        raise AssertionError("kb document never opened")
+                    assert "2.7 and 5.5" in str(_cdp.eval(
+                        "document.querySelector('#kbview').textContent")), "wrong text"
+                    __kbprefs = post(base, "/kb/prefs/add",
+                                     {"when": "placing connectors", "text": "board edge"})
+                    assert not __kbprefs.get("error"), __kbprefs
+                    _cdp.eval("(()=>{document.querySelector('#kbprefsbtn').click();"
+                              "return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if bool(_cdp.eval("!!document.querySelector"
+                                          "('#kbprefslist button[data-pref]')")):
+                            break
+                    else:
+                        raise AssertionError("preference rows never rendered")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#kbprefslist .kbkind').textContent"
+                    )) == "pending", "preference should start pending"
+                    _cdp.eval("(()=>{document.querySelector"
+                              "('#kbprefslist button[data-pref]').click();return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if str(_cdp.eval("document.querySelector"
+                                         "('#kbprefslist .kbkind').textContent")) == "approved":
+                            break
+                    else:
+                        raise AssertionError("approve did not stick")
                     # revisions: the git log renders, a click asks for that
                     # commit's diff, and only one diff is ever open
                     assert int(str(_cdp.eval(
@@ -1371,8 +1420,10 @@ def main() -> None:
             page = get(kbase, "/").decode()
             assert "id=app" in page, "workshop mount point missing from the shell"
             for _frag in ("id=kbwrap", "id=kbfetch", "id=kbask", "id=kbprefsbtn",
-                          "id=xraybar", "id=xraygo", "id=xrayfile", "id=kblist"):
-                assert _frag in _panels, f"panel control missing: {_frag}"
+                          "id=kblist", "id=kbprefslist", "id=kbview", "id=kbstat"):
+                assert _frag in _views, f"kb control missing: {_frag}"
+            for _frag in ("id=xraybar", "id=xraygo", "id=xrayfile"):
+                assert _frag in _panels, f"x-ray control missing: {_frag}"
             # quote lives in the Tools menu now, so it ships in the chrome
             # module rather than in a panel slot
             assert "id=quote" in _chrome, "quote menu missing from the chrome"

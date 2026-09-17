@@ -6,8 +6,8 @@
 // the #pluginpanels / #pluginleft islands.
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
-import { ChatPanel, CuRows, MarkRows, PartBlock, DrcStrip, TidyBlock,
-         TreePanel, VcsPanel } from './views.js';
+import { ChatPanel, CuRows, KbPanel, MarkRows, PartBlock, DrcStrip,
+         TidyBlock, TreePanel, VcsPanel } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
@@ -103,31 +103,6 @@ const ScanPanel = () => html`<section id=scanwrap>
       <svg id=scansvg aria-hidden=true></svg></div>
     <div id=scanparts></div></div>
   <pre id=scanout></pre>
-  </section>`;
-
-const KbPanel = () => html`<section id=kbwrap>
-  <header class=panel-head><span class=panel-title>knowledgebase</span>
-    <span class=panel-note id=kbnote>kb/ beside the board</span>
-    <span class=panel-note>notes + datasheets · the agent reads the same files</span></header>
-  <div id=kbbar>
-    <input id=kbq type=search aria-label="ask the knowledgebase"
-      placeholder="ask: what is the input voltage range?  (or a search term)" />
-    <button id=kbask class=primary type=button title="passages that answer the question (embeddings)">ask</button>
-    <button id=kbgrep type=button title="exact term match, one line per hit">search</button>
-    <button id=kbans type=button title="also write an answer with the local model">answer</button></div>
-  <div id=kbadd>
-    <input id=kburl type=search aria-label="datasheet url or file path"
-      placeholder="https://…/datasheet.pdf  or  path/to/note.md" />
-    <button id=kbaddbtn type=button title="copy or download it into kb/">add</button>
-    <button id=kbfetch type=button title="download the datasheet for every datasheet= / lcsc= part">fetch datasheets</button>
-    <button id=kbprefsbtn type=button title="preferences the agent follows without being asked">preferences</button></div>
-  <div id=kbprefs style="display:none"><div id=kbprefslist></div>
-    <div id=kbprefsadd><input id=kbwhen aria-label="when this applies" placeholder="when placing connectors" />
-      <input id=kbwhat aria-label="what to prefer" placeholder="put them on the board edge" />
-      <button id=kbprefsgo type=button title="save as a new preference">remember</button></div></div>
-  <div id=kbstat role=status aria-live=polite>click a document to read it</div>
-  <div id=kblist></div>
-  <pre id=kbview></pre>
   </section>`;
 
 // slot render order (panel order in the cockpit)
