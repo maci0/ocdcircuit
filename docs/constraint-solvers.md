@@ -13,7 +13,7 @@ at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
 proofs / prove-infeasible answers but cost a dependency plus a linearized
 formulation — scoped by `benches/exact_overlap_pilot.py` (stdlib
 backtracking proxy for AddNoOverlap2D): loose feasibility is trivial at
-n≤20; undersized prove-no times out at n=20 (>3 s, 9M nodes); chain-WL-capped
+n≤20; undersized prove-no times out at n=20 (>3 s, >7M nodes); chain-WL-capped
 exact search times out at n=12. Keep them optional-verifier only; do not take
 an OR-Tools dep for day-to-day place. The cheapest remaining upgrades, in
 order: (1) negotiated-congestion history hardening in the maze router (gated

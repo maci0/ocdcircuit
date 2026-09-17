@@ -30,6 +30,24 @@ except ParseError as _pe0:
     assert _pe0.line == 0 and str(_pe0) == "empty circuit"
 
 
+from unittest.mock import patch
+from benches.exact_overlap_pilot import _feas as _pilot_feas
+
+assert _pilot_feas(1, 1.5, 2.0, 1.0, 1.0)[0] == "no"
+assert _pilot_feas(0, 1.5, 2.0, 1.0, 1.0)[0] == "yes"
+assert _pilot_feas(2, 4.0, 2.0, 1.0, 1.0, [(0, 1)], 2.0)[0] == "yes"
+assert _pilot_feas(2, 4.0, 2.0, 1.0, 1.0, [(0, 1)], 1.0)[0] == "no"
+with patch("benches.exact_overlap_pilot.time.perf_counter",
+           side_effect=[0.0] + [0.995] * 50):
+    assert _pilot_feas(2, 2.0, 2.0, 1.0, 1.0)[0] == "no"
+with patch("benches.exact_overlap_pilot.time.perf_counter",
+           side_effect=[0.0, 0.0] + [1.0] * 10) as _pilot_clock:
+    _pilot_result, _, _pilot_nodes = _pilot_feas(2, 100.0, 2.0, 1.0, 1.0)
+    assert _pilot_result == "timeout"
+    assert _pilot_nodes <= 1
+    assert _pilot_clock.call_count <= 5
+
+
 class PSU(Module):
     def build(self, b: Board) -> None:
         self.add(b, "J1", "PINHD2", "9V", x=3, y=15)

@@ -20,7 +20,9 @@ def _feas(n: int, board: float, part: float, step: float, deadline: float,
           nets: list[tuple[int, int]] | None = None,
           wl_cap: float | None = None) -> tuple[str, float, int]:
     """Return (yes|no|timeout, seconds, nodes)."""
-    cells = int((board - part) / step) + 1
+    if n == 0:
+        return ("yes" if wl_cap is None or wl_cap >= 0 else "no"), 0.0, 0
+    cells = math.floor((board - part) / step) + 1
     if cells < 1:
         return "no", 0.0, 0
     half = part / 2.0
@@ -45,12 +47,12 @@ def _feas(n: int, board: float, part: float, step: float, deadline: float,
 
     def rec(i: int) -> bool:
         nonlocal nodes
-        if time.perf_counter() - t0 > deadline:
-            return False
         if i == n:
             return wl_cap is None or wl() <= wl_cap
         for cx in range(cells):
             for cy in range(cells):
+                if time.perf_counter() - t0 >= deadline:
+                    raise TimeoutError
                 nodes += 1
                 x = half + cx * step
                 y = half + cy * step
@@ -64,13 +66,11 @@ def _feas(n: int, board: float, part: float, step: float, deadline: float,
                 ys.pop()
         return False
 
-    ok = rec(0)
-    secs = time.perf_counter() - t0
-    if ok:
-        return "yes", secs, nodes
-    if secs >= deadline - 0.01:
-        return "timeout", secs, nodes
-    return "no", secs, nodes
+    try:
+        ok = rec(0)
+    except TimeoutError:
+        return "timeout", time.perf_counter() - t0, nodes
+    return "yes" if ok else "no", time.perf_counter() - t0, nodes
 
 
 def main() -> None:

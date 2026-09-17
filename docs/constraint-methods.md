@@ -21,7 +21,7 @@ placer terms** extending match/diff. Exact backends (`diffn`/`AddNoOverlap2D`,
 Z3) stay an *optional verifier* ("prove it doesn't fit"), never the default —
 scoped by measurement in `benches/exact_overlap_pilot.py` (stdlib backtracking
 proxy for AddNoOverlap2D): loose feasibility is trivial at n≤20; undersized
-prove-no is instant at n≤15 but times out (>3 s, 9M nodes) at n=20; adding a
+prove-no is instant at n≤15 but times out (>3 s, >7M nodes) at n=20; adding a
 chain-WL cap times out at n=12 on a tight cap. Exact methods earn a dependency
 only for prove-infeasible / optimality-gap questions, not day-to-day place.
 Skip: full floorplan-SA encodings, Cassowary port, GA/ACO/PSO, BayesOpt,
