@@ -1673,7 +1673,7 @@ _shb = agent.loads("board t 40x30 2L\npart R1 R0805 10k x=5 y=15\n"
 _shb.place(seeds=1, iters=10)
 _shb.route_board("maze")
 _shn = list(_shb.traces)
-assert _mz._shove(_shb, "N", 0, 40, 0, 30, 0.25, set(), set(), set(), {}, _shn)
+assert _mz._shove("N", 0, 40, 0, 30, 0.25, set(), set(), set(), {}, _shn)
 _shb.traces[:] = _shn
 assert _shb.check()["errors"] == [], _shb.check()["errors"]
 # drag-shove: all-or-nothing. It either moves copper as one undoable effect,

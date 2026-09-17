@@ -281,7 +281,7 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
             # shove first: nudge the blocker's in-corridor segs aside
             # and retry. Cheaper than ripping the whole net — and when it
             # works the victim keeps its (moved) copper.
-            if _shove(board, best, x0, x1, y0, y1, grid, copper, halo,
+            if _shove(best, x0, x1, y0, y1, grid, copper, halo,
                       base_blocked, cells_of, new) and _route_one(
                       board, fnet, grid, bend, via, nx, ny, base_blocked,
                       pad_cells, copper, halo, cells_of, new, frames, hist,
@@ -482,7 +482,7 @@ def reroute(board: Board, name: str) -> bool:
                                     and y0 <= gy * grid <= y1)):
                 if oname == name:
                     continue
-                if _shove(board, oname, x0, x1, y0, y1, grid, copper,
+                if _shove(oname, x0, x1, y0, y1, grid, copper,
                           halo, base_blocked, cells_of, new) and _route_one(
                           board, net, grid, bend, via, nx, ny,
                           base_blocked, pad_cells, copper, halo, cells_of,
@@ -531,7 +531,7 @@ def _fallback(net: Net, pts: list[tuple[str, XY]], new: list[Seg]) -> None:
                 new.append(j)
 
 
-def _shove(board: Board, victim: str,
+def _shove(victim: str,
            x0: float, x1: float, y0: float, y1: float,
            grid: float, copper: set[tuple[int, int, int]],
            halo: set[tuple[int, int, int]],
