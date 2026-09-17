@@ -1218,23 +1218,25 @@ def from_ir(doc: dict[str, object]) -> Board:
                    float(x) if isinstance(x, (int, float)) else None,
                    float(y) if isinstance(y, (int, float)) else None,
                    attrs={str(k): str(v) for k, v in attrs.items()} or None)
+    constraints = cast(list[Constraint], doc.get("constraints", []))
+    explicit = {(c.get("t"), str(c.get("net"))) for c in constraints
+                if c.get("t") in ("layer", "width")}
     for n, net in cast(dict[str, dict[str, object]], doc.get("nets", {})).items():
         for ref, pin in cast(list[list[object]], net.get("pins", [])):
             b.connect(n, str(ref), str(pin))
         nattrs = net.get("attrs", {})
         assert isinstance(nattrs, dict)
         b.nets[n].attrs.update({str(k): str(v) for k, v in nattrs.items()})
-        if net.get("layer") is not None:
+        if net.get("layer") is not None and ("layer", n) not in explicit:
             layer = net["layer"]
             assert isinstance(layer, int)
             b.constrain({"t": "layer", "net": n, "layer": layer})
         width = net.get("width", 0.3)
         assert isinstance(width, (int, float))
-        if float(width) != 0.3:
+        if float(width) != 0.3 and ("width", n) not in explicit:
             b.constrain({"t": "width", "net": n, "width": float(width)})
-    for c in cast(list[Constraint], doc.get("constraints", [])):
-        if c.get("t") not in ("layer", "width"):  # already applied above
-            b.constrain(c)
+    for c in constraints:
+        b.constrain(c)
     return b
 
 
