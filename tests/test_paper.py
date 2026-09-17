@@ -295,6 +295,36 @@ assert "a" not in rld._realms and "g" in rld._realms
 rld.declare([])
 assert "g" not in rld._realms and "b" not in rld._realms  # discarded
 
+def _check_repeated_realm_references() -> None:
+    for realm in (True, "shared"):
+        loader = Loader(Context())
+        specs: list[dict[str, object]] = [
+            {"id": "a", "factory": _fac,
+             "isolate": {"bus": realm, "clock": realm}},
+            {"id": "b", "factory": _fac,
+             "isolate": {"bus": realm}},
+        ]
+        loader.declare(specs)
+        first_scope = loader.entries["a"].scope
+        assert first_scope["bus"] is first_scope["clock"]
+        remaining_realm = loader.entries["b"].scope["bus"]
+        loader.declare(specs[1:])
+        assert loader.entries["b"].scope["bus"] is remaining_realm
+        assert len(loader._realms) == 1
+        assert next(iter(loader._realms.values())) == (remaining_realm, 1)
+        loader.declare([])
+        assert not loader._realms
+        loader.declare(specs)
+        replacement = dict(specs[0], isolate={"bus": object()})
+        loader.declare([replacement, specs[1]])
+        assert len(loader._realms) == 1
+        assert next(iter(loader._realms.values()))[1] == 1
+        loader.declare([])
+        assert not loader._realms
+
+
+_check_repeated_realm_references()
+
 # Alg 10: multi-entry reload is transactional — failed reimport
 # restores every swapped entry, never half-reloaded
 hctx = Context()

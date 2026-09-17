@@ -943,12 +943,10 @@ class Loader:
 
     def _release_isolate(self, entry: Entry) -> None:
         """Release realm refs; discard a realm once no entry names it."""
-        seen: set[str] = set()
         for v in entry.isolate.values():
             name = entry.id if v is True else v if isinstance(v, str) else None
-            if name is None or name in seen:
+            if name is None:
                 continue
-            seen.add(name)
             cur = self._realms.get(name)
             if cur is not None:
                 sym, n = cur
