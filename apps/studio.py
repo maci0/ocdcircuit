@@ -2527,13 +2527,18 @@ class H(http.server.BaseHTTPRequestHandler):
         # studio shows what the file says and points at the CLI for placement.
         # Anything smaller is placed here as usual (~0.1s for a 10-part board,
         # which is the common case and must not regress).
-        place_it = not (dense and not req.get("dense_place"))
+        place_it = not req.get("no_place") and not (
+            dense and not req.get("dense_place"))
         if place_it:
             cost = b.place(placer, seeds=1 if quick else 5,
                            iters=100 if quick else 500,
                            frames=frames if animate else None, every=25)
             assert isinstance(cost, float)
         else:
+            from ocdcircuit.solver import _fixed
+            for ref, (x, y) in _fixed(b).items():
+                if ref in b.parts:
+                    b.move_part(ref, x, y)
             cost = 0.0  # no placement: parts keep the positions the file gave them
         rframes: list[dict[str, object]] = []
         n = b.route_board("lroute" if quick else router,
