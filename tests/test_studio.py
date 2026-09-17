@@ -47,6 +47,46 @@ console.log(out.join('|'));
 HL_EXPECT = "PSU_J1|U1:U1.7|R1,R2,U1|true:0"
 
 
+class CompressionTests(unittest.TestCase):
+    def test_compression_preserves_or_reduces_transfer_size(self) -> None:
+        import gzip
+        import io
+        import random
+        from email.message import Message
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+
+        opaque = random.Random(0).randbytes(2048)
+        cases = (
+            ("image/png", b"png" * 1024, False),
+            ("font/woff2", b"font" * 1024, False),
+            ("application/zip", b"archive" * 1024, False),
+            ("text/javascript; charset=utf-8", opaque, False),
+            ("text/css; charset=utf-8", b"body{}", False),
+            ("text/javascript; charset=utf-8", b"const value = 1;\n" * 1024, True),
+            ("image/svg+xml", b"<svg></svg>" * 1024, True),
+        )
+        for content_type, body, compressed in cases:
+            with self.subTest(content_type=content_type, compressed=compressed):
+                handler = studio.H.__new__(studio.H)
+                handler.headers = Message()
+                handler.headers["Accept-Encoding"] = "gzip"
+                handler.wfile = io.BytesIO()
+                with patch.object(handler, "send_response"), \
+                        patch.object(handler, "send_header") as send_header, \
+                        patch.object(handler, "end_headers"):
+                    handler._write_bytes(200, body, content_type, doc=True)
+                headers = dict(call.args for call in send_header.call_args_list)
+                wire = handler.wfile.getvalue()
+                self.assertEqual(headers.get("Content-Encoding") == "gzip", compressed)
+                self.assertEqual(int(headers["Content-Length"]), len(wire))
+                self.assertEqual(gzip.decompress(wire) if compressed else wire, body)
+                self.assertLessEqual(len(wire), len(body))
+                print(f"{content_type}: {len(body)} -> {len(wire)} bytes")
+
+
 class LandingTests(unittest.TestCase):
     def test_collaboration_is_labeled_as_illustrative(self) -> None:
         node = shutil.which("node")

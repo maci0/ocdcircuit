@@ -1388,9 +1388,14 @@ class H(http.server.BaseHTTPRequestHandler):
             return
         out = body
         enc = False
-        if len(body) >= _MIN_GZIP and self._accepts_gzip():
-            out = gzip.compress(body, compresslevel=_GZIP_LEVEL)
-            enc = True
+        media_type = content_type.partition(";")[0].strip().lower()
+        compressible = media_type.startswith("text/") or media_type in (
+            "application/json", "application/javascript", "image/svg+xml")
+        if compressible and len(body) >= _MIN_GZIP and self._accepts_gzip():
+            compressed = gzip.compress(body, compresslevel=_GZIP_LEVEL)
+            if len(compressed) < len(body):
+                out = compressed
+                enc = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(out)))
