@@ -230,3 +230,28 @@ export const KbPanel = () => {
     <pre id=kbview>${s.kbView}</pre>
     </section>`;
 };
+
+// Candidates filmstrip. The canvas pixels are not VDOM: legacy.js owns the
+// painting, so it registers a painter here and each thumb asks for its frame
+// once after mount. Captions and the picked/base wording are state too.
+export const thumbPaint = {fn: null};
+
+const Thumb = ({t: cand}) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current && thumbPaint.fn) thumbPaint.fn(cand.cand, cand.i, ref.current);
+  }, [cand]);
+  return html`<button type=button class=galpick data-i=${cand.i}
+    aria-label=${`adopt candidate ${cand.i}, cost ${cand.cand.cost} (shift-click to compare)`}
+    ><canvas ref=${ref} width=300 height=220></canvas
+    ><span class=galcap>${cand.label}</span></button>`;
+};
+
+export const Gallery = () => {
+  const s = useUI();
+  return html`<section id=galwrap style=${s.galOpen ? '' : 'display:none'}>
+    <header class=panel-head><span class=panel-title>candidates</span>
+      <span class=panel-note>click one to adopt it, then drag it on the PCB to nudge and pin</span>
+      <span class=panel-note>job file 1F-04 · placer diffusion · 1 seed × 400 iters</span></header>
+    <div id=gal>${s.galThumbs.map(t => html`<${Thumb} t=${t} key=${t.i} />`)}</div></section>`;
+};

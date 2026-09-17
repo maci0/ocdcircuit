@@ -4,6 +4,7 @@
 // Loaded as a module AFTER workshop.js, so every id it reaches for exists.
 // NOTE: modules are strict mode — never assign to an undeclared name here.
 import { ui } from './store.js';
+import { thumbPaint } from './views.js';
 const $=id=>document.getElementById(id);
 async function api(path,body){const r=await fetch(path,{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
@@ -654,12 +655,7 @@ function galDelta(a,b){ // cost delta + parts moved >2mm between candidates
     if(dx*dx+dy*dy>4)moved++;}
   return {dcost:+(b.cost-a.cost).toFixed(1),moved};
 }
-function thumb(cand,i){
-  const fig=document.createElement('button');fig.type='button';fig.className='galpick';
-  fig.setAttribute('aria-label',`adopt candidate ${i}, cost ${cand.cost} (shift-click to compare)`);
-  const cv=document.createElement('canvas');cv.width=300;cv.height=220;fig.appendChild(cv);
-  const cap=document.createElement('span');cap.className='galcap';cap.textContent=`#${i} cost ${cand.cost}`;fig.appendChild(cap);
-  fig.onclick=e=>{if(e&&e.shiftKey)galCompare(i,cand,fig);else pickCand(i);};
+thumbPaint.fn=(cand,i,cv)=>{ // the filmstrip's pixels: canvas, never VDOM
   const ctx=cv.getContext('2d'),W=300,H=220,s=Math.min(W/S.bw,H/S.bh),ox=(W-S.bw*s)/2,oy=(H-S.bh*s)/2;
   ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
   ctx.strokeStyle=C.line2;ctx.strokeRect(ox,oy+S.bh*s,S.bw*s,-S.bh*s);
@@ -668,8 +664,14 @@ function thumb(cand,i){
     const fixed=S.fixed&&S.fixed[r];
     ctx.fillStyle=fixed?C.wash:C.ink2;ctx.fillRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);
     ctx.strokeStyle=fixed?C.signal:C.ink;ctx.strokeRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);}
-  return fig;
-}
+};
+// one click for the whole strip: shift-click compares, plain click adopts
+$('gal').addEventListener('click',e=>{
+  const b=e.target.closest('button.galpick');
+  if(!b)return;
+  const i=+b.dataset.i,cand=galCands[i];
+  if(e.shiftKey)galCompare(i,cand);else pickCand(i);
+});
 async function genCands(){
   if(!S)return;
   const n=Math.max(1,Math.min(8,parseInt($('ncand').value||'4',10)));
@@ -678,25 +680,27 @@ async function genCands(){
     const r=await api('/candidates',{placer:$('placer').value,n,seed:galSeed,iters:400});
     if(r.error){statMsg(r.error);return;}
     galMeta={n,seed:galSeed};galCands=r.candidates;galBase=null;
-    const g=$('gal');g.innerHTML='';r.candidates.forEach((c,i)=>g.appendChild(thumb(c,i)));
-    $('galwrap').style.display='';
+    ui.set({galOpen:true,galThumbs:r.candidates.map((c,i)=>
+      ({i,cand:c,label:`#${i} cost ${c.cost}`}))});
     drawFeas({feasible:r.feasible,layers:r.layers});
     statMsg(`${n} candidates — click to pick, shift-click two to compare`,true);
   });
 }
 let galMeta={n:4,seed:0};
-function galCompare(i,cand,fig){
-  const g=$('gal');
+function galLabel(i,text){ // rewrite one caption
+  ui.set({galThumbs:ui.state.galThumbs.map(t=>t.i===i?{...t,label:text}:t)});
+}
+function galCompare(i,cand){
   if(galBase&&galBase.i===i){ // toggle off
-    galBase=null;g.querySelectorAll('.galcap').forEach((c,j)=>{c.textContent=`#${j} cost ${galCands[j].cost}`;});
+    galBase=null;
+    ui.set({galThumbs:galCands.map((c,j)=>({i:j,cand:c,label:`#${j} cost ${c.cost}`}))});
     statMsg(`${galCands.length} candidates — click one to pick`,true);return;
   }
   if(!galBase){galBase={i,cand};
-    fig.querySelector('.galcap').textContent=`#${i} cost ${cand.cost} (base — click another)`;
+    galLabel(i,`#${i} cost ${cand.cost} (base — click another)`);
     statMsg(`comparing from #${i} — click another candidate`,true);return;}
   const d=galDelta(galBase.cand,cand);
-  fig.querySelector('.galcap').textContent=
-    `#${i} cost ${cand.cost} (Δ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} moved)`;
+  galLabel(i,`#${i} cost ${cand.cost} (Δ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} moved)`);
   statMsg(`#${galBase.i}→#${i}: Δcost ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} parts moved — click to pick`,true);
 }
 let galCands=[];
@@ -705,7 +709,7 @@ async function pickCand(i){
     const r=await api('/pick',{placer:$('placer').value,router:$('router').value,
       index:i,n:galMeta.n,seed:galMeta.seed,iters:400,silk:$('silk').value});
     if(r.error){statMsg(r.error);return;}
-    statMsg('');$('galwrap').style.display='none';applyState(r,true);
+    statMsg('');ui.set({galOpen:false});applyState(r,true);
   });
 }
 // The DRC strip and the tidy list are components now (views.js): shape the

@@ -2011,7 +2011,7 @@ _wjs = open(os.path.join(HERE, "..", "apps", "web", "workshop.js")).read()
 assert "id=m-board" in _wjs and "fab_dl" in _wjs, "menubar missing from workshop"
 _wp = open(os.path.join(HERE, "..", "apps", "web", "panels.js")).read()
 for _frag in ("id=edwrap", "id=pcbwrap", "id=schwrap", "id=wrap3d",
-              "id=galwrap", "id=scanwrap", "id=xraygo"):
+              "id=scanwrap", "id=xraygo"):
     assert _frag in _wp, f"panel missing from panels.js: {_frag}"
 # the parts of the panels that re-render live in views.js (preact components
 # driven by the store), so their ids are asserted there
@@ -2020,7 +2020,8 @@ for _frag in ("id=filetree", "id=tree", "id=treenote", "id=importfile",
               "id=importstat", "id=drc", "id=tidy", "id=tidycov", "id=chat",
               "id=msgs", "id=followups", "id=cout", "id=dout", "id=zout",
               "id=docout", "id=vcswrap", "id=vcs", "id=vcsnote",
-              "id=kbwrap", "id=kbprefsbtn", "id=kblist", "id=kbview"):
+              "id=kbwrap", "id=kbprefsbtn", "id=kblist", "id=kbview",
+              "id=galwrap", "id=gal"):
     assert _frag in _wv, f"reactive panel part missing from views.js: {_frag}"
 assert _studio.SLOTS.report("view") == [], _studio.SLOTS.report("view")
 # a plugin contribution still lands in a slot and still renders

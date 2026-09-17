@@ -39,6 +39,8 @@ const state = {
   kbView: '',         // the document / answer text under the list
   kbPrefsOpen: false, // the preferences block is hidden until asked for
   kbPrefs: [],        // [{id, when, text, approved}]
+  galOpen: false,     // the candidates filmstrip is shown while picking
+  galThumbs: [],      // [{i, cand, label}] — the canvas is drawn by legacy.js
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

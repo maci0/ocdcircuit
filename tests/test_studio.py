@@ -850,7 +850,8 @@ def main() -> None:
             assert _frag in _chrome, f"chrome control missing: {_frag}"
 
         # gallery compare affordance ships + delta math holds on fixtures
-        assert "shift-click to compare" in pjs, "gallery compare hint missing"
+        # the thumb's aria-label is the component's now
+        assert "shift-click to compare" in _views, "gallery compare hint missing"
         assert "function galDelta(" in pjs, "galDelta missing from legacy.js"
         # this hint is panel markup (panels.js), not behaviour
         assert "shift-drag a trace previews the shove" in _panels, \
@@ -859,10 +860,13 @@ def main() -> None:
         if shutil.which("node"):
             with tempfile.TemporaryDirectory() as _td2:
                 _ent2 = os.path.join(_td2, "gal.js")
+                # just the function: the region after it now holds a delegated
+                # listener that needs a real DOM
+                import re as _re2
+                _gal = _re2.search(r"function galDelta\(a,b\)\{.*?\n\}", pjs, _re.S)
+                assert _gal, "galDelta body not found"
                 open(_ent2, "w").write(
-                    "const $=()=>({});const S={};\n"
-                    + pjs[pjs.index("function galDelta("):
-                          pjs.index("function thumb(")])
+                    "const $=()=>({});const S={};\n" + _gal.group(0))
                 _djs = ("const a={cost:100,pos:{R1:[0,0],C1:[10,10]}};"
                         "const b={cost:95,pos:{R1:[0,0],C1:[15,10]}};"
                         "const d=galDelta(a,b);"
@@ -1189,6 +1193,57 @@ def main() -> None:
                             break
                     else:
                         raise AssertionError("up-row did not return to the root")
+                    # candidates filmstrip: rows and captions are components,
+                    # the frames are painted by legacy.js through a registered
+                    # painter, and shift-click compares instead of adopting
+                    assert str(_cdp.eval("getComputedStyle(document.querySelector"
+                                         "('#galwrap')).display")) == "none", \
+                        "filmstrip should start hidden"
+                    _cdp.eval("(()=>{document.querySelector('#ncand').value='2';"
+                              "document.querySelector('#dice').click();return 1;})()")
+                    for _ in range(180):
+                        time.sleep(1.0)
+                        if int(str(_cdp.eval(
+                                "document.querySelectorAll('#gal button.galpick').length"))) >= 2:
+                            break
+                    else:
+                        raise AssertionError("candidates never rendered")
+                    assert str(_cdp.eval("getComputedStyle(document.querySelector"
+                                         "('#galwrap')).display")) != "none", \
+                        "filmstrip stayed hidden after generating"
+                    assert "cost" in str(_cdp.eval(
+                        "document.querySelector('#gal .galcap').textContent")), \
+                        "thumb caption missing"
+                    _pix = int(str(_cdp.eval(
+                        "(function(){var c=document.querySelector('#gal canvas');"
+                        "if(!c)return -1;var d=c.getContext('2d')"
+                        ".getImageData(0,0,300,220).data,n=0;"
+                        "for(var i=3;i<d.length;i+=4*97){if(d[i])n++;}return n;})()")))
+                    assert _pix > 0, "thumb canvas never painted"
+                    _cdp.eval("(()=>{const b=document.querySelectorAll"
+                              "('#gal button.galpick')[1];b.dispatchEvent(new MouseEvent"
+                              "('click',{bubbles:true,shiftKey:true}));return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "base" in str(_cdp.eval(
+                                "(document.querySelectorAll('#gal .galcap')[1]||{})"
+                                ".textContent || ''")):
+                            break
+                    else:
+                        raise AssertionError("shift-click did not start a compare")
+                    assert "comparing from" in str(_cdp.eval(
+                        "document.querySelector('#stat').textContent")), "no compare hint"
+                    _cdp.eval("(()=>{const b=document.querySelectorAll"
+                              "('#gal button.galpick')[1];b.dispatchEvent(new MouseEvent"
+                              "('click',{bubbles:true,shiftKey:true}));return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "base" not in str(_cdp.eval(
+                                "(document.querySelectorAll('#gal .galcap')[1]||{})"
+                                ".textContent || ''")):
+                            break
+                    else:
+                        raise AssertionError("compare did not toggle off")
                     # knowledgebase: the document list renders, a row opens
                     # the file, and the preference block starts hidden
                     assert int(str(_cdp.eval(

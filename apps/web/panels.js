@@ -6,8 +6,8 @@
 // the #pluginpanels / #pluginleft islands.
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
-import { ChatPanel, CuRows, KbPanel, MarkRows, PartBlock, DrcStrip,
-         TidyBlock, TreePanel, VcsPanel } from './views.js';
+import { ChatPanel, CuRows, Gallery, KbPanel, MarkRows, PartBlock,
+         DrcStrip, TidyBlock, TreePanel, VcsPanel } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
@@ -24,12 +24,6 @@ const EditorPanel = () => html`<section id=edwrap>
     <${Chat} />
     <span id=pluginleft style="display:contents"></span>
   </div></section>`;
-
-const GalleryPanel = () => html`<section id=galwrap style="display:none">
-  <header class=panel-head><span class=panel-title>candidates</span>
-    <span class=panel-note>click one to adopt it, then drag it on the PCB to nudge and pin</span>
-    <span class=panel-note>job file 1F-04 · placer diffusion · 1 seed × 400 iters</span></header>
-  <div id=gal></div></section>`;
 
 const PcbPanel = () => html`<section id=pcbwrap>
   <header class=panel-head><span class=panel-title>PCB</span>
@@ -106,4 +100,4 @@ const ScanPanel = () => html`<section id=scanwrap>
   </section>`;
 
 // slot render order (panel order in the cockpit)
-export const Panels = () => html`<${EditorPanel} /><${PcbPanel} /><${SchPanel} /><${InspectorPanel} /><${GalleryPanel} /><${VcsPanel} /><${ScanPanel} /><${KbPanel} />`;
+export const Panels = () => html`<${EditorPanel} /><${PcbPanel} /><${SchPanel} /><${InspectorPanel} /><${Gallery} /><${VcsPanel} /><${ScanPanel} /><${KbPanel} />`;
