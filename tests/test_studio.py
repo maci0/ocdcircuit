@@ -1168,6 +1168,62 @@ def main() -> None:
                     assert str(_cdp.eval(
                         "document.querySelector('#tree .tdir').dataset.name"
                     )).startswith(".."), "no way back up out of a folder"
+                    # the up-row returns to the root, where the board row is
+                    _cdp.eval("(()=>{const u=[...document.querySelectorAll('#tree .tdir')]"
+                              ".find(b=>(b.dataset.name||'').startsWith('..'));"
+                              "if(u)u.click();return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if bool(_cdp.eval("!!document.querySelector('#tree .tfile.active')")):
+                            break
+                    else:
+                        raise AssertionError("up-row did not return to the root")
+                    # the agent log and the tool readouts are components as
+                    # well: the preview above must be one .msg with the agent's
+                    # own name, and the calculators answer from state
+                    assert "preview of notes.md" in str(_cdp.eval(
+                        "document.querySelector('#msgs').textContent")), \
+                        "message not in the log"
+                    _who = str(_cdp.eval(
+                        "(document.querySelector('#msgs .msg .who')||{}).textContent || ''"))
+                    assert _who == "flux", _who
+                    assert str(_cdp.eval(
+                        "document.querySelector('#chatwhere').textContent")) != "", \
+                        "agent panel does not name the open board"
+                    _cdp.eval("(()=>{const a=document.querySelector('#ca');a.value='2';"
+                              "a.dispatchEvent(new Event('input',{bubbles:true}));"
+                              "return 1;})()")
+                    assert "mm ext" in str(_cdp.eval(
+                        "document.querySelector('#cout').textContent")), "calc silent"
+                    # health checks render on first open, one line per check
+                    _cdp.eval("(()=>{const d=document.querySelector('#doc');d.open=true;"
+                              "d.dispatchEvent(new Event('toggle'));return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if int(str(_cdp.eval(
+                                "document.querySelectorAll('#docout>div').length"))):
+                            break
+                    else:
+                        raise AssertionError("doctor readout never rendered")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#docout>div').className")) in ("ok", "warn")
+                    # toast: opening the board from the tree shows it, and the
+                    # timer clears it (the component renders, legacy owns time)
+                    _cdp.eval("(()=>{const f=document.querySelector('#tree .tfile.active');"
+                              "if(f)f.click();return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "opened" in str(_cdp.eval(
+                                "(document.querySelector('.toast')||{}).textContent || ''")):
+                            break
+                    else:
+                        raise AssertionError("toast never appeared")
+                    for _ in range(24):
+                        time.sleep(0.5)
+                        if not bool(_cdp.eval("!!document.querySelector('.toast')")):
+                            break
+                    else:
+                        raise AssertionError("toast never cleared")
                     # layer and part visibility rows are components too: the
                     # row state and the note come from the store, and the
                     # change is delegated back to legacy.js (VIS + canvas)

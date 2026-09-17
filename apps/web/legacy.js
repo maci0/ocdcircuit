@@ -933,17 +933,18 @@ $('simbtn').onclick=async()=>{ // dc → tran → ac cycle on shift-click
 function calcLive(){
   const A=parseFloat($('ca').value)||0,dT=parseFloat($('cdt').value)||10;
   const area=Math.pow(A/(0.048*Math.pow(dT,0.44)),1/0.725); // IPC-2221 ext 1oz
-  $('cout').textContent=`${(area/1.378*0.0254).toFixed(2)}mm ext, via ${(A/(3*Math.sqrt(dT/10))).toFixed(2)}mm drill`;
+  const c=`${(area/1.378*0.0254).toFixed(2)}mm ext, via ${(A/(3*Math.sqrt(dT/10))).toFixed(2)}mm drill`;
   const pv=v=>{const m=String(v).match(/^([\d.]+)(k|M)?$/i);return m?parseFloat(m[1])*(m[2]?({k:1e3,M:1e6})[m[2].toLowerCase()]||1:1):NaN;};
   const V=pv($('dv').value),Rt=pv($('drt').value),Rb=pv($('drb').value);
-  $('dout').textContent=(V>=0&&Rt>0&&Rb>0)?`Vout ${(V*Rb/(Rt+Rb)).toFixed(2)}V`:'';
+  const d=(V>=0&&Rt>0&&Rb>0)?`Vout ${(V*Rb/(Rt+Rb)).toFixed(2)}V`:'';
   const zw=parseFloat($('zw').value)||0,zh=parseFloat($('zh').value)||0;
+  let z='';
   if(zw>0&&zh>0){const u=zw/zh,er=4.4;
     const ere=(er+1)/2+(er-1)/2/Math.sqrt(1+12/u);
-    const z=u<=1?60/Math.sqrt(ere)*Math.log(8/u+u/4)
+    const z0=u<=1?60/Math.sqrt(ere)*Math.log(8/u+u/4)
       :120*Math.PI/(Math.sqrt(ere)*(u+1.393+0.667*Math.log(u+1.444)));
-    $('zout').textContent=`Z0 ~${z.toFixed(1)}Ω (microstrip FR4, estimate)`;
-  }else $('zout').textContent='';
+    z=`Z0 ~${z0.toFixed(1)}Ω (microstrip FR4, estimate)`;}
+  ui.set({calc:{c,d,z}});
 }
 ['ca','cdt','dv','drt','drb','zw','zh'].forEach(id=>$(id).addEventListener('input',calcLive));
 if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open board
@@ -966,9 +967,11 @@ if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open boa
 $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
   if(!$('doc').open||$('docout').dataset.done)return;
   const r=await api('/doctor',{});
-  if(r.error){$('docout').textContent=r.error;return;}
-  $('docout').innerHTML=(r.ok?'<div class=ok>✓ all systems</div>':'<div class=warn>degraded: features fall back, nothing crashes</div>')
-    +r.checks.map(c=>`<div class=${c.ok?'ok':'err'}>${c.ok?'✓':'✗'} ${c.name}${c.detail?' <span class=dim>'+c.detail+'</span>':''}</div>`).join('');
+  if(r.error){ui.set({doc:[{cls:'err',text:r.error}]});return;}
+  ui.set({doc:[{cls:r.ok?'ok':'warn',
+      text:r.ok?'✓ all systems':'degraded: features fall back, nothing crashes'},
+    ...r.checks.map(c=>({cls:c.ok?'ok':'err',text:`${c.ok?'✓':'✗'} ${c.name}`,
+      detail:c.detail||''}))]});
   $('docout').dataset.done='1';
 });
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
@@ -1312,7 +1315,7 @@ async function openFile(path){
   collabOn=false; // collabStart re-opens the stream on the new board's room
   const r=await api('/fs/open',{path});
   if(r.error){statMsg(r.error);return;}
-  statMsg('');$('msgs').innerHTML='';
+  statMsg('');ui.set({msgs:[],followups:[]});$('props')&&($('props').innerHTML='');
   heldThash='';heldTraces=[];  // a different board: its traces are not ours
   setQueue([]);  // the server dropped the old board's proposals with it
   collabRev=(r.rev!==undefined)?+r.rev:-1; // re-home the room to the new board
@@ -1323,22 +1326,26 @@ async function openFile(path){
   const f=await fetch('/fs').then(x=>x.json());
   if(!f.error){DIR=f.base||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';TREE=f.tree||[];
     $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
-    $('chatwhere').textContent=SRCREL;
+    ui.set({chatWhere:SRCREL});
     treeNote();
     renderTree();}
   loadVCS();
 }
 // --- agent chat --------------------------------------------------------
-function msg(who,text){
-  const el=document.createElement('p');
-  el.className='msg '+(who==='you'?'me':who);
-  const w=document.createElement('span');w.className='who';
-  w.textContent=who==='bot'?'flux':who; // the agent has a name, like its counterpart
-  el.appendChild(w);
-  el.appendChild(document.createTextNode(text)); // textContent: never innerHTML
-  $('msgs').appendChild(el);
-  $('msgs').scrollTop=$('msgs').scrollHeight;
-  return el;
+let msgSeq=0;
+function pushMsg(entry){
+  entry.id=++msgSeq;
+  ui.set({msgs:[...ui.state.msgs,entry]});
+  return entry;
+}
+function msg(who,text){ // one conversation, one ordered list (views.js renders it)
+  const entry=pushMsg({kind:'msg',who:who==='you'?'me':who,
+    name:who==='bot'?'flux':who,text:text});
+  return {remove(){ui.set({msgs:ui.state.msgs.filter(m=>m.id!==entry.id)});}};
+}
+function diffLines(text){ // data, not DOM: class per diff line
+  return String(text).split('\n').map(ln=>({cls:/^@@|^(\+\+\+|---)/.test(ln)?'dl-at'
+    :ln.startsWith('+')?'dl-add':ln.startsWith('-')?'dl-del':'',text:ln}));
 }
 function renderDiff(p,text){
   p.textContent='';
@@ -1351,42 +1358,41 @@ function renderDiff(p,text){
   });
 }
 function propose(pr,onQueue){
-  const box=document.createElement('div');box.className='prop';
-  const head=document.createElement('div');head.className='phead';
-  const b=document.createElement('b');b.textContent=pr.path;
-  const g=document.createElement('span');g.className='grow';
-  const apply=document.createElement('button');apply.textContent='apply';
-  const drop=document.createElement('button');drop.textContent='reject';
-  head.append('proposed edit to ',b,g,apply,drop);
-  const pre=document.createElement('pre');renderDiff(pre,pr.diff||'');
-  box.append(head,pre);
-  apply.onclick=async()=>{
-    apply.disabled=drop.disabled=true;
-    const r=await api('/chat/apply',{id:pr.id});
-    if(r.error){msg('err',r.error);apply.disabled=drop.disabled=false;return;}
+  pushMsg({kind:'prop',prop:pr.id,path:pr.path,lines:diffLines(pr.diff||''),busy:false});
+}
+function propSet(id,patch){
+  ui.set({msgs:ui.state.msgs.map(m=>m.kind==='prop'&&m.prop===id?{...m,...patch}:m)});
+}
+function propDrop(id){
+  ui.set({msgs:ui.state.msgs.filter(m=>!(m.kind==='prop'&&m.prop===id))});
+}
+$('msgs').addEventListener('click',async e=>{ // apply/reject, delegated
+  const b=e.target.closest('button[data-act]');
+  if(!b)return;
+  const id=b.dataset.prop,act=b.dataset.act;
+  if(ui.state.msgs.some(m=>m.kind==='prop'&&m.prop===id&&m.busy))return;
+  propSet(id,{busy:true});
+  if(act==='apply'){
+    const r=await api('/chat/apply',{id});
+    if(r.error){propSet(id,{busy:false});msg('err',r.error);return;}
     if(r.state)applyState(r.state,false);
     else loadVCS();
-    box.remove();
-    msg('bot','applied '+pr.path+(r.state?'':' (not the open board)')
+    propDrop(id);
+    msg('bot','applied '+b.dataset.path+(r.state?'':' (not the open board)')
         +(r.note?' — '+r.note:''));
-    if(onQueue)onQueue(r.proposals||[]);
+    setQueue(r.proposals||[]);
     loadVCS();
-  };
-  drop.onclick=async()=>{
-    apply.disabled=drop.disabled=true;
-    const r=await api('/chat/reject',{id:pr.id});
-    box.remove();
-    msg('bot','rejected '+pr.path+' — nothing was written');
-    if(onQueue)onQueue(r.proposals||[]);
-  };
-  $('msgs').appendChild(box);
-  $('msgs').scrollTop=$('msgs').scrollHeight;
-  return box;
-}
+    return;
+  }
+  const r=await api('/chat/reject',{id});
+  propDrop(id);
+  msg('bot','rejected '+b.dataset.path+' — nothing was written');
+  setQueue(r.proposals||[]);
+});
 // a turn may propose several files: every card lives in one queue, and each
 // apply/reject removes its own card without disturbing the others
 function setQueue(list){
-  $('msgs').querySelectorAll('.prop').forEach(e=>e.remove());
+  ui.set({msgs:ui.state.msgs.filter(m=>m.kind!=='prop')});
   (list||[]).forEach(p=>propose(p,setQueue));
 }
 async function chat(text,auto){
@@ -1401,25 +1407,14 @@ async function chat(text,auto){
   if(r.error){msg('err',r.error);setQueue(r.proposals);return;}
   const tn=(r.proposals||[]).filter(p=>/\.ocd$/.test(p.path||''));
   if(tn.length){ // plan checklist: the turn's file edits as checkable steps
-    const det=document.createElement('details');det.className='thought';det.open=true;
-    const sum=document.createElement('summary');
-    sum.textContent=`plan: ${tn.length} file${tn.length===1?'':'s'} proposed`;
-    const ul=document.createElement('ul');
-    tn.forEach(p=>{const li=document.createElement('li');li.className='ok';
-      li.textContent='◻ '+p.path;ul.appendChild(li);});
-    det.append(sum,ul);$('msgs').appendChild(det);
-    $('msgs').scrollTop=$('msgs').scrollHeight;
+    pushMsg({kind:'plan',open:true,
+      title:`plan: ${tn.length} file${tn.length===1?'':'s'} proposed`,
+      steps:tn.map(p=>'◻ '+p.path)});
   }
   if(r.log&&r.log.length){ // thought trace: what the agent actually did
-    const det=document.createElement('details');det.className='thought';
-    const sum=document.createElement('summary');
-    sum.textContent=`thought for ${r.log.length} step${r.log.length===1?'':'s'}`;
-    const ul=document.createElement('ul');
-    r.log.forEach(ln=>{const li=document.createElement('li');
-      li.className=/failed|error/i.test(ln)?'bad':'ok';li.textContent=ln;
-      ul.appendChild(li);});
-    det.append(sum,ul);$('msgs').appendChild(det);
-    $('msgs').scrollTop=$('msgs').scrollHeight;
+    pushMsg({kind:'log',
+      title:`thought for ${r.log.length} step${r.log.length===1?'':'s'}`,
+      lines:r.log.map(ln=>({cls:/failed|error/i.test(ln)?'bad':'ok',text:ln}))});
   }
   msg('bot',r.reply||'(no reply)');
   followups(r.reply||'');
@@ -1430,33 +1425,20 @@ async function chat(text,auto){
 }
 // follow-up chips: Flux's "Route and verify / Add thermal copper" row.
 // Mined from the reply's own next-steps, else the three generic moves.
-function followups(reply){
-  let box=$('followups');
-  if(!box){box=document.createElement('div');box.id='followups';
-    $('composer').before(box);}
-  box.innerHTML='';
+function followups(reply){ // chips ride the store; the click is delegated below
   const picks=[];
   reply.split('\n').forEach(ln=>{
     const m=ln.match(/^(?:\d+[.)]\s*|[-*]\s+)(.{12,80})$/);
     if(m&&/rout|check|valid|verif|test|place|thermal|copper|drc|fix/i.test(m[1])
        &&picks.length<3)picks.push(m[1].trim());});
   if(!picks.length)picks.push('Route and verify','Check DRC','Explain this board');
-  picks.slice(0,3).forEach(q=>{const b=document.createElement('button');
-    b.textContent=q.length>34?q.slice(0,33)+'…':q;b.title=q;
-    b.onclick=()=>chat(q,$('chatauto').checked);
-    box.appendChild(b);});
+  ui.set({followups:picks.slice(0,3).map(q=>({label:q.length>34?q.slice(0,33)+'…':q,title:q}))});
 }
-$('composer').addEventListener('submit',e=>{
-  e.preventDefault();
-  const t=$('ask').value.trim();if(!t)return;
-  $('ask').value='';
-  chat(t,$('chatauto').checked);
+$('chat').addEventListener('click',e=>{ // follow-up chip
+  const b=e.target.closest('#followups button');
+  if(!b)return;
+  chat(b.title,$('chatauto').checked);
 });
-$('ask').addEventListener('keydown',e=>{
-  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();$('composer').requestSubmit();}
-});
-$('chatclear').onclick=async()=>{await api('/chat/reset',{});$('msgs').innerHTML='';};
-// --- revisions: the board directory's git log --------------------------
 async function loadVCS(){
   const r=await api('/vcs',{path:SRCREL||null});
   if(r.error){$('vcsnote').textContent=r.error;return;}
@@ -1492,11 +1474,9 @@ async function commitBoard(){
   loadVCS();
 }
 function toast(t){
-  const b=document.createElement('div');b.className='toast';
-  b.setAttribute('role','status');b.setAttribute('aria-live','polite');
-  b.textContent=t;
-  document.body.appendChild(b);
-  setTimeout(()=>b.remove(),4200);
+  ui.set({toast:t});                 // views.js renders the one toast node
+  clearTimeout(toast._t);
+  toast._t=setTimeout(()=>ui.set({toast:''}),4200);
 }
 async function loadBoard(){ // parse + route what is on disk; never re-place
   const r=await api('/load',{});
@@ -1523,7 +1503,7 @@ async function boot(){
   if(f.error){ui.set({treeNote:f.error});return;}
   DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
   $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
-  $('chatwhere').textContent=SRCREL;
+  ui.set({chatWhere:SRCREL});
   treeNote();
   renderTree();
   loadVCS();

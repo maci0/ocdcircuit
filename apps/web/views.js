@@ -4,6 +4,7 @@
 // data and pushes it into the store; the shaping stays with the report.
 // htm rule: void elements must self-close.
 import html from './html.js';
+import { useEffect, useRef } from './vendor/hooks.module.js';
 import { useUI } from './store.js';
 
 // DRC reads as a listing: one line per finding, class err/warn/ok, and the
@@ -83,4 +84,83 @@ export const PartBlock = () => {
     <button id=partshow type=button title="show every part">all</button>
     <span id=partnote class=panel-note>${s.partNote}</span></div>
     <div id=partlist>${s.partRows.map(r => html`<${PartRow} r=${r} key=${r.ref} />`)}</div>`;
+};
+
+// Calculator readouts: the inputs are legacy-wired (their values must survive
+// a re-render, so they carry no value prop here), the answers come from state.
+export const CalcBlock = () => {
+  const c = useUI().calc;
+  return html`<details id=calc title="trace width and divider calculators"><summary>calc</summary>
+    <label>A <input id=ca size=4 value=1 aria-label="trace current A" /></label>
+    <label>dT <input id=cdt size=3 value=10 aria-label="temperature rise C" /></label>
+    <div id=cout>${c.c}</div>
+    <label>V <input id=dv size=4 value=5 aria-label="divider input V" /></label>
+    <label>Rt <input id=drt size=5 value=10k aria-label="divider top R" /></label>
+    <label>Rb <input id=drb size=5 value=10k aria-label="divider bottom R" /></label>
+    <div id=dout>${c.d}</div>
+    <label>w <input id=zw size=4 value=0.3 aria-label="microstrip width mm" /></label>
+    <label>h <input id=zh size=4 value=0.2 aria-label="dielectric height mm" /></label>
+    <div id=zout>${c.z}</div></details>`;
+};
+
+// doctor: one line per check, class ok/err, dim detail
+export const HealthOut = () => {
+  const items = useUI().doc;
+  return html`<div id=docout>${items.length
+    ? items.map((it, i) => html`<div class=${it.cls} key=${i}>${it.text}${it.detail
+        ? html` <span class=dim>${it.detail}</span>` : ''}</div>`)
+    : 'click to check'}</div>`;
+};
+
+// Agent conversation: one ordered list, four entry kinds — prose, the plan
+// checklist, the thought trace and the proposal cards. legacy.js pushes
+// entries and delegates the clicks on #msgs (apply/reject) and #followups.
+const Entry = ({m}) => {
+  if (m.kind === 'plan') {
+    return html`<details class=thought open=${m.open}><summary>${m.title}</summary>
+      <ul>${m.steps.map((s, i) => html`<li class=ok key=${i}>${s}</li>`)}</ul></details>`;
+  }
+  if (m.kind === 'log') {
+    return html`<details class=thought><summary>${m.title}</summary>
+      <ul>${m.lines.map((l, i) => html`<li class=${l.cls} key=${i}>${l.text}</li>`)}</ul></details>`;
+  }
+  if (m.kind === 'prop') {
+    return html`<div class=prop><div class=phead>proposed edit to <b>${m.path}</b
+      ><span class=grow></span
+      ><button data-act=apply data-prop=${m.prop} data-path=${m.path}
+        disabled=${m.busy}>apply</button
+      ><button data-act=reject data-prop=${m.prop} data-path=${m.path}
+        disabled=${m.busy}>reject</button></div
+      ><pre>${m.lines.map((l, i) => html`<div class=${l.cls} key=${i}>${l.text}</div>`)}</pre></div>`;
+  }
+  return html`<p class=${'msg ' + m.who}><span class=who>${m.name}</span>${m.text}</p>`;
+};
+
+export const ChatPanel = () => {
+  const s = useUI();
+  const box = useRef(null);
+  const n = s.msgs.length;
+  useEffect(() => {   // a new entry scrolls the log, like the old append did
+    const el = box.current;
+    if (el && el.parentElement) el.parentElement.scrollTop = el.parentElement.scrollHeight;
+  }, [n]);
+  return html`<section id=chat class=side>
+    <header class=panel-head><span class=panel-title>agent</span>
+      <span class=panel-note id=chatwhere>${s.chatWhere}</span>
+      <button id=chatclear title="forget this conversation">clear</button></header>
+    <div id=msgs role=log aria-live=polite aria-label="agent conversation"
+      ><div id=msglist ref=${box}>${s.msgs.map(m => html`<${Entry} m=${m} key=${m.id} />`)}</div
+      ><div id=props></div></div>
+    <div id=followups>${s.followups.map((f, i) => html`<button title=${f.title}
+      key=${i}>${f.label}</button>`)}</div>
+    <form id=composer><textarea id=ask rows=2 aria-label="message to the agent"
+      placeholder="ask about this board, or say what to change (Ctrl+Enter)"></textarea>
+      <button id=send class=primary type=submit>send</button></form>
+    </section>`;
+};
+
+// toast: the one transient note, cleared by legacy.js on its timer
+export const Toast = () => {
+  const t = useUI().toast;
+  return t ? html`<div class=toast role=status aria-live=polite>${t}</div>` : null;
 };

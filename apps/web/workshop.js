@@ -10,6 +10,7 @@ import { render } from './vendor/preact.module.js';
 import html from './html.js';
 import { ui, useUI } from './store.js';
 import { Panels } from './panels.js';
+import { CalcBlock, HealthOut, Toast } from './views.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
   ><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect
@@ -43,19 +44,9 @@ const Tools = () => html`<details class=menu id=m-tools>
   <${ChatBtn} />
   <label class=auto title="apply a proposal without asking, but only when it builds DRC-clean"
     ><input type=checkbox id=chatauto />auto-apply clean proposals</label>
-  <details id=calc title="trace width and divider calculators"><summary>calc</summary>
-    <label>A <input id=ca size=4 value=1 aria-label="trace current A" /></label>
-    <label>dT <input id=cdt size=3 value=10 aria-label="temperature rise C" /></label>
-    <div id=cout></div>
-    <label>V <input id=dv size=4 value=5 aria-label="divider input V" /></label>
-    <label>Rt <input id=drt size=5 value=10k aria-label="divider top R" /></label>
-    <label>Rb <input id=drb size=5 value=10k aria-label="divider bottom R" /></label>
-    <div id=dout></div>
-    <label>w <input id=zw size=4 value=0.3 aria-label="microstrip width mm" /></label>
-    <label>h <input id=zh size=4 value=0.2 aria-label="dielectric height mm" /></label>
-    <div id=zout></div></details>
+  <${CalcBlock} />
   <details id=doc title="tooling health: python, ngspice, plugins"><summary>health</summary>
-    <div id=docout>click to check</div></details>
+    <${HealthOut} /></details>
   <details id=quote title="fab price comparison: bare per fab, JLC assembled"><summary>quote</summary>
     <label>qty <input id=qqty value=5 size=3 aria-label="boards ordered" /></label>
     <label><input type=checkbox id=qbare /> bare only</label>
@@ -151,6 +142,7 @@ const Chrome = () => html`<header class=top><div class=inner>
   <${Menubar} />
   <span id=plugintools style="display:contents"></span>
   </div></header>
+  <${Toast} />
   <main id=panels><${Panels} /><span id=pluginpanels style="display:contents"></span></main>`;
 
 render(html`<${Chrome} />`, document.getElementById('app'));

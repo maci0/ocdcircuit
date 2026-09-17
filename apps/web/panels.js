@@ -6,19 +6,12 @@
 // the #pluginpanels / #pluginleft islands.
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
-import { CuRows, MarkRows, PartBlock, DrcStrip, TidyBlock, TreePanel } from './views.js';
+import { ChatPanel, CuRows, MarkRows, PartBlock, DrcStrip, TidyBlock,
+         TreePanel } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
-const Chat = () => html`<section id=chat class=side>
-  <header class=panel-head><span class=panel-title>agent</span>
-    <span class=panel-note id=chatwhere></span>
-    <button id=chatclear title="forget this conversation">clear</button></header>
-  <div id=msgs role=log aria-live=polite aria-label="agent conversation"></div>
-  <form id=composer><textarea id=ask rows=2 aria-label="message to the agent"
-    placeholder="ask about this board, or say what to change (Ctrl+Enter)"></textarea>
-    <button id=send class=primary type=submit>send</button></form>
-  </section>`;
+const Chat = () => html`<${ChatPanel} />`;
 
 const EditorPanel = () => html`<section id=edwrap>
   <header class=panel-head><span class=panel-title>job file</span>

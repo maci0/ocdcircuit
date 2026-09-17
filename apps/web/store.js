@@ -21,6 +21,12 @@ const state = {
   markRows: [],       // silkscreen/mask/mark toggles (same shape)
   partRows: [],       // [{ref, value, on, hidden, sel}]
   partNote: '',       // "N/N shown" / "N/N of M (capped)"
+  toast: '',          // transient bottom-right note (legacy clears it on a timer)
+  calc: {c: '', d: '', z: ''},   // calculator readouts
+  doc: [],            // doctor: [{cls, text}]
+  chatWhere: '',      // the open board's path, in the agent panel header
+  msgs: [],           // agent log, ordered: msg | plan | log | prop entries
+  followups: [],      // chips under the composer: [{label, title}]
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';
