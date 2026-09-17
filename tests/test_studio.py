@@ -449,6 +449,41 @@ assert.equal(ui.state.partRows.every(r=>r.on),true);
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class ApiNetworkErrorTests(unittest.TestCase):
+    def test_unreachable_server_returns_error_reply(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        with open(os.path.join(ROOT, "apps", "web", "api.js")) as source:
+            script = source.read()
+        drive = """
+import assert from 'node:assert/strict';
+const realFetch = globalThis.fetch;
+globalThis.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+try {
+  const r = await api('/shelf', {});
+  assert.ok(r.error, 'network failure must come back as an error reply');
+  assert.match(r.error, /studio/i);
+  const calls = [];
+  globalThis.fetch = async (path, init) => {
+    calls.push({path, init});
+    return new Response('{"ok":true}', {headers: {'Content-Type': 'application/json'}});
+  };
+  const ok = await api('/shelf', {name: 'demo'});
+  assert.equal(ok.ok, true);
+  assert.deepEqual(calls, [{path: '/shelf',
+    init: {method: 'POST', headers: {'Content-Type': 'application/json'},
+           body: '{"name":"demo"}'}}]);
+} finally {
+  globalThis.fetch = realFetch;
+}
+"""
+        result = subprocess.run(
+            [node, "--input-type=module"], input=script + drive, cwd=ROOT,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class ChatFormTests(unittest.TestCase):
     def run_chat(self, drive: str) -> None:
         node = shutil.which("node")
