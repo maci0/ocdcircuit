@@ -742,47 +742,48 @@ async function pickCand(i){
     statMsg('');$('galwrap').style.display='none';applyState(r,true);
   });
 }
+// The DRC strip and the tidy list are components now (views.js): shape the
+// report into plain lines here, where the report is, and let preact paint it.
 function drawDRC(r){
-  const d=$('drc');let h='';
+  const items=[]; // [{cls, text}] — same lines, same order, same classes
   const li=r.lint||{errors:[],warnings:[]}; // static source lint, no place/route
-  if(li.errors.length)h+=li.errors.map(e=>`<div class=err>✗ lint: ${e}</div>`).join('');
-  if(r.errors.length)h+=r.errors.map(e=>`<div class=err>✗ ${e}</div>`).join('');
-  else if(!li.errors.length)h+='<div class=ok>✓ DRC clean ('+r.fab+')</div>';
-  h+=r.warnings.slice(0,5).map(w=>`<div class=warn>~ ${w}</div>`).join('');
-  h+=(li.warnings||[]).slice(0,3).map(w=>`<div class=warn>~ lint: ${w}</div>`).join('');
+  if(li.errors.length)items.push(...li.errors.map(e=>({cls:'err',text:`✗ lint: ${e}`})));
+  if(r.errors.length)items.push(...r.errors.map(e=>({cls:'err',text:`✗ ${e}`})));
+  else if(!li.errors.length)items.push({cls:'ok',text:'✓ DRC clean ('+r.fab+')'});
+  items.push(...r.warnings.slice(0,5).map(w=>({cls:'warn',text:`~ ${w}`})));
+  items.push(...(li.warnings||[]).slice(0,3).map(w=>({cls:'warn',text:`~ lint: ${w}`})));
   const rec=(r.recommend&&r.recommend.items)||[];
-  h+=rec.slice(0,6).map(it=>`<div class=warn>+ ${it.kind}: ${it.msg}</div>`).join('');
-  if(r.sim&&Object.keys(r.sim).length)h+='<div class=ok>⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')+'</div>';
-  if(r.sim_problems&&r.sim_problems.length)h+=r.sim_problems.map(p=>`<div class=err>⚡✗ ${p}</div>`).join('');
-  if(r.tran&&Object.keys(r.tran).length)h+='<div class=ok>⚡tran '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')+'</div>';
+  items.push(...rec.slice(0,6).map(it=>({cls:'warn',text:`+ ${it.kind}: ${it.msg}`})));
+  if(r.sim&&Object.keys(r.sim).length)items.push({cls:'ok',text:'⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')});
+  if(r.sim_problems&&r.sim_problems.length)items.push(...r.sim_problems.map(p=>({cls:'err',text:`⚡✗ ${p}`})));
+  if(r.tran&&Object.keys(r.tran).length)items.push({cls:'ok',text:'⚡tran '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')});
   if(r.ac&&Object.keys(r.ac).length){const db=v=>20*Math.log10(Math.max(1e-12,Math.abs(v)));
-    h+='<div class=ok>⚡ac '+Object.entries(r.ac).map(([n,w])=>`${n} ${db(w[w.length-1]).toFixed(1)}dB@${r.f1||''}Hz [${db(Math.max(...w.map(Math.abs))).toFixed(1)}dB pk] (${w.length}pts)`).join(' · ')+'</div>';}
-  d.innerHTML=h;
+    items.push({cls:'ok',text:'⚡ac '+Object.entries(r.ac).map(([n,w])=>`${n} ${db(w[w.length-1]).toFixed(1)}dB@${r.f1||''}Hz [${db(Math.max(...w.map(Math.abs))).toFixed(1)}dB pk] (${w.length}pts)`).join(' · ')});}
+  ui.set({drc:items});
   drawTidy(r);
 }
-function tidyVal(v){
-  if(v===null||v===undefined)return '<span class=dim>n/a</span>';
-  if(typeof v==='number')return Number.isInteger(v)?String(v):v.toFixed(3);
+function tidyVal(v){ // {text, dim}: data, not markup
+  if(v===null||v===undefined)return {text:'n/a',dim:true};
+  if(typeof v==='number')return {text:Number.isInteger(v)?String(v):v.toFixed(3)};
   if(typeof v==='object'){const ks=Object.keys(v);
-    if(v.total!==undefined&&v.per_net!==undefined)return `total=${v.total}`; // nested detail lives in STATUS.md
-    return ks.map(a=>`${a}=${v[a]}`).join(', ');}
-  return String(v);
+    if(v.total!==undefined&&v.per_net!==undefined)return {text:`total=${v.total}`}; // nested detail lives in STATUS.md
+    return {text:ks.map(a=>`${a}=${v[a]}`).join(', ')};}
+  return {text:String(v)};
 }
 function drawTidy(r){
   const t=r.tidy||{};
   if(r.dense){ // metrics and the routability probe are skipped at this size
-    $('tidycov').textContent='';
-    $('tidy').innerHTML='<div class=dim>tidy metrics skipped on a dense board '
-      +`(${Object.keys(r.parts||{}).length} parts) — run the CLI for the full report</div>`;
-    ui.set({ocd:'OCD n/a (dense)'});
+    ui.set({tidyCov:'',tidyRows:[],
+      tidyNote:'tidy metrics skipped on a dense board '
+        +`(${Object.keys(r.parts||{}).length} parts) — run the CLI for the full report`,
+      ocd:'OCD n/a (dense)'});
     return;
   }
-  $('tidycov').textContent=t.coverage?`(${t.coverage})`:'';
   const rows=Object.entries(t).filter(([k])=>k!=='coverage'&&k!=='routed_segs')
-    .map(([k,v])=>`<div><span class=dim>${k}</span> ${tidyVal(v)}</div>`).join('');
-  $('tidy').innerHTML=rows;
+    .map(([k,v])=>[k,tidyVal(v)]);
   const sc=r.score; // OCD neatness 0-100 next to cost
-  if(sc&&!sc.dense)ui.set({ocd:`OCD ${sc.total}/100 (${sc.grade})`});
+  ui.set({tidyCov:t.coverage?`(${t.coverage})`:'',tidyRows:rows,tidyNote:'',
+    ...(sc&&!sc.dense?{ocd:`OCD ${sc.total}/100 (${sc.grade})`}:{})});
 }
 // A dense board says so: it is loaded from the file's own positions, its
 // metrics are skipped, and its parts list is capped. Never let the page look

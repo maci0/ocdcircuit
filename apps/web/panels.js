@@ -6,6 +6,7 @@
 // the #pluginpanels / #pluginleft islands.
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
+import { DrcStrip, TidyBlock } from './views.js';
 
 const FileTree = () => html`<section id=filetree class=side>
   <header class=panel-head><span class=panel-title>project</span>
@@ -61,7 +62,7 @@ const PcbPanel = () => html`<section id=pcbwrap>
           <span id=partnote class=panel-note></span></div>
         <div id=partlist></div></div></details></header>
   <div class=platewrap><canvas id=pcb role=img aria-label="PCB layout"></canvas>
-    <div id=drc role=status aria-live=polite></div></div></section>`;
+    <${DrcStrip} /></div></section>`;
 
 const SchPanel = () => html`<section id=schwrap>
   <header class=panel-head><span class=panel-title>schematic</span>
@@ -84,9 +85,7 @@ const InspectorPanel = () => html`<section id=wrap3d>
     <label>cu <input id=xraythr value=100 size=3 aria-label="copper brightness cutoff" /></label></div>
   <div id=xraystat role=status aria-live=polite></div>
   <div id=xraydivs></div>
-  <header class=panel-head><span class=panel-title>tidy</span>
-    <span class=panel-note id=tidycov></span></header>
-  <div id=tidy></div></section>`;
+  <${TidyBlock} /></section>`;
 
 const VcsPanel = () => html`<section id=vcswrap>
   <header class=panel-head><span class=panel-title>revisions</span>

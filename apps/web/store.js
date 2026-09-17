@@ -7,7 +7,15 @@ const state = {
   room: 'solo', roomOk: false, roomTitle: 'no one else here yet',
   roomNote: 'live on this board', me: '',
   view: 'all', tabs: false, dark: false, chat: false,
+  // panel content, shaped by legacy.js from the build report and rendered by
+  // the components in views.js: the report shaping stays where the report is
+  drc: [],            // [{cls: 'err'|'warn'|'ok', text}]
+  tidyCov: '',        // "(13/15)" coverage note in the tidy header
+  tidyRows: [],       // [[metric, {text, dim}]]
+  tidyNote: '',       // the dense-board note (replaces the rows)
 };
+
+import { useEffect, useState } from './vendor/hooks.module.js';
 
 const subs = new Set();
 
@@ -25,3 +33,13 @@ export const ui = {
     return () => { subs.delete(fn); };
   },
 };
+
+// Subscribe a component to the store: a store update re-renders that component
+// and nothing else (the chrome's static parts must never re-render — legacy.js
+// fills their selects and readouts). Lives here so panels/views and the chrome
+// share one hook.
+export function useUI() {
+  const [, bump] = useState(0);
+  useEffect(() => ui.sub(() => bump(n => n + 1)), []);
+  return state;
+}

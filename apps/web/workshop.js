@@ -7,9 +7,8 @@
 // mounted once with innerHTML — preact never re-renders what it does not own.
 // htm rule: every void element needs its slash (<input ... />).
 import { render } from './vendor/preact.module.js';
-import { useEffect, useState } from './vendor/hooks.module.js';
 import html from './html.js';
-import { ui } from './store.js';
+import { ui, useUI } from './store.js';
 import { Panels } from './panels.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
@@ -153,13 +152,6 @@ const Chrome = () => html`<header class=top><div class=inner>
   <span id=plugintools style="display:contents"></span>
   </div></header>
   <main id=panels><${Panels} /><span id=pluginpanels style="display:contents"></span></main>`;
-
-// chrome state lives in the store; legacy.js pushes into it (see store.js)
-function useUI() {
-  const [, bump] = useState(0);
-  useEffect(() => ui.sub(() => bump(n => n + 1)), []);
-  return ui.state;
-}
 
 render(html`<${Chrome} />`, document.getElementById('app'));
 

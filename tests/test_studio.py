@@ -1123,6 +1123,39 @@ def main() -> None:
                     assert int(str(_cdp.eval(
                         "document.querySelector('#placer').options.length"))) > 1, \
                         "engine select lost its options to a chrome re-render"
+                    # the panel contents are components now (views.js): the
+                    # DRC strip and the tidy list render from the store, so a
+                    # build that fails must repaint them — no innerHTML in
+                    # legacy.js for either.
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#tidy>div').length"))) > 0, \
+                        "tidy list never rendered"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#tidycov').textContent"
+                    )).startswith("("), "tidy coverage note missing"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#drc').textContent"
+                    )).strip(), "DRC strip empty on a loaded board"
+                    _ovl = ("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
+                            "fix R1 at 5 5\nfix R2 at 6 6\nN :: R1.1 R2.1\n")
+                    _cdp.eval("(()=>{const ed=document.querySelector('#ed');"
+                              "ed.innerText=" + json.dumps(_ovl) + ";"
+                              "ed.dispatchEvent(new Event('input',{bubbles:true}));"
+                              "return 1;})()")
+                    _nerr = 0
+                    for _ in range(24):
+                        time.sleep(0.5)
+                        _nerr = int(str(_cdp.eval(
+                            "document.querySelectorAll('#drc .err').length")))
+                        if _nerr:
+                            break
+                    assert _nerr > 0, "DRC strip did not show the failing build"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#drc .err').textContent"
+                    )).startswith("✗"), "error line lost its mark"
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#tidy>div').length"))) > 0, \
+                        "tidy list did not survive the re-render"
                     _badw = [e for e in _cdp.events
                              if e.get("method") == "Runtime.exceptionThrown"]
                     assert not _badw, json.dumps(_badw[:1])[:400]
@@ -1132,7 +1165,7 @@ def main() -> None:
                 _cr.terminate()
                 shutil.rmtree(_cdpdir, ignore_errors=True)
             print(f"workshop DOM ok ({_st['menus']} menus, {_st['panels']} panels, "
-                  f"{_st['paint']} canvas samples, chrome state ok)")
+                  f"{_st['paint']} canvas samples, chrome state + panels ok)")
     finally:
         srv.terminate()
         shutil.rmtree(troot, ignore_errors=True)
