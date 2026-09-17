@@ -25,7 +25,14 @@ OS user.
 
 Secrets (`OCD_LLM_KEY`, `JLCPCB_*`, and optional `~/.secrets/jlcpcb`) must
 never be committed. `.env` / `.ocd-users` are gitignored; `ocd doctor`
-redacts known secret values.
+redacts known secret values. `OCD_LLM_BASE` may be any http(s) URL with a
+host (`ocdcircuit/envcfg.py`); the Bearer key is sent to that base on every
+LLM call — treat a hostile or mistyped base as credential disclosure.
+
+Optional live JLC pricing via knoll loads and executes
+`knoll/stock.py` from `KNOLL_SRC` (or `~/Desktop/knoll/src` when unset) inside
+the process (`ocdcircuit/plugins.py`). Only point those paths at code you
+trust.
 
 ## Threat model
 
