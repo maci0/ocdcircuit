@@ -7,7 +7,10 @@
 // mounted once with innerHTML — preact never re-renders what it does not own.
 // htm rule: every void element needs its slash (<input ... />).
 import { render } from './vendor/preact.module.js';
+import { useEffect, useState } from './vendor/hooks.module.js';
 import html from './html.js';
+import { ui } from './store.js';
+import { Panels } from './panels.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
   ><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect
@@ -27,10 +30,18 @@ const Engines = () => html`<details class=menu id=m-engines>
   <label>silk<select id=silk title="silkscreen density"></select></label>
   </div></details>`;
 
+// chat is a toggle with state behind it (body.chatty + the button look)
+const ChatBtn = () => {
+  const on = useUI().chat;
+  return html`<button id=chatbtn type=button aria-pressed=${on ? 'true' : 'false'}
+    class=${on ? 'primary' : ''}
+    title="show or hide the agent chat panel">chat</button>`;
+};
+
 // calculators / health / quote: the readouts (#cout …) stay legacy-owned
 const Tools = () => html`<details class=menu id=m-tools>
   <summary title="agent, calculators, prices, health">Tools</summary><div class=mpop>
-  <button id=chatbtn type=button aria-pressed=false title="show or hide the agent chat panel">chat</button>
+  <${ChatBtn} />
   <label class=auto title="apply a proposal without asking, but only when it builds DRC-clean"
     ><input type=checkbox id=chatauto />auto-apply clean proposals</label>
   <details id=calc title="trace width and divider calculators"><summary>calc</summary>
@@ -79,11 +90,36 @@ const Menubar = () => html`<nav class=menubar aria-label="board menus">
   <details class=menu id=m-live><summary title="who is on this board and how to invite">Share</summary><div class=mpop>
     <div class=mnote id=roomnote>live on this board</div>
     <button id=sharebtn title="copy a link to this board">copy invite link</button></div></details>
-  <div class=mastat><span id=cost class=pill title="total wirelength">cost</span>
-    <span id=ocdscore class=pill title="OCD neatness badge 0-100 — do not compare across boards"></span>
-    <span id=feas class=pill title="routing feasibility per layer count"></span>
-    <span id=stat role=status aria-live=polite></span></div>
+  <${StatusPills} />
   </nav>`;
+
+// Status pills: legacy.js owns the numbers (cost, OCD score, feasibility,
+// transient status), this renders them. Its own component so a store update
+// re-renders only these spans — never the menubar, whose engine <select>s are
+// filled by legacy.js and must keep their options.
+const StatusPills = () => {
+  const s = useUI();
+  return html`<div class=mastat>
+    <span id=cost class=pill title="total wirelength">${s.cost}</span>
+    <span id=ocdscore class=pill title="OCD neatness badge 0-100 — do not compare across boards">${s.ocd}</span>
+    <span id=feas class=pill title="routing feasibility per layer count"
+      dangerouslySetInnerHTML=${{__html: s.feas}}></span>
+    <span id=stat role=status aria-live=polite title=${s.stat}
+      class=${!s.stat ? '' : (s.statOk ? 'ok' : 'err')}>${s.stat}</span></div>`;
+};
+
+// presence, identity, theme, tabs: all store-driven, each its own subscriber
+const RoomPill = () => {
+  const s = useUI();
+  return html`<span id=room role=status aria-live=polite title=${s.roomTitle}
+    class=${'pill' + (s.roomOk ? ' ok' : '')}>${s.room}</span>`;
+};
+const MePill = () => html`<span id=me class=pill title="logged in as">${useUI().me}</span>`;
+const ThemeBtn = () => {
+  const s = useUI();
+  return html`<button id=themebtn type=button aria-pressed=${s.dark ? 'true' : 'false'}
+    title="toggle Flux-dark theme (paper ↔ dark)">${s.dark ? 'paper' : 'dark'}</button>`;
+};
 
 const VIEWS = [
   ['all', 'every panel at once (the cockpit)', 'All', true],
@@ -93,30 +129,48 @@ const VIEWS = [
   ['docs', 'notes and datasheets', 'Docs', false],
 ];
 
+const ViewTabs = () => {
+  const s = useUI();
+  return html`<nav id=viewtabs role=tablist aria-label="views"
+    title="pick a view, or All for every panel at once"
+    >${VIEWS.map(([v, title, label]) => {
+      const on = s.view === v;   // cockpit = All is the active tab
+      return html`<button data-v=${v} role=tab key=${v} aria-selected=${on ? 'true' : 'false'}
+        tabindex=${on ? 0 : -1} class=${on ? 'on' : ''} title=${title}>${label}</button>`;
+    })}</nav>`;
+};
+
+// Rendered exactly once: nothing here subscribes, so the engine <select>s and
+// the quote/calc inputs keep whatever legacy.js puts inside them.
 const Chrome = () => html`<header class=top><div class=inner>
   <${Brand} />
-  <span id=room role=status aria-live=polite class=pill title="who else is on this board right now">solo</span>
-  <span id=me class=pill title="logged in as"></span>
+  <${RoomPill} />
+  <${MePill} />
   <button id=logoutbtn title="log out of the studio">log out</button>
-  <button id=themebtn type=button aria-pressed=false title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
-  <nav id=viewtabs role=tablist aria-label="views"
-    title="pick a view, or All for every panel at once"
-    >${VIEWS.map(([v, title, label, on]) => html`<button data-v=${v} role=tab key=${v}
-      aria-selected=${on ? 'true' : 'false'} tabindex=${on ? 0 : -1} class=${on ? 'on' : ''}
-      title=${title}>${label}</button>`)}</nav>
+  <${ThemeBtn} />
+  <${ViewTabs} />
   <${Menubar} />
   <span id=plugintools style="display:contents"></span>
   </div></header>
-  <main id=panels></main>`;
+  <main id=panels><${Panels} /><span id=pluginpanels style="display:contents"></span></main>`;
+
+// chrome state lives in the store; legacy.js pushes into it (see store.js)
+function useUI() {
+  const [, bump] = useState(0);
+  useEffect(() => ui.sub(() => bump(n => n + 1)), []);
+  return ui.state;
+}
 
 render(html`<${Chrome} />`, document.getElementById('app'));
 
-// Slot islands: app/studio.py renders whatever is registered (built-in panels
-// now, plugin panels always) and this mounts it verbatim, once.
+// Slot islands: the built-in panels are components above; anything a plugin
+// registers through the Python slot registry arrives as markup and is mounted
+// verbatim, once, inside the island for its slot.
 const slots = JSON.parse(document.getElementById('slots').textContent || '{}');
 const mount = (id, markup) => {
   const el = document.getElementById(id);
   if (el) el.innerHTML = markup || '';
 };
 mount('plugintools', slots.toolbar);
-mount('panels', slots.view);
+mount('pluginpanels', slots.view);
+mount('pluginleft', slots['panel-left']);

@@ -150,16 +150,29 @@ def main() -> None:
     if ROOT not in sys.path:  # in-process import: sys.path[0] is tests/
         sys.path.insert(0, ROOT)
     from apps import studio as _st_ui
-    assert "kb" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
-    assert "inspector" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
-    assert "scan" in _st_ui.SLOTS.report("view"), _st_ui.SLOTS.report("view")
-    # toolbar chrome moved to apps/web/workshop.js (Preact); the server
-    # registry keeps the 10 panel/view contributions
-    assert len(_st_ui._UI_DISPOSERS) == 10, len(_st_ui._UI_DISPOSERS)
+    # the studio's own UI is components under apps/web/ now, so importing it
+    # registers nothing: the slot registry is the plugin contract (see the
+    # panels.js assertions below for the built-in panels themselves)
+    assert _st_ui.SLOTS.report("view") == [], _st_ui.SLOTS.report("view")
+    assert _st_ui._UI_DISPOSERS == [], _st_ui._UI_DISPOSERS
+    # three contributions through the plugin path (_slot returns None: it is
+    # the studio's wrapper that also keeps the disposer)
+    for _i in range(3):
+        _st_ui._slot("view", f"probe{_i}",
+                     (lambda n: lambda s: f"<b id=probe{n}>x</b>")(_i),
+                     order=float(_i))
+    assert _st_ui.SLOTS.report("view") == ["probe0", "probe1", "probe2"] or \
+        set(_st_ui.SLOTS.report("view")) == {"probe0", "probe1", "probe2"}
+    assert "probe1" in _st_ui.SLOTS.render("view", None)
+    # every _slot() keeps the disposer register() handed back and unload_ui()
+    # runs them LIFO — the previous code dropped the disposer, which made each
+    # row permanent module state (the inverse of importing the UI)
+    assert len(_st_ui._UI_DISPOSERS) == 3, len(_st_ui._UI_DISPOSERS)
     _st_ui.unload_ui()
     assert _st_ui.SLOTS.report("view") == [] and _st_ui.SLOTS.report("toolbar") == []
     assert _st_ui._UI_DISPOSERS == []
-    print("ui slot dispose ok (10 contributions, LIFO, once)")
+    assert _st_ui.SLOTS.render("view", None) == ""
+    print("ui slot dispose ok (plugin contributions, LIFO, once)")
 
     # session/auth caches: expired tokens must not crowd out live sessions,
     # and the rate-limit map must stay bounded under IP spray.
@@ -407,8 +420,10 @@ def main() -> None:
         assert "text" in _idor_ok, _idor_ok  # owner (tester jar) can still read
         # open the private shelf board as tester (process-global SRC switches).
         # A second authed peer must not /init, /export, /collab/sync, or /poll it.
+        # the page is a shell: what matters is that it is the workshop page
+        # (mount point + modules), not which panel markup it carries
         _open_priv = get(base, "/?board=private-board").decode()
-        assert "id=ed" in _open_priv, _open_priv[:200]
+        assert "id=app" in _open_priv and "id=slots" in _open_priv, _open_priv[:200]
         _peer_init = post(base, "/init", {}, cookie=_ck_second)
         assert "error" in _peer_init and "shelf" in str(
             _peer_init["error"]).lower(), _peer_init
@@ -445,12 +460,14 @@ def main() -> None:
         _back = post(base, "/fs/open", {"path": "blinky_555.ocd"})
         assert "error" not in _back, _back
         _in = get(base, "/").decode()
-        assert "id=ed" in _in, _in[:200]
-        assert "id=importfile" in _in and "id=importstat" in _in, "import picker missing"
+        _JS = os.path.join(ROOT, "apps", "web")
+        _panels = open(os.path.join(_JS, "panels.js")).read()
+        assert "id=edwrap" in _panels, "editor panel missing from panels.js"
+        assert "id=importfile" in _panels and "id=importstat" in _panels, \
+            "import picker missing"
         # the frontend is three files under apps/web/: the panels ride in the
         # shell as slot markup, the chrome is a preact module, the behaviour is
         # a module, and the tokens are a stylesheet. Assert each where it lives.
-        _JS = os.path.join(ROOT, "apps", "web")
         _chrome = open(os.path.join(_JS, "workshop.js")).read()
         _wjs = open(os.path.join(_JS, "legacy.js")).read()
         _wcss = open(os.path.join(_JS, "workshop.css")).read()
@@ -519,12 +536,13 @@ def main() -> None:
                      "id=npgrid", "id=npblank", "npcache",
                      "openShelfBoard", "fromTemplate"):
             assert frag in _lpjs, f"new-project modal missing: {frag}"
-        _w = get(base, "/").decode()  # still authed: workshop shell
-        # the panels ride in the shell as slot markup (plugin contract), the
-        # behaviour rides in the module
-        assert "id=ed" in _w, _w[:200]
+        _w = get(base, "/").decode()  # still authed: the workshop shell
+        # chrome + panels are modules, behaviour is a module, and the slot JSON
+        # carries plugin markup only
         assert 'src=/web/workshop.js' in _w and 'src=/web/legacy.js' in _w, _w[:400]
+        assert 'href="/web/workshop.css"' in _w, _w[:400]
         assert "id=slots" in _w, "slot islands must ship with the shell"
+        assert "id=app" in _w, "mount point missing from the shell"
         assert "withBusy" in _wjs, "long-action busy feedback missing"
         assert "fromTemplate" in _lpjs, "template double-click guard missing"
         assert "one turn at a time" in _wjs, "chat submit busy guard missing"
@@ -697,9 +715,13 @@ def main() -> None:
         assert any('"hello": "teammate"' in _e for _e in _seen), _seen
         print(f"collab ok (push {_cpdt * 1000:.0f}ms, 2 users, stale+presence+op+SSE)")
 
+        # the photo-scan panel is a component: it must be in the module that
+        # the authed page loads, and (below) in the DOM the browser builds
+        assert "id=scanwrap" in _panels and "id=scanfiles" in _panels, \
+            "scan panel not served"
         _ui = urllib.request.urlopen(urllib.request.Request(
             base + "/", headers={"Cookie": _JAR.get(base, "")})).read().decode()
-        assert "scanwrap" in _ui and "scanfiles" in _ui, "scan panel not served"
+        assert "id=app" in _ui, "workshop mount point missing"
 
         for key in ("svg", "sch", "xray"):
             r = post(base, "/render", {"key": key})
@@ -794,7 +816,8 @@ def main() -> None:
             # every frontend module must parse as ESM: the browser half sees
             # them only once authenticated, and a syntax error there is a
             # blank page (this is the gate the inline page got for free)
-            for _mod in ("workshop.js", "legacy.js", "html.js", "api.js"):
+            for _mod in ("workshop.js", "panels.js", "legacy.js", "html.js",
+                         "api.js", "store.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
@@ -809,8 +832,8 @@ def main() -> None:
         # gallery compare affordance ships + delta math holds on fixtures
         assert "shift-click to compare" in pjs, "gallery compare hint missing"
         assert "function galDelta(" in pjs, "galDelta missing from legacy.js"
-        # this hint is panel markup (studio.py slot), not behaviour
-        assert "shift-drag a trace previews the shove" in _in, \
+        # this hint is panel markup (panels.js), not behaviour
+        assert "shift-drag a trace previews the shove" in _panels, \
             "seg-drag hint missing"
         assert "function hitSeg(" in pjs, "hitSeg missing from legacy.js"
         if shutil.which("node"):
@@ -1041,10 +1064,54 @@ def main() -> None:
                         if cast(int, _st.get("paint") or 0) > 0:
                             break
                     assert _st.get("pcb") and _st.get("ed"), _st
+                    # every built-in panel is a component now: check the DOM
+                    # the browser built, not the markup a slot lambda printed
+                    _ids = ("edwrap", "pcbwrap", "schwrap", "wrap3d", "galwrap",
+                            "vcswrap", "scanwrap", "kbwrap", "filetree", "chat",
+                            "xraybar", "tidy", "drc", "layers", "partlist",
+                            "kbask", "kbfetch", "scanbar", "vcs", "pluginpanels")
+                    _raw_ids = str(_cdp.eval(
+                        "JSON.stringify(" + json.dumps(list(_ids)) + ".filter("
+                        "i=>!document.getElementById(i)))"))
+                    assert json.loads(_raw_ids) == [], f"panels missing: {_raw_ids}"
                     assert _st.get("menus") == 6, _st   # Board/Edit/Engines/Sim/Tools/Share
                     assert _st.get("tabs") == 5, _st
                     assert cast(int, _st.get("panels") or 0) >= 6, _st
                     assert cast(int, _st.get("paint") or 0) > 0, _st
+                    # the chrome is store-driven now: legacy.js pushes the
+                    # numbers, preact renders them (apps/web/store.js), and a
+                    # store update must not wipe what legacy put in the menus.
+                    _cost = str(_cdp.eval("document.querySelector('#cost').textContent"))
+                    assert _cost.startswith("cost ") and _cost != "cost ", _cost
+                    assert str(_cdp.eval(
+                        "document.querySelector('#feas').textContent.slice(0,19)"
+                    )) == "routing feasibility", "feasibility pill never filled"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#ocdscore').textContent.slice(0,4)"
+                    )) == "OCD ", "neatness pill never filled"
+                    _cdp.eval("document.querySelector('[data-v=pcb]').click()")
+                    assert str(_cdp.eval("document.body.dataset.view")) == "pcb"
+                    assert "on" in str(_cdp.eval(
+                        "document.querySelector('[data-v=pcb]').className"))
+                    assert "tabs" in str(_cdp.eval("document.body.className"))
+                    _cdp.eval("document.querySelector('[data-v=all]').click()")
+                    assert str(_cdp.eval("document.body.dataset.view || ''")) == ""
+                    assert "on" in str(_cdp.eval(
+                        "document.querySelector('[data-v=all]').className"))
+                    _cdp.eval("document.querySelector('#themebtn').click()")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#themebtn').textContent")) == "paper"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#themebtn').getAttribute('aria-pressed')"
+                    )) == "true"
+                    assert "dark" in str(_cdp.eval("document.body.className"))
+                    _cdp.eval("document.querySelector('#chatbtn').click()")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#chatbtn').getAttribute('aria-pressed')"
+                    )) == "true"
+                    assert int(str(_cdp.eval(
+                        "document.querySelector('#placer').options.length"))) > 1, \
+                        "engine select lost its options to a chrome re-render"
                     _badw = [e for e in _cdp.events
                              if e.get("method") == "Runtime.exceptionThrown"]
                     assert not _badw, json.dumps(_badw[:1])[:400]
@@ -1054,7 +1121,7 @@ def main() -> None:
                 _cr.terminate()
                 shutil.rmtree(_cdpdir, ignore_errors=True)
             print(f"workshop DOM ok ({_st['menus']} menus, {_st['panels']} panels, "
-                  f"{_st['paint']} canvas samples)")
+                  f"{_st['paint']} canvas samples, chrome state ok)")
     finally:
         srv.terminate()
         shutil.rmtree(troot, ignore_errors=True)
@@ -1088,11 +1155,10 @@ def main() -> None:
                 raise AssertionError("kb studio did not boot")
             login(kbase)
             page = get(kbase, "/").decode()
-            assert "id=kbwrap" in page, "kb panel missing from the page"
-            assert "id=kbfetch" in page and "id=kbask" in page, "kb controls missing"
-            assert "id=kbprefsbtn" in page, "prefs button missing from the page"
-            assert "id=xraybar" in page, "xray panel missing from the page"
-            assert "id=xraygo" in page and "id=xrayfile" in page, "xray controls missing"
+            assert "id=app" in page, "workshop mount point missing from the shell"
+            for _frag in ("id=kbwrap", "id=kbfetch", "id=kbask", "id=kbprefsbtn",
+                          "id=xraybar", "id=xraygo", "id=xrayfile", "id=kblist"):
+                assert _frag in _panels, f"panel control missing: {_frag}"
             # quote lives in the Tools menu now, so it ships in the chrome
             # module rather than in a panel slot
             assert "id=quote" in _chrome, "quote menu missing from the chrome"
@@ -1105,7 +1171,9 @@ def main() -> None:
             assert all(str(r.get("logo", "")).startswith("data:image/png;base64,")
                        for r in _q0rows), "every quote row wears its fab logo"
             slots = json.loads(urllib.request.urlopen(kbase + "/slots", timeout=5).read())
-            assert "kb" in slots["view"], slots
+            # the registry lists plugin contributions only: built-ins are JS
+            assert slots["view"] == [], slots
+            assert set(slots) >= {"toolbar", "view", "panel-left"}, sorted(slots)
             kl = post(kbase, "/kb/list", {})
             assert not kl.get("error"), kl
             assert str(kl["dir"]).endswith("kb"), kl["dir"]

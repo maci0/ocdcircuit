@@ -1923,11 +1923,21 @@ _st = _studio.H._build(open(os.path.join(EX, "psu.ocd")).read(), False,
                        {"placer": "diffusion", "router": "lroute"})
 assert _st["errors"] == [], _st["errors"]
 assert cast(dict[str, object], _st["tidy"])["coverage"] == "13/15", _st["tidy"]
-assert set(_studio.SLOTS.report("view")) >= {"editor", "pcb", "sch", "inspector"}
-assert "xraygo" in _studio.SLOTS.render("view", None)  # x-ray compare controls
-# menubar lives in apps/web/workshop.js (Preact); server slots carry panels
+# built-in chrome AND panels are modules under apps/web/ now; the Python slot
+# registry is the plugin contract, so it is empty until a plugin registers
 _wjs = open(os.path.join(HERE, "..", "apps", "web", "workshop.js")).read()
 assert "id=m-board" in _wjs and "fab_dl" in _wjs, "menubar missing from workshop"
+_wp = open(os.path.join(HERE, "..", "apps", "web", "panels.js")).read()
+for _frag in ("id=edwrap", "id=pcbwrap", "id=schwrap", "id=wrap3d",
+              "id=galwrap", "id=vcswrap", "id=scanwrap", "id=kbwrap",
+              "id=xraygo", "id=kbprefsbtn", "id=filetree", "id=chat"):
+    assert _frag in _wp, f"panel missing from panels.js: {_frag}"
+assert _studio.SLOTS.report("view") == [], _studio.SLOTS.report("view")
+# a plugin contribution still lands in a slot and still renders
+_dis = _studio.SLOTS.register("view", "probe", lambda s: "<b id=probe>x</b>", order=9.0)
+assert "probe" in _studio.SLOTS.render("view", None)
+_dis()
+assert "probe" not in _studio.SLOTS.render("view", None)
 _spp = _studio.H._build("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\npour GND on 0\n", False, {})
 assert cast(dict[str, object], _spp["pours"]) == {"GND": [0]}

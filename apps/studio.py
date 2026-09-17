@@ -85,164 +85,6 @@ def unload_ui() -> None:
         _UI_DISPOSERS.pop()()
 
 
-_slot("view", "gallery",
-               lambda s: '<section id=galwrap style="display:none">'
-                         '<header class=panel-head><span class=panel-title>candidates</span>'
-                         '<span class=panel-note>click one to adopt it, then drag it on the PCB to nudge and pin</span>'
-                         '<span class=panel-note>job file 1F-04 &middot; placer diffusion &middot; 1 seed &times; 400 iters</span></header>'
-                         '<div id=gal></div></section>',
-               order=4.0)
-_slot("view", "editor",
-               lambda s: '<section id=edwrap>'
-                         '<header class=panel-head><span class=panel-title>job file</span>'
-                         '<span class=panel-note id=srcnote>board.ocd &middot; saved on every good build</span>'
-                         '<span class=panel-note>edit here or drag on the PCB &middot; rebuilds in 0.4s</span></header>'
-                         '<div id=ed contenteditable spellcheck=false role=textbox aria-multiline=true '
-                         'aria-label=".ocd source, edits rebuild the board"></div>'
-                         '<div id=srcpanels>'
-                         + SLOTS.render("panel-left", None)
-                         + '</div></section>',
-               order=0.0)
-_slot("panel-left", "filetree",
-               lambda s: '<section id=filetree class=side>'
-                         '<header class=panel-head><span class=panel-title>project</span>'
-                         '<span class=panel-note id=treenote></span>'
-                         '<label id=importlbl title="import a footprint, symbol, or board (kicad, eagle, tscircuit, altium, easyeda)">import<input id=importfile type=file hidden></label></header>'
-                         '<div id=tree></div><div id=importstat role=status aria-live=polite></div></section>',
-               order=0.0)
-_slot("panel-left", "chat",
-               lambda s: '<section id=chat class=side>'
-                         '<header class=panel-head><span class=panel-title>agent</span>'
-                         '<span class=panel-note id=chatwhere></span>'
-                         '<button id=chatclear title="forget this conversation">clear</button></header>'
-                         '<div id=msgs role=log aria-live=polite aria-label="agent conversation"></div>'
-                         '<form id=composer><textarea id=ask rows=2 aria-label="message to the agent" '
-                         'placeholder="ask about this board, or say what to change (Ctrl+Enter)"></textarea>'
-                         '<button id=send class=primary type=submit>send</button></form>'
-                         '</section>',
-               order=1.0)
-_slot("view", "vcs",
-               lambda s: '<section id=vcswrap>'
-                         '<header class=panel-head><span class=panel-title>revisions</span>'
-                         '<span class=panel-note id=vcsnote></span>'
-                         '<span class=panel-note>git history of the board directory</span></header>'
-                         '<div id=vcs></div></section>',
-               order=5.0)
-_slot("view", "pcb",
-               lambda s: '<section id=pcbwrap>'
-                         '<header class=panel-head><span class=panel-title>PCB</span>'
-                         '<span class=panel-note>drag a part to pin it &middot; double-click unpins &middot; right-click rotates &middot; alt-click a trace re-routes its net &middot; shift-drag a trace previews the shove</span>'
-                         '<details id=layerbox title="show or hide layers and marks on this canvas">'
-                         '<summary>layers</summary>'
-                         '<div id=layers role=group aria-label="visible layers">'
-                         '<span class=lbl>copper</span><div id=cu class=row></div>'
-                         '<span class=lbl>marks</span><div id=marks class=row></div>'
-                         '<button id=layersall type=button>show all</button></div></details>'
-                         '<details id=partbox title="show or hide individual parts on this canvas">'
-                         '<summary>parts</summary>'
-                         '<div id=partpanel role=group aria-label="visible parts">'
-                         '<div id=partbar><input id=partfilter type=search '
-                         'placeholder="filter ref, value, footprint" aria-label="filter parts">'
-                         '<button id=parthide type=button title="hide every part">none</button>'
-                         '<button id=partshow type=button title="show every part">all</button>'
-                         '<span id=partnote class=panel-note></span></div>'
-                         '<div id=partlist></div></div></details></header>'
-                         '<div class=platewrap><canvas id=pcb role=img aria-label="PCB layout"></canvas>'
-                         '<div id=drc role=status aria-live=polite></div></div></section>',
-               order=1.0)
-_slot("view", "sch",
-               lambda s: '<section id=schwrap>'
-                         '<header class=panel-head><span class=panel-title>schematic</span>'
-                         '<span class=panel-note>click a pin then a net to rewire &middot; alt-click drops a pin &middot; double-click a label renames it</span></header>'
-                         '<canvas id=sch role=img aria-label="schematic"></canvas></section>',
-               order=2.0)
-_slot("view", "inspector",
-               lambda s: '<section id=wrap3d>'
-                         '<header class=panel-head><span class=panel-title>3D</span>'
-                         '<span class=panel-note>click to spin</span></header>'
-                         '<canvas id=t3d role=img aria-label="3D board preview"></canvas>'
-                         '<header class=panel-head><span class=panel-title>x-ray</span>'
-                         '<span class=panel-note>reference + fab scan check</span></header>'
-                         '<div id=xraybar><input id=xrayfile type=file accept="image/png,.png" '
-                         'aria-label="fab x-ray PNG to compare against the design">'
-                         '<button id=xraysvg type=button title="the reference x-ray view">reference</button>'
-                         '<button id=xraygo type=button class=primary title="compare the chosen scan against the design">compare</button>'
-                         '<label>dx <input id=xraydx value=0 size=3 aria-label="scan x offset mm"></label>'
-                         '<label>dy <input id=xraydy value=0 size=3 aria-label="scan y offset mm"></label>'
-                         '<label>sc <input id=xraysc value=1 size=4 aria-label="scan scale"></label>'
-                         '<label>cu <input id=xraythr value=100 size=3 aria-label="copper brightness cutoff"></label></div>'
-                         '<div id=xraystat role=status aria-live=polite></div>'
-                         '<div id=xraydivs></div>'
-                         '<header class=panel-head><span class=panel-title>tidy</span>'
-                         '<span class=panel-note id=tidycov></span></header>'
-                         '<div id=tidy></div></section>',
-               order=3.0)
-
-_slot("view", "scan",
-               lambda s: '<section id=scanwrap>'
-                         '<header class=panel-head><span class=panel-title>photo scan</span>'
-                         '<span class=panel-note>photos of a real board &rarr; draft design</span></header>'
-                         '<div id=scanbar>'
-                         '<input id=scanfiles type=file multiple accept="image/*" '
-                         'aria-label="photos of the board, both sides">'
-                         '<label>mm <input id=scanmm size=4 value="" '
-                         'aria-label="board width in mm, if known"></label>'
-                         '<button id=scango type=button class=primary '
-                         'title="stitch, enhance, and reverse-engineer">analyse</button></div>'
-                         '<div id=scanbar2>'
-                         '<input id=scannote type=search aria-label="what this board is" '
-                         'placeholder="what is it? e.g. scope PSU pulled from a dead unit">'
-                         '<input id=scandocs type=file multiple accept=".pdf,.txt,.md" '
-                         'aria-label="manual or datasheet"></div>'
-                         '<div id=scanstat role=status aria-live=polite>'
-                         'name files with &ldquo;top&rdquo; / &ldquo;bottom&rdquo; so the sides are split &middot; '
-                         'shoot whole-board frames plus mid-range ones; very tight close-ups often fail to line up</div>'
-                         '<div id=scanq></div>'
-                         '<div id=scanview hidden>'
-                         '<div id=scanviewbar>'
-                         '<label>side <select id=scanside aria-label="board side to view">'
-                         '<option value=top>top</option><option value=bottom>bottom</option>'
-                         '</select></label>'
-                         '<label>view <select id=scanviewkind aria-label="which enhancement to show">'
-                         '<option value=stitch>photo</option><option value=contrast>markings</option>'
-                         '</select></label>'
-                         '<label class=scancheck><input id=scanlabels type=checkbox checked> labels</label>'
-                         '<label class=scancheck><input id=scanboxes type=checkbox checked> outlines</label>'
-                         '<span id=scanhover role=status aria-live=polite></span></div>'
-                         '<div class=scanstage><img id=scanimg alt="stitched board photo">'
-                         '<svg id=scansvg aria-hidden=true></svg></div>'
-                         '<div id=scanparts></div></div>'
-                         '<pre id=scanout></pre>'
-                         '</section>',
-               order=5.5)
-
-_slot("view", "kb",
-               lambda s: '<section id=kbwrap>'
-                         '<header class=panel-head><span class=panel-title>knowledgebase</span>'
-                         '<span class=panel-note id=kbnote>kb/ beside the board</span>'
-                         '<span class=panel-note>notes + datasheets &middot; the agent reads the same files</span></header>'
-                         '<div id=kbbar>'
-                         '<input id=kbq type=search aria-label="ask the knowledgebase" '
-                         'placeholder="ask: what is the input voltage range?  (or a search term)">'
-                         '<button id=kbask class=primary type=button title="passages that answer the question (embeddings)">ask</button>'
-                         '<button id=kbgrep type=button title="exact term match, one line per hit">search</button>'
-                         '<button id=kbans type=button title="also write an answer with the local model">answer</button></div>'
-                         '<div id=kbadd>'
-                         '<input id=kburl type=search aria-label="datasheet url or file path" '
-                         'placeholder="https://…/datasheet.pdf  or  path/to/note.md">'
-                         '<button id=kbaddbtn type=button title="copy or download it into kb/">add</button>'
-                         '<button id=kbfetch type=button title="download the datasheet for every datasheet= / lcsc= part">fetch datasheets</button>'
-                          '<button id=kbprefsbtn type=button title="preferences the agent follows without being asked">preferences</button></div>'
-                          '<div id=kbprefs style="display:none"><div id=kbprefslist></div>'
-                          '<div id=kbprefsadd><input id=kbwhen aria-label="when this applies" placeholder="when placing connectors">'
-                          '<input id=kbwhat aria-label="what to prefer" placeholder="put them on the board edge">'
-                          '<button id=kbprefsgo type=button title="save as a new preference">remember</button></div></div>'
-                         '<div id=kbstat role=status aria-live=polite>click a document to read it</div>'
-                         '<div id=kblist></div>'
-                         '<pre id=kbview></pre>'
-                         '</section>',
-               order=6.0)
-
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "boards", "blinky_555.ocd")
 SRC = os.path.abspath(SRC)
 BASE = os.path.dirname(SRC)
@@ -1763,10 +1605,10 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.save_target = cand
                     H.hist, H.redo, H.chat, H.props = [H.src_text], [], [], []
                     H.saved_text = ""
-            # Built-in chrome is apps/web/workshop.js. Python still owns the
-            # slot registry, so plugin contributions ride along as markup and
-            # the JS mounts them once (islands — preact never re-renders them).
-            slots = {name: SLOTS.render(name, None) for name in ("toolbar", "view")}
+            # Built-in chrome and panels are modules under apps/web/; the
+            # Python slot registry still renders whatever a plugin left in
+            # any slot, and the JS mounts those islands once.
+            slots = {name: SLOTS.render(name, None) for name in UiSlots.slots}
             page = PAGE.replace("/*__SLOTS__*/",
                                       json.dumps(slots).replace("</", "<\\/"))
             body = page.encode("utf-8")
