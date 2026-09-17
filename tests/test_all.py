@@ -1202,7 +1202,7 @@ with tempfile.TemporaryDirectory() as d:
     _lbom = open([f for f in _lc.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     assert ",C1" in _lbom and ",C2" in _lbom and _lbom.count("10k") == 2, _lbom
-    # alternates ride a 5th BOM column (unioned per row; JLC ignores extras)
+    # alternates ride the last BOM column (unioned per row; JLC ignores extras)
     _la = agent.loads("board t 40x30 2L\npart U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN,TLC555CP\n"
                       "part U2 SOIC8 NE555 mpn=NE555P alternates=TLC555CP,ICM7555\n"
                       "net N: U1.1 U2.1\nnet GND: U1.2 U2.2\n", base=EX)
@@ -1210,6 +1210,21 @@ with tempfile.TemporaryDirectory() as d:
                    if f.endswith(".BOM.csv")][0]).read()
     assert "Alternates" in _labom.splitlines()[0], _labom
     assert _labom.splitlines()[1].endswith(",ICM7555;LM555CN;TLC555CP"), _labom
+    # tol= validates at parse, rides its own BOM column, splits rows
+    for _badtol in ["tol=bogus", "tol=5%%"]:
+        try:
+            agent.loads(f"board t 40x30 2L\npart R1 R0805 10k {_badtol}\n"
+                        "N :: R1.1 R1.2\n", base=EX)
+            raise AssertionError(f"should have raised: {_badtol}")
+        except ValueError as e:
+            assert "bad tol=" in str(e), e
+    _lt = agent.loads("board t 40x30 2L\npart R1 R0805 10k tol=1%\n"
+                      "part R2 R0805 10k tol=5%\npart R3 R0805 10k tol=1%\n"
+                      "N :: R1.1 R2.1\nM :: R2.2 R3.1\nGND :: R1.2 R3.2\n", base=EX)
+    _ltbom = open([f for f in _lt.export("jlc", outdir=tempfile.mkdtemp())
+                   if f.endswith(".BOM.csv")][0]).read()
+    assert "Tol" in _ltbom.splitlines()[0], _ltbom.splitlines()[0]
+    assert "R1,R3" in _ltbom and ",1%," in _ltbom and ",5%," in _ltbom, _ltbom
     from ocdcircuit.circuit import Seg as _Seg
     _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
     assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5

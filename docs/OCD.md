@@ -51,7 +51,8 @@ part U2 SOIC8 TL072 sym=OPX pin2=VFB  # sym= symbol override; pinN= pin label
 
 Part attrs (`k=v`, order-free, kept verbatim into IR/BOM/KiCad):
 values with spaces quote (`note="hello world"`, shlex rules) ·
-`lcsc=` `mpn=` (orderable keys) · `rot=` 0/90/180/270 (bbox-aware) ·
+`lcsc=` `mpn=` (orderable keys) · `tol=` 1%|0.1|100ppm (validated,
+splits BOM rows) · `rot=` 0/90/180/270 (bbox-aware) ·
 `x=` `y=` (≡ `fix REF at x y`, dumps the `fix` line) · `dnp=1` ·
 `sym=` (symbol override: R C L D Q3 OPAMP IC8 IC14 IC16) ·
 `pinN=` (schematic pin label) ·

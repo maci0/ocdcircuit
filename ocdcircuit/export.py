@@ -349,12 +349,13 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.BOM.csv")
     # JLC format: Comment,Designator,Footprint,LCSC — grouped by value,
     # LCSC from `lcsc` part attr. DNP parts get their own rows (JLC's
-    # "Do not place" is per-line; never merge placed + DNP). LCSC is part
-    # of the key: same value+fp with different LCSC must not merge (JLC
-    # orders per row; first-wins would ship the wrong reel).
-    groups: dict[tuple[str, str, str, str], list[str]] = {}
+    # "Do not place" is per-line; never merge placed + DNP). LCSC and
+    # tol are part of the key: same value+fp with different tolerance
+    # must not merge (JLC orders per row; first-wins ships the wrong reel).
+    groups: dict[tuple[str, str, str, str, str], list[str]] = {}
     for p in board.parts.values():
         groups.setdefault((p.value, p.fp, str(p.attrs.get("lcsc", "")),
+                           str(p.attrs.get("tol", "")),
                            "DNP" if p.attrs.get("dnp") else ""), []).append(p.ref)
     byref = {p.ref: p for p in board.parts.values()}
     # csv.writer, not ",".join: a value carrying a comma (`1k,1%`) used to shift
@@ -362,8 +363,9 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     # field. lineterminator keeps the LF the rest of the bundle uses.
     with open(fn, "w", newline="", encoding="utf-8") as f:
         cw = csv.writer(f, lineterminator="\n")
-        cw.writerow(["Comment", "Designator", "Footprint", "LCSC", "Alternates"])
-        for (value, fp, lcsc, dnp), refs in sorted(groups.items()):
+        cw.writerow(["Comment", "Designator", "Footprint", "LCSC", "Tol",
+                     "Alternates"])
+        for (value, fp, lcsc, tol, dnp), refs in sorted(groups.items()):
             comment = f"{value} (DNP)" if dnp else value
             # alternates: curated per-part substitute lists (stock-outs);
             # unioned across the row, empties dropped. JLC ignores the extra
@@ -371,7 +373,8 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             alts = sorted({a.strip() for r in refs
                            for a in str(byref[r].attrs.get("alternates", "")).split(",")
                            if a.strip()})
-            cw.writerow([comment, ",".join(sorted(refs)), fp, lcsc, ";".join(alts)])
+            cw.writerow([comment, ",".join(sorted(refs)), fp, lcsc, tol,
+                         ";".join(alts)])
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
     # DNP excluded: CPL drives the pick-and-place machine, BOM marks the

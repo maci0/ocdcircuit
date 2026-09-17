@@ -986,6 +986,10 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         b.add_part(ref, fp, value, attrs=attrs or None)
     except (KeyError, ValueError) as e:
         raise err(f"{ctx}{e}")
+    if "tol" in attrs and not re.fullmatch(
+            r"\d+(\.\d+)?(%|ppm)?", attrs["tol"]):
+        raise err(f"{ctx}bad tol={attrs['tol']!r} on part {ref} "
+                  "(want 1%, 0.1, 100ppm)")
     # declarative placement: `part R1 R0805 1k x=3 y=15` ≡ `fix R1 at 3 15`
     if "x" in attrs or "y" in attrs:
         try:
