@@ -415,6 +415,57 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
     return True
 
 
+def reroute(board: Board, name: str) -> bool:
+    """Rip one net and re-route it against live copper (other nets' segs
+    rasterized to blockage). One undoable effect. Returns maze-success.
+    The interactive primitive: retry a failed net without full-board churn."""
+    net = board.nets.get(name)
+    if net is None:
+        raise ValueError(f"unknown net {name!r}")
+    P = _constraints(board)
+    grid, bend, via = P["grid"], P["bend"], P["via"]
+    nx = max(1, int(board.width / grid) + 1)
+    ny = max(1, int(board.height / grid) + 1)
+    old = list(board.traces)
+    # rasterize surviving nets' segs to cells
+    cells_of: dict[str, set[tuple[int, int, int]]] = {}
+    for s in old:
+        if s.net == name:
+            continue
+        cells = cells_of.setdefault(s.net, set())
+        x0, x1 = sorted((s.x1, s.x2))
+        y0, y1 = sorted((s.y1, s.y2))
+        for gx in range(int(x0 / grid), int(x1 / grid) + 1):
+            for gy in range(int(y0 / grid), int(y1 / grid) + 1):
+                cells.add((gx, gy, s.layer))
+    copper: set[tuple[int, int, int]] = set()
+    halo: set[tuple[int, int, int]] = set()
+    _rebuild_blocked(copper, halo, cells_of)
+    base_blocked = _blocked(board, grid)
+    from .parts import pads_of
+    lib = board._lib()
+    pad_cells: dict[tuple[int, int], str] = {}
+    for n, nt in board.nets.items():
+        for ref, pin in nt.pins:
+            if ref in board.parts and pin in pads_of(board.parts[ref].fp, lib):
+                px, py = board.pad_pos(ref, pin)
+                for gx in (int(px / grid) - 1, int(px / grid), int(px / grid) + 1):
+                    for gy in (int(py / grid) - 1, int(py / grid), int(py / grid) + 1):
+                        pad_cells.setdefault((gx, gy), n)
+    new = [s for s in old if s.net != name]
+    ok = _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
+                    pad_cells, copper, halo, cells_of, new, None, {},
+                    _novia_cells(board, grid))
+    if not ok:
+        pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
+        if len(pts) >= 2:
+            _fallback(net, pts, new)
+    kept = list(new)
+    board.emit(lambda: board.traces.__setitem__(slice(None), kept),
+               lambda: board.traces.__setitem__(slice(None), old))
+    return ok
+
+
 def _fallback(net: Net, pts: list[tuple[str, XY]], new: list[Seg]) -> None:
     """Straight-L fallback (never fail a build). Flagged jumper for DRC."""
     from .circuit import Seg as S

@@ -142,6 +142,8 @@ def _apply_patch_inner(board: Board, ops: list[dict[str, object]]) -> int:
             board.set_board(_f(op["w"]), _f(op["h"]))
         elif k == "route":
             board.route_board()
+        elif k == "reroute":
+            op["result"] = board.reroute(_s(op["net"]))
         elif k == "optimize":
             board.place(seeds=_i(op.get("seeds"), 4),
                         iters=_i(op.get("iters"), 400), seed=_i(op.get("seed"), 0))

@@ -487,6 +487,12 @@ class Board(Component):
         assert isinstance(out, int)
         return out
 
+    def reroute(self, net: str) -> bool:
+        """Rip one net and maze it again against live copper.
+        One undoable effect; True = maze-succeeded (else flagged jumper)."""
+        from . import maze as _maze
+        return _maze.reroute(self, net)
+
     def check(self, key: str | None = None, **k: object) -> DrcReport:
         out = self._run("drc", key, **k)
         assert isinstance(out, dict)

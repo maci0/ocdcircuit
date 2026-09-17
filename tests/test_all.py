@@ -1464,6 +1464,16 @@ assert len(cast(dict[str, object], _call("fabs", {})["fabs"])) == 11
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert cast(float, _call("place", {})["cost"]) >= 0  # every tool invoked live
 assert cast(int, _call("route", {})["segments"]) > 0  # blinky must actually route
+# reroute: single net against live copper, net set preserved, undoable
+_rb = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
+_rb.place(seeds=1, iters=30)
+_rb.route_board("maze")
+_rnets = {s.net for s in _rb.traces}
+assert _rb.reroute("VCC") in (True, False)
+assert {s.net for s in _rb.traces} == _rnets, "reroute keeps every net"
+_rb.ctx.undo()
+assert {s.net for s in _rb.traces} == _rnets, "reroute undoes"
+assert agent.apply_patch(_rb, [{"op": "reroute", "net": "GND"}]) == 1
 assert _call("use_plugin", {"kind": "placer", "key": "compact"}) == {"active": "compact"}
 assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active": "diffusion"}
 with tempfile.TemporaryDirectory() as _md:
