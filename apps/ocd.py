@@ -358,6 +358,32 @@ def cmd_status(agent: object, args: list[str]) -> int:
                 simline += "sim FAIL: " + "; ".join(_fails) + "\n"
         except (ValueError, KeyError, AssertionError):
             simline = "sim: error\n"
+    quoteline = ""
+    try:
+        from ocdcircuit import quote as _qq
+        qr = _qq.compare(b, qty=5)
+        qrows = cast(list[dict[str, object]], qr["rows"])
+        priced = [r for r in qrows if "bare_total" in r]
+        if priced:
+            cheapest = min(priced, key=lambda r: float(cast(float, r["bare_total"])))
+            quoteline = (f"quote: cheapest={cheapest['fab']} "
+                         f"bare ${cheapest['bare_total']}/bd")
+            asm = cheapest.get("asm")
+            if isinstance(asm, dict):
+                flags = []
+                if cast(list[str], asm.get("unpriced", [])):
+                    flags.append(f"unpriced={len(cast(list[str], asm['unpriced']))}")
+                if cast(list[str], asm.get("low_stock", [])):
+                    flags.append(f"low-stock={len(cast(list[str], asm['low_stock']))}")
+                if cast(list[str], asm.get("risky", [])):
+                    flags.append(f"risky={len(cast(list[str], asm['risky']))}")
+                if cast(list[str], asm.get("via_alt", [])):
+                    flags.append(f"subs={len(cast(list[str], asm['via_alt']))}")
+                if flags:
+                    quoteline += " (" + ", ".join(flags) + ")"
+            quoteline += "\n"
+    except (ValueError, KeyError, AssertionError):
+        quoteline = "quote: error\n"
     trows = "\n".join(f"| {k} | {_tidy_md(v)} |" for k, v in t.items()
                         if k not in ("coverage", "routed_segs"))
     ran = checks.get("ran", [])
@@ -373,6 +399,7 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + ("".join(f"- {e}\n" for e in derr[:10]))
            + ("".join(f"- {w}\n" for w in dwarn[:10]))
            + (f"{simline}\n" if simline else "")
+           + (f"{quoteline}\n" if quoteline else "")
            + (f"jumpers: {', '.join(b.jumper_nets())} "
               f"(wire bridges — retry one with alt-click reroute)\n"
               if b.jumper_nets() else "")

@@ -1981,6 +1981,7 @@ with _tf.TemporaryDirectory() as _td:
     assert "tidy (13/15" in _sm, _sm[:200]
     assert "shrink →" in _sm, _sm[-300:]
     assert "solved: diffusion/lroute @ jlc" in _sm, _sm[-500:]
+    assert "quote: cheapest=" in _sm, _sm[-500:]
     # status/score honor board.toml picks (same as run) + CLI flags win
     open(os.path.join(_td, "board.toml"), "w").write('placer = "compact"\n')
     assert _ocd.cmd_status(_ocd._boot(), [_sp]) == 0
