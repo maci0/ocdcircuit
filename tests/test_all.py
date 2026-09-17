@@ -2008,7 +2008,7 @@ assert cast(dict[str, object], _st["tidy"])["coverage"] == "13/15", _st["tidy"]
 # built-in chrome AND panels are modules under apps/web/ now; the Python slot
 # registry is the plugin contract, so it is empty until a plugin registers
 _wjs = open(os.path.join(HERE, "..", "apps", "web", "workshop.js")).read()
-assert "id=m-board" in _wjs and "fab_dl" in _wjs, "menubar missing from workshop"
+assert "id=m-board" in _wjs, "menubar missing from the chrome module"
 _wp = open(os.path.join(HERE, "..", "apps", "web", "panels.js")).read()
 for _frag in ("id=edwrap", "id=pcbwrap", "id=schwrap", "id=wrap3d",
               "id=xraygo"):
@@ -2023,7 +2023,8 @@ for _frag in ("id=filetree", "id=tree", "id=treenote", "id=importfile",
               "id=kbwrap", "id=kbprefsbtn", "id=kblist", "id=kbview",
               "id=galwrap", "id=gal", "id=scanwrap", "id=scanfiles",
               "id=scanview", "id=scanparts", "id=m-engines", "id=placer",
-              "id=router", "id=silk", "id=fab"):
+              "id=router", "id=silk", "id=fab", "id=solve", "id=dice",
+              "id=fab_dl", "id=dl", "id=simbtn", "id=qgo"):
     assert _frag in _wv, f"reactive panel part missing from views.js: {_frag}"
 assert _studio.SLOTS.report("view") == [], _studio.SLOTS.report("view")
 # a plugin contribution still lands in a slot and still renders

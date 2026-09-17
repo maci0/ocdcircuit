@@ -511,13 +511,13 @@ def main() -> None:
         for frag in ("id=m-engines", "id=placer", "id=router", "id=silk", "id=fab"):
             assert frag in _views, f"engine picker missing from views.js: {frag}"
         # every action keeps its id (handlers never rebind)
-        for frag in ("id=solve", "id=dice", "id=stamp", "id=fab_dl",
-                      "id=undo", "id=redo", "id=diffprev", "id=commit",
+        for frag in ("id=stamp", "id=undo", "id=redo", "id=diffprev", "id=commit",
                       "id=chatbtn", "id=chatauto", "id=sharebtn", "id=room"):
             assert frag in _chrome, f"control id missing: {frag}"
         # the two labels that change on click are components: nothing writes
         # text into a node preact renders
-        for frag in ("id=dl", "id=simbtn", "id=srcnote"):
+        for frag in ("id=dl", "id=simbtn", "id=srcnote", "id=solve", "id=dice",
+                     "id=fab_dl", "id=qgo"):
             assert frag in _views, f"label component missing: {frag}"
         print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
@@ -717,7 +717,7 @@ def main() -> None:
         assert _cop.get("applied") == 1, _cop
         _ev = urllib.request.Request(base + "/collab/events")
         _ev.add_header("Cookie", _mate)
-        _seen: list[str] = []
+        _blabel: list[str] = []
         _er = urllib.request.urlopen(_ev, timeout=25)
         _t1 = time.monotonic()
         _buf = b""
@@ -731,14 +731,14 @@ def main() -> None:
                 _raw, _buf = _buf.split(b"\n\n", 1)
                 for _ln in _raw.split(b"\n"):
                     if _ln.startswith(b"data:"):
-                        _seen.append(_ln[5:].decode())
-                        if len(_seen) >= 2:
+                        _blabel.append(_ln[5:].decode())
+                        if len(_blabel) >= 2:
                             _done = True
                             break
                 if _done:
                     break
         _er.close()
-        assert any('"hello": "teammate"' in _e for _e in _seen), _seen
+        assert any('"hello": "teammate"' in _e for _e in _blabel), _blabel
         print(f"collab ok (push {_cpdt * 1000:.0f}ms, 2 users, stale+presence+op+SSE)")
 
         # the photo-scan panel is a component: it must be in the module that
@@ -851,8 +851,7 @@ def main() -> None:
         assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
         # the chrome is a module too: menus, tabs and pills are htm now
         for _frag in ("id=m-board", "id=m-edit", "id=m-tools",
-                      "id=viewtabs", "id=themebtn", "id=logoutbtn", "id=cost",
-                      "id=solve", "id=fab_dl"):
+                      "id=viewtabs", "id=themebtn", "id=logoutbtn", "id=cost"):
             assert _frag in _chrome, f"chrome control missing: {_frag}"
 
         # gallery compare affordance ships + delta math holds on fixtures
@@ -1313,6 +1312,29 @@ def main() -> None:
                     assert str(_cdp.eval(
                         "document.querySelector('#scanout').textContent")).strip(), \
                         "analysis text missing"
+                    # a long action labels the button it disabled, through the
+                    # busy slice: withBusy writes no text into a preact node.
+                    # Slow fetch so the label is observable for certain.
+                    _cdp.eval("(()=>{window.__fetch=window.fetch;"
+                              "window.fetch=(...a)=>new Promise(r=>setTimeout("
+                              "()=>r(window.__fetch(...a)),1500));"
+                              "document.querySelector('#qgo').click();return 1;})()")
+                    _busylabel = ""
+                    for _ in range(40):
+                        time.sleep(0.1)
+                        _busylabel = str(_cdp.eval(
+                            "document.querySelector('#qgo').textContent"))
+                        if _busylabel == "comparing…":
+                            break
+                    assert _busylabel == "comparing…", f"busy label missing ({_busylabel!r})"
+                    _cdp.eval("(()=>{window.fetch=window.__fetch;return 1;})()")
+                    for _ in range(80):
+                        time.sleep(0.25)
+                        if str(_cdp.eval(
+                                "document.querySelector('#qgo').textContent")) == "compare":
+                            break
+                    else:
+                        raise AssertionError("busy label never cleared")
                     # quote rows carry their fab's own logo tile, and the
                     # notes under them are state (no innerHTML in legacy.js)
                     _cdp.eval("(()=>{document.querySelector('#qgo').click();return 1;})()")
@@ -1603,8 +1625,8 @@ def main() -> None:
             # quote lives in the Tools menu now, so it ships in the chrome
             # module rather than in a panel slot
             assert "id=quote" in _chrome, "quote menu missing from the chrome"
-            assert "id=qgo" in _chrome and "id=qqty" in _chrome, \
-                "quote controls missing"
+            assert "id=qqty" in _chrome, "quote controls missing"
+            assert "id=qgo" in _views, "quote button belongs to its component"
             _qq0 = post(kbase, "/quote", {"qty": 5, "no_parts": True})
             assert not _qq0.get("error"), _qq0.get("error")
             _q0rows = cast(list[dict[str, object]], _qq0["rows"])

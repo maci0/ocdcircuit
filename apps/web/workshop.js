@@ -10,8 +10,9 @@ import { render } from './vendor/preact.module.js';
 import html from './html.js';
 import { ui, useUI } from './store.js';
 import { Panels } from './panels.js';
-import { CalcBlock, DlButton, Engines, ExtBanner, HealthOut, QuoteOut,
-         SimButton, Toast } from './views.js';
+import { CalcBlock, DiceButton, DlButton, Engines, ExtBanner, FabDlButton,
+         HealthOut, QgoButton, QuoteOut, SimButton, SolveButton,
+         Toast } from './views.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
   ><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect
@@ -42,19 +43,19 @@ const Tools = () => html`<details class=menu id=m-tools>
   <details id=quote title="fab price comparison: bare per fab, JLC assembled"><summary>quote</summary>
     <label>qty <input id=qqty value=5 size=3 aria-label="boards ordered" /></label>
     <label><input type=checkbox id=qbare /> bare only</label>
-    <button id=qgo type=button class=primary title="compare fab prices for the open board">compare</button>
+    <${QgoButton} />
     <${QuoteOut} /></details>
   </div></details>`;
 
 // The menubar is a nav of <details>; legacy.js closes the others on open and
 // matches .menubar>details.menu, so this structure is load-bearing.
 const Menubar = () => html`<nav class=menubar aria-label="board menus">
-  <button id=solve class=primary title="full solve, 5 seeds x 500 iters (Ctrl+Enter)">solve</button>
+  <${SolveButton} />
   <details class=menu id=m-board><summary title="board outputs and layouts">Board</summary><div class=mpop>
-    <div class=mrow><button id=dice title="generate N candidate layouts side by side">candidates</button>
+    <div class=mrow><${DiceButton} />
       <input id=ncand value=4 size=1 aria-label="candidate count" title="candidate count" /></div>
     <button id=stamp title="stamp another copy of the hovered instance">stamp instance</button>
-    <button id=fab_dl title="download the fab bundle as one zip">fab zip</button>
+    <${FabDlButton} />
     <${DlButton} />
     </div></details>
   <details class=menu id=m-edit><summary title="undo history and revisions">Edit</summary><div class=mpop>

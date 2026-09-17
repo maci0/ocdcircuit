@@ -63,6 +63,7 @@ const state = {
   simLabel: 'sim dc', // the Simulate button's word + tooltip
   simTitle: 'simulate the current board (shift-click: tran)',
   dlLabel: 'download render',   // the Board menu's download word
+  busy: {},           // id -> "solving…" while an action runs (withBusy writes here)
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

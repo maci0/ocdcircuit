@@ -383,10 +383,41 @@ export const Engines = () => {
 // has text written under it from outside.
 export const SrcNote = () => html`<span class=panel-note id=srcnote>${useUI().srcNote}</span>`;
 
-export const DlButton = () => html`<button id=dl title=${'download a render (cycles svg, '
-  + 'sch, png, xray; shift-click backwards)'}>${useUI().dlLabel}</button>`;
+// Long actions say what they are doing IN the button they disable. The label
+// lives in the busy slice, keyed by the button's id, so withBusy() never writes
+// into a node preact renders.
+export const SolveButton = () => {
+  const s = useUI();
+  return html`<button id=solve class=primary
+    title="full solve, 5 seeds x 500 iters (Ctrl+Enter)">${s.busy.solve || 'solve'}</button>`;
+};
+
+export const DiceButton = () => {
+  const s = useUI();
+  return html`<button id=dice title="generate N candidate layouts side by side"
+    >${s.busy.dice || 'candidates'}</button>`;
+};
+
+export const FabDlButton = () => {
+  const s = useUI();
+  return html`<button id=fab_dl title="download the fab bundle as one zip"
+    >${s.busy.fab_dl || 'fab zip'}</button>`;
+};
+
+export const DlButton = () => {
+  const s = useUI();
+  return html`<button id=dl title="download a render (cycles svg, sch, png, xray; shift-click backwards)"
+    >${s.busy.dl || s.dlLabel}</button>`;
+};
 
 export const SimButton = () => {
   const s = useUI();
-  return html`<button id=simbtn title=${s.simTitle}>${s.simLabel}</button>`;
+  return html`<button id=simbtn title=${s.simTitle}
+    >${s.busy.simbtn || s.simLabel}</button>`;
+};
+
+export const QgoButton = () => {
+  const s = useUI();
+  return html`<button id=qgo type=button class=primary
+    title="compare fab prices for the open board">${s.busy.qgo || 'compare'}</button>`;
 };
