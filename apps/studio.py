@@ -607,7 +607,7 @@ $('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';$('err').cl
 ['u','p'].forEach(id=>$(id).removeAttribute('aria-invalid'));
 const u=$('u').value.trim(),p=$('p').value;
 if(!u){authErr("Username can't be blank!",$('u'));return;}
-const go=$('go');go.disabled=true;
+const go=$('go');if(go.disabled)return;go.disabled=true;
 try{
 const r=await api(mode==='signup'?'/auth/signup':'/auth/login',{user:u,password:p});
 if(r.error){authErr(r.error);return;}
@@ -615,6 +615,13 @@ me=r.user||u;showShelf();
 }finally{go.disabled=false;}};
 function openShelfBoard(name){ // every create path lands in the workshop
   if(!name)return;location.href='/?board='+encodeURIComponent(String(name).replace(/\.ocd$/,''));}
+async function fromTemplate(name){ // one in-flight copy: double-click must not mint -2/-3
+  if(fromTemplate._busy)return;fromTemplate._busy=true;
+  try{const x=await api('/shelf/from_template',{name});
+    if(x.error){authErr(x.error);return;}
+    if($('newproj').open)$('newproj').close();
+    openShelfBoard(x.name);}
+  finally{fromTemplate._busy=false;}}
 async function showShelf(){$('f').style.display='none';
 document.body.classList.add('shelf');  // one class reveals every shelf-only control
 const me0=await api('/auth/me',{});
@@ -633,17 +640,14 @@ cardSec(box,'Your boards',r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
 cardSec(box,'Templates',(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
   s:t.blurb||'starter board',
   m:'template — opens a copy in the workshop',
-  go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
-    if(x.error){authErr(x.error);return;}openShelfBoard(x.name);}})));
+  go:()=>fromTemplate(t.name)})));
 _npcache={boards:r.boards.map(b=>({t:b.name.replace(/\.ocd$/,''),
   s:b.blurb||`${b.parts} parts · ${b.nets} nets`,
   m:`${b.name} · ${b.mtime}`,
   go:()=>openShelfBoard(b.name)})),
   templates:(r.templates||[]).map(t=>({t:t.name.replace(/\.ocd$/,''),
   s:t.blurb||'starter board',m:'template — opens a copy in the workshop',
-  go:async()=>{const x=await api('/shelf/from_template',{name:t.name});
-    if(x.error){authErr(x.error);return;}
-    if($('newproj').open)$('newproj').close();openShelfBoard(x.name);}}))};
+  go:()=>fromTemplate(t.name)}))};
 }
 function cardSec(box,h,cards){
   if(!cards.length)return;
@@ -664,10 +668,12 @@ $('promptbox').onsubmit=async e=>{e.preventDefault();
     openShelfBoard(r.name);}
   finally{if(go)go.disabled=false;}};
 $('profgo').onclick=async()=>{
-  const r=await api('/auth/profile',{display:$('profin').value});
-  if(r.error){authErr(r.error);return;}
-  $('title').textContent='Welcome, '+r.display;
-  $('err').textContent='display name saved';$('err').classList.add('ok');};
+  if($('profgo').disabled)return;$('profgo').disabled=true;
+  try{const r=await api('/auth/profile',{display:$('profin').value});
+    if(r.error){authErr(r.error);return;}
+    $('title').textContent='Welcome, '+r.display;
+    $('err').textContent='display name saved';$('err').classList.add('ok');}
+  finally{$('profgo').disabled=false;}};
 $('newboard').onsubmit=async e=>{e.preventDefault();
   const go=$('newboard').querySelector('button[type=submit]');if(go&&go.disabled)return;
   if(go)go.disabled=true;
@@ -2296,10 +2302,14 @@ function setQueue(list){
   (list||[]).forEach(p=>propose(p,setQueue));
 }
 async function chat(text,auto){
+  const go=$('composer').querySelector('button[type=submit]');
+  if(go&&go.disabled)return; // one turn at a time — a double Enter doubles LLM spend
+  if(go)go.disabled=true;
   msg('you',text);
   const wait=msg('bot','thinking…');
-  const r=await api('/chat',{text,auto:!!auto});
-  wait.remove();
+  let r;
+  try{r=await api('/chat',{text,auto:!!auto});}
+  finally{if(go)go.disabled=false;wait.remove();}
   if(r.error){msg('err',r.error);setQueue(r.proposals);return;}
   const tn=(r.proposals||[]).filter(p=>/\.ocd$/.test(p.path||''));
   if(tn.length){ // plan checklist: the turn's file edits as checkable steps
@@ -2643,9 +2653,11 @@ async function kbPrefs(){
   if(!(r.prefs||[]).length)box.textContent='no preferences yet — teach one below';
 }
 $('kbprefsgo').onclick=async()=>{
-  const r=await api('/kb/prefs/add',{when:$('kbwhen').value,text:$('kbwhat').value});
-  if(r.error){$('kbstat').textContent=r.error;return;}
-  $('kbwhen').value='';$('kbwhat').value='';kbPrefs();
+  if($('kbprefsgo').disabled)return;$('kbprefsgo').disabled=true;
+  try{const r=await api('/kb/prefs/add',{when:$('kbwhen').value,text:$('kbwhat').value});
+    if(r.error){$('kbstat').textContent=r.error;return;}
+    $('kbwhen').value='';$('kbwhat').value='';kbPrefs();}
+  finally{$('kbprefsgo').disabled=false;}
 };
 $('kbq').addEventListener('keydown',e=>{
   if(e.key==='Enter'){e.preventDefault();kbGo(true,false);}});
@@ -3535,6 +3547,8 @@ class H(http.server.BaseHTTPRequestHandler):
     kb_parts: tuple[int, dict[str, dict[str, str]]] | None = None  # (rev, parts)
     kb_log: list[str] = []
     kb_busy: bool = False
+    # One LLM turn at a time: a double Enter / retry must not stack spend.
+    chat_busy: bool = False
 
     @staticmethod
     def open_file(path: object) -> None:
@@ -3614,63 +3628,71 @@ class H(http.server.BaseHTTPRequestHandler):
         """One chat turn. The model may answer or propose file edits; each
         proposal is diffed, and auto-applied only when it builds DRC-clean."""
         from ocdcircuit import llm as _llm
-        H.chat.append({"role": "user", "content": message})
-        H.chat = H.chat[-24:]
-        ctx = _board_digest()
-        tools = {"fs.list": lambda p, _b: "\n".join(
-                     f"{e['name']}{'/' if e['kind'] == 'dir' else ''}"
-                     for e in _tree(p or ".")),
-                 "fs.read": lambda p, _b: _read(p)}
+        with H._mu:
+            if H.chat_busy:
+                return {"error": "already thinking — wait for the current reply"}
+            H.chat_busy = True
         try:
-            from ocdcircuit import kb as _kbmod
-            _kb = _kbmod.KB(BASE, parts=_kbmod.parts_map(H.src_text))
-            _prefs = _kb.prefs_approved()
-        except (ValueError, OSError):
-            _prefs = ""
-        sys = "Current board:\n" + ctx + ("\n\n" + _prefs if _prefs else "")
-        msgs = ([{"role": "system", "content": sys}] if ctx else []) + H.chat
-        try:
-            out = _llm.run(msgs, tools)
-        except _llm.LLMError as e:
-            H.chat.pop()  # do not keep a turn the model never saw
-            return {"error": str(e)}
-        H.chat.append({"role": "assistant", "content": str(out["reply"])})
-        H.chat = H.chat[-24:]
-        res: dict[str, object] = {"reply": out["reply"], "log": out["log"],
-                                  "applied": False}
-        files = cast(dict[str, str], out["files"])
-        if not files:
-            return res
-        props, refused = H._stage(files)
-        res["proposals"] = props
-        if refused:
-            res["error"] = "; ".join(refused)
-        if not props:
-            return res
-        if not auto:
-            return res
-        # auto: apply in order, stopping at the first proposal that does not
-        # build — later ones were written against a tree this one has changed
-        for i, p in enumerate(props):
-            one = H.apply_one(str(p["id"]))
-            st = cast(dict[str, object] | None, one.get("state"))
-            errs = list(cast(list[object], st["errors"])) if st else []
-            if one.get("error") or errs:
-                res["applied"] = False
-                res["error"] = str(one.get("error") or "; ".join(
-                    str(e) for e in errs[:3]))
-                res["note"] = (f"applied {i} of {len(props)} proposed files; "
-                               "review the rest by hand")
-                res["proposals"] = [q for q in H.props
-                                    if str(q["id"]) in {str(r["id"]) for r in props[i:]}]
+            H.chat.append({"role": "user", "content": message})
+            H.chat = H.chat[-24:]
+            ctx = _board_digest()
+            tools = {"fs.list": lambda p, _b: "\n".join(
+                         f"{e['name']}{'/' if e['kind'] == 'dir' else ''}"
+                         for e in _tree(p or ".")),
+                     "fs.read": lambda p, _b: _read(p)}
+            try:
+                from ocdcircuit import kb as _kbmod
+                _kb = _kbmod.KB(BASE, parts=_kbmod.parts_map(H.src_text))
+                _prefs = _kb.prefs_approved()
+            except (ValueError, OSError):
+                _prefs = ""
+            sys = "Current board:\n" + ctx + ("\n\n" + _prefs if _prefs else "")
+            msgs = ([{"role": "system", "content": sys}] if ctx else []) + H.chat
+            try:
+                out = _llm.run(msgs, tools)
+            except _llm.LLMError as e:
+                H.chat.pop()  # do not keep a turn the model never saw
+                return {"error": str(e)}
+            H.chat.append({"role": "assistant", "content": str(out["reply"])})
+            H.chat = H.chat[-24:]
+            res: dict[str, object] = {"reply": out["reply"], "log": out["log"],
+                                      "applied": False}
+            files = cast(dict[str, str], out["files"])
+            if not files:
                 return res
-            if st:
-                res["state"] = st
-        res["applied"] = True
-        res["proposals"] = []
-        for p in props:  # each applied file leaves the queue
-            H.props = [q for q in H.props if q["id"] != p["id"]]
-        return res
+            props, refused = H._stage(files)
+            res["proposals"] = props
+            if refused:
+                res["error"] = "; ".join(refused)
+            if not props:
+                return res
+            if not auto:
+                return res
+            # auto: apply in order, stopping at the first proposal that does not
+            # build — later ones were written against a tree this one has changed
+            for i, p in enumerate(props):
+                one = H.apply_one(str(p["id"]))
+                st = cast(dict[str, object] | None, one.get("state"))
+                errs = list(cast(list[object], st["errors"])) if st else []
+                if one.get("error") or errs:
+                    res["applied"] = False
+                    res["error"] = str(one.get("error") or "; ".join(
+                        str(e) for e in errs[:3]))
+                    res["note"] = (f"applied {i} of {len(props)} proposed files; "
+                                   "review the rest by hand")
+                    res["proposals"] = [q for q in H.props
+                                        if str(q["id"]) in {str(r["id"]) for r in props[i:]}]
+                    return res
+                if st:
+                    res["state"] = st
+            res["applied"] = True
+            res["proposals"] = []
+            for p in props:  # each applied file leaves the queue
+                H.props = [q for q in H.props if q["id"] != p["id"]]
+            return res
+        finally:
+            with H._mu:
+                H.chat_busy = False
 
     @staticmethod
     def apply_one(pid: str) -> dict[str, object]:
@@ -4174,16 +4196,26 @@ class H(http.server.BaseHTTPRequestHandler):
                 if not os.path.isfile(src):
                     self._send({"error": f"{fn}: no such template"})
                     return
-                dst = os.path.join(_user_dir(user), fn)
-                stem, n = fn[:-4], 1
-                while os.path.exists(dst):
-                    n += 1
-                    dst = os.path.join(_user_dir(user), f"{stem}-{n}.ocd")
+                # Reuse a byte-identical shelf copy (double-click / retry);
+                # mint stem-N only when every existing copy was edited away.
+                import filecmp
                 import shutil
-                shutil.copy2(src, dst)
-                # open the copy, not the template catalogue again
-                out = os.path.basename(dst)[:-4]
-                self._send({"ok": True, "name": out, "boards": _shelf(user)})
+                stem, n = fn[:-4], 1
+                udir = _user_dir(user)
+                while True:
+                    cand = fn if n == 1 else f"{stem}-{n}.ocd"
+                    dst = os.path.join(udir, cand)
+                    if os.path.isfile(dst):
+                        if filecmp.cmp(src, dst, shallow=False):
+                            self._send({"ok": True, "name": cand[:-4],
+                                        "boards": _shelf(user)})
+                            return
+                        n += 1
+                        continue
+                    shutil.copy2(src, dst)
+                    self._send({"ok": True, "name": cand[:-4],
+                                "boards": _shelf(user)})
+                    return
             elif self.path == "/init":
                 self._send(self._build(H.src_text, True))
             elif self.path == "/collab/sync":

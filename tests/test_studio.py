@@ -173,6 +173,13 @@ def main() -> None:
     assert len(_st_ui._AUTH_HITS) <= _st_ui._AUTH_HITS_MAX
     _st_ui._SESSIONS.clear()
     _st_ui._AUTH_HITS.clear()
+    # chat turn lock: a second ask while busy must not reach the LLM
+    _st_ui.H.chat_busy = True
+    try:
+        _busy = _st_ui.H.ask("hello", False)
+        assert "already thinking" in str(_busy.get("error")), _busy
+    finally:
+        _st_ui.H.chat_busy = False
     # shelf account names must not appear in stderr paths
     assert _st_ui._path_for_log(".users/alice/board.ocd") == ".users/*/board.ocd"
     assert _st_ui._path_for_log("/tmp/x/.users/bob") == "/tmp/x/.users/*"
@@ -454,6 +461,12 @@ def main() -> None:
         _tmpl = post(base, "/shelf/from_template", {"name": "blinky_555.ocd"})
         assert not _tmpl.get("error"), _tmpl  # template opens a copy
         assert _tmpl.get("name") == "blinky_555", _tmpl
+        # retry / double-click: same bytes → same board, no blinky_555-2
+        _tmpl_again = post(base, "/shelf/from_template", {"name": "blinky_555.ocd"})
+        assert _tmpl_again.get("name") == "blinky_555", _tmpl_again
+        _shelf_names = [str(b.get("name")) for b in
+                        cast(list[dict[str, object]], _tmpl_again.get("boards") or [])]
+        assert "blinky_555-2.ocd" not in _shelf_names, _shelf_names
         _bad = post(base, "/shelf/from_template", {"name": "../../etc/passwd"})
         assert "error" in _bad, _bad
         import base64 as _b64
@@ -469,6 +482,8 @@ def main() -> None:
         _w = get(base, "/").decode()  # still authed: workshop
         assert "id=ed" in _w, _w[:200]
         assert "withBusy" in _w, "long-action busy feedback missing"
+        assert "fromTemplate" in _lp, "template double-click guard missing"
+        assert "one turn at a time" in _w, "chat submit busy guard missing"
         assert "download ${key}" in _w or "download ${" in _w, "download label must stay a word"
         assert "sim ${simWhat}" in _w or "sim ${" in _w, "sim label must stay a word"
         # modal lives on the landing page, but its data path is the shelf:
