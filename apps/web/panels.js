@@ -6,7 +6,7 @@
 // the #pluginpanels / #pluginleft islands.
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
-import { DrcStrip, TidyBlock, TreePanel } from './views.js';
+import { CuRows, MarkRows, PartBlock, DrcStrip, TidyBlock, TreePanel } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
@@ -44,18 +44,13 @@ const PcbPanel = () => html`<section id=pcbwrap>
     <details id=layerbox title="show or hide layers and marks on this canvas">
       <summary>layers</summary>
       <div id=layers role=group aria-label="visible layers">
-        <span class=lbl>copper</span><div id=cu class=row></div>
-        <span class=lbl>marks</span><div id=marks class=row></div>
+        <span class=lbl>copper</span><${CuRows} />
+        <span class=lbl>marks</span><${MarkRows} />
         <button id=layersall type=button>show all</button></div></details>
     <details id=partbox title="show or hide individual parts on this canvas">
       <summary>parts</summary>
       <div id=partpanel role=group aria-label="visible parts">
-        <div id=partbar><input id=partfilter type=search
-          placeholder="filter ref, value, footprint" aria-label="filter parts" />
-          <button id=parthide type=button title="hide every part">none</button>
-          <button id=partshow type=button title="show every part">all</button>
-          <span id=partnote class=panel-note></span></div>
-        <div id=partlist></div></div></details></header>
+        <${PartBlock} /></div></details></header>
   <div class=platewrap><canvas id=pcb role=img aria-label="PCB layout"></canvas>
     <${DrcStrip} /></div></section>`;
 

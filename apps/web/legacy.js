@@ -549,45 +549,33 @@ function drawFeas(r){
     return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}${cg}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ')});
 }
 // --- layer and part visibility controls (view state, never a board edit) --
+// visibility rows are components (views.js): this shapes them and handles the
+// change events, which stay here because VIS, localStorage and the canvas do
 function renderLayers(st){
-  const cu=$('cu'),marks=$('marks');
-  if(!cu)return;
   st=st||(S&&S.cur)||{layers:2,silk:'full'};
-  cu.innerHTML='';marks.innerHTML='';
-  layerNames(st).forEach(nm=>{
-    const on=visLayer(nm,st);
-    const id='lay_'+nm.replace(/[^\w]/g,'_');
-    cu.appendChild(layerRow(nm,nm,on,id));
-  });
-  SILKMARKS.forEach(nm=>{
-    const on=visLayer(nm,st);
-    marks.appendChild(layerRow(nm==='silk'?'silkscreen':'mask',nm,on,'mark_'+nm));
-  });
-  Object.keys(MARKLABEL).forEach(k=>{ // ref/value ride the silkscreen toggle
-    if(k==='ref'||k==='value')return;
-    marks.appendChild(layerRow(MARKLABEL[k],k,visMark(k,st),'mark_'+k));
-  });
+  ui.set({
+    cuRows:layerNames(st).map(nm=>({key:nm,label:nm,on:visLayer(nm,st),
+      id:'lay_'+nm.replace(/[^\w]/g,'_'),title:`copper layer ${nm}`})),
+    markRows:[...SILKMARKS.map(nm=>({key:nm,
+        label:nm==='silk'?'silkscreen':'mask',on:visLayer(nm,st),
+        id:'mark_'+nm,title:`${nm==='silk'?'silkscreen':'mask'} on the PCB canvas`})),
+      ...Object.keys(MARKLABEL).filter(k=>k!=='ref'&&k!=='value') // ride the silk toggle
+        .map(k=>({key:k,label:MARKLABEL[k],on:visMark(k,st),id:'mark_'+k,
+          title:`${MARKLABEL[k]} on the PCB canvas`}))]});
 }
-function layerRow(label,key,on,id){
-  const l=document.createElement('label');
-  l.className=on?'on':'off';
-  const i=document.createElement('input');
-  i.type='checkbox';i.checked=on;i.id=id;
-  i.onchange=()=>{
-    if(isCu(key))VIS.layers[key]=i.checked; else if(SILKMARKS.includes(key))VIS.layers[key]=i.checked;
-    else VIS.marks[key]=i.checked;
-    visSave();
-    const st=(S&&S.cur)||null;
-    renderLayers(st);renderParts(st);markDirty();
-  };
-  l.append(i,document.createTextNode(label));
-  l.title=isCu(key)?`copper layer ${key}`:`${label} on the PCB canvas`;
-  return l;
-}
+// one change listener per list: the rows say which key/ref they belong to
+$('layers').addEventListener('change',e=>{
+  const i=e.target.closest('input[data-key]');
+  if(!i)return;
+  const key=i.dataset.key;
+  if(isCu(key)||SILKMARKS.includes(key))VIS.layers[key]=i.checked;
+  else VIS.marks[key]=i.checked;
+  visSave();
+  const st=(S&&S.cur)||null;
+  renderLayers(st);renderParts(st);markDirty();
+});
 const MAX_ROWS=400; // DOM rows, not parts: 5400 checkboxes brick the page
 function renderParts(st){
-  const box=$('partlist');
-  if(!box)return;
   st=st||(S&&S.cur)||{parts:{}};
   const all=Object.keys(st.parts||{}).sort();
   // a filter searches every part (the list is capped, the search is not)
@@ -597,51 +585,29 @@ function renderParts(st){
     edHl.forEach(r=>{if(!shown.has(r))refs.push(r);}); // keep the selection reachable
     refs.sort();
   }
-  const same=box.children.length===refs.length
-    && refs.every((r,i)=>box.children[i]&&box.children[i].dataset.ref===r);
-  if(!same)box.innerHTML=''; // first draw, or a different board
-  refs.forEach((r,i)=>{
-    let l=box.children[i];
-    if(!l||l.dataset.ref!==r){
-      l=document.createElement('label');
-      l.dataset.ref=r;
-      const cb=document.createElement('input');
-      cb.type='checkbox';
-      cb.onchange=()=>{VIS.parts[r]=cb.checked;visSave();paintParts();markDirty();};
-      const nm=document.createElement('span');nm.textContent=r;
-      const v=document.createElement('span');v.className='pv';
-      l.append(cb,nm,v);
-      if(box.children[i])box.replaceChild(l,box.children[i]);
-      else box.appendChild(l);
-    }
+  ui.set({partRows:refs.map(r=>{
     const p=st.parts[r]||{};
-    const v=l.querySelector('.pv');
-    v.textContent=[p.value||'',p.fp||''].filter(Boolean).join(' '); // filterable
-    v.title=v.textContent;
-  });
-  paintParts();
+    return {ref:r,value:[p.value||'',p.fp||''].filter(Boolean).join(' '),
+      on:VIS.parts[r]!==false,hidden:false,sel:edHl.has(r)};})});
+  paintParts(refs.length,all.length);
 }
-function paintParts(){ // the rows are the source of truth for the note
-  const box=$('partlist');
-  if(!box)return;
-  const total=Object.keys((S&&S.cur&&S.cur.parts)||{}).length;
-  const refs=Array.from(box.children).map(l=>l.dataset.ref).filter(Boolean);
-  let hidden=0;
-  refs.forEach((r,i)=>{
-    const l=box.children[i];
-    if(!l)return;
-    const on=VIS.parts[r]!==false;
-    if(!on)hidden++;
-    l.dataset.hidden=on?'':'1';
-    l.className=(on?'':'hidden ')+(edHl.has(r)?'selpart':'');
-    l.querySelector('input').checked=on;
-    // the filter greys the rest, it does not detach the rows (no stale nodes)
-    l.style.opacity='1'; // a filter selects rows; it cannot dim rows that are not here
-  });
-  $('partnote').textContent=!total?'no parts'
-    :(total>refs.length?`${refs.length-hidden}/${refs.length} of ${total} (capped)`
-                       :`${refs.length-hidden}/${refs.length} shown`);
+function paintParts(shown){ // the rows are the source of truth for the note
+  const st=(S&&S.cur)||null;
+  const all=Object.keys((st&&st.parts)||{}).length;
+  const n=shown===undefined?ui.state.partRows.length:shown;
+  const rows=ui.state.partRows.map(r=>{
+    const on=VIS.parts[r.ref]!==false;
+    return {...r,on,hidden:!on,sel:edHl.has(r.ref)};});
+  const hidden=rows.filter(r=>r.hidden).length;
+  ui.set({partRows:rows,
+    partNote:!all?'no parts'
+      :(all>n?`${n-hidden}/${n} of ${all} (capped)`:`${n-hidden}/${n} shown`)});
 }
+$('partlist').addEventListener('change',e=>{
+  const i=e.target.closest('input[data-ref]');
+  if(!i)return;
+  VIS.parts[i.dataset.ref]=i.checked;visSave();paintParts();markDirty();
+});
 $('partfilter').addEventListener('input',()=>{VIS.filter=$('partfilter').value;renderParts();markDirty();});
 $('parthide').onclick=()=>setAllParts(false,S&&S.cur);
 $('partshow').onclick=()=>setAllParts(true,S&&S.cur);

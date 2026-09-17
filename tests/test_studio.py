@@ -1168,6 +1168,42 @@ def main() -> None:
                     assert str(_cdp.eval(
                         "document.querySelector('#tree .tdir').dataset.name"
                     )).startswith(".."), "no way back up out of a folder"
+                    # layer and part visibility rows are components too: the
+                    # row state and the note come from the store, and the
+                    # change is delegated back to legacy.js (VIS + canvas)
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#cu label').length"))) >= 2, \
+                        "copper layer rows missing"
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#marks label').length"))) >= 4, \
+                        "mark rows missing"
+                    _npart = int(str(_cdp.eval(
+                        "document.querySelectorAll('#partlist label').length")))
+                    assert _npart > 0, "part rows missing"
+                    _note0 = str(_cdp.eval(
+                        "document.querySelector('#partnote').textContent"))
+                    assert _note0.endswith("shown"), _note0
+                    _cdp.eval("(()=>{document.querySelector('#partlist label input')"
+                              ".click();return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if str(_cdp.eval("document.querySelector('#partlist label')"
+                                         ".dataset.hidden || ''")) == "1":
+                            break
+                    else:
+                        raise AssertionError("part row did not hide")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#partnote').textContent")) != _note0, \
+                        "hidden part not counted in the note"
+                    _cdp.eval("(()=>{document.querySelector('#partlist label input')"
+                              ".click();return 1;})()")   # back on for the rest
+                    _cdp.eval("(()=>{document.querySelector('#cu label input')"
+                              ".click();return 1;})()")
+                    _cdp.eval("(()=>{document.querySelector('#cu label input')"
+                              ".click();return 1;})()")   # twice: state must toggle
+                    assert str(_cdp.eval(
+                        "document.querySelector('#partnote').textContent")) == _note0, \
+                        "part note did not come back"
                     # the panel contents are components now (views.js): the
                     # DRC strip and the tidy list render from the store, so a
                     # build that fails must repaint them — no innerHTML in

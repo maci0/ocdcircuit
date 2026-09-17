@@ -52,3 +52,35 @@ export const TreePanel = () => {
       : html`<div class="trow tdir" role=status>(no text files)</div>`}</div>
     <div id=importstat role=status aria-live=polite>${s.importStat}</div></section>`;
 };
+
+// Layer / mark / part visibility: rows are pure description, the change events
+// are delegated in legacy.js (it owns VIS, persistence and the canvas repaint).
+const VisRow = ({r}) => html`<label class=${r.on ? 'on' : 'off'} title=${r.title}
+  ><input type=checkbox id=${r.id} data-key=${r.key} checked=${r.on} />${r.label}</label>`;
+
+export const CuRows = () => {
+  const rows = useUI().cuRows;
+  return html`<div id=cu class=row>${rows.map(r => html`<${VisRow} r=${r} key=${r.key} />`)}</div>`;
+};
+
+export const MarkRows = () => {
+  const rows = useUI().markRows;
+  return html`<div id=marks class=row>${rows.map(r => html`<${VisRow} r=${r} key=${r.key} />`)}</div>`;
+};
+
+// parts: filter + hide/show controls stay where they were, the rows and the
+// note are rendered here. Rows carry data-ref; the change event is delegated.
+const PartRow = ({r}) => html`<label data-ref=${r.ref} data-hidden=${r.hidden ? '1' : ''}
+  class=${(r.on ? '' : 'hidden ') + (r.sel ? 'selpart' : '')}
+  ><input type=checkbox data-ref=${r.ref} checked=${r.on} /><span>${r.ref}</span
+  ><span class=pv title=${r.value}>${r.value}</span></label>`;
+
+export const PartBlock = () => {
+  const s = useUI();
+  return html`<div id=partbar><input id=partfilter type=search
+      placeholder="filter ref, value, footprint" aria-label="filter parts" />
+    <button id=parthide type=button title="hide every part">none</button>
+    <button id=partshow type=button title="show every part">all</button>
+    <span id=partnote class=panel-note>${s.partNote}</span></div>
+    <div id=partlist>${s.partRows.map(r => html`<${PartRow} r=${r} key=${r.ref} />`)}</div>`;
+};

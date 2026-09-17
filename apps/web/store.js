@@ -17,6 +17,10 @@ const state = {
   treeRows: [],       // [{name, path, kind, bytes, active}]
   treeNote: '',       // "dir · N files"
   importStat: '',     // what the import picker is doing
+  cuRows: [],         // copper layer toggles  [{key, label, on, id, title}]
+  markRows: [],       // silkscreen/mask/mark toggles (same shape)
+  partRows: [],       // [{ref, value, on, hidden, sel}]
+  partNote: '',       // "N/N shown" / "N/N of M (capped)"
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';
