@@ -586,23 +586,32 @@ def drag_shove(board: Board, net: str, idx: int,
                dx: float, dy: float, depth: int = 3) -> bool:
     """Interactive push-shove: move one seg by (dx, dy), spring-push any
     foreign copper it would short, recursively to depth. All-or-nothing:
-    returns False with zero mutation when anything is unpushable (pads,
-    part courtyards, board edge, depth exhausted). One undoable effect."""
+    returns False with zero mutation when anything is unpushable (a foreign
+    pad, a courtyard the push would newly enter, the board edge, depth
+    exhausted). One undoable effect."""
+    if net not in board.nets:
+        raise ValueError(f"unknown net {net!r}")
     from .circuit import Seg as S
     segs = [s for s in board.traces if s.net == net]
     if not (0 <= idx < len(segs)):
-        raise ValueError(f"seg {idx} out of range for net {net!r}")
+        raise ValueError(f"seg {idx} out of range for net {net!r} "
+                         f"({len(segs)} segs)")
     grid = _constraints(board)["grid"]
     lib = board._lib()
-    # immovable: part courtyards + pads (grid cells, every layer)
-    base_blocked = _blocked(board, grid)
+    court = _blocked(board, grid)      # part courtyards, every layer
+    pin_net: dict[tuple[str, str], str] = {}
+    for name, nt in board.nets.items():
+        for rf, pn in nt.pins:
+            pin_net[(rf, pn)] = name
+    pad_net: dict[tuple[int, int], str] = {}   # cell -> the net it pads
     from .parts import pads_of
     for p in board.parts.values():
         for pin in pads_of(p.fp, lib):
             px, py = board.pad_pos(p.ref, pin)
+            owner = pin_net.get((p.ref, pin), "")
             for gx in (int(px / grid) - 1, int(px / grid), int(px / grid) + 1):
                 for gy in (int(py / grid) - 1, int(py / grid), int(py / grid) + 1):
-                    base_blocked.add((gx, gy))
+                    pad_net[(gx, gy)] = owner
     moves: dict[int, tuple[float, float]] = {}  # id(seg) -> (dx, dy)
 
     def _cells(s: Seg, ox: float, oy: float) -> set[tuple[int, int, int]]:
@@ -617,9 +626,15 @@ def drag_shove(board: Board, net: str, idx: int,
     def _push(s: Seg, ox: float, oy: float, d: int) -> bool:
         if d < 0:
             return False
+        cur = _cells(s, 0.0, 0.0)
         want = _cells(s, ox, oy)
-        # board edge + courtyards/pads block
-        if any((c[0], c[1]) in base_blocked for c in want):
+        # A seg already overlaps its own courtyard and its own pads, so an
+        # absolute guard refuses every push (measured: 0/24 on a routed
+        # 3-part board). Courtyards block only the cells the push NEWLY
+        # enters; a pad blocks only copper that is not its own net.
+        if (want - cur) & court:
+            return False
+        if any(pad_net.get((c[0], c[1]), s.net) != s.net for c in want):
             return False
         if any(not (0 <= c[0] * grid <= board.width and
                     0 <= c[1] * grid <= board.height) for c in want):

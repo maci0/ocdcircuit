@@ -138,6 +138,18 @@ def unit_price(board: Board, ref: str) -> tuple[float | None, str, int | None]:
     return None, "unpriced", None
 
 
+def bom_pricing(board: Board) -> dict[str, tuple[float | None, int | None]]:
+    """ref -> (unit USD, stock) for a priced BOM: the same lookup assembled()
+    bills with, so the BOM and the quote can never disagree. Callers hand
+    this to export_jlc(pricing=…) — the exporter itself stays offline."""
+    out: dict[str, tuple[float | None, int | None]] = {}
+    for r in assembly_parts(board):
+        ref = str(r["ref"])
+        unit, _src, stock = unit_price(board, ref)
+        out[ref] = (unit, stock)
+    return out
+
+
 def bare(board: Board, fab: str, qty: int = 5) -> dict[str, object]:
     """Bare-PCB estimate for one fab: {total, per_board, note}."""
     from typing import cast

@@ -335,7 +335,17 @@ class JlcExporter(Plugin[list[str]]):
         from . import export
         outdir = k.get("outdir", "out")
         assert isinstance(outdir, str)
-        return export.export_jlc(board, outdir)
+        raw = k.get("pricing")
+        pricing = None
+        if isinstance(raw, dict):
+            pricing = {}
+            for ref, pv in raw.items():
+                if isinstance(pv, (list, tuple)) and len(pv) == 2:
+                    p, s = pv
+                    pricing[str(ref)] = (
+                        float(p) if isinstance(p, (int, float)) else None,
+                        int(s) if isinstance(s, int) else None)
+        return export.export_jlc(board, outdir, pricing=pricing)
 
 
 class KicadExporter(Plugin[list[str]]):

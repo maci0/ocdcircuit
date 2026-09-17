@@ -654,6 +654,23 @@ _qb = agent.loads("board q 40x30 2L\npart R1 R0805 10k price=0.02\npart C1 C0805
                   "N :: R1.1 C1.1\nGND :: R1.2 C1.2\n", base=EX)
 _qb.place(seeds=1, iters=20)
 _qb.route_board()
+# the BOM's priced columns come from this map: same lookup, one source
+_qpricing = _qq.bom_pricing(_qb)
+assert _qpricing == {"R1": (0.02, None), "C1": (0.01, None)}, _qpricing
+with tempfile.TemporaryDirectory() as _pd:
+    _pfiles = _qb.export("jlc", outdir=_pd, pricing=_qpricing)
+    _pbom = [f for f in _pfiles if f.endswith(".BOM.csv")][0]
+    _plines = open(_pbom).read().splitlines()
+    _phead = _plines[0]
+    assert _phead.endswith("Unit$,Stock"), _phead
+    _prows = {ln.split(",")[1]: ln for ln in _plines[1:] if ln}
+    # stock stays empty here: price= is an offline attr, no stock to report
+    assert _prows["R1"].endswith("0.0200,"), _prows["R1"]
+    assert _prows["C1"].endswith("0.0100,"), _prows["C1"]
+    _nfiles = _qb.export("jlc", outdir=_pd)
+    _nbom = [f for f in _nfiles if f.endswith(".BOM.csv")][0]
+    assert "Unit$" not in open(_nbom).read().splitlines()[0], "unpriced BOM grew columns"
+print("priced BOM ok (Unit$/Stock only when pricing is given)")
 _qr = _qq.compare(_qb, qty=5)
 _qrows = cast(list[dict[str, object]], _qr["rows"])
 assert [r["fab"] for r in _qrows][:2] == ["jlc", "allpcb"], _qrows[:3]
@@ -1611,25 +1628,40 @@ def _shsnap(bb: Board) -> list[tuple[str, float, float, float, float, int]]:
     return [(s.net, s.x1, s.y1, s.x2, s.y2, s.layer) for s in bb.traces]
 
 
+# drag-shove: moves copper as one undoable effect, refuses all-or-nothing.
+# One grid-cell push of a routed seg must be accepted (the guards allow a
+# seg to keep running through its own pads and the courtyard it already
+# occupies) and undo must put every seg back exactly.
 _sh_before = _shsnap(_sh_board)
 _sh_pushed = _sh_board.shove("VO", 0, _sh_grid, 0.0)
-if _sh_pushed:
-    assert _shsnap(_sh_board) != _sh_before, "shove reported a move and changed nothing"
-    _sh_board.ctx.undo()
-    assert _shsnap(_sh_board) == _sh_before, "shove is not undoable"
-else:
-    assert _shsnap(_sh_board) == _sh_before, "refused shove mutated the board"
-try:
-    _sh_board.shove("VO", 99, _sh_grid, 0.0)
-    raise AssertionError("out-of-range seg accepted")
-except ValueError:
-    pass
+assert _sh_pushed is True, "a one-cell push of a routed seg was refused"
+assert _shsnap(_sh_board) != _sh_before, "shove reported a move and changed nothing"
+_sh_board.ctx.undo()
+assert _shsnap(_sh_board) == _sh_before, "shove is not undoable"
+# a push that would leave the board is refused, and refusal mutates nothing
+assert _sh_board.shove("VO", 0, 999.0, 0.0) is False, "off-board push accepted"
+assert _shsnap(_sh_board) == _sh_before, "refused shove mutated the board"
+for _sh_bad, _sh_msg in ((("VO", 99), "out of range"), (("nope", 0), "unknown net")):
+    try:
+        _sh_board.shove(_sh_bad[0], _sh_bad[1], _sh_grid, 0.0)
+        raise AssertionError(f"bad shove accepted: {_sh_bad}")
+    except ValueError as _sh_err:
+        assert _sh_msg in str(_sh_err), _sh_err
 assert _shsnap(_sh_board) == _sh_before, "rejected shove still moved copper"
-print(f"drag-shove ok (accepted={_sh_pushed}, atomic either way)")
+print("drag-shove ok (push accepted, undoable, refusals atomic)")
 assert _call("use_plugin", {"kind": "placer", "key": "compact"}) == {"active": "compact"}
 assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active": "diffusion"}
 with tempfile.TemporaryDirectory() as _md:
     assert len(cast(list[object], _call("export", {"key": "jlc", "outdir": _md})["files"])) >= 10
+# MCP export: `pricing: true` asks for the live lookup (unpriced offline here,
+# so the columns appear empty — the point is the argument reaches the BOM)
+with tempfile.TemporaryDirectory() as _pd2:
+    _pfiles2 = cast(list[object],
+                    _call("export", {"key": "jlc", "outdir": _pd2,
+                                     "pricing": True})["files"])
+    _pbom2 = [f for f in _pfiles2 if str(f).endswith(".BOM.csv")][0]
+    assert "Unit$" in open(str(_pbom2)).read().splitlines()[0], \
+        "pricing: true gave no columns"
 assert len(cast(str, _call("render", {"key": "svg"})["data"])) > 1000
 assert len(cast(str, _call("render", {"key": "xray"})["data"])) > 1000
 # MCP xray: `xray` without png is a clean error, not a fence trip

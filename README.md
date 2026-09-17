@@ -257,7 +257,8 @@ stated as a word in a pill.
 - **Fab price comparison** (`quote:std`): bare PCB per fab + JLC assembly
   with parts (`ocd quote board.ocd 5`, studio quote dropdown, MCP `quote`).
   Estimates from published pricing — parts via knoll's live JLC lookup or
-  `price=` attrs.
+  `price=` attrs. MCP `export` takes `pricing` (`true` = live lookup, or a
+  ref → [unit, stock] map) and writes Unit$/Stock columns into the JLC BOM.
   `match`/`diff` constraints cover length + diff pairs.
 - **Context paradigm** ([the paper](https://arxiv.org/abs/2608.25512)):
   every edit carries its inverse (`Context.effect`, fires once), every module

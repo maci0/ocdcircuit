@@ -232,7 +232,17 @@ def t_export(a: dict[str, object]) -> dict[str, object]:
     key = a.get("key")
     assert key is None or isinstance(key, str)
     outdir = str(a.get("outdir", "out"))
-    return {"files": b.export(key, outdir=outdir)}
+    k: dict[str, object] = {"outdir": outdir}
+    # priced BOM: `pricing: true` looks the parts up live (same lookup the
+    # quote tool uses), or the caller passes what it already fetched. The
+    # exporter never touches the network itself.
+    pricing = a.get("pricing")
+    if pricing is True:
+        from ocdcircuit import quote as _quote
+        k["pricing"] = _quote.bom_pricing(b)
+    elif isinstance(pricing, dict):
+        k["pricing"] = pricing
+    return {"files": b.export(key, **k)}
 
 
 def t_render(a: dict[str, object]) -> dict[str, object]:
@@ -475,7 +485,11 @@ TOOLS: dict[str, object] = {
                       "base?": "dir use/fp paths resolve against"}),
     "lint": (t_lint, {}),
     "doctor": (t_doctor, {}),
-    "export": (t_export, {"key": "exporter?", "outdir": "out", "fab?": "one-shot fab override"}),
+    "export": (t_export, {"key": "exporter?", "outdir": "out",
+                          "fab?": "one-shot fab override",
+                          "pricing?": "true = live JLC price/stock lookup, "
+                                      "or {ref: [unit USD, stock]} for a "
+                                      "priced JLC BOM"}),
     "render": (t_render, {"key": "renderer?"}),
     "xray": (t_xray, {"png": "fab scan: path | base64 PNG bytes",
                       "thr?": "copper cutoff 0-255", "dx?": "mm",
