@@ -1187,6 +1187,17 @@ with tempfile.TemporaryDirectory() as d:
                       "net VBUS: R1.1 C1.1\nnet VSYS: R1.1 C1.2\npower VBUS VSYS\n", base=EX)
     assert any("power-short VSYS/VBUS at R1.1" in e
                for e in _ps.check("erc")["errors"])
+    # net roles (RFC-0002): signal net sharing a pin with a power net errors
+    _role = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                        "HV class=highvolt :: R1.1 C1.1\nSIG class=sig :: R1.1 C1.2\n"
+                        "GND :: R1.2 C1.2\nclass highvolt role=power\n"
+                        "class sig role=signal\n", base=EX)
+    assert any("role-clash SIG/HV at R1.1" in e
+               for e in _role.check("erc")["errors"]), _role.check("erc")["errors"]
+    _role2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                         "HV class=highvolt :: R1.1 C1.1\nSIG class=sig :: R1.2 C1.2\n"
+                         "class highvolt role=power\nclass sig role=signal\n", base=EX)
+    assert not [e for e in _role2.check("erc")["errors"] if "role-clash" in e]
     _cbom = open([f for f in _cb.export("jlc", outdir=tempfile.mkdtemp())
                   if f.endswith(".BOM.csv")][0]).read()
     # csv.writer quotes a field only when it must: a single designator stays

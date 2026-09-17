@@ -68,6 +68,8 @@ GND L1 w0.5 :: J1.2 <--> U1.1    #   L<n> layer, w<n> width mm
 GND pour=0 :: J1.2 <--> U1.1     #   pour=N ≡ `pour NET on N`
 HV class=highvolt :: J1.3 <--> U1.2  # k=v net attrs (class= names a class…)
 class highvolt width=0.8 clearance=0.5  # …defined once: width floor + DRC gap
+class highvolt role=power      # …role=power|signal: cross-role pin sharing
+                               # is an ERC error (RFC-0002)
 ```
 
 Legacy `net NAME [attrs]: REF.PIN ...` (colon form) also parses.

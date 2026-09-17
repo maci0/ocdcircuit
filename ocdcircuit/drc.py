@@ -439,6 +439,28 @@ def erc(board: Board) -> dict[str, object]:
                 if key in owners:
                     errors.append(f"power-short {n}/{owners[key]} at {ref}.{pin}")
                 owners[key] = n
+    # net roles (RFC-0002): class role=power|signal; a signal net sharing
+    # a pin with a power net is a type error, not a warning.
+    roles: dict[str, str] = {}
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "class":
+            r = str(c.get("role", ""))
+            if r in ("power", "signal"):
+                roles[str(c.get("name", ""))] = r
+    if roles:
+        pinrole: dict[tuple[str, str], tuple[str, str]] = {}
+        for n, net in board.nets.items():
+            role = roles.get(str(net.attrs.get("class", "")))
+            if role is None:
+                continue
+            for ref, pin in net.pins:
+                key = (ref, str(pin))
+                if key in pinrole and pinrole[key][1] != role:
+                    on, orole = pinrole[key]
+                    errors.append(f"role-clash {n}/{on} at {ref}.{pin} "
+                                  f"({role} vs {orole})")
+                else:
+                    pinrole[key] = (n, role)
     for n, net in board.nets.items():
         if len(net.pins) > 12:
             warnings.append(f"big-net {n} ({len(net.pins)} pins — intentional?)")
