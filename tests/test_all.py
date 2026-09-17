@@ -1823,6 +1823,18 @@ with tempfile.TemporaryDirectory() as _md3:
 assert "placer:diffusion" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "importer:fp" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert "simulate:mna" in cast(list[str], _call("list_plugins", {})["plugins"])
+# agents/ reference config: valid JSON, server entry, prompt tool names resolve
+import json as _jsa
+_cfg = _jsa.load(open(os.path.join(HERE, "..", "agents", "mcp.json")))
+assert _cfg["mcpServers"]["ocdcircuit"]["args"] == ["-m", "apps.mcp"], _cfg
+from apps import mcp as _mcpmod
+assert len(_mcpmod.TOOLS) == 30, len(_mcpmod.TOOLS)
+for _nm in ("load_board", "place", "route", "check", "candidates",
+            "apply_candidate", "export", "set_state", "apply_patch",
+            "undo", "parse_constraint", "feasible", "quote", "simulate",
+            "kb", "doctor", "lint", "solve"):
+    assert _nm in _mcpmod.TOOLS, _nm
+    assert _nm in open(os.path.join(HERE, "..", "agents", "SYSTEM.md")).read(), _nm
 # failure memory: raising plugin is marked failed, previous entry serves,
 # explicit use() re-arms (harness-loader style rollback)
 from ocdcircuit.core import Plugin as _Pl

@@ -225,8 +225,8 @@ offer locally.
 ## 8. Roadmap (build in this order)
 
 1. Solve-API + KiCad round-trip + Stripe credits (B's MVP — funds the rest).
-2. Copilot-over-MCP reference config (Claude/DeepSeek system prompt +
-   tool policy in-repo; proves the "better than Copilot" claim publicly).
+2. ~~Copilot-over-MCP reference config~~ DONE (`agents/mcp.json` +
+   `agents/SYSTEM.md`: server entry, tool policy, language cheatsheet).
 3. Live sourcing: LCSC price/stock on BOM (unblocks fab-affiliate revenue).
 4. ~~AC-sweep/Bode in sim~~ DONE (studio cycle + Bode readout) — model upload still open.
 5. ODB++/IPC-2581/STEP export (enterprise handoff unblock).

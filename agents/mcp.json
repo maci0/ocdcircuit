@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ocdcircuit": {
+      "command": "python",
+      "args": ["-m", "apps.mcp"],
+      "cwd": "..",
+      "description": "OCD Circuit: circuits-as-code board design over MCP (30 tools). Needs Python 3.14; run `make setup` first."
+    }
+  }
+}
