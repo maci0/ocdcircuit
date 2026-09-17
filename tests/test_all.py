@@ -2039,9 +2039,21 @@ assert abs(calc.divider(9, 10000, 4700) - 2.88) < 0.05
 assert abs(calc.divider_pick(9, 5) - 8000) < 1
 assert 0 < calc.via_amps(0.3) < calc.via_amps(0.6)  # monotone in drill
 assert abs(calc.via_amps(0.3, 40.0) / calc.via_amps(0.3, 10.0) - 2.0) < 0.01  # sqrt rise
+# microstrip impedance: sane FR4 numbers, tighter coupling lowers Zdiff
+assert 45 < calc.microstrip_z0(0.3, 0.2) < 85
+assert 60 < calc.microstrip_diff(0.15, 0.15, 0.2) < 130
+assert calc.microstrip_diff(0.15, 0.1, 0.2) < calc.microstrip_diff(0.15, 0.5, 0.2)
+try:
+    calc.microstrip_z0(0, 0.2)
+    raise AssertionError("should have raised")
+except ValueError:
+    pass
 # calc plugin rejects non-physical inputs (complex widths, div-by-zero —
 # and a fence trip: typos must stay clean ValueErrors, never fence)
 _cb = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nN :: R1.1 R1.2\n", base=EX)
+assert 45 < float(cast(float, _cb.calc(what="z0", w=0.3, h=0.2)["ohms"])) < 85
+assert 60 < float(cast(float, _cb.calc(what="zdiff", w=0.15, s=0.15,
+                                       h=0.2)["ohms"])) < 130
 for _ckw in [dict(what="trace", amps=-5), dict(what="trace", rise=0),
              dict(what="amps", mm=0), dict(what="via", drill=-1),
              dict(what="divider", rtop=0, rbot=0), dict(what="pick", vout=0)]:

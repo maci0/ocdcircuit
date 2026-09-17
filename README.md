@@ -135,7 +135,8 @@ stated as a word in a pill.
 - **`nc` + ERC**: `drc:erc` flags unconnected pins, power shorts, dupes;
   `nc` marks intentional no-connects (USB-C demo has 14).
 - **One-zip fab bundle** (`export:bundle`), **snapshot golden tests**,
-  **embedded calculators** (IPC-2221 trace width, via current, divider).
+  **embedded calculators** (IPC-2221 trace width, via current, divider,
+  microstrip Z0 + diff-pair — closed-form estimates, not a field solver).
 - **Board knowledgebase** (`kb/` beside the board): notes you drop in, plus
   datasheets — `ocd kb fetch` pulls them per part from a `datasheet=` URL or
   an `lcsc=` code, `ocd kb add` takes a path/url, `ocd kb search <term>`

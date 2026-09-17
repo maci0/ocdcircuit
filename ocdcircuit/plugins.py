@@ -1676,7 +1676,8 @@ class TomlConfig(Plugin[dict[str, object]]):
 
 
 class CalcPlugin(Plugin[dict[str, object]]):
-    """Embedded calculators: trace width/amps, via current, divider."""
+    """Embedded calculators: trace width/amps, via current, divider,
+    microstrip impedance."""
     kind, key = "calc", "std"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
@@ -1714,7 +1715,17 @@ class CalcPlugin(Plugin[dict[str, object]]):
             return {"rtop": _calc.divider_pick(_f(k.get("vin", 9.0)),
                                                _vo,
                                                _pos(k.get("rbot", 10000.0), "rbot"))}
-        raise ValueError(f"unknown calc {what!r} (trace|amps|via|divider|pick)")
+        if what == "z0":
+            return {"ohms": _calc.microstrip_z0(
+                _pos(k.get("w", 0.3), "w"), _pos(k.get("h", 0.2), "h"),
+                _pos(k.get("t", 0.035), "t"), _pos(k.get("er", 4.4), "er"))}
+        if what == "zdiff":
+            return {"ohms": _calc.microstrip_diff(
+                _pos(k.get("w", 0.15), "w"), _pos(k.get("s", 0.15), "s"),
+                _pos(k.get("h", 0.2), "h"), _pos(k.get("t", 0.035), "t"),
+                _pos(k.get("er", 4.4), "er"))}
+        raise ValueError(f"unknown calc {what!r} "
+                         "(trace|amps|via|divider|pick|z0|zdiff)")
 
 
 class SimPlugin(Plugin[dict[str, object]]):

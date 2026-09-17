@@ -130,7 +130,10 @@ MENUS = (
     '<label>V <input id=dv size=4 value=5 aria-label="divider input V"></label>'
     '<label>Rt <input id=drt size=5 value=10k aria-label="divider top R"></label>'
     '<label>Rb <input id=drb size=5 value=10k aria-label="divider bottom R"></label>'
-    '<div id=dout></div></details>'
+    '<div id=dout></div>'
+    '<label>w <input id=zw size=4 value=0.3 aria-label="microstrip width mm"></label>'
+    '<label>h <input id=zh size=4 value=0.2 aria-label="dielectric height mm"></label>'
+    '<div id=zout></div></details>'
     '<details id=doc title="tooling health: python, ngspice, plugins"><summary>health</summary>'
     '<div id=docout>click to check</div></details>'
     '<details id=quote title="fab price comparison: bare per fab, JLC assembled"><summary>quote</summary>'
@@ -1917,8 +1920,15 @@ function calcLive(){
   const pv=v=>{const m=String(v).match(/^([\d.]+)(k|M)?$/i);return m?parseFloat(m[1])*(m[2]?({k:1e3,M:1e6})[m[2].toLowerCase()]||1:1):NaN;};
   const V=pv($('dv').value),Rt=pv($('drt').value),Rb=pv($('drb').value);
   $('dout').textContent=(V>=0&&Rt>0&&Rb>0)?`Vout ${(V*Rb/(Rt+Rb)).toFixed(2)}V`:'';
+  const zw=parseFloat($('zw').value)||0,zh=parseFloat($('zh').value)||0;
+  if(zw>0&&zh>0){const u=zw/zh,er=4.4;
+    const ere=(er+1)/2+(er-1)/2/Math.sqrt(1+12/u);
+    const z=u<=1?60/Math.sqrt(ere)*Math.log(8/u+u/4)
+      :120*Math.PI/(Math.sqrt(ere)*(u+1.393+0.667*Math.log(u+1.444)));
+    $('zout').textContent=`Z0 ~${z.toFixed(1)}Ω (microstrip FR4, estimate)`;
+  }else $('zout').textContent='';
 }
-['ca','cdt','dv','drt','drb'].forEach(id=>$(id).addEventListener('input',calcLive));
+['ca','cdt','dv','drt','drb','zw','zh'].forEach(id=>$(id).addEventListener('input',calcLive));
 if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open board
   await withBusy($('qgo'),'comparing…',async()=>{
     const q=Math.max(1,parseInt($('qqty').value)||5);
