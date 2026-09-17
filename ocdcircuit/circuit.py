@@ -498,8 +498,6 @@ class Board(Component):
         from . import maze as _maze
         return _maze.reroute(self, net)
 
-
-
     def check(self, key: str | None = None, **k: object) -> DrcReport:
         out = self._run("drc", key, **k)
         assert isinstance(out, dict)
