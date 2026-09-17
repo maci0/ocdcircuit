@@ -1,8 +1,8 @@
 """Doctor: is the tooling itself healthy? Python version (≥3.14, pinned
-in `.python-version`), optional binaries (ngspice, chromium, …), the
-plugin registry (every kind has an active), and a redacted dump of the
-process env knobs (see ocdcircuit.envcfg / `.env.example`). No board
-needed — pass None.
+in `.python-version`), optional binaries (ngspice, chromium, …), gate
+tools (mypy/ruff — `make setup`), the plugin registry (every kind has an
+active), and a redacted dump of the process env knobs (see
+ocdcircuit.envcfg / `.env.example`). No board needed — pass None.
 
 `ok` is True when required checks pass (Python + mounted plugins +
 well-formed env values). Optional tools still appear as ✗ rows when
@@ -24,7 +24,20 @@ if TYPE_CHECKING:
 # before the first chat request.
 _OPTIONAL = frozenset({
     "numpy", "rich", "pillow", "ngspice", "kicad-cli", "pdftotext", "chromium",
+    # gate tools: needed for `make check`, not for running boards
+    "mypy", "ruff",
 })
+
+
+def _find_gate_tool(name: str) -> str | None:
+    """PATH first, then project `.venv/bin` (matches Makefile after `make setup`)."""
+    p = shutil.which(name)
+    if p:
+        return p
+    local = os.path.join(".venv", "bin", name)
+    if os.path.isfile(local) and os.access(local, os.X_OK):
+        return os.path.abspath(local)
+    return None
 
 # PATH names first; then common install locations when the binary is not
 # on PATH (macOS .app bundles, Windows Program Files).
@@ -96,6 +109,12 @@ def doctor(board: Board | None = None) -> dict[str, object]:
     add("chromium", chrom is not None,
         chrom or "missing (studio browser half skipped; "
                  "CI uses runner Google Chrome)")
+    mypy_bin = _find_gate_tool("mypy")
+    add("mypy", mypy_bin is not None,
+        mypy_bin or "missing (run: make setup — pins gate tools in .venv)")
+    ruff_bin = _find_gate_tool("ruff")
+    add("ruff", ruff_bin is not None,
+        ruff_bin or "missing (run: make setup — pins gate tools in .venv)")
     try:
         import rich  # noqa: F401
         add("rich", True, "pretty CLI on")

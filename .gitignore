@@ -1,5 +1,10 @@
 __pycache__/
 *.pyc
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
 boards/out/
 boards/*/out/
 benches/discrete6502/baseline_*.txt

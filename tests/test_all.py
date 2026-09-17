@@ -3569,6 +3569,7 @@ assert any(str(c.get("name")) == "plugin:diff"
            and c.get("ok") for c in _doc_checks)
 assert "kicad-cli" in _doc_names and "chromium" in _doc_names
 assert "pdftotext" in _doc_names
+assert "mypy" in _doc_names and "ruff" in _doc_names
 assert "pillow" in _doc_names and "numpy" in _doc_names and "rich" in _doc_names
 assert "env:OCD_LLM_BASE" in _doc_names and "env:OCD_LLM_KEY" in _doc_names
 _key_row = next(c for c in _doc_checks if c.get("name") == "env:OCD_LLM_KEY")
@@ -3603,7 +3604,7 @@ _real_which = _shutil_doc.which
 def _no_optionals(name: str) -> str | None:
     if name in ("ngspice", "kicad-cli", "pdftotext", "chromium",
                 "chromium-browser", "google-chrome", "google-chrome-stable",
-                "chrome", "msedge", "microsoft-edge"):
+                "chrome", "msedge", "microsoft-edge", "mypy", "ruff"):
         return None
     return _real_which(name)
 setattr(_shutil_doc, "which", _no_optionals)
@@ -3698,6 +3699,7 @@ else:
 # silent placement-quality change, not just a slow test.
 from ocdcircuit import solver as _psv  # noqa: E402
 from ocdcircuit.util import numpy as _pnp  # noqa: E402
+import random as _prng  # noqa: E402
 
 def _scalar_hits(box: list[tuple[float, float, float, float]]) -> int:
     k = 0
@@ -3711,7 +3713,6 @@ def _scalar_hits(box: list[tuple[float, float, float, float]]) -> int:
 
 _np_h = _pnp()
 if _np_h is not None:
-    import random as _prng
     _pr = _prng.Random(11)
     for _t in range(40):
         # ties and exact-touch coords included: that is where < vs <= drifts

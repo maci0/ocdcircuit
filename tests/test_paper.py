@@ -505,7 +505,11 @@ assert _rg.get("zz", "boom") is not None, "stale failure outlived the entry"
 # UI slot: dispose clears the crash verdict, so a reload renders again
 _slots = UiSlots()
 _sd = _slots.register("toolbar", "x", lambda st: 1 / 0)
-assert _slots.render("toolbar", None) == ""
+import contextlib
+import io as _io_abdicate
+with contextlib.redirect_stderr(_io_abdicate.StringIO()) as _abd_err:
+    assert _slots.render("toolbar", None) == ""
+assert "ZeroDivisionError" in _abd_err.getvalue()
 _sd()
 _slots.register("toolbar", "x", lambda st: "<ok>")
 assert _slots.render("toolbar", None) == "<ok>", "crash verdict outlived entry"

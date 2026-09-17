@@ -3,13 +3,13 @@
 A circuit design tool for people with OCD. Your traces are parallel.
 Your silkscreen is aligned. Your DRC is clean. It has to be.
 
-Needs: Python 3.14 (see `.python-version`), no other deps (`rich` /
-`numpy` / `pillow` optional — `pip install '.[optional]'`).
+Needs: Python 3.14 (see `.python-version`). Runtime extras (`numpy` /
+`rich` / `pillow`) come with `make setup` so goldens match CI.
 Developing: see [CONTRIBUTING.md](CONTRIBUTING.md) — short version:
 
 ```bash
-python -m pip install -r requirements-dev.txt   # pins mypy + ruff
-make doctor                                     # names missing optionals
+make setup                                      # .venv + gate tools + optionals
+make doctor                                     # names missing tools
 make check                                      # lint + all tests (what CI runs)
 make                                            # lists every contributor command
 ```

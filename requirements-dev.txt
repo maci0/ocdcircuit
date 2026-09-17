@@ -1,5 +1,10 @@
-# Dev-only dependencies: the gate `make check` runs. Install with
-#   python -m pip install -r requirements-dev.txt
+# Dev-only dependencies: the gate `make check` runs. Preferred install:
+#   make setup
+# which creates `.venv`, installs this file, then `.[optional]` (numpy etc.
+# — goldens expect the vector placer). Equivalent without Make:
+#   python -m venv .venv
+#   .venv/bin/python -m pip install -r requirements-dev.txt
+#   .venv/bin/python -m pip install '.[optional]'
 # Bump deliberately — CI installs exactly this file, so a new checker cannot
 # change the gate on its own:
 #   python -m pip install -U mypy && mypy && edit the pin here.
@@ -14,5 +19,5 @@ pathspec==1.1.1
 typing_extensions==4.16.0
 
 # Optional runtime extras: pinned under [project.optional-dependencies]
-# in pyproject.toml (numpy, rich + its tree, pillow). Install with:
-#   python -m pip install '.[optional]'
+# in pyproject.toml (numpy, rich + its tree, pillow). `make setup` installs
+# them editable into `.venv`; CI installs the same extras non-editable.
