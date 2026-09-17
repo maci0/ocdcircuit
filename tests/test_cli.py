@@ -6,7 +6,9 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -129,6 +131,28 @@ class CLIHelpTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
         self.assertEqual(json.loads(result.stdout)["bomFormat"], "CycloneDX")
+
+    def test_make_board_sweeps(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            boards = Path(tmp) / "boards"
+            boards.mkdir()
+            (boards / "sample.ocd").write_text(
+                "board sample 20x12 2L\npart R1 R0805 1k\n"
+                "part R2 R0805 2k\nN L0 :: R1.1 R2.1\n",
+                encoding="utf-8")
+            for target in ("farm", "fabsweep"):
+                with self.subTest(target=target):
+                    result = subprocess.run(
+                        ["make", "--no-print-directory", "-s", "-f",
+                         str(root / "Makefile"), f"PYTHON={sys.executable}",
+                         target], cwd=tmp,
+                        env={**os.environ, "PYTHONPATH": str(root)},
+                        capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("sample.ocd", result.stdout)
+                    self.assertIn("0 errors" if target == "farm" else "jlc=0",
+                                  result.stdout)
 
     def test_sbom_run_emits_cyclonedx_json(self) -> None:
         stdout, stderr = io.StringIO(), io.StringIO()
