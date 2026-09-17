@@ -1201,7 +1201,7 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.brd (Eagle XML): libraries/packages from footprints,
     elements, signals with contactrefs, Dimension wires. Mirrors what
     foreign.eagle_brd parses, so export→import round-trips."""
-    from xml.sax.saxutils import escape as _esc
+    from xml.sax.saxutils import quoteattr
     from .parts import hole_drill, pad_size, pads_of
     os.makedirs(outdir, exist_ok=True)
     lib = board._lib()
@@ -1225,22 +1225,22 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
         if p.fp in seen:
             continue
         seen.add(p.fp)
-        A(f'<package name="{_esc(p.fp)}">')
+        A(f'<package name={quoteattr(p.fp)}>')
         for pin, (dx, dy) in sorted(pads_of(p.fp, lib).items()):
             dr = hole_drill(p.fp, pin, lib)
             if dr > 0:
-                A(f'<pad name="{_esc(str(pin))}" x="{dx:.4f}" y="{dy:.4f}" '
+                A(f'<pad name={quoteattr(str(pin))} x="{dx:.4f}" y="{dy:.4f}" '
                   f'drill="{dr:.4f}"/>')
             else:
                 pw, ph = pad_size(p.fp, pin, lib)
-                A(f'<smd name="{_esc(str(pin))}" x="{dx:.4f}" y="{dy:.4f}" '
+                A(f'<smd name={quoteattr(str(pin))} x="{dx:.4f}" y="{dy:.4f}" '
                   f'dx="{pw:.4f}" dy="{ph:.4f}"/>')
         A("</package>")
     A("</packages></library></libraries>")
     A("<elements>")
     for p in sorted(board.parts.values(), key=lambda q: q.ref):
-        A(f'<element name="{_esc(p.ref)}" package="{_esc(p.fp)}" '
-          f'value="{_esc(p.value or p.fp)}" x="{p.x:.4f}" y="{p.y:.4f}"/>')
+        A(f'<element name={quoteattr(p.ref)} package={quoteattr(p.fp)} '
+          f'value={quoteattr(p.value or p.fp)} x="{p.x:.4f}" y="{p.y:.4f}"/>')
     A("</elements>")
     A("<signals>")
     from .drc import pour_layers as _eagle_pours
@@ -1250,9 +1250,9 @@ def export_eagle(board: Board, outdir: str = "out") -> list[str]:
     _eiso = float(cast(float, _eagle_fab(board.fab).get("min_space", 0.09)))
     for n in sorted(board.nets):
         net = board.nets[n]
-        A(f'<signal name="{_esc(n)}">')
+        A(f'<signal name={quoteattr(n)}>')
         for r, q in net.pins:
-            A(f'<contactref element="{_esc(r)}" pad="{_esc(str(q))}"/>')
+            A(f'<contactref element={quoteattr(r)} pad={quoteattr(str(q))}/>')
         for t in board.traces:
             if t.net != n or t.via:
                 continue

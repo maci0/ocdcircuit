@@ -674,4 +674,23 @@ _ok_nl = _sp_lib.netlist(_ag_lib.loads(
     "sim vcc N 5\nsim lib models.lib\n"))
 assert ".lib models.lib\n" in _ok_nl, _ok_nl
 
+from ocdcircuit import Board as _EagleBoard
+from ocdcircuit.foreign import eagle_brd as _eagle_read
+
+with tempfile.TemporaryDirectory() as _eagle_dir:
+    for _eagle_value in ('café\t10µF\r\n温度', 'cafe\u0301 "10µF" & <温度> \'signal\' \U0001f600'):
+        _eagle_board = _EagleBoard("unicode", 20, 20)
+        _eagle_board.add_part("R1", "R0805", _eagle_value)
+        _eagle_net = 'cafe\u0301"&温度'
+        _eagle_board.connect(_eagle_net, "R1", "1")
+        _eagle_path = _eagle_board.export("eagle", outdir=_eagle_dir)[0]
+        _eagle_ir = _eagle_read(_rt(_eagle_path))
+        _eagle_parts = _eagle_ir["parts"]
+        assert isinstance(_eagle_parts, list)
+        assert _eagle_parts[0]["value"] == _eagle_value, _eagle_parts
+        _eagle_nets = _eagle_ir["nets"]
+        assert isinstance(_eagle_nets, dict)
+        assert list(_eagle_nets) == [_eagle_net], _eagle_nets
+        assert _eagle_nets[_eagle_net]["pins"] == [["R1", "1"]]
+
 print("CORE PAPER OK")
