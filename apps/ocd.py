@@ -9,7 +9,7 @@
     ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
     ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
     ocd lint <circuit.ocd>   static source lint, no place/route
-    ocd kb list|search|read|add|fetch|ask  board knowledgebase (`kb/`: notes + datasheets)
+    ocd kb list|search|read|add|fetch|index|ask  board knowledgebase (`kb/`)
     ocd doctor               tooling self-check (no file needed)
 
 Global flags (run/score): --fab --placer --router --sim. `ocd <file>` = run.
@@ -36,7 +36,7 @@ USAGE = """usage:
   ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd lint <circuit.ocd>         static source lint, no place/route
-  ocd kb list|search|read|add|fetch|ask  kb/: notes + datasheets, agent-readable
+  ocd kb list|search|read|add|fetch|index|ask  kb/: notes + datasheets
   ocd doctor                     tooling self-check (no file needed)
   ocd plugins [kind]            list registry keys (placer/router/…)
   ocd <circuit.ocd>              shorthand for run"""
@@ -52,6 +52,23 @@ def _die(msg: str) -> int:
     """Operational CLI error on stderr; always exit 1."""
     print(msg, file=sys.stderr)
     return 1
+
+
+def _exc_msg(e: BaseException) -> str:
+    """Human CLI text for caught errors (no raw Errno noise)."""
+    if isinstance(e, FileNotFoundError) and getattr(e, "filename", None):
+        return f"no such file: {e.filename}"
+    return str(e)
+
+
+def _one_board(rest: list[str], usage: str) -> tuple[str | None, int | None]:
+    """Require exactly one non-flag path; --help → stdout/0, else usage/1."""
+    if rest and rest[0] in ("-h", "--help"):
+        return None, _usage(usage, requested=True)
+    # dangling/unknown flags left in rest by _flags must not be opened as files
+    if len(rest) != 1 or rest[0].startswith("-"):
+        return None, _usage(usage)
+    return rest[0], None
 
 
 def _boot() -> object:
@@ -210,22 +227,21 @@ def _flags(args: list[str]) -> tuple[str | None, str | None, str | None, str | N
 
 def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
     fab, placer, router, simwhat, rest = _flags(args)
-    if rest and rest[0] in ("-h", "--help"):
-        return _usage(USAGE, requested=True)
-    if len(rest) != 1:
-        return _usage(USAGE)
-    src = rest[0]
+    src, err = _one_board(rest, USAGE)
+    if err is not None:
+        return err
+    assert src is not None
     try:
         b = _load(agent, src)
         if fab is not None:
             b.fab = fab
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        _err().print(f"[red]ocd: {e}[/red]")
+        _err().print(f"[red]ocd: {_exc_msg(e)}[/red]")
         return 1
     try:
         c, n, pl_used, rt_used = _solve(b, placer, router)
     except KeyError as e:
-        _err().print(f"[red]ocd: {e}[/red]")
+        _err().print(f"[red]ocd: {_exc_msg(e)}[/red]")
         return 1
     r = b.check("all", keys=_proj_list(b, "drc"))
     out = os.path.join(os.path.dirname(os.path.abspath(src)), "out")
@@ -298,21 +314,19 @@ def _pour_line(b: object) -> str:
 
 def cmd_status(agent: object, args: list[str]) -> int:
     fab, placer, router, _sim, rest = _flags(args)
-    if rest and rest[0] in ("-h", "--help"):
-        return _usage(
-            "usage: ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>",
-            requested=True)
-    if len(rest) != 1:
-        return _usage(
-            "usage: ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>")
-    src = rest[0]
+    _st_usage = (
+        "usage: ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>")
+    src, err = _one_board(rest, _st_usage)
+    if err is not None:
+        return err
+    assert src is not None
     try:
         b = _load(agent, src)
         if fab is not None:
             b.fab = fab
         _, _, pl_used, rt_used = _solve(b, placer, router)
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     s = b.score()
     t = b.score(tidy=True)
     _ext = cast(dict[str, object], s["extent"])
@@ -364,29 +378,27 @@ def cmd_status(agent: object, args: list[str]) -> int:
 
 
 def cmd_diff(agent: object, args: list[str]) -> int:
-    if args and args[0] in ("-h", "--help"):
+    if args and ("-h" in args or "--help" in args):
         return _usage("usage: ocd diff <a.ocd> <b.ocd>", requested=True)
-    if len(args) != 2:
+    if len(args) != 2 or any(a.startswith("-") for a in args):
         return _usage("usage: ocd diff <a.ocd> <b.ocd>")
     try:
         a = _load(agent, args[0])
         b = _load(agent, args[1])
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     print(a.diff(b) or "identical")
     return 0
 
 
 def cmd_xray(agent: object, args: list[str]) -> int:
-    if args and args[0] in ("-h", "--help"):
-        return _usage(
-            "usage: ocd xray <circuit.ocd> <fab.png> "
-            "(dx/dy/scale/thr via env XRAY=dx,dy,scale,thr)",
-            requested=True)
-    if len(args) != 2:
-        return _usage(
-            "usage: ocd xray <circuit.ocd> <fab.png> "
-            "(dx/dy/scale/thr via env XRAY=dx,dy,scale,thr)")
+    _xusage = (
+        "usage: ocd xray <circuit.ocd> <fab.png> "
+        "(dx/dy/scale/thr via env XRAY=dx,dy,scale,thr)")
+    if args and ("-h" in args or "--help" in args):
+        return _usage(_xusage, requested=True)
+    if len(args) != 2 or any(a.startswith("-") for a in args):
+        return _usage(_xusage)
     import os as _os
     try:
         b = _load(agent, args[0])
@@ -402,7 +414,7 @@ def cmd_xray(agent: object, args: list[str]) -> int:
                                 f"(want dx,dy,scale,thr numbers)")
         r = b.xray(None, png=args[1], **kw)
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     divs = cast(list[dict[str, object]], r["divs"])
     missing = cast(int, r["missing"])
     extra = cast(int, r["extra"])
@@ -436,19 +448,27 @@ def cmd_quote(agent: object, args: list[str]) -> int:
         if skip:
             skip = False
             continue
-        if a == "--fab" and i + 1 < len(args):
+        if a == "--fab":
+            if i + 1 >= len(args) or args[i + 1].startswith("-"):
+                return _die("ocd: --fab needs a fab name")
             fabs.append(args[i + 1])
             skip = True
-        elif a != "--bare":
+        elif a == "--bare":
+            continue
+        elif a.startswith("-"):
+            return _die(f"ocd: unknown flag {a}")
+        else:
             rest.append(a)
-    if not rest:
-        return _usage("usage: ocd quote <circuit.ocd> [qty] [--bare] [--fab F]")
+    if not rest or rest[0].startswith("-"):
+        return _usage(_qusage)
+    if len(rest) > 1 and rest[1].startswith("-"):
+        return _usage(_qusage)
     try:
         b = _load(agent, rest[0])
         qty = int(rest[1]) if len(rest) > 1 else 5
         r = b.quote(qty=qty, fabs=fabs or None, no_parts=bare_only)
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     rows = cast(list[dict[str, object]], r["rows"])
     _table(f"quote {r['board']} x{r['qty']} ({r['stamp']})",
            [(str(x["fab"]),
@@ -472,20 +492,19 @@ def cmd_quote(agent: object, args: list[str]) -> int:
 
 def cmd_score(agent: object, args: list[str]) -> int:
     fab, placer, router, _sim, rest = _flags(args)
-    if rest and rest[0] in ("-h", "--help"):
-        return _usage(
-            "usage: ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>",
-            requested=True)
-    if len(rest) != 1:
-        return _usage(
-            "usage: ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>")
+    _sc_usage = (
+        "usage: ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>")
+    src, err = _one_board(rest, _sc_usage)
+    if err is not None:
+        return err
+    assert src is not None
     try:
-        b = _load(agent, rest[0])
+        b = _load(agent, src)
         if fab is not None:
             b.fab = fab
         _solve(b, placer, router)
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     s = b.score()
     t = b.score(tidy=True)
     sparts = cast(dict[str, float], s["parts"])
@@ -505,14 +524,14 @@ def cmd_score(agent: object, args: list[str]) -> int:
 
 
 def cmd_lint(agent: object, args: list[str]) -> int:
-    if args and args[0] in ("-h", "--help"):
-        return _usage("usage: ocd lint <circuit.ocd>", requested=True)
-    if len(args) != 1:
-        return _usage("usage: ocd lint <circuit.ocd>")
+    src, err = _one_board(args, "usage: ocd lint <circuit.ocd>")
+    if err is not None:
+        return err
+    assert src is not None
     try:
-        b = _load(agent, args[0])
+        b = _load(agent, src)
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        _err().print(f"[red]ocd: {e}[/red]")
+        _err().print(f"[red]ocd: {_exc_msg(e)}[/red]")
         return 1
     r = b.lint()
     errors = cast(list[object], r["errors"])
@@ -569,11 +588,14 @@ def _kb_base(target: str) -> str:
 def cmd_kb(agent: object, args: list[str]) -> int:
     from ocdcircuit import kb as _kb
     from ocdcircuit.util import read_text
-    if args and args[0] in ("-h", "--help"):
+    # --help anywhere (e.g. `kb list --help`); never treat it as a path
+    if args and ("-h" in args or "--help" in args):
         return _usage(KB_USAGE, requested=True)
     if len(args) < 2:
         return _usage(KB_USAGE)
     op, target, rest = args[0], args[1], args[2:]
+    if target.startswith("-"):
+        return _usage(KB_USAGE)
     board = None
     parts = None
     try:
@@ -586,7 +608,7 @@ def cmd_kb(agent: object, args: list[str]) -> int:
             else:
                 parts = _kb.parts_map(read_text(target))
     except (OSError, ValueError, KeyError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     k = _kb.KB(_kb_base(target), board=board, parts=parts)
     try:
         if op == "list":
@@ -667,7 +689,7 @@ def cmd_kb(agent: object, args: list[str]) -> int:
                 print(f"FAIL  {fl['part']}: {fl['error']}")
             return 1 if r["failed"] else 0
     except (ValueError, OSError, KeyError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     return _usage(KB_USAGE)
 
 
@@ -704,23 +726,26 @@ def cmd_scan(agent: object, args: list[str]) -> int:
     i = 0
     while i < len(args):
         a = args[i]
-        if a == "--out" and i + 1 < len(args):
+        if a in ("--out", "--mm", "--note", "--tall", "--zoom", "--maxdim",
+                 "--doc", "--answer") and i + 1 >= len(args):
+            return _die(f"ocd: {a} needs a value")
+        if a == "--out":
             outdir, i = args[i + 1], i + 2
-        elif a == "--mm" and i + 1 < len(args):
+        elif a == "--mm":
             try:
                 mm = float(args[i + 1])
             except ValueError:
                 return _die(f"ocd: --mm wants a number, got {args[i + 1]!r}")
             i += 2
-        elif a == "--note" and i + 1 < len(args):
+        elif a == "--note":
             note, i = args[i + 1], i + 2
-        elif a == "--tall" and i + 1 < len(args):
+        elif a == "--tall":
             try:
                 tall = float(args[i + 1])
             except ValueError:
                 return _die(f"ocd: --tall wants a number, got {args[i + 1]!r}")
             i += 2
-        elif a in ("--zoom", "--maxdim") and i + 1 < len(args):
+        elif a in ("--zoom", "--maxdim"):
             try:
                 v = int(args[i + 1])
             except ValueError:
@@ -730,10 +755,10 @@ def cmd_scan(agent: object, args: list[str]) -> int:
             else:
                 maxdim = max(400, v)
             i += 2
-        elif a == "--doc" and i + 1 < len(args):
+        elif a == "--doc":
             docs.append(args[i + 1])
             i += 2
-        elif a == "--answer" and i + 1 < len(args):
+        elif a == "--answer":
             if "=" not in args[i + 1]:
                 return _die("ocd: --answer wants 'question=answer'")
             q, _, ans = args[i + 1].partition("=")
@@ -767,7 +792,7 @@ def cmd_scan(agent: object, args: list[str]) -> int:
                             answers=answers or None, zoom=zoom,
                             maxdim=maxdim, tall_mm=tall, llm=use_llm)
     except (OSError, ValueError, KeyError, RuntimeError, AssertionError) as e:
-        return _die(f"ocd: {e}")
+        return _die(f"ocd: {_exc_msg(e)}")
     for side, s in sorted(cast(dict[str, dict[str, object]],
                                r.get("sides", {})).items()):
         _table(f"{side}: {s['used']}/{s['photos']} photos registered",

@@ -1797,6 +1797,25 @@ with _tf.TemporaryDirectory() as _td:
     assert _ocd.cmd_lint(_ocd._boot(), [os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.cmd_lint(_ocd._boot(), []) == 1
     assert _ocd.cmd_lint(_ocd._boot(), [os.path.join(_td, "nope.ocd")]) == 1
+    # dangling / unknown flags are usage errors — never opened as paths
+    import io as _io_cli
+    import contextlib as _cl_cli
+    _err_buf = _io_cli.StringIO()
+    with _cl_cli.redirect_stderr(_err_buf), _cl_cli.redirect_stdout(_io_cli.StringIO()):
+        assert _ocd.main(["ocd", "run", "--fab"]) == 1
+        assert _ocd.cmd_score(_ocd._boot(), ["--router"]) == 1
+        assert _ocd.cmd_lint(_ocd._boot(), ["--help"]) == 0
+        assert _ocd.main(["ocd", "kb", "list", "--help"]) == 0
+        assert _ocd.cmd_quote(_ocd._boot(), [os.path.join(_np, "newproj.ocd"),
+                                             "--fab"]) == 1
+    _err_txt = _err_buf.getvalue()
+    assert "No such file" not in _err_txt and "Errno" not in _err_txt, _err_txt
+    assert "index" in _ocd.USAGE
+    # missing board: plain "no such file:" (not raw Errno)
+    _nf_err = _io_cli.StringIO()
+    with _cl_cli.redirect_stderr(_nf_err), _cl_cli.redirect_stdout(_io_cli.StringIO()):
+        assert _ocd.cmd_lint(_ocd._boot(), [os.path.join(_td, "missing.ocd")]) == 1
+    assert "no such file:" in _nf_err.getvalue(), _nf_err.getvalue()
     # malformed input prints ocd: ... exit 1 (no traceback — asserts included)
     open(os.path.join(_td, "bad.ocd"), "w").write(
         "board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\nN pour=bogus :: R1.1\n")
