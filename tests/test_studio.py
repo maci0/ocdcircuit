@@ -47,6 +47,42 @@ console.log(out.join('|'));
 HL_EXPECT = "PSU_J1|U1:U1.7|R1,R2,U1|true:0"
 
 
+class SessionExpiryTests(unittest.TestCase):
+    def test_session_deadline_is_exclusive(self) -> None:
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+
+        for elapsed in (studio._SESSION_TTL - 0.5,
+                        studio._SESSION_TTL, studio._SESSION_TTL + 0.5):
+            with self.subTest(elapsed=elapsed), \
+                    patch.object(studio, "_SESSIONS", {}), \
+                    patch("apps.studio.time.monotonic", return_value=100.0) as clock:
+                token = studio._new_session("alice")
+                clock.return_value = 100.0 + elapsed
+                headers = {"Cookie": f"{studio._AUTH_COOKIE}={token}"}
+                live = elapsed < studio._SESSION_TTL
+                self.assertEqual(studio._authed(headers), "alice" if live else None)
+                self.assertEqual(token in studio._SESSIONS, live)
+
+    def test_session_purge_at_deadline(self) -> None:
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+
+        with patch.object(studio, "_SESSIONS", {}), \
+                patch("apps.studio.time.monotonic", return_value=100.0):
+            token = studio._new_session("alice")
+            deadline = 100.0 + studio._SESSION_TTL
+            with studio._AUTH_MU:
+                studio._purge_sessions(deadline - 0.5)
+                self.assertIn(token, studio._SESSIONS)
+                studio._purge_sessions(deadline)
+                self.assertNotIn(token, studio._SESSIONS)
+
+
 class CompressionTests(unittest.TestCase):
     def test_compression_preserves_or_reduces_transfer_size(self) -> None:
         import gzip

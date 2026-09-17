@@ -356,7 +356,7 @@ def _purge_sessions(now: float | None = None) -> None:
     """Drop expired tokens so they cannot steal slots from live sessions.
     Caller must hold `_AUTH_MU`."""
     t = time.monotonic() if now is None else now
-    for tok in [k for k, (_n, exp) in _SESSIONS.items() if t > exp]:
+    for tok in [k for k, (_n, exp) in _SESSIONS.items() if t >= exp]:
         _SESSIONS.pop(tok, None)
 
 
@@ -516,7 +516,7 @@ def _authed(headers: object) -> str | None:
             if k.strip() != _AUTH_COOKIE or tok not in _SESSIONS:
                 continue
             name, exp = _SESSIONS[tok]
-            if now > exp:
+            if now >= exp:
                 _SESSIONS.pop(tok, None)
                 return None
             return name
