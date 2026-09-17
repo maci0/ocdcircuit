@@ -7,8 +7,8 @@
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
 import { ChatPanel, CuRows, Gallery, KbPanel, MarkRows, PartBlock,
-         DrcStrip, ScanPanel, TidyBlock, TreePanel, VcsPanel, XrayDivs,
-         XrayStat } from './views.js';
+         DrcStrip, ScanPanel, SrcNote, TidyBlock, TreePanel, VcsPanel,
+         XrayDivs, XrayStat } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
@@ -16,7 +16,7 @@ const Chat = () => html`<${ChatPanel} />`;
 
 const EditorPanel = () => html`<section id=edwrap>
   <header class=panel-head><span class=panel-title>job file</span>
-    <span class=panel-note id=srcnote>board.ocd · saved on every good build</span>
+    <${SrcNote} />
     <span class=panel-note>edit here or drag on the PCB · rebuilds in 0.4s</span></header>
   <div id=ed contenteditable spellcheck=false role=textbox aria-multiline=true
     aria-label=".ocd source, edits rebuild the board"></div>

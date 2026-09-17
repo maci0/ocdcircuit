@@ -59,6 +59,10 @@ const state = {
   silks: [],
   fabOpts: [],
   silkSel: '',        // the silkscreen default the server reported
+  srcNote: 'board.ocd · saved on every good build',   // editor panel note
+  simLabel: 'sim dc', // the Simulate button's word + tooltip
+  simTitle: 'simulate the current board (shift-click: tran)',
+  dlLabel: 'download render',   // the Board menu's download word
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

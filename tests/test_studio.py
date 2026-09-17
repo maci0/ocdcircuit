@@ -511,11 +511,14 @@ def main() -> None:
         for frag in ("id=m-engines", "id=placer", "id=router", "id=silk", "id=fab"):
             assert frag in _views, f"engine picker missing from views.js: {frag}"
         # every action keeps its id (handlers never rebind)
-        for frag in ("id=solve", "id=dice", "id=stamp", "id=fab_dl", "id=dl",
+        for frag in ("id=solve", "id=dice", "id=stamp", "id=fab_dl",
                       "id=undo", "id=redo", "id=diffprev", "id=commit",
-                      "id=simbtn", "id=chatbtn", "id=chatauto",
-                      "id=sharebtn", "id=room"):
+                      "id=chatbtn", "id=chatauto", "id=sharebtn", "id=room"):
             assert frag in _chrome, f"control id missing: {frag}"
+        # the two labels that change on click are components: nothing writes
+        # text into a node preact renders
+        for frag in ("id=dl", "id=simbtn", "id=srcnote"):
+            assert frag in _views, f"label component missing: {frag}"
         print("flux agent-rail + tabs + dark ok")
         _sh = post(base, "/shelf", {})
         assert _sh.get("user") == "tester" and isinstance(_sh.get("boards"), list), _sh

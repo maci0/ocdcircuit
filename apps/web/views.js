@@ -377,3 +377,16 @@ export const Engines = () => {
       >${s.silks.map(p => html`<option key=${p} selected=${p === s.silkSel}>${p}</option>`)}</select></label>
     </div></details>`;
 };
+
+// Three words that legacy.js still owned: the editor's source note and the two
+// menu labels that change on click. They are state now, so no component ever
+// has text written under it from outside.
+export const SrcNote = () => html`<span class=panel-note id=srcnote>${useUI().srcNote}</span>`;
+
+export const DlButton = () => html`<button id=dl title=${'download a render (cycles svg, '
+  + 'sch, png, xray; shift-click backwards)'}>${useUI().dlLabel}</button>`;
+
+export const SimButton = () => {
+  const s = useUI();
+  return html`<button id=simbtn title=${s.simTitle}>${s.simLabel}</button>`;
+};

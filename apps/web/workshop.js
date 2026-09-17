@@ -10,8 +10,8 @@ import { render } from './vendor/preact.module.js';
 import html from './html.js';
 import { ui, useUI } from './store.js';
 import { Panels } from './panels.js';
-import { CalcBlock, Engines, ExtBanner, HealthOut, QuoteOut,
-         Toast } from './views.js';
+import { CalcBlock, DlButton, Engines, ExtBanner, HealthOut, QuoteOut,
+         SimButton, Toast } from './views.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
   ><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect
@@ -55,7 +55,7 @@ const Menubar = () => html`<nav class=menubar aria-label="board menus">
       <input id=ncand value=4 size=1 aria-label="candidate count" title="candidate count" /></div>
     <button id=stamp title="stamp another copy of the hovered instance">stamp instance</button>
     <button id=fab_dl title="download the fab bundle as one zip">fab zip</button>
-    <button id=dl title="download a render (cycles svg, sch, png, xray; shift-click backwards)">download render</button>
+    <${DlButton} />
     </div></details>
   <details class=menu id=m-edit><summary title="undo history and revisions">Edit</summary><div class=mpop>
     <button id=undo title="undo (Ctrl+Z)">undo<span class=kbd>Ctrl+Z</span></button>
@@ -65,7 +65,7 @@ const Menubar = () => html`<nav class=menubar aria-label="board menus">
     </div></details>
   <${Engines} />
   <details class=menu id=m-sim><summary title="simulate the current board">Simulate</summary><div class=mpop>
-    <button id=simbtn title="simulate the current board (shift-click: tran)">sim dc</button>
+    <${SimButton} />
     <div class=mnote>shift-click toggles dc/tran · needs sim lines</div>
     </div></details>
   <${Tools} />

@@ -906,7 +906,7 @@ $('dl').onclick=async()=>{ // cycle svg → sch → png → xray (shift-click ba
   const keys=['svg','sch','png','xray'];
   dlIdx=(dlIdx+((window.event&&window.event.shiftKey)?-1:1)+keys.length)%keys.length;
   const key=keys[dlIdx];
-  $('dl').textContent=`download ${key}`; // keep a word label (glyph alone is not a label)
+  ui.set({dlLabel:`download ${key}`}); // keep a word label (glyph alone is not a label)
   await withBusy($('dl'),`download ${key}…`,async()=>{
     const r=await api('/render',{key});
     if(r.error){statMsg(r.error);return;}
@@ -922,8 +922,8 @@ let simWhat='dc';
 $('simbtn').onclick=async()=>{ // dc → tran → ac cycle on shift-click
   if(window.event&&window.event.shiftKey)
     simWhat=simWhat==='dc'?'tran':simWhat==='tran'?'ac':'dc';
-  $('simbtn').textContent=`sim ${simWhat}`;
-  $('simbtn').title=`simulate the current board (shift-click: ${simWhat==='dc'?'tran':simWhat==='tran'?'ac':'dc'})`;
+  ui.set({simLabel:`sim ${simWhat}`,
+    simTitle:`simulate the current board (shift-click: ${simWhat==='dc'?'tran':simWhat==='tran'?'ac':'dc'})`});
   await withBusy($('simbtn'),`sim ${simWhat}…`,async()=>{
     const r=await api('/simulate',{what:simWhat});
     if(r.error){statMsg(r.error);return;}
@@ -1318,7 +1318,7 @@ async function openFile(path){
   toast('opened '+path);
   const f=await fetch('/fs').then(x=>x.json());
   if(!f.error){DIR=f.base||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';TREE=f.tree||[];
-    $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
+    ui.set({srcNote:`${SRCREL} · ${f.base||'.'} · saved on every good build`});
     ui.set({chatWhere:SRCREL});
     treeNote();
     renderTree();}
@@ -1480,7 +1480,7 @@ async function boot(){
   collabStart(); // realtime: SSE fan-out + presence from here on
   if(f.error){ui.set({treeNote:f.error});return;}
   DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
-  $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
+  ui.set({srcNote:`${SRCREL} · ${f.base||'.'} · saved on every good build`});
   ui.set({chatWhere:SRCREL});
   treeNote();
   renderTree();
