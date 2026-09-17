@@ -86,8 +86,10 @@ function visMark(k,st){ // explicit choice wins; otherwise silk/mask decide
   if(k==="pads")return visLayer("mask",st); // pads are the mask openings
   return visLayer("silk",st);               // ref/value/pour marks
 }
-function partShown(r,st){ // visibility + the parts filter
-  if(VIS.parts[r]===false)return false;
+function partShown(r,st){
+  return VIS.parts[r]!==false&&partMatches(r,st);
+}
+function partMatches(r,st){
   const f=VIS.filter.trim().toLowerCase();
   if(!f)return true;
   const p=(st&&st.parts&&st.parts[r])||{};
@@ -513,8 +515,8 @@ function renderParts(st){
   st=st||(S&&S.cur)||{parts:{}};
   const all=Object.keys(st.parts||{}).sort();
   // a filter searches every part (the list is capped, the search is not)
-  const refs=(VIS.filter?all.filter(r=>partShown(r,st)):all).slice(0,MAX_ROWS);
-  if(!VIS.filter&&all.length>MAX_ROWS){
+  const refs=all.filter(r=>partMatches(r,st)).slice(0,MAX_ROWS);
+  if(!VIS.filter.trim()&&all.length>MAX_ROWS){
     const shown=new Set(refs);
     edHl.forEach(r=>{if(!shown.has(r))refs.push(r);}); // keep the selection reachable
     refs.sort();
@@ -523,19 +525,24 @@ function renderParts(st){
     const p=st.parts[r]||{};
     return {ref:r,value:[p.value||'',p.fp||''].filter(Boolean).join(' '),
       on:VIS.parts[r]!==false,hidden:false,sel:edHl.has(r)};})});
-  paintParts(refs.length,all.length);
+  paintParts(st);
 }
-function paintParts(shown){ // the rows are the source of truth for the note
-  const st=(S&&S.cur)||null;
-  const all=Object.keys((st&&st.parts)||{}).length;
-  const n=shown===undefined?ui.state.partRows.length:shown;
+function paintParts(st){
+  st=st||(S&&S.cur)||null;
+  const all=Object.keys((st&&st.parts)||{});
+  const matching=all.filter(r=>partMatches(r,st)).length;
+  const n=ui.state.partRows.length;
   const rows=ui.state.partRows.map(r=>{
     const on=VIS.parts[r.ref]!==false;
     return {...r,on,hidden:!on,sel:edHl.has(r.ref)};});
   const hidden=rows.filter(r=>r.hidden).length;
+  const filtered=!!VIS.filter.trim();
   ui.set({partRows:rows,
-    partNote:!all?'no parts'
-      :(all>n?`${n-hidden}/${n} of ${all} (capped)`:`${n-hidden}/${n} shown`)});
+    partNote:!all.length?'no parts'
+      :!matching?`no matching parts; clear the filter to see all ${all.length}`
+      :`${n-hidden}/${n} shown`+(matching>n
+        ?` · first ${n} of ${matching}${filtered?' matching':''} parts`
+        :filtered?` · ${matching} matching of ${all.length}`:'')});
 }
 $('partlist').addEventListener('change',e=>{
   const i=e.target.closest('input[data-ref]');
@@ -1019,15 +1026,18 @@ function setQueue(list){
   (list||[]).forEach(p=>propose(p,setQueue));
 }
 async function chat(text,auto){
+  text=text.trim();
   const go=$('composer').querySelector('button[type=submit]');
-  if(go&&go.disabled)return; // one turn at a time — a double Enter doubles LLM spend
+  if(!text||(go&&go.disabled)||$('chatclear').disabled)return false;
   if(go)go.disabled=true;
+  $('chatclear').disabled=true;
   msg('you',text);
   const wait=msg('bot','thinking…');
   let r;
   try{r=await api('/chat',{text,auto:!!auto});}
-  finally{if(go)go.disabled=false;wait.remove();}
-  if(r.error){msg('err',r.error);setQueue(r.proposals);return;}
+  catch(e){msg('err','Could not reach Studio. Try sending your message again.');return false;}
+  finally{if(go)go.disabled=false;$('chatclear').disabled=false;wait.remove();}
+  if(r.error){msg('err',r.error);if(r.proposals)setQueue(r.proposals);return false;}
   const tn=(r.proposals||[]).filter(p=>/\.ocd$/.test(p.path||''));
   if(tn.length){ // plan checklist: the turn's file edits as checkable steps
     pushMsg({kind:'plan',open:true,
@@ -1045,7 +1055,31 @@ async function chat(text,auto){
   if(r.proposals&&r.proposals.length)setQueue(r.proposals);
   if(r.state)applyState(r.state,false);
   if(r.applied)loadVCS();
+  return true;
 }
+$('composer').onsubmit=async e=>{
+  e.preventDefault();
+  const input=$('ask'),draft=input.value;
+  if(await chat(draft,$('chatauto').checked)){
+    if(input.value===draft)input.value='';
+  }
+};
+$('ask').addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
+    e.preventDefault();$('composer').requestSubmit();
+  }
+});
+$('chatclear').onclick=async()=>{
+  const btn=$('chatclear');
+  if(btn.disabled||!confirm('Clear this conversation and pending proposals? Board files will not change.'))return;
+  btn.disabled=true;
+  try{
+    const r=await api('/chat/reset',{});
+    if(r.error){msg('err',r.error);return;}
+    ui.set({msgs:[],followups:[]});
+  }catch(e){msg('err','Could not clear the conversation. Try again.');}
+  finally{btn.disabled=false;}
+};
 // follow-up chips: Flux's "Route and verify / Add thermal copper" row.
 // Mined from the reply's own next-steps, else the three generic moves.
 function followups(reply){ // chips ride the store; the click is delegated below

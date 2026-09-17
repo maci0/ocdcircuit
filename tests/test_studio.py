@@ -142,6 +142,158 @@ assert.match(ui.state.xrayStat, /score 1/);
 """)
 
 
+class PartFilterTests(unittest.TestCase):
+    def test_hidden_parts_remain_searchable(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+            script = source.read()
+        visibility = script.split("function partShown", 1)[1].split("function drawPCB", 1)[0]
+        rows = script.split("const MAX_ROWS=", 1)[1].split("$('partlist').addEventListener", 1)[0]
+        drive = """
+import assert from 'node:assert/strict';
+const VIS={parts:{R1:false},filter:'  r0805  '};
+const S={cur:{parts:{R1:{value:'10k',fp:'R0805'},C1:{value:'100n',fp:'C0805'}}}};
+const edHl=new Set();
+const ui={state:{partRows:[]},set(patch){Object.assign(this.state,patch);}};
+const visSave=()=>{},markDirty=()=>{};
+""" + "function partShown" + visibility + "const MAX_ROWS=" + rows + """
+renderParts();
+assert.deepEqual(ui.state.partRows.map(r=>r.ref),['R1']);
+assert.equal(ui.state.partRows[0].hidden,true);
+assert.equal(partShown('R1',S.cur),false);
+assert.equal(ui.state.partNote,'0/1 shown · 1 matching of 2');
+VIS.parts.R1=true;paintParts();
+assert.equal(ui.state.partRows[0].hidden,false);
+assert.equal(partShown('R1',S.cur),true);
+VIS.filter='missing';renderParts();
+assert.equal(ui.state.partRows.length,0);
+assert.equal(ui.state.partNote,'no matching parts; clear the filter to see all 2');
+VIS.filter=' ';renderParts();
+assert.equal(ui.state.partRows.length,2);
+assert.equal(ui.state.partNote,'2/2 shown');
+S.cur.parts=Object.fromEntries(Array.from({length:405},(_,i)=>['R'+i,{fp:'R0805'}]));
+VIS.filter='R0805';renderParts();
+assert.equal(ui.state.partRows.length,400);
+assert.equal(ui.state.partNote,'400/400 shown · first 400 of 405 matching parts');
+setAllParts(false,S.cur);
+assert.equal(ui.state.partRows.length,400);
+assert.equal(ui.state.partRows.every(r=>r.hidden),true);
+setAllParts(true,S.cur);
+assert.equal(ui.state.partRows.every(r=>r.on),true);
+"""
+        result = subprocess.run(
+            [node, "--input-type=module"], input=drive, cwd=ROOT,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class ChatFormTests(unittest.TestCase):
+    def run_chat(self, drive: str) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+            script = source.read()
+        handler = script.split("let msgSeq=0;", 1)[1].split("function toast(", 1)[0]
+        stub = """
+import assert from 'node:assert/strict';
+const elements = {};
+const $ = id => elements[id] ||= {value:'',disabled:false,handlers:{},
+  addEventListener(name,fn){this.handlers[name]=fn;}};
+$('composer').querySelector = () => $('send');
+const ui = {state:{msgs:[],followups:[]}, set(patch){Object.assign(this.state, patch);}};
+const calls = [];
+let chatResponse = {reply:'Board checked'}, acceptClear=true;
+const confirm = () => acceptClear;
+const api = async (path, body) => {
+  calls.push({path, body});
+  if(chatResponse instanceof Error)throw chatResponse;
+  return chatResponse;
+};
+const applyState = () => {};
+const loadVCS = () => {};
+"""
+        result = subprocess.run(
+            [node, "--input-type=module"], input=stub + "let msgSeq=0;" + handler + drive,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_send_and_clear(self) -> None:
+        self.run_chat("""
+let prevented=false;
+const event={preventDefault(){prevented=true;}};
+assert.equal(typeof $('composer').onsubmit,'function');
+$('ask').value='   ';
+await $('composer').onsubmit(event);
+assert.equal(prevented,true);
+assert.equal(calls.length,0);
+$('ask').value='  solve the unroutable net  ';
+$('chatauto').checked=true;
+await $('composer').onsubmit(event);
+assert.deepEqual(calls, [{path:'/chat', body:{text:'solve the unroutable net', auto:true}}]);
+assert.equal(ui.state.msgs[0].text,'solve the unroutable net');
+assert.match(String(ui.state.followups.map(f=>f.label)), /Route and verify/);
+assert.equal($('ask').value,'');
+assert.equal($('send').disabled,false);
+acceptClear=false;
+await $('chatclear').onclick();
+assert.equal(calls.length,1);
+acceptClear=true;
+await $('chatclear').onclick();
+assert.deepEqual(calls[1], {path:'/chat/reset', body:{}});
+assert.deepEqual(ui.state.msgs, []);
+assert.deepEqual(ui.state.followups, []);
+""")
+
+    def test_failed_send_keeps_draft_and_proposals(self) -> None:
+        self.run_chat("""
+const event={preventDefault(){}};
+const proposal={kind:'prop',prop:'p1'};
+ui.state.msgs=[proposal];
+for(const response of [{error:'Model unavailable'},new Error('network')]){
+  chatResponse=response;
+  $('ask').value='keep this draft';
+  await $('composer').onsubmit(event);
+  assert.equal($('ask').value,'keep this draft');
+  assert.equal($('send').disabled,false);
+  assert.equal($('chatclear').disabled,false);
+  assert.ok(ui.state.msgs.includes(proposal));
+  assert.equal(ui.state.msgs.at(-1).who,'err');
+  assert.equal(ui.state.msgs.some(m=>m.text==='thinking…'),false);
+}
+chatResponse={error:'Reset failed'};
+await $('chatclear').onclick();
+assert.ok(ui.state.msgs.includes(proposal));
+assert.equal($('chatclear').disabled,false);
+""")
+
+    def test_pending_send_preserves_new_draft_and_blocks_duplicates(self) -> None:
+        self.run_chat("""
+const event={preventDefault(){}};
+let resolve;
+chatResponse=new Promise(done=>resolve=done);
+$('ask').value='first draft';
+const sending=$('composer').onsubmit(event);
+assert.equal($('send').disabled,true);
+assert.equal($('chatclear').disabled,true);
+await $('composer').onsubmit(event);
+await $('chatclear').onclick();
+assert.equal(calls.length,1);
+$('ask').value='next draft';
+resolve({reply:'Done'});
+await sending;
+assert.equal($('ask').value,'next draft');
+let submitted=0;
+$('composer').requestSubmit=()=>submitted++;
+$('ask').handlers.keydown({key:'Enter',ctrlKey:true,preventDefault(){}});
+$('ask').handlers.keydown({key:'Enter',metaKey:true,preventDefault(){}});
+$('ask').handlers.keydown({key:'Enter',preventDefault(){}});
+assert.equal(submitted,2);
+""")
+
+
 def free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -196,9 +348,9 @@ def login(base: str) -> str:
 
 
 def main() -> None:
-    uploads = unittest.TextTestRunner().run(
-        unittest.defaultTestLoader.loadTestsFromTestCase(UploadTests))
-    assert uploads.wasSuccessful(), "upload handler tests failed"
+    frontend = unittest.TextTestRunner().run(
+        unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]))
+    assert frontend.wasSuccessful(), "frontend handler tests failed"
     # --help answers usage without booting a server (mcp + studio)
     mh = subprocess.run([sys.executable, "-m", "apps.mcp", "--help"],
                         cwd=ROOT, capture_output=True, timeout=30)
