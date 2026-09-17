@@ -67,7 +67,7 @@ def fetch(cache: str) -> bool:
 def ground_truth(sch: str) -> list[tuple[str, str]]:
     """(ref, value) for every component in the published schematic."""
     import re
-    s = open(sch).read()
+    s = open(sch, encoding="utf-8").read()
     hits = re.findall(
         r'\(property "Reference" "([A-Z]+\d+)"[\s\S]{0,600}?'
         r'\(property "Value" "([^"]*)"', s)
@@ -373,7 +373,7 @@ def main(argv: list[str]) -> int:
                         if f.endswith(".png"))
         refs = [r for r, _ in gtc]
         manual = os.path.join(root, "manual.txt")
-        with open(manual, "w") as f:      # the "datasheet" a user would upload
+        with open(manual, "w", encoding="utf-8") as f:  # the "datasheet" a user would upload
             f.write("NComputing L130 thin client - service notes\n\n"
                     + "\n".join(f"  {r}  {v}" for r, v in gtc)
                     + "\n\nEthernet-attached thin client: FPGA does video and\n"
@@ -400,7 +400,7 @@ def main(argv: list[str]) -> int:
             except Exception as e:        # noqa: BLE001 - report, keep going
                 print(f"  {tag:10s} FAILED: {type(e).__name__}: {e}")
                 return None
-            rep = open(str(r["analysis"])).read() if "analysis" in r else ""
+            rep = open(str(r["analysis"]), encoding="utf-8").read() if "analysis" in r else ""
             found = [x for x in refs if x in rep]
             vals = [v for _, v in gtc
                     if v and v.split()[0][:6].upper() in rep.upper()]
@@ -414,7 +414,7 @@ def main(argv: list[str]) -> int:
             if isinstance(r.get("draft"), str) and os.path.isfile(str(r["draft"])):
                 import re as _re
                 m = _re.search(r"board\s+\S+\s+([\d.]+)x([\d.]+)",
-                               open(str(r["draft"])).read())
+                               open(str(r["draft"]), encoding="utf-8").read())
                 if m:
                     dim = int(max(abs(float(m.group(1)) - 100.0),
                                   abs(float(m.group(2)) - 100.0)))

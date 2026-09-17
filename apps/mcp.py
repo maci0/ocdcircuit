@@ -599,7 +599,7 @@ def main() -> None:
             header += chunk
         try:
             length = 0
-            for line in header.decode().split("\r\n"):
+            for line in header.decode("utf-8").split("\r\n"):
                 if line.lower().startswith("content-length:"):
                     length = int(line.split(":")[1].strip())
             body = stdin.read(length)
@@ -617,8 +617,8 @@ def main() -> None:
                     "error": {"code": -32700, "message": str(e)}}
         if resp is None:
             continue
-        out = json.dumps(resp).encode()
-        stdout.write(f"Content-Length: {len(out)}\r\n\r\n".encode() + out)
+        out = json.dumps(resp).encode("utf-8")
+        stdout.write(f"Content-Length: {len(out)}\r\n\r\n".encode("ascii") + out)
         stdout.flush()
 
 

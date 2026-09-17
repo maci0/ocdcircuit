@@ -1120,7 +1120,7 @@ def read_doc(path: str, limit: int = 20000) -> str:
                            capture_output=True, timeout=180)
         if r.returncode != 0:
             raise ValueError(f"pdftotext failed on {os.path.basename(path)}: "
-                             f"{r.stderr.decode(errors='replace')[:200]}")
+                             f"{r.stderr.decode('utf-8', errors='replace')[:200]}")
         body = r.stdout.decode("utf-8", errors="replace")
     else:
         with open(path, encoding="utf-8", errors="replace") as f:

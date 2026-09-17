@@ -153,7 +153,7 @@ def positions_from_pcb(path: str) -> tuple[dict[str, tuple[float, float]],
                                            dict[str, str]]:
     """{ref: (x, y)} in mm + board w/h + {ref: footprint} from a .kicad_pcb."""
     from ocdcircuit.foreign import sexpr, _kids, _unq, _num, _footprint_ref
-    root = sexpr(open(path).read())
+    root = sexpr(open(path, encoding="utf-8").read())
     refs: dict[str, tuple[float, float]] = {}
     fps: dict[str, str] = {}
     for fp in _kids(root, "footprint"):
@@ -182,7 +182,7 @@ def positions_from_pcb(path: str) -> tuple[dict[str, tuple[float, float]],
 def convert(projdir: str, outdir: str) -> str:
     """Atopile project → outdir/{name.ocd, fp/*.fp}. Returns .ocd path."""
     main_f = os.path.join(projdir, "atopile", "main.ato")
-    src = open(main_f).read()
+    src = open(main_f, encoding="utf-8").read()
     # sibling-file modules first: follow `from "x.ato" import Y` (SSSdriver)
     _mods: dict[str, tuple[list[str], dict[str, str], list[tuple[str, str, str]]]] = {}
     _seen_files = {os.path.abspath(main_f)}
@@ -190,14 +190,14 @@ def convert(projdir: str, outdir: str) -> str:
         _fp = os.path.normpath(os.path.join(os.path.dirname(main_f), m.group(1)))
         if _fp not in _seen_files and os.path.isfile(_fp):
             _seen_files.add(_fp)
-            _, _, _, _mods, _ = _parse_with(open(_fp).read(), _mods)
+            _, _, _, _mods, _ = _parse_with(open(_fp, encoding="utf-8").read(), _mods)
     signals, insts, wires, _, _scope = _parse_with(src, _mods)
     parts_info: dict[str, dict[str, object]] = {}
     parts_dir = os.path.join(projdir, "atopile", "parts")
     for root, _ds, fs in os.walk(parts_dir):
         for fn in fs:
             if fn.endswith(".ato"):
-                parts_info.update(parse_parts(open(os.path.join(root, fn)).read()))
+                parts_info.update(parse_parts(open(os.path.join(root, fn), encoding="utf-8").read()))
     # instance refs: J-designator order of declaration
     refs: dict[str, str] = {}
     counters: dict[str, int] = {}
@@ -264,7 +264,7 @@ def convert(projdir: str, outdir: str) -> str:
     _pj = os.path.join(projdir, "placement.json")
     if os.path.isfile(_pj):
         try:
-            _fix = _json.load(open(_pj)).get("fixed", {})
+            _fix = _json.load(open(_pj, encoding="utf-8")).get("fixed", {})
             assert isinstance(_fix, dict)
             for _vr, _xy in _fix.items():
                 assert isinstance(_xy, list) and len(_xy) >= 2
@@ -296,7 +296,7 @@ def convert(projdir: str, outdir: str) -> str:
     # assignments, scoped per module then mapped onto elaborated var names
     # (z1_r16 descends from instance z1 of a module declaring r16.package)
     _varpkg: dict[str, str] = {}
-    for _f, _txt in [(main_f, src)] + [(_fp, open(_fp).read()) for _fp in _seen_files
+    for _f, _txt in [(main_f, src)] + [(_fp, open(_fp, encoding="utf-8").read()) for _fp in _seen_files
                                        if _fp != os.path.abspath(main_f)]:
         _sc = _strip_comments(_txt)
         for _m in re.finditer(r"^module\s+(\w+)\s*:(.*?)(?=^module\s+\w+\s*:|\Z)",
@@ -432,7 +432,7 @@ def convert(projdir: str, outdir: str) -> str:
     if _ncs:
         L.append("nc " + " ".join(_ncs))
     fn = os.path.join(outdir, f"{name}.ocd")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return fn
 
 

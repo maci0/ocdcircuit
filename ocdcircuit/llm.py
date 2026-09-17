@@ -115,7 +115,7 @@ def _post_json(c: dict[str, str], path: str, payload: dict[str, Any],
     `reach_hint` is an LLMError template with `{base}` and `{err}` for the
     unreachable-host path (chat and embed word this differently).
     """
-    body = json.dumps(payload).encode()
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         c["base"] + path, data=body, method="POST",
         headers={"Content-Type": "application/json",
@@ -153,7 +153,7 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
             reach_hint=("cannot reach {base} ({err}). Set OCD_LLM_BASE, "
                         "OCD_LLM_MODEL, OCD_LLM_KEY."))
     except urllib.error.HTTPError as e:
-        detail = e.read()[:400].decode("utf8", "replace")
+        detail = e.read().decode("utf-8", "replace")[:400]
         hint = ""
         if e.code == 404:  # usually a model id the server does not serve
             have = models()
@@ -212,7 +212,7 @@ def embed(texts: list[str], *, model: str | None = None,
             reach_hint=("cannot reach {base} for embeddings ({err}). "
                         "Set OCD_LLM_BASE, OCD_LLM_EMBED."))
     except urllib.error.HTTPError as e:
-        detail = e.read()[:400].decode("utf8", "replace")
+        detail = e.read().decode("utf-8", "replace")[:400]
         raise LLMError(f"{c['base']} said {e.code} for embedding model "
                        f"{mid!r}: {detail}. Set OCD_LLM_EMBED.") from e
     try:

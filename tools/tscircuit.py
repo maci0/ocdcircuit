@@ -106,8 +106,8 @@ def convert(projdir: str) -> str:
     """Project dir → .ocd text. Raises on unmapped footprints."""
     tsx_f = os.path.join(projdir, "index.circuit.tsx")
     cj_f = os.path.join(projdir, "dist", "index", "circuit.json")
-    src = open(tsx_f).read()
-    cjson = cast(list[dict[str, object]], json.load(open(cj_f)))
+    src = open(tsx_f, encoding="utf-8").read()
+    cjson = cast(list[dict[str, object]], json.load(open(cj_f, encoding="utf-8")))
     by_id = {str(e["source_component_id"]): e for e in cjson
              if e.get("type") == "source_component"}
     for _e in by_id.values():

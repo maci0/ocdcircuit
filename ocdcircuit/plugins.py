@@ -850,7 +850,8 @@ bpy.ops.render.render(write_still=True)
             if r.returncode != 0 or not os.path.isfile(out):
                 raise RuntimeError(
                     "blender render failed "
-                    f"(have org.blender.Blender? {r.stderr.decode()[-300:]})")
+                    f"(have org.blender.Blender? "
+                    f"{r.stderr.decode('utf-8', 'replace')[-300:]})")
             with open(out, "rb") as f:
                 return f.read()
 
@@ -1975,12 +1976,12 @@ def _jlc_api_price(lcsc: str) -> float | None:
         for _ in range(32))
     ts = int(time.time())
     sig = base64.b64encode(hmac.new(
-        secret.encode(),
-        f"POST\n/component/getComponentInfos\n{ts}\n{nonce}\n{body}\n".encode(),
-        hashlib.sha256).digest()).decode()
+        secret.encode("utf-8"),
+        f"POST\n/component/getComponentInfos\n{ts}\n{nonce}\n{body}\n".encode("utf-8"),
+        hashlib.sha256).digest()).decode("ascii")
     req = urllib.request.Request(
         "https://jlcpcb.com/external/component/getComponentInfos",
-        data=body.encode(),
+        data=body.encode("utf-8"),
         headers={"Authorization": f'JOP appid="{app_id}",accesskey="{access}",'
                  f'nonce="{nonce}",timestamp="{ts}",signature="{sig}"',
                  "Content-Type": "application/json"}, method="POST")

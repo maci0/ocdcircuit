@@ -38,7 +38,7 @@ def color_for(name: str) -> str:
     """Stable pill color per user (sha1, not hash(): PYTHONHASHSEED would
     reshuffle colors every restart — and hash() collides fast on 6 colors)."""
     import hashlib
-    return COLORS[int(hashlib.sha1(name.encode()).hexdigest(), 16) % len(COLORS)]
+    return COLORS[int(hashlib.sha1(name.encode("utf-8")).hexdigest(), 16) % len(COLORS)]
 
 
 class Room:

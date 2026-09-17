@@ -52,7 +52,7 @@ bench:				# 5420-part stress (~5 min, not in check)
 farm:				# every board loads+solves (breath-ketone density excepted)
 	$(HERMETIC) python -c "import sys, glob, os; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent; \
-	[(_b := agent.loads(open(f).read(), base=os.path.dirname(f)), \
+	[(_b := agent.loads(open(f, encoding="utf-8").read(), base=os.path.dirname(f)), \
 	_b.place(seeds=2, iters=100), _b.route_board(), \
 	print(f, len(_b.check()['errors']), 'errors')) \
 	for f in sorted(glob.glob(os.path.join('boards', '*.ocd')) \
@@ -61,7 +61,7 @@ farm:				# every board loads+solves (breath-ketone density excepted)
 fabsweep:			# every board x every fab (profile discrimination check)
 	$(HERMETIC) python -c "import sys, glob, os; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent, fab; \
-	[(_b := agent.loads(open(f).read(), base=os.path.dirname(f)), \
+	[(_b := agent.loads(open(f, encoding="utf-8").read(), base=os.path.dirname(f)), \
 	_b.place(seeds=2, iters=100), _b.route_board(), \
 	print(os.path.basename(f), ' '.join(f'{g}={len(_b.check(\"fab\", fab=g)[\"errors\"])}' \
 	for g in fab.list_fabs()))) \

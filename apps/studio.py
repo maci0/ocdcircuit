@@ -2878,9 +2878,17 @@ def _purge_sessions(now: float | None = None) -> None:
         _SESSIONS.pop(tok, None)
 
 
+def _norm_display(disp: str) -> str:
+    """NFC so macOS NFD paste and NFC typing land as one spelling in the
+    users file (e.g. caf\u00e9 vs cafe\\u0301)."""
+    import unicodedata
+    return unicodedata.normalize("NFC", disp)
+
+
 def _ok_display(disp: str) -> bool:
     """Display names must not break the colon-separated users file or hide
-    identity with format/control chars (ZWSP, bidi marks, etc.)."""
+    identity with format/control chars (ZWSP, bidi marks, etc.).
+    Caller passes NFC text (see `_norm_display`)."""
     import unicodedata
     if not disp or len(disp) > 40:
         return False
@@ -2912,7 +2920,7 @@ def _read_users() -> dict[str, tuple[str, str, str]]:
                 parts = line.rstrip("\n").split(":")
                 if len(parts) >= 3 and parts[0]:
                     disp = parts[3] if len(parts) > 3 and parts[3] else parts[0]
-                    out[parts[0]] = (parts[1], parts[2], disp)
+                    out[parts[0]] = (parts[1], parts[2], _norm_display(disp))
     except FileNotFoundError:
         return out
     return out
@@ -2920,6 +2928,7 @@ def _read_users() -> dict[str, tuple[str, str, str]]:
 
 def _set_display(name: str, display: str) -> None:
     """Rewrite the user's line with a new display name (validated by caller)."""
+    display = _norm_display(display)
     if not _ok_display(display):
         raise ValueError("display name can't contain control chars or ':'")
     with _AUTH_MU:
@@ -3258,7 +3267,10 @@ def _import_upload(name: str, data: str) -> dict[str, object]:
     the editor. Returns {note[, text]} — text only when a board was made."""
     import base64
     import binascii
-    fn = "".join(c for c in os.path.basename(name) if c.isalnum() or c in "_-.")[:80]
+    # ASCII-only: bare isalnum() keeps NFC/NFD lookalikes (caf\u00e9 vs
+    # cafe\\u0301) as distinct paths that collide on APFS.
+    fn = "".join(c for c in os.path.basename(name)
+                 if c.isascii() and (c.isalnum() or c in "_-."))[:80]
     ext = os.path.splitext(fn)[1].lower()
     if not fn or ext not in IMPORT_EXTS:
         return {"error": f"{name or '(no name)'}: import wants "
@@ -3841,7 +3853,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write(out)
 
     def _send(self, obj: object, cookie: str | None = None) -> None:
-        body = json.dumps(obj).encode()
+        body = json.dumps(obj).encode("utf-8")
         self._write_bytes(200, body, "application/json", cookie=cookie)
 
     def do_GET(self) -> None:
@@ -3896,7 +3908,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._send({"error": f"cannot read open board on disk",
                                 "hash": "", "clean": False})
                     return
-                self._send({"hash": hashlib.md5(disk.encode()).hexdigest(),
+                self._send({"hash": hashlib.md5(disk.encode("utf-8")).hexdigest(),
                             "clean": disk == H.saved_text})
                 return
             if self.path.startswith("/collab/events"):
@@ -3938,7 +3950,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     snap = room.snapshot()
                     assert isinstance(snap, dict)
                     self.wfile.write(
-                        f"data: {json.dumps({'hello': user, **snap})}\n\n".encode())
+                        f"data: {json.dumps({'hello': user, **snap})}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     import queue as _qq
                     idle = 0
@@ -3946,7 +3958,7 @@ class H(http.server.BaseHTTPRequestHandler):
                         try:
                             msg = stream.get(timeout=15.0)
                             assert isinstance(msg, dict)
-                            self.wfile.write(f"data: {json.dumps(msg)}\n\n".encode())
+                            self.wfile.write(f"data: {json.dumps(msg)}\n\n".encode("utf-8"))
                             self.wfile.flush()
                             idle = 0
                         except _qq.Empty:
@@ -3994,7 +4006,7 @@ class H(http.server.BaseHTTPRequestHandler):
             # stays open (it is how you get the cookie). The gate lives here, not
             # in a proxy, so `python -m apps.studio` is the whole setup.
             if user is None:
-                body = LOGIN_PAGE.replace("/*__FABS__*/", fab_strip()).encode()
+                body = LOGIN_PAGE.replace("/*__FABS__*/", fab_strip()).encode("utf-8")
                 self._write_bytes(200, body, "text/html; charset=utf-8", doc=True)
                 return
             from urllib.parse import parse_qs, urlparse
@@ -4004,7 +4016,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 # shelf boards only: alnum/_/- inside the user's own dir, else the
                 # launch board. Server-side: the cookie names the user, the query
                 # names only the file.
-                clean = "".join(c for c in want if c.isalnum() or c in "_-")[:32]
+                clean = "".join(
+                    c for c in want
+                    if c.isascii() and (c.isalnum() or c in "_-"))[:32]
                 cand = os.path.join(_user_dir(user), (clean or "_") + ".ocd")
                 if os.path.isfile(cand):
                     g = globals()
@@ -4015,7 +4029,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     H.saved_text = ""
             page = PAGE.replace("/*__TOOLBAR__*/", SLOTS.render("toolbar", None))
             page = page.replace("/*__VIEWS__*/", SLOTS.render("view", None))
-            body = page.encode()
+            body = page.encode("utf-8")
             self._write_bytes(200, body, "text/html; charset=utf-8", doc=True)
         finally:
             _REQ_USER.reset(_tok)
@@ -4105,7 +4119,7 @@ class H(http.server.BaseHTTPRequestHandler):
                             "needs_setup": not _read_users()})
             elif self.path == "/auth/profile":
                 assert user is not None  # gated above
-                disp = str(req.get("display", "")).strip()[:40]
+                disp = _norm_display(str(req.get("display", "")).strip())[:40]
                 if not disp:
                     self._send({"error": "a display name can't be blank"})
                     return
@@ -4149,7 +4163,8 @@ class H(http.server.BaseHTTPRequestHandler):
             elif self.path == "/shelf/from_template":
                 assert user is not None  # gated above
                 raw = str(req.get("name", ""))
-                fn = "".join(c for c in os.path.basename(raw) if c.isalnum() or c in "_-.")[:40]
+                fn = "".join(c for c in os.path.basename(raw)
+                             if c.isascii() and (c.isalnum() or c in "_-."))[:40]
                 if not fn.endswith(".ocd"):
                     self._send({"error": "pick a template first"})
                     return
@@ -4899,7 +4914,7 @@ class H(http.server.BaseHTTPRequestHandler):
         # discrete6502) and a text edit rarely changes them: the caller sends
         # the hash it holds, and an unchanged list is not re-sent.
         import hashlib as _hashlib
-        tkey = _hashlib.sha1(repr(traces).encode()).hexdigest()[:12]
+        tkey = _hashlib.sha1(repr(traces).encode("utf-8")).hexdigest()[:12]
         if req.get("thash") == tkey:
             traces = []
         st = board_state(b, agent.dumps(b), frames, traces, cost, drc)

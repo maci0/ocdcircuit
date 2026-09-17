@@ -318,6 +318,11 @@ def main() -> None:
         _profzw = post(base, "/auth/profile",
                        {"display": "Ada\u200bCircuit"})  # ZWSP
         assert "error" in _profzw, _profzw
+        # NFD paste (e + combining acute) stores as NFC caf\u00e9
+        _nfd = post(base, "/auth/profile", {"display": "cafe\u0301"})
+        assert not _nfd.get("error"), _nfd
+        assert _nfd.get("display") == "caf\u00e9", _nfd
+        assert post(base, "/auth/me", {})["display"] == "caf\u00e9"
         _unic = post(base, "/auth/signup",
                      {"user": "caf\u00e9", "password": "testtest99"})
         assert "error" in _unic, _unic  # ASCII usernames only
@@ -327,6 +332,19 @@ def main() -> None:
         _slug = post(base, "/shelf/new", {"name": "capteur caf\u00e9"})
         assert not _slug.get("error"), _slug
         assert _slug.get("name") == "capteur-caf", _slug  # ASCII slug only
+        # import upload: Unicode letters stripped (NFC/NFD must not land on disk)
+        import base64 as _b64_u
+        _fp_src = b"footprint TINY 1x1\npad 1 0 0 0.5 0.5\n"
+        _fp_body = _b64_u.b64encode(_fp_src).decode()
+        _imp_nfc = post(base, "/fs/import",
+                        {"name": "caf\u00e9.fp", "data": _fp_body})
+        assert not _imp_nfc.get("error"), _imp_nfc
+        assert "imported caf.fp" in str(_imp_nfc.get("note", "")), _imp_nfc
+        _imp_nfd = post(base, "/fs/import",
+                        {"name": "cafe\u0301.fp", "data": _fp_body})
+        # combining mark dropped → cafe.fp (distinct ASCII stem, not a lookalike path)
+        assert not _imp_nfd.get("error"), _imp_nfd
+        assert "imported cafe.fp" in str(_imp_nfd.get("note", "")), _imp_nfd
         # shelf isolation: second user cannot /fs/read the first user's board
         _mine = post(base, "/shelf/new", {"name": "private-board"})
         assert not _mine.get("error"), _mine

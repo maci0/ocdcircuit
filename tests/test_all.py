@@ -3550,6 +3550,27 @@ assert _key_row["ok"] is True
 # envcfg self-check: empty ≡ unset, bad values raise, secrets stay redacted
 from ocdcircuit import envcfg as _envcfg
 _envcfg._selfcheck()
+# LLM HTTP error bodies: decode UTF-8 before clipping so a mid-sequence cut
+# (e.g. body[:5] on "错误…") does not inject U+FFFD into the raised message.
+import io as _io_llm
+import email.message as _em_llm
+import urllib.error as _ue_llm
+from unittest import mock as _mock_llm
+from ocdcircuit import llm as _llm
+_llm_body = "错误信息".encode("utf-8")
+assert "\ufffd" in _llm_body[:5].decode("utf-8", "replace")  # old trap
+class _FakeHTTP(_ue_llm.HTTPError):
+    def __init__(self) -> None:
+        super().__init__("http://x", 400, "bad", hdrs=_em_llm.Message(),
+                         fp=_io_llm.BytesIO(_llm_body))
+with _mock_llm.patch.object(_llm, "cfg", return_value={
+        "base": "http://x", "model": "m", "key": ""}):
+    with _mock_llm.patch.object(_llm, "_post_json", side_effect=_FakeHTTP()):
+        try:
+            _llm.chat([{"role": "user", "content": "hi"}], timeout=1)
+            raise AssertionError("expected LLMError")
+        except _llm.LLMError as _le:
+            assert "\ufffd" not in str(_le) and "错误" in str(_le), _le
 import shutil as _shutil_doc
 _real_which = _shutil_doc.which
 def _no_optionals(name: str) -> str | None:

@@ -499,7 +499,7 @@ class KB:
         r = subprocess.run([exe, "-layout", p, "-"], capture_output=True, timeout=120)
         if r.returncode != 0:
             raise ValueError(f"pdftotext failed on {name!r}: "
-                             f"{r.stderr.decode(errors='replace')[:200]}")
+                             f"{r.stderr.decode('utf-8', errors='replace')[:200]}")
         body = r.stdout.decode("utf-8", errors="replace")
         os.makedirs(self.cache, exist_ok=True)
         with open(cpath, "w", encoding="utf-8") as f:

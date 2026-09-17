@@ -151,8 +151,8 @@ def convert(projdir: str, outdir: str) -> str:
     """Mitox project → outdir/{mitox.ocd, fp/*.fp}. Returns .ocd path."""
     tsx_f = os.path.join(projdir, "index.circuit.tsx")
     cj_f = os.path.join(projdir, "index.circuit.circuit.json")
-    src = open(tsx_f).read()
-    cjson = cast(list[dict[str, object]], json.load(open(cj_f)))
+    src = open(tsx_f, encoding="utf-8").read()
+    cjson = cast(list[dict[str, object]], json.load(open(cj_f, encoding="utf-8")))
     os.makedirs(os.path.join(outdir, "fp"), exist_ok=True)
 
     by_comp = {str(e["source_component_id"]): str(e.get("name", ""))
@@ -265,7 +265,7 @@ def convert(projdir: str, outdir: str) -> str:
         if pads or holes:
             fn = f"fp/{fpname}.fp"
             if fpname not in fp_files:
-                open(os.path.join(outdir, fn), "w").write(
+                open(os.path.join(outdir, fn), "w", encoding="utf-8").write(
                     fp_text(fpname, pads, holes, tsci_wh.get(name)))
                 fp_files[fpname] = fn
         else:
@@ -311,7 +311,7 @@ def convert(projdir: str, outdir: str) -> str:
     if "GND" in nets or True:
         L.append("power VBUS VBAT VSYS V3V3 GND")
     fn = os.path.join(outdir, "mitox.ocd")
-    open(fn, "w").write("\n".join(L) + "\n")
+    open(fn, "w", encoding="utf-8").write("\n".join(L) + "\n")
     return fn
 
 
