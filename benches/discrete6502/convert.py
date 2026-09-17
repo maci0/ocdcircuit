@@ -9,7 +9,10 @@ Mapping: 4051 FETs -> FET_SOT323 (.fp, true 2.0x1.25); R/C0402 -> CHIP0402
 (.fp); 55 LEDs -> LED0603 (stdlib); C0805 -> C0805; diodes -> D_SOD323;
 36 testpoints -> TP1 (.fp); DNP Pico U1 dropped with its private nets.
 Positions: layout.json mm (netlist.json pos units are NOT mil — ignored).
-Board 291x322 6L. DNP ballast excluded.
+Board 290.7×322.0 mm 6L (written as 291x322 in .ocd header). DNP ballast
+excluded. Rotations in layout.json ignored (axis-aligned parts only).
+Block pairing (`_find_blocks`) + internal-net suppression are heuristics —
+not golden-validated against upstream hierarchy.
 
 Usage: python -m benches.discrete6502.convert  # writes discrete6502.ocd (needs netlist.json + layout.json)
 """
@@ -33,8 +36,6 @@ FP = {
 # DNP Pico site: 40-pin module with no ocd footprint; drop the part, keep its
 # nets only where shared with placed parts (vcc/vss), drop pico-private nets.
 _DROP_PARTS = {"U1"}
-# testpoints/pico have more pins than PINHD2; keep first two connected pins.
-_PIN_CAP = {"PINHD2": ("1", "2")}
 
 
 def _safe_net(n: str) -> str:

@@ -183,8 +183,8 @@ CLI badge only):
   OK for report-only; must decorrelate before any `cost()` promotion);
   T13 jogs hardwired 0 (rails straight by construction); T6 gap-σ missing;
   T1 lacks per-cm normalization; T8 uses single-part mean (not `<2→None`);
-  T4 via monkey-patch caveat real; T14 font-box crude; tile size 5 mm and
-  copper-length-proxy are unflagged constants in code.
+  T4 via monkey-patch caveat real; T14 font-box crude; tile size **5 mm** and
+  copper-length-proxy are uncalibrated constants in code (flagged).
 - `score()` → {0–100, grade A–F} duplicates a subset of placement subs for
   CLI badges. **Never compare badges across boards**; never fold `score()`
   into placer `cost()`. Prefer `tidy()` components.
@@ -201,7 +201,7 @@ CLI badge only):
 | T8 | Grid-snap residual | mean dist to actual grid multiple (pin to the board's `route-grid` constraint, not literal 0.25); single-part boards still score | 0 (J) | ✅ |
 | T9 | Spacing uniformity | 1 − CV of neighbor gaps; `None` if <2 parts or mean gap 0 (conflicts with T7 by design — aligned groups score low here) | →1 (J) | ✅ |
 | T10 | Orientation consistency | 0°/90°/180°/270° fraction + entropy over `p.rot` (`Part.rot` exists — `circuit.py` rot/wh/rot_xy, honored by export + 3D) | 1.0 (J) | ✅ |
-| T11 | Copper tile variance | RAW tile σ + layer Δ over 5mm tiles (trace-length proxy; None if unrouted) | Δ≤20% (F) | ✅ |
+| T11 | Copper tile variance | RAW tile σ + layer Δ over **5 mm** tiles (trace-length proxy — constants uncalibrated; None if unrouted) | Δ≤20% (F) | ✅ |
 | T12 | Acid-trap scan | RAW # acute <90° wedges at trace joins (0 under Manhattan-only routing — tripwire for leaked non-Manhattan geometry); `None` if unrouted | 0 (F) | ✅ |
 | T13 | Schematic crossings/jogs | RAW drop-line × rail crossings; jogs hardwired 0 | min (L — the one valid Purchase transfer) | ✅ |
 | T14 | Silk overlap | RAW text–text + text–copper count (crude font-box — `Text` has no glyph extents); **scored, never veto-gated** | 0 (F) | ✅ |

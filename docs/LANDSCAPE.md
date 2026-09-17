@@ -71,6 +71,6 @@ Corpus-wide honesty map — tracked here so briefs don't silently overclaim:
 | Cost / stock | attrs + optional quote; no live distributor default |
 | Panelization | zero code (panel elements still "Remaining" above) |
 | Interactive route | no push-shove story (KiCad PNS is the reference, not a port) |
-| Exact layout proof | CP-SAT/`AddNoOverlap2D` optional verifier — unpiloted |
+| Exact layout proof | CP-SAT optional; stdlib proxy piloted in `benches/exact_overlap_pilot.py` (feasibility cheap ≤20; prove-no/WL-cap time out by n=12–20) |
 | Whole-board sim | block-by-block + model-less policy; never one "simulate PCB" button |
 

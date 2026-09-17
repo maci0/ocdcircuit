@@ -138,7 +138,7 @@ MENUS = (
     '<div id=qout role=status aria-live=polite></div></details>'
     '</div></details>'
     '<div class=mastat><span id=cost class=pill title="total wirelength">cost</span>'
-    '<span id=ocdscore class=pill title="OCD neatness, 0-100"></span>'
+    '<span id=ocdscore class=pill title="OCD neatness badge 0-100 — do not compare across boards"></span>'
     '<span id=feas class=pill title="routing feasibility per layer count"></span>'
     '<span id=stat role=status aria-live=polite></span></div>'
     '</nav>')

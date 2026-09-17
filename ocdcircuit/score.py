@@ -458,10 +458,11 @@ def tidy(board: Board) -> dict[str, object]:
 
 
 def score(board: Board) -> dict[str, object]:
-    """0-100 aggregate for CLI badges only. Prefer tidy() components.
+    """CLI display badge only — prefer tidy() components for anything real.
 
-    Never compare totals/grades across boards (None-coverage differs);
-    never feed this into placer cost(). Display-only.
+    Returns total/grade for human glance; never compare across boards
+    (None-coverage differs) and never feed into placer cost(). Normative
+    surface is tidy() (docs/tidy-metrics.md).
     """
     t = tidy(board)
     subs: dict[str, float] = {}

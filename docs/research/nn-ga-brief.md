@@ -166,6 +166,9 @@ Extrapolating the measured table:
   slow — infeasible flat. The fixed 0.25 mm grid is the `ponytail:` ceiling
   firing (`maze.py`: "coarser when boards grow"). MOnSter physical size
   (305×381 mm) is larger still; use discrete6502 numbers for this repo.
+  **WL caveat** (see `benches/discrete6502/SOURCES.md`): star-model WL is
+  dominated by power nets (vcc 1350 / vss 2502 pins); published ratios are
+  mostly power-span, and bench defaults (1/5) ≠ studio defaults (4/400).
 - **DRC**: ~34 s routed (O(n²) trace-pair checks) — annoying but survivable;
   fix last.
 

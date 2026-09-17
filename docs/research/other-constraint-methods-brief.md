@@ -120,7 +120,8 @@ ADMM/ALM until stiffness bites, escape routing until dense BGA.
   [Adaptagrams README](https://github.com/cmears/adaptagrams).
   Dunnart record verified via OpenAlex (Dwyer–Marriott–Wybrow 2009,
   [doi](https://doi.org/10.1007/978-3-642-00219-9_41), 51 cites).
-  **This is the legalizer design: ~50 lines/sweep, no deps. Adopt first.**
+  **This is the legalizer design: ~50 lines/sweep, no deps. Adopt-first
+  candidate — residual-overlap delta vs diffusion+_repair still unmeasured.**
 - **Cassowary** (incremental linear equality+inequality solver, stay/edit
   constraints for interactive UI): verified via kiwisolver docs — "efficient
   C++ implementation of the Cassowary constraint solving algorithm… 10x to
@@ -133,9 +134,9 @@ ADMM/ALM until stiffness bites, escape routing until dense BGA.
   convergence; Dykstra adds corrections). Keepout rectangles make the feasible
   set non-convex → heuristic repair, not exact. **Do now: one-line clips and
   keepout push-out.**
-- Ranking: (i) VPSC-style 1D passes — FIRST; (ii) clamp/projection — NOW;
-  (iii) ALM — only if 1e6-weight stiffness bites; (iv) Cassowary — only if UI
-  constraints grow.
+- Ranking (judgment, not measured): (i) VPSC-style 1D passes — FIRST candidate;
+  (ii) clamp/projection — NOW; (iii) ALM — only if 1e6-weight stiffness bites;
+  (iv) Cassowary — only if UI constraints grow.
 
 ## 4. Local search + population metaheuristics
 
@@ -187,8 +188,10 @@ ADMM/ALM until stiffness bites, escape routing until dense BGA.
   lookup tables for low-degree nets + D&C — record verified via OpenAlex (TCAD,
   [doi](https://doi.org/10.1109/tcad.2007.907068), 354 cites). Buy over
   pin-to-pin chaining: one shared trunk replaces N−1 competing maze paths —
-  fewer detours/layer changes (exact % unverified — flagged). **~50 lines for
-  rectilinear-MST + Hanan improvement; cheapest routing win.**
+  fewer detours/layer changes (exact % unverified — flagged). **Rectilinear-MST
+  trunk legs SHIPPED** (`maze._mst_pairs`; blinky 109→98 segs, mitox
+  1536→987). Hanan RSMT improvement still open (~lookup/D&C; not required
+  for the MST win).
 - **Pin assignment / escape**: assignment = min-cost bipartite matching
   (Hungarian) over swappable pins (textbook account, record NOT fetched —
   flagged); escape = simultaneous flow/pattern routing (e.g.
@@ -214,7 +217,8 @@ ADMM/ALM until stiffness bites, escape routing until dense BGA.
 
 ## Adoption ranking (all five angles merged)
 
-1. VPSC-style 1D separation legalizer (~50 lines, §3) — still the next build.
+1. VPSC-style 1D separation legalizer (~50 lines, §3) — next build candidate;
+   ranking unmeasured (no pilot vs diffusion+_repair residual overlaps yet).
 2. ~~Min-conflicts repair loop~~ — SHIPPED (`solver._repair`, 88 lines);
    next in this family: LNS ruin-recreate.
 3. ~~Rectilinear-MST/Steiner decomposition~~ — SHIPPED (`_mst_pairs` trunk

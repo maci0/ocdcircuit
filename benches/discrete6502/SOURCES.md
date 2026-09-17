@@ -47,14 +47,19 @@
    wirelength/benchmark metrics, not DRC-zero.
 2. **Current published baseline** (flat diffusion, seeds=1 iters=5 —
    `BASE_SEEDS`/`BASE_ITERS` in `bench.py`; numbers from `baseline_r3.txt`
-   r4/r5 block; re-pin on solver/WL-model changes):
+   **r4/r5 block** — filename keeps r3 history; file holds r3+r4+r5).
+   Tree pin: quote only against the same `ocdcircuit/solver.py` +
+   `ocdcircuit/maze.py` that produced the r4/r5 block (re-run
+   `python -m benches.discrete6502.bench 1 5` and append a new block
+   whenever those files change WL/overlap math). Numbers:
    531–536 s, cost 4939572307 (deterministic — same cost across r4/r5;
    wall-clock varies by machine), placed WL 1394358 vs golden 1087471
    (ratio **1.28**), mean displacement 88.91 mm (similarity, secondary),
    overlaps 3321 vs golden floor 957 (**above_floor 2364**). Headroom:
    close the WL ratio toward 1.0 and the 2364 avoidable overlaps.
-   Historical r3 (pre WL-model/repair drift): ratio 1.39, above_floor 1591,
-   cost 3647492514 — superseded; do not quote as current headroom.
+   Historical r3 (pre WL-model/repair drift; first block in same file):
+   ratio 1.39, above_floor 1591, cost 3647492514 — superseded; do not
+   quote as current headroom.
 3. **Multilevel** (`placer:multilevel`, seeds=1 iters=2, same harness):
    10.6 s, WL ratio 1.64, overlaps 682 vs floor 957. Beating the stacking
    floor on overlaps while trailing on WL is a **different tradeoff**

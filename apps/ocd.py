@@ -351,7 +351,8 @@ def cmd_status(agent: object, args: list[str]) -> int:
                         if k not in ("coverage", "routed_segs"))
     ran = checks.get("ran", [])
     doc = (f"# STATUS — {b.name}\n\n"
-           f"OCD score: {s['total']}/100 ({s['grade']})\n\n"
+           f"OCD score: {s['total']}/100 ({s['grade']}) "
+           f"(display badge — do not rank boards by this)\n\n"
            f"## tidy ({t['coverage']} metrics defined)\n\n"
            f"| metric | value |\n|---|---|\n{trows}\n\n"
            f"| check | errors | warnings |\n|---|---|---|\n"
@@ -506,7 +507,8 @@ def cmd_score(agent: object, args: list[str]) -> int:
     sparts = cast(dict[str, float], s["parts"])
     total = cast(float, s["total"])
     color = "green" if total >= 75 else "yellow" if total >= 40 else "red"
-    _out().print(f"OCD [{color}]{total}/100 ({s['grade']})[/{color}]")
+    _out().print(f"OCD [{color}]{total}/100 ({s['grade']})[/{color}]"
+                 "  [dim](display badge — do not rank boards by this)[/dim]")
     _table("neatness", [(k, str(v)) for k, v in sparts.items()])
     _table("tidy " + str(t["coverage"]), [_tidy_row(k, v) for k, v in t.items()
                                           if k not in ("coverage", "routed_segs")])

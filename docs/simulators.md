@@ -16,7 +16,7 @@ with real silicon needs an external simulator. Integration status
    PINS...` positional X-line; no `spicepin=` attr — pin order is per-op
    constraint args; BJT SOT23 roles hardcoded in `spice.py`) + behavioral
    B-sources.
-4. **Tiny built-in gate sim** — SHIPPED (`ocdcircuit/gates.py`, 195 lines,
+4. **Tiny built-in gate sim** — SHIPPED (`ocdcircuit/gates.py`, 196 lines,
    unit-delay event-driven; `simulate:gates`; `sim clk`; `logic=` attr).
 5. **XSPICE code models via ngspice** — NEXT (no second simulator; bridge
    model names still to confirm in the manual). Everything else (shared-lib
@@ -112,7 +112,7 @@ models in stdlib. Remaining: XSPICE bridges, shared-lib fast path.
 
 ### 3. Digital: tiny gate sim first, XSPICE second, Verilator if HDL appears
 
-- **Tiny built-in gate sim: YES — SHIPPED at 195 lines** (`ocdcircuit/gates.py`,
+- **Tiny built-in gate sim: YES — SHIPPED at 196 lines** (`ocdcircuit/gates.py`,
   was estimated ~50–100). Event-driven worklist (time, node, value); pop
   earliest, evaluate fanout, schedule changes at t+delay; unit-delay defuses
   combinational loops; fixpoint cap (~100 iterations) catches oscillation.
