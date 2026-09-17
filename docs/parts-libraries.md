@@ -7,7 +7,10 @@
   MODEL PINS...` carries positional pins; `spice.py` hardcodes SOT23 BJT
   roles (1=B 2=E 3=C). No footprint→SPICE-order table yet; no `spicepin=`
   attr (name free). MNA still maps by net.
-- (3) `alternates=` attr: SHIPPED (BOM 5th column via `export.py`).
+- (3) `alternates=` attr: SHIPPED — validated non-blank at parse, BOM
+  Alternates column (unioned per row), priced when the primary MPN is
+  unpriced (`+alt:` source), live JLC stock threads into `low_stock`.
+  Pinout compatibility stays a human attestation.
 - (4) Courtyard audit: DEFERRED to an automated pass (unchanged).
 - (5) Live distributor APIs: never by default (unchanged policy).
 

@@ -1005,6 +1005,10 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
             "active", "nrnd", "eol"):
         raise err(f"{ctx}bad lcstat={attrs['lcstat']!r} on part {ref} "
                   "(want active|nrnd|eol)")
+    if "alternates" in attrs and not [a for a in attrs["alternates"].split(",")
+                                      if a.strip()]:
+        raise err(f"{ctx}bad alternates={attrs['alternates']!r} on part {ref} "
+                  "(want comma MPNs, no blanks-only)")
     # declarative placement: `part R1 R0805 1k x=3 y=15` ≡ `fix R1 at 3 15`
     if "x" in attrs or "y" in attrs:
         try:

@@ -1285,6 +1285,14 @@ with tempfile.TemporaryDirectory() as d:
             raise AssertionError(f"should have raised: {_badtol}")
         except ValueError as e:
             assert "bad tol=" in str(e), e
+    # alternates= blanks-only is a typo, not an empty list: reject at parse
+    for _badalt in ["alternates=,,,", "alternates=  "]:
+        try:
+            agent.loads(f"board t 40x30 2L\npart R1 R0805 10k {_badalt}\n"
+                        "N :: R1.1 R1.2\n", base=EX)
+            raise AssertionError(f"should have raised: {_badalt}")
+        except ValueError as e:
+            assert "bad alternates=" in str(e), e
     _lt = agent.loads("board t 40x30 2L\npart R1 R0805 10k tol=1%\n"
                       "part R2 R0805 10k tol=5%\npart R3 R0805 10k tol=1%\n"
                       "N :: R1.1 R2.1\nM :: R2.2 R3.1\nGND :: R1.2 R3.2\n", base=EX)
