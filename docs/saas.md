@@ -191,7 +191,9 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
   stdlib) + `simulate:ngspice`/`gates` plugins, `calc.py` (IPC-2221, via,
   divider). Flux's prompt-sim needs their cloud + meter; ours needs numpy-less stdlib.
 - **Fab honesty.** 5 vendor profiles (JLC/PCBWay/OSH/Seeed/Aisler),
-  one-zip bundle, snapshot goldens. DRC errors block fab, warnings don't.
+   one-zip bundle, snapshot goldens. DRC errors make `ocd run` exit 2
+   after writing output; warnings alone do not fail it. Exports have no
+   DRC gate, so callers must check before fabrication.
   AtlasPCB's fab-side note applies to us too: manufacturers accept
   AI-generated Gerbers but flag aggressive minimum-feature use, copper
   imbalance, missing notes — our fab profiles + DFM honesty are the answer.

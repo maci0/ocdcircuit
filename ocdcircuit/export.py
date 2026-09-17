@@ -493,8 +493,8 @@ def _enet(board: Board, ref: str, pin: object) -> str:
 
 
 def export_bundle(board: Board, outdir: str = "out") -> list[str]:
-    """One-zip fab bundle: Gerbers + drill + BOM + CPL + .ocd source.
-    Download → upload → boards. Returns [zip path].
+    """Bundle Gerbers, drill, BOM, CPL, KiCad PCB/schematic, Eagle and STEP.
+    Returns [zip path]; does not include .ocd source or enforce DRC.
 
     Zip entry order, mtimes, and modes are normalized so two exports of
     the same board byte-match when SOURCE_DATE_EPOCH is set (default 0)."""

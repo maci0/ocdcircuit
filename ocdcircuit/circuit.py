@@ -510,6 +510,9 @@ class Board(Component):
         return cast(DrcReport, out)
 
     def export(self, key: str | None = None, **k: object) -> list[str]:
+        """Write files without a DRC gate; check the board before fabrication.
+        Filesystem writes are not undone by Context.undo().
+        """
         out = self._run("exporter", key, **k)
         assert isinstance(out, list)
         return out

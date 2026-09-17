@@ -55,5 +55,9 @@ apps/mcp.py ───┘         │                        │                 
   discrete6502 stress; `tests/` suite + geometry goldens.
 
 Invariants: no list mutation outside `Context.emit`; `dumps`/`loads`
-round-trip byte-identically (goldens enforce); DRC errors block fab,
-warnings don't; `Board` methods never bypass `_run`.
+round-trip byte-identically (goldens enforce). `ocd run` writes exports and
+renders even when DRC fails, then exits 2 on errors; warnings alone do not
+fail the command. `Board.export()` does not run DRC or reject a failing
+board: callers must check the report before sending output for fabrication.
+Plugin dispatch goes through `_run`; Board-owned helpers may call engines
+directly.

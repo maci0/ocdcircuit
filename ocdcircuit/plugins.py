@@ -441,7 +441,7 @@ class Ipc2581Exporter(Plugin[list[str]]):
 
 
 class BundleExporter(Plugin[list[str]]):
-    """One-zip fab bundle: Gerbers + drill + BOM + CPL + KiCad. Upload-ready.
+    """Fab and CAD bundle; callers must check DRC before fabrication.
     cordis-boundary: file emission (outside-context by §6.1); withheld
     until export() is called, no inverse claimed."""
     kind, key = "exporter", "bundle"
