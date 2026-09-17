@@ -421,6 +421,22 @@ class BundleExporter(Plugin[list[str]]):
         return export.export_bundle(board, outdir)
 
 
+class StepExporter(Plugin[list[str]]):
+    """STEP AP203 faceted board (mechanical handoff, not a mfg model)."""
+    kind, key = "exporter", "step"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        import os
+        from . import geom3d
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        os.makedirs(outdir, exist_ok=True)
+        fn = os.path.join(outdir, f"{board.name}.step")
+        with open(fn, "w", encoding="utf-8") as f:
+            f.write(geom3d.to_step(board, _f(k.get("thick", 1.6))))
+        return [fn]
+
+
 class OcdExporter(Plugin[list[str]]):
     """The circuit language exporter (.ocd text — see agent.dumps)."""
     kind, key = "exporter", "ocd"

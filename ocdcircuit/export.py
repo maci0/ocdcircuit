@@ -487,6 +487,11 @@ def export_bundle(board: Board, outdir: str = "out") -> list[str]:
     files += export_kicad(board, outdir)
     files += export_kicad_sch(board, outdir)
     files += export_eagle(board, outdir)
+    from . import geom3d as _g3
+    _sfn = os.path.join(outdir, f"{board.name}.step")
+    with open(_sfn, "w", encoding="utf-8") as _sf:
+        _sf.write(_g3.to_step(board))
+    files.append(_sfn)
     zfn = os.path.join(outdir, f"{board.name}-fab.zip")
     # ZIP local headers (DOS date) only cover 1980-01-01 .. 2107-12-31; clamp
     # so SOURCE_DATE_EPOCH=0 and post-2107 values both still pack cleanly.

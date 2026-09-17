@@ -149,6 +149,8 @@ stated as a word in a pill.
   `.kicad_pcb` board import, and EasyEDA Std JSON export.
 - **Textured 3D**: `render("gltf")` with PBR materials (mask/copper/silk/
   chip/tantalum/electrolytic/LED/steel); studio canvas shades faces live.
+  `export:step` writes a faceted STEP AP203 for mechanical handoff
+  (in the fab bundle too).
 - **Simulators are plugins** (`simulate:mna`): DC operating point +
   transient (Backward-Euler MNA, stdlib) via `sim` constraints;
   `ocd --sim dc|tran`, studio ⚡ readout, MCP `simulate` tool.

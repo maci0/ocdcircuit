@@ -286,3 +286,64 @@ def to_gltf(board: Board, thick: float = 1.6) -> str:
         "scene": 0,
     }
     return json.dumps(doc)
+
+
+def to_step(board: Board, thick: float = 1.6) -> str:
+    """STEP AP203 faceted B-rep from the board mesh (one CLOSED_SHELL).
+    Mechanical handoff (enclosure fit), not a manufacturing model:
+    faces are flat triangles, no curves or pads-as-cylinders."""
+    tris = build(board, thick)
+    # dedupe vertices: mesh boxes share corners (blinky: 3.4k tris)
+    vid: dict[tuple[float, float, float], int] = {}
+    verts: list[tuple[float, float, float]] = []
+    faces: list[tuple[int, int, int]] = []
+    for a, b, c, _m in tris:
+        fi = []
+        for v in (a, b, c):
+            key = (round(v[0], 3), round(v[1], 3), round(v[2], 3))
+            if key not in vid:
+                vid[key] = len(verts) + 1
+                verts.append(key)
+            fi.append(vid[key])
+        faces.append((fi[0], fi[1], fi[2]))
+    L: list[str] = []
+    n = 1
+
+    def _id() -> int:
+        nonlocal n
+        n += 1
+        return n - 1
+    ploop = _id()
+    L.append(f"#{ploop}=CARTESIAN_POINT('',(0.,0.,0.));")
+    px = _id()
+    L.append(f"#{px}=DIRECTION('',(1.,0.,0.));")
+    py = _id()
+    L.append(f"#{py}=DIRECTION('',(0.,1.,0.));")
+    pz = _id()
+    L.append(f"#{pz}=DIRECTION('',(0.,0.,1.));")
+    ax = _id()
+    L.append(f"#{ax}=AXIS2_PLACEMENT_3D('',#{ploop},#{pz},#{px});")
+    ctx = _id()
+    L.append(f"#{ctx}=GEOMETRIC_REPRESENTATION_CONTEXT(3);")
+    brep = _id()
+    shell = _id()
+    face_ids: list[int] = []
+    for fa, fb, fc in faces:
+        pts = [_id() for _ in range(3)]
+        for pid, v in zip(pts, (verts[fa - 1], verts[fb - 1], verts[fc - 1])):
+            L.append(f"#{pid}=CARTESIAN_POINT('',({v[0]:.3f},{v[1]:.3f},{v[2]:.3f}));")
+        loop = _id()
+        L.append(f"#{loop}=VERTEX_LOOP('',({','.join(f'#{p}' for p in pts)}));")
+        bound = _id()
+        L.append(f"#{bound}=FACE_BOUND('',#{loop},.T.);")
+        face_ids.append(bound)
+    L.append(f"#{shell}=CLOSED_SHELL('',({','.join(f'#{f}' for f in face_ids)}));")
+    L.append(f"#{brep}=MANIFOLD_SOLID_BREP('',#{shell});")
+    hdr = "\n".join([
+        "ISO-10303-21;",
+        "HEADER;",
+        f"FILE_DESCRIPTION(('{board.name} faceted board',),'2;1');",
+        f"FILE_NAME('{board.name}.stp',$, $,$,$,$);",
+        "FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2'));", "ENDSEC;",
+        "DATA;"] + L + ["ENDSEC;", "END-ISO-10303-21;"])
+    return hdr

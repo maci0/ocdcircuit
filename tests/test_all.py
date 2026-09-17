@@ -1110,6 +1110,13 @@ with tempfile.TemporaryDirectory() as d:
     _zn = _zf.ZipFile(_zb).namelist()
     assert any(n.endswith(".GTL.gbr") for n in _zn) and any(n.endswith(".CPL.csv") for n in _zn)
     assert any(n.endswith(".kicad_sch") for n in _zn) and any(n.endswith(".brd") for n in _zn)
+    # STEP mechanical handoff rides the bundle: faceted B-rep, unique ids
+    assert any(n.endswith(".step") for n in _zn), _zn
+    _stp = _zf.ZipFile(_zb).read([n for n in _zn if n.endswith(".step")][0]).decode()
+    assert _stp.startswith("ISO-10303-21;") and "CLOSED_SHELL" in _stp
+    import re as _re2
+    _sids = _re2.findall(r"^#(\d+)=", _stp, _re2.M)
+    assert len(_sids) == len(set(_sids)), "dup STEP ids"
     # same board → bit-identical fab zip (content UUIDs + SOURCE_DATE_EPOCH)
     _zb2 = b.export("bundle", outdir=tempfile.mkdtemp())[0]
     assert open(_zb, "rb").read() == open(_zb2, "rb").read()
