@@ -462,13 +462,55 @@ def reroute(board: Board, name: str) -> bool:
                     for gy in (int(py / grid) - 1, int(py / grid), int(py / grid) + 1):
                         pad_cells.setdefault((gx, gy), n)
     new = [s for s in old if s.net != name]
+    novia = _novia_cells(board, grid)
     ok = _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
                     pad_cells, copper, halo, cells_of, new, None, {},
-                    _novia_cells(board, grid))
+                    novia)
     if not ok:
+        # shove pass: nudge each blocker's in-corridor segs aside, retry.
+        # Then one rip-up of the biggest blocker. Then flagged jumper.
         pts = [(r, board.pad_pos(r, q)) for r, q in net.pins if r in board.parts]
         if len(pts) >= 2:
-            _fallback(net, pts, new)
+            xs = [p[0] for _, p in pts]
+            ys = [p[1] for _, p in pts]
+            x0, x1 = min(xs) - 4.0, max(xs) + 4.0
+            y0, y1 = min(ys) - 4.0, max(ys) + 4.0
+            for oname in sorted(cells_of,
+                                key=lambda o: -sum(
+                                    1 for (gx, gy, _ll) in cells_of[o]
+                                    if x0 <= gx * grid <= x1
+                                    and y0 <= gy * grid <= y1)):
+                if oname == name:
+                    continue
+                if _shove(board, oname, x0, x1, y0, y1, grid, copper,
+                          halo, base_blocked, cells_of, new) and _route_one(
+                          board, net, grid, bend, via, nx, ny,
+                          base_blocked, pad_cells, copper, halo, cells_of,
+                          new, None, {}, novia):
+                    ok = True
+                    break
+        if not ok:
+            # rip the biggest surviving blocker once, then retry
+            pre_rip = list(new)
+            pre_cells = {k: set(v) for k, v in cells_of.items()}
+            best, best_n = "", -1
+            for oname, cells in cells_of.items():
+                if oname != name and len(cells) > best_n:
+                    best, best_n = oname, len(cells)
+            if best:
+                new[:] = [s for s in new if s.net != best]
+                del cells_of[best]
+                _rebuild_blocked(copper, halo, cells_of)
+                ok = _route_one(board, net, grid, bend, via, nx, ny,
+                                base_blocked, pad_cells, copper, halo,
+                                cells_of, new, None, {}, novia)
+                if not ok:
+                    new[:] = pre_rip
+                    cells_of.clear()
+                    cells_of.update(pre_cells)
+                    _rebuild_blocked(copper, halo, cells_of)
+            if not ok and len(pts) >= 2:
+                _fallback(net, pts, new)
     kept = list(new)
     board.emit(lambda: board.traces.__setitem__(slice(None), kept),
                lambda: board.traces.__setitem__(slice(None), old))
