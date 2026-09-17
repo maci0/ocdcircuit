@@ -515,7 +515,9 @@ assert _sch.count("<circle") >= sum(len(n.pins) for n in bj.nets.values())
 _ez = cast(str, bj.render("easyeda"))
 assert _ez.startswith("<svg") and "U1" in _ez and "#FFFF00" in _ez
 _ra = bj.render_all(tempfile.mkdtemp())
-assert len(_ra) == len(bj.plugins().list("renderer")) - 1  # "all" excluded
+_n = len(bj.plugins().list("renderer")) - 1  # "all" excluded
+# blender/kicad/pcbdraw skip when their tools are missing (CI has none)
+assert 1 <= len(_ra) <= _n, (_ra, _n)
 assert any(f.endswith(".easyeda.svg") for f in _ra)
 # assembly drawing X's out DNP parts (hand-assembly: do not place)
 _asm = agent.loads("board t 40x30 2L\npart R1 R0805 10k dnp=1\npart C1 C0805 100n\n"
