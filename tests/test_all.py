@@ -908,6 +908,9 @@ with tempfile.TemporaryDirectory() as _td:
         ('router = "maz"\n', "unknown router"),
         ('fab = "acme"\n', "unknown fab"),
         ('drc = ["nope"]\n', "unknown drc"),
+        ('fab = 1\n', "must be a string"),
+        ('drc = "erc"\n', "must be a list"),
+        ('mask = true\n', "must be a string"),
     ]:
         open(os.path.join(_td, "board.toml"), "w").write(_bad_toml)
         try:

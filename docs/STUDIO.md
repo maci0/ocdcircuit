@@ -13,9 +13,12 @@ OCD_ROOT=/path/to/project python -m apps.studio …           # file-browser roo
 
 Studio binds `127.0.0.1` only. A bad `OCD_PORT` / `OCD_ROOT` prints a
 stderr note and falls back (default port 8077 / the board's directory) so a
-typo does not kill the session. All process env knobs — LLM endpoint, scan
-budget, JLCPCB creds, `SOURCE_DATE_EPOCH`, … — are listed in `.env.example`
-and checked (secrets redacted) by `ocd doctor`.
+typo does not kill the session. At boot, any other malformed env knob
+(from `ocdcircuit.envcfg.summary`, secrets redacted) is printed to stderr
+so a bad `OCD_LLM_BASE` / `XRAY` / … is visible before first use. All
+process env knobs — LLM endpoint, scan budget, JLCPCB creds,
+`SOURCE_DATE_EPOCH`, … — are listed in `.env.example` and checked by
+`ocd doctor`.
 
 First visit: create a local Studio account (`.ocd-users` beside the boards),
 then open a board from the shelf (or the launch file). Creating a blank board,

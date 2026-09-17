@@ -83,8 +83,9 @@ def llm_base() -> str:
 
 
 def llm_key() -> str:
-    """Bearer token; empty is allowed (local Ollama / LM Studio)."""
-    return os.environ.get("OCD_LLM_KEY", "")
+    """Bearer token; empty is allowed (local Ollama / LM Studio).
+    Whitespace-only counts as empty (same as other knobs)."""
+    return os.environ.get("OCD_LLM_KEY", "").strip()
 
 
 def llm_model() -> str:
@@ -150,6 +151,44 @@ def source_date_epoch(default: int = 0) -> int:
 
 def scanbench_reps(default: int = 1) -> int:
     return env_int("SCANBENCH_REPS", default, lo=1, hi=100)
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    """Truthy env flag: 1/true/yes/on (any case). Unset/empty → default."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def scanbench_llm(default: bool = False) -> bool:
+    """Enable the vision/LLM section of tools/scanbench.py."""
+    return env_bool("SCANBENCH_LLM", default)
+
+
+def xray_overrides() -> dict[str, float | int]:
+    """Parse XRAY=dx,dy,scale,thr into kwargs for Board.xray.
+
+    Unset/empty → {}. Empty slots are skipped (XRAY=,1 sets dy only).
+    Extra fields or non-numeric tokens raise EnvError."""
+    raw = os.environ.get("XRAY")
+    if raw is None or raw.strip() == "":
+        return {}
+    parts = raw.split(",")
+    if len(parts) > 4:
+        raise EnvError(
+            f"XRAY={raw!r} wants at most dx,dy,scale,thr (got {len(parts)} fields)")
+    keys = ("dx", "dy", "scale", "thr")
+    out: dict[str, float | int] = {}
+    for i, tok in enumerate(parts):
+        s = tok.strip()
+        if not s:
+            continue
+        try:
+            out[keys[i]] = int(s) if i == 3 else float(s)
+        except ValueError as e:
+            raise EnvError(f"XRAY {keys[i]}={s!r} is not a number") from e
+    return out
 
 
 def knoll_src() -> str | None:
@@ -230,11 +269,12 @@ def jlc_offline_db() -> str | None:
 
 def jlc_env_creds() -> tuple[str, str, str]:
     """(app_id, access_key, secret) from env only — empty strings when unset.
-    Caller merges ~/.secrets/jlcpcb; this never logs the values."""
+    Caller merges ~/.secrets/jlcpcb; this never logs the values.
+    Values are stripped so accidental whitespace does not look like a key."""
     return (
-        os.environ.get("JLCPCB_APP_ID", ""),
-        os.environ.get("JLCPCB_API_KEY", ""),
-        os.environ.get("JLCPCB_API_SECRET", ""),
+        os.environ.get("JLCPCB_APP_ID", "").strip(),
+        os.environ.get("JLCPCB_API_KEY", "").strip(),
+        os.environ.get("JLCPCB_API_SECRET", "").strip(),
     )
 
 
@@ -263,11 +303,12 @@ def summary() -> list[dict[str, object]]:
         ("SOURCE_DATE_EPOCH", source_date_epoch),
         ("KICAD10_3DMODEL_DIR", kicad_3d_dir),
         ("KNOLL_SRC", lambda: knoll_src() or "(unset)"),
-        ("JLCPCB_APP_ID", lambda: os.environ.get("JLCPCB_APP_ID", "")),
-        ("JLCPCB_API_KEY", lambda: os.environ.get("JLCPCB_API_KEY", "")),
-        ("JLCPCB_API_SECRET", lambda: os.environ.get("JLCPCB_API_SECRET", "")),
+        ("JLCPCB_APP_ID", lambda: jlc_env_creds()[0]),
+        ("JLCPCB_API_KEY", lambda: jlc_env_creds()[1]),
+        ("JLCPCB_API_SECRET", lambda: jlc_env_creds()[2]),
+        ("SCANBENCH_LLM", scanbench_llm),
         ("SCANBENCH_REPS", scanbench_reps),
-        ("XRAY", lambda: os.environ.get("XRAY") or "(unset)"),
+        ("XRAY", lambda: xray_overrides() or "(unset)"),
     ]
     # APP_ID is not a secret by itself but is useless without keys; treat as
     # non-secret so operators can confirm which app is wired.
@@ -275,7 +316,7 @@ def summary() -> list[dict[str, object]]:
     for name, fn in rows:
         ok, detail = _probe(name, fn)
         if name == "JLCPCB_APP_ID":
-            detail = "set" if os.environ.get("JLCPCB_APP_ID") else "unset"
+            detail = "set" if jlc_env_creds()[0] else "unset"
             ok = True
         out.append({"name": f"env:{name}", "ok": ok, "detail": detail})
     return out
@@ -284,12 +325,16 @@ def summary() -> list[dict[str, object]]:
 def _selfcheck() -> None:
     import tempfile
     saved = {k: os.environ.pop(k, None) for k in (
-        "OCD_LLM_BASE", "OCD_LLM_MAX_TOKENS", "OCD_SCAN_MAX_MB",
-        "SOURCE_DATE_EPOCH", "OCD_PORT", "SCANBENCH_REPS",
-        "KICAD10_3DMODEL_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")}
+        "OCD_LLM_BASE", "OCD_LLM_MAX_TOKENS", "OCD_LLM_KEY", "OCD_SCAN_MAX_MB",
+        "SOURCE_DATE_EPOCH", "OCD_PORT", "SCANBENCH_REPS", "SCANBENCH_LLM",
+        "XRAY", "KICAD10_3DMODEL_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")}
     try:
         assert llm_base().startswith("http")
         assert llm_max_tokens() == 8192
+        assert llm_key() == ""
+        os.environ["OCD_LLM_KEY"] = "  "
+        assert llm_key() == ""  # whitespace-only ≡ empty
+        del os.environ["OCD_LLM_KEY"]
         os.environ["OCD_LLM_MAX_TOKENS"] = "0"
         assert llm_max_tokens() is None
         os.environ["OCD_LLM_MAX_TOKENS"] = "bogus"
@@ -327,6 +372,20 @@ def _selfcheck() -> None:
         except EnvError:
             pass
         del os.environ["OCD_LLM_BASE"]
+        assert scanbench_llm() is False
+        os.environ["SCANBENCH_LLM"] = "yes"
+        assert scanbench_llm() is True
+        del os.environ["SCANBENCH_LLM"]
+        assert xray_overrides() == {}
+        os.environ["XRAY"] = "1.5,,2,10"
+        assert xray_overrides() == {"dx": 1.5, "scale": 2.0, "thr": 10}
+        os.environ["XRAY"] = "nope"
+        try:
+            xray_overrides()
+            raise AssertionError("expected EnvError")
+        except EnvError:
+            pass
+        del os.environ["XRAY"]
         with tempfile.TemporaryDirectory() as d:
             os.environ["OCD_ROOT"] = os.path.join(d, "missing")
             assert studio_root(d) == d

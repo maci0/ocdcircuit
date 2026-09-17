@@ -403,15 +403,11 @@ def cmd_xray(agent: object, args: list[str]) -> int:
     try:
         b = _load(agent, args[0])
         _solve(b, None, None)
-        kw: dict[str, object] = {}
-        for i, k in enumerate(str(_os.environ.get("XRAY", "")).split(",")):
-            if k.strip():
-                try:
-                    kw[("dx", "dy", "scale", "thr")[i]] = (
-                        int(k) if i == 3 else float(k))
-                except (ValueError, IndexError):
-                    return _die(f"ocd: bad XRAY {k.strip()!r} "
-                                f"(want dx,dy,scale,thr numbers)")
+        from ocdcircuit import envcfg as _envcfg
+        try:
+            kw = _envcfg.xray_overrides()
+        except _envcfg.EnvError as e:
+            return _die(f"ocd: {e}")
         r = b.xray(None, png=args[1], **kw)
     except (OSError, ValueError, KeyError, AssertionError) as e:
         return _die(f"ocd: {_exc_msg(e)}")

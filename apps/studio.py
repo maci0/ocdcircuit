@@ -4936,6 +4936,13 @@ def main() -> None:
     H.props = []         # no proposals pending
     H.rev = 0            # revision 1 is the genesis commit above
     port = _envcfg.studio_port()
+    # Surface malformed knobs at boot (secrets stay redacted via summary).
+    # Bad OCD_PORT already fell back above; other bad values would otherwise
+    # only fail on first use (LLM URL, XRAY, …).
+    for row in _envcfg.summary():
+        if not row["ok"]:
+            print(f"studio: bad config {row['name']}: {row['detail']}",
+                  file=sys.stderr)
     # Threading: one SSE stream per collaborator blocks its handler for
     # minutes — on a single-threaded server the second user could never even
     # log in while the first one's stream was open. Threads share H/rooms;
@@ -4944,7 +4951,7 @@ def main() -> None:
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
     srv.daemon_threads = True
     print(f"OCD Studio: http://localhost:{port}  "
-          f"({_path_for_log(SRC)})")
+          f"({_path_for_log(SRC)}; root={_path_for_log(ROOT)})")
     srv.serve_forever()
 
 

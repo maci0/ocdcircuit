@@ -366,7 +366,8 @@ def main(argv: list[str]) -> int:
     for k, im in P.enhance(st).items():
         print(f"  {k:9s} {locstd(P.gray(im)):6.2f}  ({locstd(P.gray(im)) / raw:.1f}x raw)")
 
-    if os.environ.get("SCANBENCH_LLM"):
+    from ocdcircuit import envcfg
+    if envcfg.scanbench_llm():
         print("== vision analysis (SCANBENCH_LLM set)")
         photos = sorted(os.path.join(shots, f) for f in os.listdir(shots)
                         if f.endswith(".png"))
@@ -382,7 +383,6 @@ def main(argv: list[str]) -> int:
         def cast_paths(v: object) -> list[str] | None:
             return [str(x) for x in v] if isinstance(v, list) else None
 
-        from ocdcircuit import envcfg
         try:
             reps = envcfg.scanbench_reps()
         except envcfg.EnvError as e:

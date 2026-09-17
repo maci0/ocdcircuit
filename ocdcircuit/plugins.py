@@ -1617,32 +1617,49 @@ class TomlConfig(Plugin[dict[str, object]]):
         for key in cfg:
             if key not in self.KEYS:
                 raise ValueError(f"{fn}: unknown key {key!r} (have {list(self.KEYS)})")
+        # Present-but-wrong-type must fail here: isinstance skips used to
+        # leave builtins in place and look like a successful empty apply.
+        def _str(key: str) -> str | None:
+            if key not in cfg:
+                return None
+            v = cfg[key]
+            if not isinstance(v, str):
+                raise ValueError(
+                    f"{fn}: {key} must be a string (got {type(v).__name__})")
+            return v
+
         reg = board.plugins()
         from . import fab as _fab
         applied: dict[str, object] = {}
-        if isinstance(cfg.get("fab"), str):
-            if cfg["fab"] not in _fab.list_fabs():
-                raise ValueError(f"{fn}: unknown fab {cfg['fab']!r} "
+        fab = _str("fab")
+        if fab is not None:
+            if fab not in _fab.list_fabs():
+                raise ValueError(f"{fn}: unknown fab {fab!r} "
                                  f"(have {_fab.list_fabs()})")
-            board.fab = cfg["fab"]
-            applied["fab"] = cfg["fab"]
+            board.fab = fab
+            applied["fab"] = fab
         for kind in ("placer", "router"):
-            if isinstance(cfg.get(kind), str):
-                if cfg[kind] not in reg.list(kind):
-                    raise ValueError(f"{fn}: unknown {kind} {cfg[kind]!r} "
+            pick = _str(kind)
+            if pick is not None:
+                if pick not in reg.list(kind):
+                    raise ValueError(f"{fn}: unknown {kind} {pick!r} "
                                      f"(have {reg.list(kind)})")
-                applied[kind] = cfg[kind]
-        drc = cfg.get("drc")
-        if isinstance(drc, list) and all(isinstance(x, str) for x in drc):
+                applied[kind] = pick
+        if "drc" in cfg:
+            drc = cfg["drc"]
+            if not (isinstance(drc, list) and all(isinstance(x, str) for x in drc)):
+                raise ValueError(f"{fn}: drc must be a list of strings "
+                                 f"(got {type(drc).__name__})")
             bad = [x for x in drc if x not in reg.list("drc")]
             if bad:
                 raise ValueError(f"{fn}: unknown drc {bad!r} "
                                  f"(have {reg.list('drc')})")
             applied["drc"] = list(drc)
         for key in ("mask", "style"):
-            if isinstance(cfg.get(key), str):
-                board.meta[key] = cfg[key]
-                applied[key] = cfg[key]
+            val = _str(key)
+            if val is not None:
+                board.meta[key] = val
+                applied[key] = val
         board.proj.update(applied)
         return applied
 
@@ -1811,11 +1828,12 @@ def _price_offline(lcsc: str) -> float | None:
 
 class KnollPrice(Plugin[dict[str, object]]):
     """Unit-price provider: knoll's live JLC lookup (LCSC exact, MPN exact).
-    Needs network + knoll's checkout (KNOLL_SRC or ~/Desktop/knoll/src);
-    missing/broken checkout → unpriced (logged once), never an error — knoll
-    is an optional undeclared checkout, not a declared dependency. Loaded via
-    importlib spec so it never lands on sys.path. cordis-boundary: network
-    emission, withheld until run()."""
+    Needs network + knoll's checkout via KNOLL_SRC (or, only when unset,
+    ~/Desktop/knoll/src). A set-but-missing KNOLL_SRC does not fall through
+    to the Desktop path. Missing/broken checkout → unpriced (logged once),
+    never an error — knoll is optional, not a declared dependency. Loaded
+    via importlib spec so it never lands on sys.path. cordis-boundary:
+    network emission, withheld until run()."""
     kind, key = "price", "knoll"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:
@@ -1834,21 +1852,28 @@ _KNOLL_WARNED = False  # one stderr line per process for knoll load/lookup fails
 
 
 def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
-    """Live JLC lookup via an optional knoll checkout. Missing file → try
-    next candidate / unpriced. Load or lookup failure → unpriced, logged
-    once (swallowing without a trace hid a broken checkout forever)."""
+    """Live JLC lookup via an optional knoll checkout. KNOLL_SRC, when set,
+    is the only candidate (a typo must not silently use another tree). When
+    unset, try ~/Desktop/knoll/src. Load/lookup failure → unpriced, logged
+    once."""
     import importlib.util
     import math
     import os
     import sys
     from . import envcfg
     global _KNOLL_WARNED
-    cands = [envcfg.knoll_src(), os.path.expanduser("~/Desktop/knoll/src")]
+    explicit = envcfg.knoll_src()
+    if explicit is not None:
+        cands = [explicit]
+    else:
+        cands = [os.path.expanduser("~/Desktop/knoll/src")]
     for cand in cands:
-        if not cand:
-            continue
         mod = os.path.join(cand, "knoll", "stock.py")
         if not os.path.isfile(mod):
+            if explicit is not None and not _KNOLL_WARNED:
+                print(f"price:knoll KNOLL_SRC={cand!r} has no knoll/stock.py",
+                      file=sys.stderr)
+                _KNOLL_WARNED = True
             continue
         try:
             spec = importlib.util.spec_from_file_location("_knoll_stock", mod)

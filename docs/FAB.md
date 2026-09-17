@@ -48,7 +48,8 @@ $3.07). Parts price through the `price` provider chain: `price:std`
 committed; placeholders in `.env.example`; unpriced until JLC approves the
 app), then `price:knoll`
 (knoll's live JLC lookup by `lcsc=`/`mpn=`, needs network + knoll's
-checkout via `KNOLL_SRC`), else unpriced-and-named. Swap providers
+checkout via `KNOLL_SRC` — when set, that path alone is used; when unset,
+`~/Desktop/knoll/src` is probed), else unpriced-and-named. Swap providers
 with `b.use("price", "knoll")`; a crashing provider is fenced and the next
 source serves. Other fabs are bare-only (their assembly is per-order
 quote). **Estimates, not quotes** — every number carries its fit date
