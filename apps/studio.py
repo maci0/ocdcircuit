@@ -409,6 +409,7 @@ color:var(--term-faint);font:.85rem var(--sans)}
 body.shelf .backlink{display:none}
 #err{color:var(--term-bad);font:.85rem var(--mono);min-height:1.4em;margin:0}
 #err:empty{min-height:0}
+#err.ok{color:var(--term-ok)}
 #shelf{display:none;gap:.6rem}
 #shelf.has{display:grid}
 .scard{text-align:left;background:var(--term-2);color:var(--term-text);
@@ -579,7 +580,7 @@ requestAnimationFrame(()=>{paint($('art'));paint($('art2'));});
 function gate(){document.body.classList.add('gating');
 const f=$('u');if(f&&!f.value)f.focus();}
 $('herogo').onclick=()=>setMode('signup');$('topcta').onclick=()=>setMode('signup');
-$('back').onclick=()=>{document.body.classList.remove('gating');$('err').textContent='';};
+$('back').onclick=()=>{document.body.classList.remove('gating');$('err').textContent='';$('err').classList.remove('ok');};
 $('loginbtn').onclick=()=>{gate();setMode('login');};
 async function api(p,b){const r=await fetch(p,{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
@@ -596,10 +597,11 @@ $('p').setAttribute('autocomplete',m==='signup'?'new-password':'current-password
 $('swap').textContent=m==='signup'?'Have an account? Log in':'New here? Create an account';}
 $('swap').onclick=()=>setMode(mode==='signup'?'login':'signup');
 function authErr(msg,field){ // announce + move focus so keyboard/AT users hear it
-$('err').textContent=msg;['u','p'].forEach(id=>$(id).removeAttribute('aria-invalid'));
+$('err').textContent=msg;$('err').classList.remove('ok');
+['u','p'].forEach(id=>$(id).removeAttribute('aria-invalid'));
 if(field){field.setAttribute('aria-invalid','true');field.focus();}
 else{$('err').focus();}}
-$('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';
+$('f').onsubmit=async e=>{e.preventDefault();$('err').textContent='';$('err').classList.remove('ok');
 ['u','p'].forEach(id=>$(id).removeAttribute('aria-invalid'));
 const u=$('u').value.trim(),p=$('p').value;
 if(!u){authErr("Username can't be blank!",$('u'));return;}
@@ -653,17 +655,24 @@ function cardSec(box,h,cards){
 }
 $('promptbox').onsubmit=async e=>{e.preventDefault();
   const q=$('promptq').value.trim();if(!q)return;
-  const r=await api('/shelf/new',{name:q});
-  if(r.error){authErr(r.error+' — try a shorter name');return;}
-  openShelfBoard(r.name);};
+  const go=$('promptbox').querySelector('button');if(go&&go.disabled)return;
+  if(go)go.disabled=true;
+  try{const r=await api('/shelf/new',{name:q});
+    if(r.error){authErr(r.error+' — try a shorter name');return;}
+    openShelfBoard(r.name);}
+  finally{if(go)go.disabled=false;}};
 $('profgo').onclick=async()=>{
   const r=await api('/auth/profile',{display:$('profin').value});
   if(r.error){authErr(r.error);return;}
-  $('title').textContent='Welcome, '+r.display;$('err').textContent='saved';};
+  $('title').textContent='Welcome, '+r.display;
+  $('err').textContent='display name saved';$('err').classList.add('ok');};
 $('newboard').onsubmit=async e=>{e.preventDefault();
-const r=await api('/shelf/new',{name:$('nbname').value});
-if(r.error){authErr(r.error);return;}
-openShelfBoard(r.name);};
+  const go=$('newboard').querySelector('button[type=submit]');if(go&&go.disabled)return;
+  if(go)go.disabled=true;
+  try{const r=await api('/shelf/new',{name:$('nbname').value});
+    if(r.error){authErr(r.error);return;}
+    openShelfBoard(r.name);}
+  finally{if(go)go.disabled=false;}};
 // new-project modal: the shelf's own lists, filtered client-side. Reuses
 // cardSec cards; blank reuses /shelf/new with the search text as the name.
 let _npcache={boards:[],templates:[]};
@@ -671,10 +680,12 @@ $('newprojbtn').onclick=()=>{_npcache._last=($('promptq').value||'');
   $('npsearch').value=_npcache._last;npRender();$('newproj').showModal();};
 $('npsearch').oninput=npRender;
 $('npblank').onclick=async()=>{
-  const q=$('npsearch').value.trim()||'untitled';
-  const r=await api('/shelf/new',{name:q});
-  if(r.error){authErr(r.error);return;}
-  $('newproj').close();openShelfBoard(r.name);};
+  if($('npblank').disabled)return;$('npblank').disabled=true;
+  try{const q=$('npsearch').value.trim()||'untitled';
+    const r=await api('/shelf/new',{name:q});
+    if(r.error){authErr(r.error);return;}
+    $('newproj').close();openShelfBoard(r.name);}
+  finally{$('npblank').disabled=false;}};
 function npRender(){
   const q=$('npsearch').value.trim().toLowerCase();
   const box=$('npgrid');box.innerHTML='';
@@ -977,7 +988,7 @@ body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{grid-c
 <span id=me class=pill title="logged in as"></span>
 <button id=logoutbtn title="log out of the studio">log out</button>
 <button id=themebtn type=button aria-pressed=false title="toggle Flux-dark theme (paper ↔ dark)">dark</button>
-<nav id=viewtabs role=tablist aria-label="views" title="click a view; double-click any tab to show all panels"><button data-v=pcb role=tab aria-selected=false tabindex=0 title="PCB layout — double-click to show all panels">Layout</button><button data-v=sch role=tab aria-selected=false tabindex=-1 title="schematic — double-click to show all panels">Schematic</button><button data-v=t3d role=tab aria-selected=false tabindex=-1 title="3D preview — double-click to show all panels">3D</button><button data-v=docs role=tab aria-selected=false tabindex=-1 title="notes and datasheets — double-click to show all panels">Docs</button></nav>
+<nav id=viewtabs role=tablist aria-label="views" title="pick a view, or All for every panel at once"><button data-v=all role=tab aria-selected=true tabindex=0 class=on title="every panel at once (the cockpit)">All</button><button data-v=pcb role=tab aria-selected=false tabindex=-1 title="PCB layout">Layout</button><button data-v=sch role=tab aria-selected=false tabindex=-1 title="schematic">Schematic</button><button data-v=t3d role=tab aria-selected=false tabindex=-1 title="3D preview">3D</button><button data-v=docs role=tab aria-selected=false tabindex=-1 title="notes and datasheets">Docs</button></nav>
 /*__TOOLBAR__*/
 </div></header>
 <main>
@@ -1810,24 +1821,28 @@ $('dl').onclick=async()=>{ // cycle svg → sch → png → xray (shift-click ba
   dlIdx=(dlIdx+((window.event&&window.event.shiftKey)?-1:1)+keys.length)%keys.length;
   const key=keys[dlIdx];
   $('dl').textContent=`download ${key}`; // keep a word label (glyph alone is not a label)
-  const r=await api('/render',{key});
-  if(r.error){statMsg(r.error);return;}
-  const a=document.createElement('a');
-  a.href=r.bin?`data:application/octet-stream;base64,${r.data}`
-    :`data:image/svg+xml,${encodeURIComponent(r.data)}`;
-  if(key==='png'&&!r.bin)a.href=`data:image/png;base64,${r.data}`;
-  a.download=r.name;a.click();statMsg(r.name,true);
+  await withBusy($('dl'),`download ${key}…`,async()=>{
+    const r=await api('/render',{key});
+    if(r.error){statMsg(r.error);return;}
+    const a=document.createElement('a');
+    a.href=r.bin?`data:application/octet-stream;base64,${r.data}`
+      :`data:image/svg+xml,${encodeURIComponent(r.data)}`;
+    if(key==='png'&&!r.bin)a.href=`data:image/png;base64,${r.data}`;
+    a.download=r.name;a.click();statMsg(r.name,true);
+  });
 };
 let dlIdx=0;
 let simWhat='dc';
 $('simbtn').onclick=async()=>{ // dc ⇄ tran on shift-click
   if(window.event&&window.event.shiftKey)simWhat=simWhat==='dc'?'tran':'dc';
   $('simbtn').textContent=`sim ${simWhat}`;
-  const r=await api('/simulate',{what:simWhat});
-  if(r.error){statMsg(r.error);return;}
-  if(r.sim&&Object.keys(r.sim).length)S.sim=r.sim;
-  if(r.tran&&Object.keys(r.tran).length)S.tran=r.tran;
-  statMsg('',true);drawDRC(S);
+  await withBusy($('simbtn'),`sim ${simWhat}…`,async()=>{
+    const r=await api('/simulate',{what:simWhat});
+    if(r.error){statMsg(r.error);return;}
+    if(r.sim&&Object.keys(r.sim).length)S.sim=r.sim;
+    if(r.tran&&Object.keys(r.tran).length)S.tran=r.tran;
+    statMsg('',true);drawDRC(S);
+  });
 };
 // Ω calculators: same math as ocdcircuit/calc.py, instant, no round-trip
 function calcLive(){
@@ -2416,15 +2431,9 @@ async function boot(){
   try{if(JSON.parse(localStorage.getItem('ocd-studio-dark')||'0'))setDark(true);}catch(e){}
   $('themebtn').onclick=()=>setDark(!document.body.classList.contains('dark'));
   document.querySelectorAll('#viewtabs button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-  try{const v=localStorage.getItem('ocd-studio-view');if(v)setView(v);}catch(e){}
-  // cockpit ↔ tabs: double-click a tab returns to the all-at-once cockpit
-  document.querySelectorAll('#viewtabs button').forEach(b=>b.ondblclick=()=>{
-    document.body.classList.remove('tabs');
-    const tabs=[...document.querySelectorAll('#viewtabs button')];
-    tabs.forEach((x,i)=>{
-      x.classList.remove('on');
-      x.setAttribute('aria-selected','false');
-      x.tabIndex=i===0?0:-1;});});
+  try{const v=localStorage.getItem('ocd-studio-view');if(v&&v!=='all')setView(v);}catch(e){}
+  // cockpit ↔ tabs: All (or double-click any tab) returns to every panel
+  document.querySelectorAll('#viewtabs button').forEach(b=>b.ondblclick=()=>showCockpit());
   // tablist: arrow keys move selection (APG pattern); Home/End jump ends
   $('viewtabs').addEventListener('keydown',e=>{
     const tabs=[...$('viewtabs').querySelectorAll('[role=tab]')];
@@ -2450,7 +2459,19 @@ function setDark(on){
   try{localStorage.setItem('ocd-studio-dark',on?'1':'0');}catch(e){}
   markDirty();
 }
+function showCockpit(){ // every panel at once — the default, and a real control (All)
+  document.body.classList.remove('tabs');
+  delete document.body.dataset.view;
+  document.querySelectorAll('#viewtabs button').forEach(b=>{
+    const all=b.dataset.v==='all';
+    b.classList.toggle('on',all);
+    b.setAttribute('aria-selected',all?'true':'false');
+    b.tabIndex=all?0:-1;});
+  try{localStorage.setItem('ocd-studio-view','all');}catch(e){}
+  renderAll();markDirty();
+}
 function setView(v){
+  if(v==='all'){showCockpit();return;}
   let tabs=document.body.classList.contains('tabs');
   if(!tabs){ // first pick enables tab mode (cockpit is the default)
     document.body.classList.add('tabs');tabs=true;}

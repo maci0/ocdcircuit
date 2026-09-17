@@ -52,7 +52,9 @@ else lives in a named menu — `Board` (candidates, stamp, fab zip, render) ·
 (placer/router/fab/silk) · `Simulate` (sim dc, shift-click tran) · `Tools`
 (chat, auto-apply, calc, health, quote) · `Share` (live roster + invite
 link) — with the state pills on the right. Alt+B/E/G/S/T jumps to a menu,
-Esc closes.
+Esc closes. View tabs (`All` / Layout / Schematic / 3D / Docs) focus one
+panel; `All` (or double-click any tab) returns to the multi-panel cockpit,
+and that choice is remembered across reloads.
 
 - **live presence first:** the header carries the room pill (`2 here: maya,
   leo`) right after the brand — collab is the headline, not a corner.

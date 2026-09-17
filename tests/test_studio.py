@@ -391,13 +391,13 @@ def main() -> None:
         assert "id=ed" in _in, _in[:200]
         assert "id=importfile" in _in and "id=importstat" in _in, "import picker missing"
         # static shell markers (in the HTML) …
-        for frag in ("id=viewtabs", "data-v=pcb", "data-v=sch", "data-v=t3d",
-                     "data-v=docs", "id=themebtn"):
+        for frag in ("id=viewtabs", "data-v=all", "data-v=pcb", "data-v=sch",
+                     "data-v=t3d", "data-v=docs", "id=themebtn"):
             assert frag in _in, f"flux work missing: {frag}"
         # …plus runtime-built pieces (in the inline script, created by JS)
         # and the followups CSS rule (in <style>, not <script>)
         _pjs = _in[_in.index("<script>") + 8:_in.index("</script>")]
-        for frag in ("setDark", "setView", "followups", "thought",
+        for frag in ("setDark", "setView", "showCockpit", "followups", "thought",
                      "contextmenu", "rotRefs", "unpinRefs"):
             assert frag in _pjs, f"flux work missing: {frag}"
         assert "followups:empty" in _in, "flux work missing: followups:empty"
