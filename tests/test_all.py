@@ -1564,6 +1564,17 @@ assert {s.net for s in _rb.traces} == _rnets, "reroute keeps every net"
 _rb.ctx.undo()
 assert {s.net for s in _rb.traces} == _rnets, "reroute undoes"
 assert agent.apply_patch(_rb, [{"op": "reroute", "net": "GND"}]) == 1
+# shove: victim segs move ±1 cell into free space, DRC stays clean
+from ocdcircuit import maze as _mz
+_shb = agent.loads("board t 40x30 2L\npart R1 R0805 10k x=5 y=15\n"
+                   "part C1 C0805 100n x=35 y=15\nN :: R1.1 C1.1\n"
+                   "GND :: R1.2 C1.2\n", base=EX)
+_shb.place(seeds=1, iters=10)
+_shb.route_board("maze")
+_shn = list(_shb.traces)
+assert _mz._shove(_shb, "N", 0, 40, 0, 30, 0.25, set(), set(), set(), {}, _shn)
+_shb.traces[:] = _shn
+assert _shb.check()["errors"] == [], _shb.check()["errors"]
 assert _call("use_plugin", {"kind": "placer", "key": "compact"}) == {"active": "compact"}
 assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active": "diffusion"}
 with tempfile.TemporaryDirectory() as _md:

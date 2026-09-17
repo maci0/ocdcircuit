@@ -278,6 +278,15 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                 else:
                     still.append(fname)
                 continue
+            # shove first: nudge the blocker's in-corridor segs aside
+            # and retry. Cheaper than ripping the whole net — and when it
+            # works the victim keeps its (moved) copper.
+            if _shove(board, best, x0, x1, y0, y1, grid, copper, halo,
+                      base_blocked, cells_of, new) and _route_one(
+                      board, fnet, grid, bend, via, nx, ny, base_blocked,
+                      pad_cells, copper, halo, cells_of, new, frames, hist,
+                      novia, all_pads_3d, own_pads_3d):
+                continue
             ripped = [s for s in new if s.net == best]
             new[:] = [s for s in new if s.net != best]
             victim_cells = set(cells_of.get(best, ()))
@@ -478,6 +487,57 @@ def _fallback(net: Net, pts: list[tuple[str, XY]], new: list[Seg]) -> None:
                 j = S(net.name, aa[0], aa[1], bb[0], bb[1], layer, net.width)
                 j.jumper = True
                 new.append(j)
+
+
+def _shove(board: Board, victim: str,
+           x0: float, x1: float, y0: float, y1: float,
+           grid: float, copper: set[tuple[int, int, int]],
+           halo: set[tuple[int, int, int]],
+           base_blocked: set[tuple[int, int]],
+           cells_of: dict[str, set[tuple[int, int, int]]],
+           new: list[Seg]) -> bool:
+    """Push-and-shove lite: shift the victim's in-corridor segs ±1 cell
+    perpendicular instead of ripping the whole net. Returns True when at
+    least one seg moved into free cells (not copper/halo/courtyard).
+    The failed net retries against the shoved geometry; rip-up stays
+    the fallback when nothing can move."""
+    from .circuit import Seg as S
+    moved = False
+    for s in list(new):
+        if s.net != victim:
+            continue
+        mx, my = (s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2
+        if not (x0 <= mx <= x1 and y0 <= my <= y1):
+            continue
+        horiz = abs(s.x2 - s.x1) >= abs(s.y2 - s.y1)
+        for sign in (1.0, -1.0):
+            dx, dy = (0.0, sign * grid) if horiz else (sign * grid, 0.0)
+            cells: set[tuple[int, int, int]] = set()
+            x1, x2 = sorted((s.x1 + dx, s.x2 + dx))
+            y1, y2 = sorted((s.y1 + dy, s.y2 + dy))
+            for gx in range(int(x1 / grid), int(x2 / grid) + 1):
+                for gy in range(int(y1 / grid), int(y2 / grid) + 1):
+                    cells.add((gx, gy, s.layer))
+            if not cells:
+                continue
+            if any(c in copper or c in halo or (c[0], c[1]) in base_blocked
+                   for c in cells):
+                continue
+            # move it: replace seg, refresh victim cells
+            new.remove(s)
+            ns = S(s.net, s.x1 + dx, s.y1 + dy, s.x2 + dx, s.y2 + dy,
+                   s.layer, s.width)
+            new.append(ns)
+            vcells = cells_of.get(victim, set())
+            vcells = {c for c in vcells
+                      if not (x0 <= c[0] * grid <= x1 and y0 <= c[1] * grid <= y1)}
+            vcells |= cells
+            cells_of[victim] = vcells
+            moved = True
+            break
+    if moved:
+        _rebuild_blocked(copper, halo, cells_of)
+    return moved
 
 
 def _rebuild_blocked(copper: set[tuple[int, int, int]],
