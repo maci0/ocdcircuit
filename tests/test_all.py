@@ -1306,10 +1306,10 @@ with tempfile.TemporaryDirectory() as _kbt:
         _k2dir = tempfile.mkdtemp()
         _b2 = agent.loads("board q 10x10 2L\npart C9 C0805 1u lcsc=C19702\n"
                           "net N: C9.1 C9.2\n", base=_k2dir)
-        _k2 = _kbmod.KB(_k2dir, board=_b2)
-        _f3 = cast(list[dict[str, object]], _k2.fetch(_b2)["saved"])
+        _kb_lcsc = _kbmod.KB(_k2dir, board=_b2)
+        _f3 = cast(list[dict[str, object]], _kb_lcsc.fetch(_b2)["saved"])
         assert "C19702_" in str(_f3[0]["name"]) and _f3[0]["url"] == "https://lcsc.test/C19702.pdf"
-        _docs = _k2.docs()
+        _docs = _kb_lcsc.docs()
         assert cast(list[str], _docs[0]["parts"]) == ["C9"], _docs
         _kbsh.rmtree(_k2dir)
 
@@ -2221,6 +2221,23 @@ try:
     raise AssertionError("should have raised")
 except ValueError:
     pass
+# sbom: pinned manifests → CycloneDX components (no network)
+from tools import sbom as _sbom
+import io as _sbomio
+import contextlib as _sbomctx
+import json as _sbomjson
+_sbom_comps = _sbom.inventory()
+_sbom_by = {str(c["name"]): c for c in _sbom_comps}
+assert _sbom_by["mypy"]["scope"] == "required" and _sbom_by["mypy"]["version"] == "2.3.1"
+assert _sbom_by["numpy"]["scope"] == "optional"
+assert _sbom_by["markdown-it-py"]["scope"] == "optional"
+assert _sbom_by["setuptools"]["scope"] == "excluded"
+_sbom_buf = _sbomio.StringIO()
+with _sbomctx.redirect_stdout(_sbom_buf):
+    assert _sbom.main() == 0
+_sbom_doc = _sbomjson.loads(_sbom_buf.getvalue())
+assert _sbom_doc["bomFormat"] == "CycloneDX" and len(
+    cast(list[object], _sbom_doc["components"])) == len(_sbom_comps)
 # atopile positions_from_pcb: KiCad Y-flip, gr_line board size, lib split
 from tools import atopile as _ato2
 _pcb = ('(kicad_pcb (version 20221001)\n'
@@ -2760,33 +2777,33 @@ _al_lines = [
 ]
 _al_alphabet = "RECORD=|NAMExyz0123.mm \t\"'#()<>\x00\nABC_"
 for _als in (11, 29):
-    _alr = _alrng.Random(_als)
+    _alfuzz = _alrng.Random(_als)
     for _ in range(60):
         _lines = _al_base.splitlines(True)
-        _kind = _alr.randrange(6)
+        _kind = _alfuzz.randrange(6)
         if _kind == 0 and _lines:
-            _lines[_alr.randrange(len(_lines))] = _alr.choice(_al_lines) + "\n"
+            _lines[_alfuzz.randrange(len(_lines))] = _alfuzz.choice(_al_lines) + "\n"
         elif _kind == 1:
-            _lines.insert(_alr.randrange(len(_lines) + 1),
-                          _alr.choice(_al_lines) + "\n")
+            _lines.insert(_alfuzz.randrange(len(_lines) + 1),
+                          _alfuzz.choice(_al_lines) + "\n")
         elif _kind == 2 and _lines:
-            del _lines[_alr.randrange(len(_lines))]
+            del _lines[_alfuzz.randrange(len(_lines))]
         elif _kind == 3 and _lines:
-            _i = _alr.randrange(len(_lines))
+            _i = _alfuzz.randrange(len(_lines))
             _s = list(_lines[_i])
             if _s:
-                _s[_alr.randrange(len(_s))] = _alr.choice(_al_alphabet)
+                _s[_alfuzz.randrange(len(_s))] = _alfuzz.choice(_al_alphabet)
             _lines[_i] = "".join(_s)
         elif _kind == 4:
-            _n = _alr.randrange(0, 64)
-            _lines.append("".join(_alr.choice(_al_alphabet) for _j in range(_n))
+            _n = _alfuzz.randrange(0, 64)
+            _lines.append("".join(_alfuzz.choice(_al_alphabet) for _j in range(_n))
                           + "\n")
         else:
             # force the binary-OLE reject path occasionally
             _lines.insert(0, "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1junk\n")
         _text = "".join(_lines)
-        if _alr.random() < 0.15:
-            _text = _text[:_alr.randrange(len(_text) + 1)]
+        if _alfuzz.random() < 0.15:
+            _text = _text[:_alfuzz.randrange(len(_text) + 1)]
         try:
             _air = foreign.altium_ascii(_text)
         except (ValueError, KeyError, TypeError, OverflowError,
@@ -2798,11 +2815,11 @@ for _als in (11, 29):
         _abb = _air.get("board")
         if not isinstance(_abb, dict):
             continue
-        _aw, _ah = _abb.get("w"), _abb.get("h")
+        _abb_w, _abb_h = _abb.get("w"), _abb.get("h")
         # skip pathological outlines: from_ir is the trust boundary, but
         # unbounded board sizes are a resource bomb, not a parse bug
-        if not (isinstance(_aw, (int, float)) and isinstance(_ah, (int, float))
-                and 0 < float(_aw) < 1e4 and 0 < float(_ah) < 1e4):
+        if not (isinstance(_abb_w, (int, float)) and isinstance(_abb_h, (int, float))
+                and 0 < float(_abb_w) < 1e4 and 0 < float(_abb_h) < 1e4):
             continue
         try:
             agent.from_ir(_air)
@@ -3336,10 +3353,10 @@ _lnc = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\nnc R1.1 
 assert any("nc on unknown part Q9.1" in e for e in cast(list[str], _lnc.lint()["errors"]))
 _lnp = agent.loads("board t 40x30\npart R1 R0805 10k\nnet N: R1.1 R1.2\nnc R1.9\n", base=EX)
 assert any("nc on unknown pin R1.9" in e for e in cast(list[str], _lnp.lint()["errors"]))
-_ld = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+_ldirty = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
                   "net N: R1.2\nfix ZZ at 5 5\nkeep R1 near ZZ\n"
                   "trace NONET 0.5\n")
-_lr = _ld.lint()
+_lr = _ldirty.lint()
 assert any("ZZ" in e for e in cast(list[str], _lr["errors"])), _lr
 assert any("single-pin net N" in w for w in cast(list[str], _lr["warnings"])), _lr
 assert any("C1" in w for w in cast(list[str], _lr["warnings"])), _lr
@@ -3510,8 +3527,8 @@ assert _symb.symbol_of("R1").get("zigzag") is True
 assert cast(dict[str, object], _symb.symbol_of("U1")["pins"])["1"] == ("left", 0, "")
 _svg = cast(str, _symb.render("sch"))
 assert "<polyline" in _svg and _svg.count("<circle") >= 4  # zigzag + stubs
-with tempfile.TemporaryDirectory() as _d:
-    _symfp = os.path.join(_d, "op.sym")
+with tempfile.TemporaryDirectory() as _symdir:
+    _symfp = os.path.join(_symdir, "op.sym")
     open(_symfp, "w").write("symbol OPX\npin 1 left IN+\npin 2 left IN-\n"
                          "pin 3 right OUT\nlabel {ref} {value}\nnotch\n")
     _sb = agent.loads(f"board s2 20x10\nsym {_symfp}\npart U1 SOIC8 TL072 sym=OPX pin2=VFB\n"

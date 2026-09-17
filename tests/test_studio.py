@@ -201,7 +201,7 @@ def main() -> None:
     _upath = os.path.join(_td_u, ".ocd-users")
     open(_upath, "w", encoding="utf-8").write("alice:aa:bb\n")
     _orig_up = _st_ui._users_path
-    _st_ui._users_path = lambda: _upath  # type: ignore[method-assign]
+    _st_ui._users_path = lambda: _upath
     try:
         assert "alice" in _st_ui._read_users()
         os.remove(_upath)
@@ -219,7 +219,7 @@ def main() -> None:
             pass
         assert os.path.isdir(_upath)  # not replaced with a wiped file
     finally:
-        _st_ui._users_path = _orig_up  # type: ignore[method-assign]
+        _st_ui._users_path = _orig_up
         shutil.rmtree(_td_u)
     print("session/auth cache bounds ok")
 

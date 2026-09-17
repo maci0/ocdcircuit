@@ -5,7 +5,7 @@ dev checkers is required for the core path.
 
 ```bash
 python -m pip install -r requirements-dev.txt   # pins mypy + ruff for `make check`
-python -m pip install '.[optional]'             # optional: numpy, rich, pillow
+python -m pip install '.[optional]'             # optional: numpy, rich (+tree), pillow
 make doctor                                     # names missing optionals
 make check                                      # what CI runs (lint + all tests)
 ```

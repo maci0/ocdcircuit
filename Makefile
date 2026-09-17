@@ -6,7 +6,7 @@ BOARD ?= boards/blinky_555.ocd
 export SOURCE_DATE_EPOCH ?= 0
 HERMETIC := LC_ALL=C TZ=UTC
 
-.PHONY: help check run lint doctor test snap bench farm fabsweep clean
+.PHONY: help check run lint doctor test snap bench farm fabsweep sbom clean
 
 help:				# list contributor commands (default)
 	@printf '%s\n' \
@@ -20,6 +20,7 @@ help:				# list contributor commands (default)
 	  '  make bench      5420-part stress (~5 min, not in check)' \
 	  '  make farm       load+solve every board' \
 	  '  make fabsweep   every board × every fab profile' \
+	  '  make sbom       CycloneDX inventory from pinned manifests' \
 	  '  make clean      wipe out/ caches and report leftovers' \
 	  '' \
 	  'Single suite (edit-test loop):' \
@@ -68,5 +69,7 @@ fabsweep:			# every board x every fab (profile discrimination check)
 	for f in sorted(glob.glob(os.path.join('boards', '*.ocd')) \
 	              + glob.glob(os.path.join('boards', '*', '*.ocd'))) \
 	if 'out' not in f.split(os.sep) and 'lib' not in f.split(os.sep)]"
+sbom:				# CycloneDX JSON from pinned manifests (stdout)
+	$(HERMETIC) python -m tools.sbom
 clean:
 	rm -rf boards/out boards/*/out *-erc.rpt *-drc.rpt __pycache__ apps/__pycache__ */__pycache__ .mypy_cache

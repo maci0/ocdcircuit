@@ -14,5 +14,5 @@ pathspec==1.1.1
 typing_extensions==4.16.0
 
 # Optional runtime extras: pinned under [project.optional-dependencies]
-# in pyproject.toml (numpy, rich, pillow). Install with:
+# in pyproject.toml (numpy, rich + its tree, pillow). Install with:
 #   python -m pip install '.[optional]'

@@ -17,7 +17,9 @@ Interactions:
 Run: python studio.py [file.ocd]  → http://localhost:8077
 """
 from __future__ import annotations
-from ocdcircuit.util import as_float as _f, as_int as _i, path_for_log as _path_for_log
+from ocdcircuit.util import as_float as _f, as_int as _i, path_for_log
+# Explicit bind so mypy strict re-exports the name (tests import apps.studio._path_for_log).
+_path_for_log = path_for_log
 import contextvars
 import gzip
 import hashlib
