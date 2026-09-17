@@ -150,7 +150,7 @@ export const ChatPanel = () => {
       <button id=chatclear title="forget this conversation">clear</button></header>
     <div id=msgs role=log aria-live=polite aria-label="agent conversation"
       ><div id=msglist ref=${box}>${s.msgs.map(m => html`<${Entry} m=${m} key=${m.id} />`)}</div
-      ><div id=props></div></div>
+      ></div>
     <div id=followups>${s.followups.map((f, i) => html`<button title=${f.title}
       key=${i}>${f.label}</button>`)}</div>
     <form id=composer><textarea id=ask rows=2 aria-label="message to the agent"
@@ -358,4 +358,22 @@ export const ScanPanel = () => {
       <div id=scanparts>${s.scanParts.map(p => html`<${ScanPart} p=${p} key=${p.ref} />`)}</div></div>
     <pre id=scanout>${s.scanOut}</pre>
     </section>`;
+};
+
+// engine pickers (Options section above holds the why): one subscribed
+// component so the option lists can arrive after first paint without a full
+// chrome re-render (the menubar's other children must never re-render).
+export const Engines = () => {
+  const s = useUI();
+  return html`<details class=menu id=m-engines>
+    <summary title="placement, routing, fab and silk engines">Engines</summary><div class=mpop>
+    <label>placer<select id=placer title="placement engine"
+      >${s.placers.map(p => html`<option key=${p}>${p}</option>`)}</select></label>
+    <label>router<select id=router title="routing engine"
+      >${s.routers.map(p => html`<option key=${p}>${p}</option>`)}</select></label>
+    <label>fab<select id=fab title="fab rules (edge, clearance, min trace)"
+      >${s.fabOpts.map(p => html`<option key=${p}>${p}</option>`)}</select></label>
+    <label>silk<select id=silk title="silkscreen density"
+      >${s.silks.map(p => html`<option key=${p} selected=${p === s.silkSel}>${p}</option>`)}</select></label>
+    </div></details>`;
 };

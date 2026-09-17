@@ -54,6 +54,11 @@ const state = {
   scanReview: false,  // the stitched-photo review block is hidden until a scan
   scanSeq: 0,         // bump: repaint the overlay (legacy paints the svg)
   scanHover: '',      // part under the cursor in the review overlay
+  placers: [],        // engine pickers: the option lists from /load
+  routers: [],
+  silks: [],
+  fabOpts: [],
+  silkSel: '',        // the silkscreen default the server reported
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

@@ -503,13 +503,16 @@ def main() -> None:
             assert frag in _wjs, f"flux work missing: {frag}"
         assert "followups:empty" in _wcss, "flux work missing: followups:empty"
         # proper menus: solve stays top-level, the rest lives in named menus
-        for frag in ("id=m-board", "id=m-edit", "id=m-engines", "id=m-sim",
+        for frag in ("id=m-board", "id=m-edit", "id=m-sim",
                       "id=m-tools", "id=m-live", "id=roomnote"):
             assert frag in _chrome, f"menu missing: {frag}"
+        # the Engines menu is its own component: its option lists arrive with
+        # /load, after the first paint, so it renders from state
+        for frag in ("id=m-engines", "id=placer", "id=router", "id=silk", "id=fab"):
+            assert frag in _views, f"engine picker missing from views.js: {frag}"
         # every action keeps its id (handlers never rebind)
         for frag in ("id=solve", "id=dice", "id=stamp", "id=fab_dl", "id=dl",
                       "id=undo", "id=redo", "id=diffprev", "id=commit",
-                      "id=placer", "id=router", "id=fab", "id=silk",
                       "id=simbtn", "id=chatbtn", "id=chatauto",
                       "id=sharebtn", "id=room"):
             assert frag in _chrome, f"control id missing: {frag}"
@@ -844,7 +847,7 @@ def main() -> None:
             print("editor highlight → pcb/sch ok")
         assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
         # the chrome is a module too: menus, tabs and pills are htm now
-        for _frag in ("id=m-board", "id=m-edit", "id=m-engines", "id=m-tools",
+        for _frag in ("id=m-board", "id=m-edit", "id=m-tools",
                       "id=viewtabs", "id=themebtn", "id=logoutbtn", "id=cost",
                       "id=solve", "id=fab_dl"):
             assert _frag in _chrome, f"chrome control missing: {_frag}"
@@ -1147,6 +1150,28 @@ def main() -> None:
                     assert int(str(_cdp.eval(
                         "document.querySelector('#placer').options.length"))) > 1, \
                         "engine select lost its options to a chrome re-render"
+                    # engine pickers: the option lists are components now, the
+                    # selection stays native DOM state (six call sites read
+                    # .value), so a change must survive the store round-trip
+                    for _sel, _least in (("placer", 4), ("router", 2), ("fab", 5),
+                                         ("silk", 2)):
+                        _nopt = int(str(_cdp.eval(
+                            f"document.querySelector('#{_sel}').options.length")))
+                        assert _nopt >= _least, (_sel, _nopt)
+                    _silk0 = str(_cdp.eval("document.querySelector('#silk').value"))
+                    assert _silk0, "silk has no selected option"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#silk').selectedOptions[0].textContent"
+                    )) == _silk0, "silk default is not the server's pick"
+                    _cdp.eval("(()=>{const s=document.querySelector('#silk');"
+                              "s.selectedIndex=s.options.length-1;"
+                              "s.dispatchEvent(new Event('change',{bubbles:true}));"
+                              "return 1;})()")
+                    time.sleep(2)
+                    assert str(_cdp.eval(
+                        "document.querySelector('#silk').value")) == str(_cdp.eval(
+                            "document.querySelector('#silk').selectedOptions[0].textContent")), \
+                        "selection and option text disagree after a re-render"
                     # project tree: component rows, legacy-delegated clicks
                     assert int(str(_cdp.eval(
                         "document.querySelectorAll('#tree button.trow').length"))) >= 4, \

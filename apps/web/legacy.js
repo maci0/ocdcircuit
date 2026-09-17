@@ -1308,7 +1308,7 @@ async function openFile(path){
   collabOn=false; // collabStart re-opens the stream on the new board's room
   const r=await api('/fs/open',{path});
   if(r.error){statMsg(r.error);return;}
-  statMsg('');ui.set({msgs:[],followups:[]});$('props')&&($('props').innerHTML='');
+  statMsg('');ui.set({msgs:[],followups:[]});
   heldThash='';heldTraces=[];  // a different board: its traces are not ours
   setQueue([]);  // the server dropped the old board's proposals with it
   collabRev=(r.rev!==undefined)?+r.rev:-1; // re-home the room to the new board
@@ -1473,10 +1473,8 @@ async function boot(){
   // the parts go. `solve` is the explicit ask for a fresh placement.
   // /load and /fs are independent — fetch in parallel (was a waterfall).
   const [r,f]=await Promise.all([api('/load',{}),fetch('/fs').then(x=>x.json())]);
-  $('placer').innerHTML=r.placers.map(p=>`<option>${p}</option>`).join('');
-  $('router').innerHTML=r.routers.map(p=>`<option>${p}</option>`).join('');
-  $('silk').innerHTML=r.silks.map(p=>`<option ${p===r.silk?'selected':''}>${p}</option>`).join('');
-  $('fab').innerHTML=r.fabs.map(p=>`<option>${p}</option>`).join('');
+  ui.set({placers:r.placers,routers:r.routers,silks:r.silks,
+    fabOpts:r.fabs,silkSel:r.silk});   // views.js Engines renders the options
   setEditor(r.text);applyState(r,false);
   if(r.rev!==undefined)collabRev=+r.rev; // the room's rev from the first load
   collabStart(); // realtime: SSE fan-out + presence from here on

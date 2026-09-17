@@ -2022,7 +2022,8 @@ for _frag in ("id=filetree", "id=tree", "id=treenote", "id=importfile",
               "id=docout", "id=vcswrap", "id=vcs", "id=vcsnote",
               "id=kbwrap", "id=kbprefsbtn", "id=kblist", "id=kbview",
               "id=galwrap", "id=gal", "id=scanwrap", "id=scanfiles",
-              "id=scanview", "id=scanparts"):
+              "id=scanview", "id=scanparts", "id=m-engines", "id=placer",
+              "id=router", "id=silk", "id=fab"):
     assert _frag in _wv, f"reactive panel part missing from views.js: {_frag}"
 assert _studio.SLOTS.report("view") == [], _studio.SLOTS.report("view")
 # a plugin contribution still lands in a slot and still renders

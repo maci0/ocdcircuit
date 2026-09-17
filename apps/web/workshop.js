@@ -10,7 +10,8 @@ import { render } from './vendor/preact.module.js';
 import html from './html.js';
 import { ui, useUI } from './store.js';
 import { Panels } from './panels.js';
-import { CalcBlock, ExtBanner, HealthOut, QuoteOut, Toast } from './views.js';
+import { CalcBlock, Engines, ExtBanner, HealthOut, QuoteOut,
+         Toast } from './views.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
   ><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect
@@ -20,15 +21,6 @@ const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=t
   ></svg>`;
 
 const Brand = () => html`<span class=brand>${BRAND_SVG}OCD Studio <i>board & PCB workshop</i></span>`;
-
-// engine pickers: legacy.js fills the options and reads the selection
-const Engines = () => html`<details class=menu id=m-engines>
-  <summary title="placement, routing, fab and silk engines">Engines</summary><div class=mpop>
-  <label>placer<select id=placer title="placement engine"></select></label>
-  <label>router<select id=router title="routing engine"></select></label>
-  <label>fab<select id=fab title="fab rules (edge, clearance, min trace)"></select></label>
-  <label>silk<select id=silk title="silkscreen density"></select></label>
-  </div></details>`;
 
 // chat is a toggle with state behind it (body.chatty + the button look)
 const ChatBtn = () => {
