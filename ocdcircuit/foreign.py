@@ -448,7 +448,7 @@ def eagle_brd(text: str) -> dict[str, object]:
         for c in sig.iter("contactref"):
             pins.append([_at(c, "element", "?"), _at(c, "pad", "?")])
     return {"board": {"name": "imported", "w": wdt, "h": hgt, "layers": 2},
-            "parts": parts, "nets": nets, "constraints": [],
+            "parts": parts, "nets": nets, "constraints": _pin_all(parts),
             "_imported_fp": fps}
 
 
@@ -1245,6 +1245,19 @@ def _safe_id(s: str, fallback: str) -> str:
     return re.sub(r"\W", "_", out) or fallback
 
 
+def _pin_all(parts: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Board importers carry physical placement: pin every part so dumps
+    (fix lines) and re-solve keep where the foreign tool put it.
+    Schematic importers must NOT use this (their x/y is drawing, not mm)."""
+    out: list[dict[str, object]] = []
+    for p in parts:
+        x, y = p.get("x"), p.get("y")
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+            out.append({"t": "fixed", "ref": str(p["ref"]),
+                        "x": float(x), "y": float(y)})
+    return out
+
+
 def kicad_pcb_netlist(text: str) -> dict[str, object]:
     """Import netlist from .kicad_pcb s-expr: footprints + pads→nets.
     Returns IR dict loadable via agent.from_ir (positions preserved)."""
@@ -1364,7 +1377,7 @@ def kicad_pcb_netlist(text: str) -> dict[str, object]:
         for p in parts:
             p["x"], p["y"] = float(str(p["x"])) - ox, float(str(p["y"])) - oy
     return {"board": {"name": "imported", "w": wdt, "h": hgt, "layers": ncu},
-            "parts": parts, "nets": nets, "constraints": [],
+            "parts": parts, "nets": nets, "constraints": _pin_all(parts),
             "_imported_fp": fps}
 
 
@@ -2399,6 +2412,12 @@ def _bin_pcbdoc(data: bytes) -> dict[str, object]:
     from typing import cast as _cast5
     cons = [c for c in _cast5(list[object], ir.get("constraints", []))
             if isinstance(c, dict)]
+    from typing import cast as _castp
+    for p in _castp(list[dict[str, object]], ir.get("parts", [])):
+        x, y = p.get("x"), p.get("y")
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+            cons.append({"t": "fixed", "ref": str(p["ref"]),
+                         "x": float(x), "y": float(y)})
     for net, lay in bpours:
         nn, ll = _li(net, lay)
         if nn is not None and ll is not None and ll < 10:

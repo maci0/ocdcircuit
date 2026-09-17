@@ -2685,6 +2685,10 @@ _egf = _ebb.export("eagle", outdir=tempfile.mkdtemp())[0]
 assert _egf.endswith(".brd") and _ET.parse(_egf) is not None
 _egrt = agent.from_ir(foreign.eagle_brd(open(_egf).read()))
 assert sorted(_egrt.parts) == ["R1", "R2"] and sorted(_egrt.nets) == ["GND", "N"]
+# board importers pin physical placement: fix lines survive dumps + re-solve
+assert len([c for c in _egrt.constraints if c.get("t") == "fixed"]) == 2, \
+    [c for c in _egrt.constraints if c.get("t") == "fixed"]
+assert agent.dumps(_egrt).count("fix ") == 2, agent.dumps(_egrt)
 # altium ASCII export round-trips (refs + nets + traces, exact geometry)
 _alf = _ebb.export("altium", outdir=tempfile.mkdtemp())[0]
 assert _alf.endswith(".PcbDocAscii") and "|RECORD=Component|" in open(_alf).read()
