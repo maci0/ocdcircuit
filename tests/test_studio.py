@@ -902,6 +902,16 @@ def main() -> None:
         assert not _nfd.get("error"), _nfd
         assert _nfd.get("display") == "caf\u00e9", _nfd
         assert post(base, "/auth/me", {})["display"] == "caf\u00e9"
+        _nfdedge = post(base, "/auth/profile",
+                        {"display": "x" * 39 + "e\u0301"})
+        assert not _nfdedge.get("error"), _nfdedge
+        assert _nfdedge.get("display") == "x" * 39 + "\u00e9", _nfdedge
+        for _long_display in ("y" * 40 + "\u00e9",
+                              "x" * 39 + "q\u0301",
+                              "x" * 39 + "\U0001f1fa\U0001f1f8"):
+            _toolong = post(base, "/auth/profile", {"display": _long_display})
+            assert "error" in _toolong, _toolong
+            assert post(base, "/auth/me", {})["display"] == "x" * 39 + "\u00e9"
         _unic = post(base, "/auth/signup",
                      {"user": "caf\u00e9", "password": "testtest99"})
         assert "error" in _unic, _unic  # ASCII usernames only

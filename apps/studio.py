@@ -1718,9 +1718,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 if user is None:
                     self._send({"error": "log in first", "login": True})
                     return
-                disp = _norm_display(str(req.get("display", "")).strip())[:40]
+                disp = _norm_display(str(req.get("display", "")).strip())
                 if not disp:
                     self._send({"error": "a display name can't be blank"})
+                    return
+                if len(disp) > 40:
+                    self._send({"error": "display name is 40 characters max"})
                     return
                 if not _ok_display(disp):
                     self._send({"error": "display name can't contain control "
