@@ -42,6 +42,7 @@ help:				# list contributor commands (default)
 	  '  $(PYTHON) tests/test_paper.py      # core paper (~0.1s)' \
 	  '  $(PYTHON) tests/test_sdk.py        # SDK integration' \
 	  '  $(PYTHON) tests/test_all.py        # unit + MCP (~1–2 min)' \
+	  '  $(PYTHON) tests/test_exact_overlap.py  # exact-pilot timeout/feasibility' \
 	  '  $(PYTHON) tests/test_snapshot.py   # golden geometry' \
 	  '  $(PYTHON) tests/test_studio.py     # studio smoke (+ chromium if present)' \
 	  '' \
@@ -67,6 +68,7 @@ test:				# unit suite + golden snapshots + studio smoke gate
 	$(HERMETIC) $(PYTHON) tests/test_cli.py
 	$(HERMETIC) $(PYTHON) tests/test_sdk.py
 	$(HERMETIC) $(PYTHON) tests/test_all.py
+	$(HERMETIC) $(PYTHON) tests/test_exact_overlap.py
 	$(HERMETIC) $(PYTHON) tests/test_snapshot.py
 	$(HERMETIC) $(PYTHON) tests/test_paper.py
 	$(HERMETIC) $(PYTHON) tests/test_studio.py

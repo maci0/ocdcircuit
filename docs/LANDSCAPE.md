@@ -86,6 +86,6 @@ Corpus-wide honesty map — tracked here so briefs don't silently overclaim:
 | Interactive route | maze shove + single-net reroute + alt-click/shift-drag UI; no spring-drag copper |
 | Enterprise handoff | STEP AP203 + IPC-2581 + ODB++ subsets, honestly labeled; Gerbers stay mfg truth |
 | Agent copilot | `agents/` MCP config + system prompt, registry-tested |
-| Exact layout proof | CP-SAT optional; stdlib proxy piloted in `benches/exact_overlap_pilot.py` (feasibility cheap ≤20; prove-no/WL-cap time out by n=12–20) |
+| Exact layout proof | CP-SAT optional; stdlib proxy piloted in `benches/exact_overlap_pilot.py` (feasibility cheap ≤20; prove-no/WL-cap time out by n=12–20; CP-SAT itself unmeasured) |
 | Whole-board sim | block-by-block + model-less policy; never one "simulate PCB" button |
 

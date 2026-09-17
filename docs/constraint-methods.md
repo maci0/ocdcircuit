@@ -241,8 +241,9 @@ ADMM/ALM until stiffness bites, escape routing until dense BGA.
 3. ~~At what density does the exact-verifier (`AddNoOverlap2D`) earn its
    dependency?~~ ANSWERED (`benches/exact_overlap_pilot.py`): feasibility
    alone is cheap at n≤20; prove-infeasible times out at n=20 undersized
-   (>3 s); WL-capped exact search times out at n=12. Keep exact backends
-   optional-verifier only — do not take an OR-Tools dep for day-to-day place.
+   (>3 s); WL-capped exact search times out at n=12 on a tight cap. Keep
+   exact backends optional-verifier only — do not take an OR-Tools dep for
+   day-to-day place.
 4. Unverified items carried forward: per-solver `diffn` support, CP-SAT
    propagator internals, Hanan/Hwang/Sugiyama/Hungarian citation details,
    Hwang 3/2 ratio, ACO-PCB record, PSO-placement record.
