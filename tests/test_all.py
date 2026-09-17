@@ -1600,7 +1600,12 @@ with tempfile.TemporaryDirectory() as _kbm:
     except AssertionError as _e:
         assert "unknown kb op" in str(_e), _e
     _kbi = _call("kb", {"op": "index"})
-    assert "indexed" in _kbi and not _kbi["failed"], _kbi
+    assert "indexed" in _kbi, _kbi
+    # no embeddings endpoint on CI runners: only connection failures
+    # tolerated (ask still answers lexically below)
+    _kbfail = cast(list[str], _kbi["failed"])
+    assert not _kbfail or all("Connection refused" in f or "cannot reach" in f
+                              for f in _kbfail), _kbi
     _kba = _call("kb", {"op": "ask", "q": "keep R1 off the edge", "limit": 1})
     assert _kba["method"] in ("embeddings", "lexical"), _kba
     assert cast(list[dict[str, object]], _kba["passages"])[0]["doc"] == "N.md", _kba
