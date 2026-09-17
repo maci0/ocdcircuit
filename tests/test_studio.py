@@ -180,6 +180,26 @@ def main() -> None:
         assert "already thinking" in str(_chat_busy.get("error")), _chat_busy
     finally:
         _st_ui.H.chat_busy = False
+    # deterministic sim intent: no LLM call, proposal carries expect line
+    _old_src, _old_base = _st_ui.H.src_text, _st_ui.BASE
+    try:
+        _st_ui.H.src_text = ("board t 40x30 2L\npart R1 R0805 10k\n"
+                             "part R2 R0805 4k7\nnet VIN: R1.1\n"
+                             "net VO: R1.2 R2.1\nnet GND: R2.2\n"
+                             "sim vcc VIN 9\n")
+        _st_ui.BASE = os.path.dirname(BOARD)
+        _ir = _st_ui.H.ask("VO should settle at 2.88V", False)
+        assert "error" not in _ir, _ir
+        assert "sim expect VO final" in str(_ir.get("reply", "")), _ir
+        assert any("sim expect VO final" in str(p.get("diff", ""))
+                   for p in cast(list[dict[str, object]],
+                                 _ir.get("proposals", []))), _ir
+        # non-intent yields no constraints (fallthrough needs no network)
+        from ocdcircuit import agent as _ag2, sim as _sim2
+        _ib = _ag2.loads(_st_ui.H.src_text, base=_st_ui.BASE)
+        assert _sim2.intent(_ib, "route the board please") is None
+    finally:
+        _st_ui.H.src_text, _st_ui.BASE = _old_src, _old_base
     # shelf account names must not appear in stderr paths
     assert _st_ui._path_for_log(".users/alice/board.ocd") == ".users/*/board.ocd"
     assert _st_ui._path_for_log("/tmp/x/.users/bob") == "/tmp/x/.users/*"

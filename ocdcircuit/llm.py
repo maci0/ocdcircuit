@@ -43,6 +43,8 @@ Language (one fact per line):
   use path.ocd as PREFIX         net NAME :: REF.PIN <--> REF.PIN
   fix REF at x y                 keep REF near OTHER MM
   route NET on LAYER             power NET...   silk LEVEL
+  sim vcc NET V                  sim expect NET == V [tol X]
+  sim tran T N                   sim expect NET final|min|max == V
 Comments start with #. Every net lists every pin it touches.
 
 Tools: to inspect or change a project, print ONE fenced block per tool call

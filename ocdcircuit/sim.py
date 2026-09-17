@@ -314,6 +314,52 @@ def run(board: Board, what: str = "dc", **k: object) -> dict[str, object]:
     return {"nets": dc(board)}
 
 
+def intent(board: Board, text: str) -> list[dict[str, object]] | None:
+    """Deterministic NL sim-intent → expect constraints (no LLM needed).
+    Returns None when the text is not a sim assertion request.
+    Shapes: "VO should settle at 5V" / "check N stays under 3.6V" /
+    "assert VCC == 5" / "VO must reach at least 4.5V" /
+    "ensure OUT settles within 4.9 5.1". Unknown nets/values → None."""
+    import re
+    t = text.strip()
+    m = re.match(r"(?:(?:please\s+)?(?:check|assert|ensure|verify|make sure)\s+)?"
+                 r"(\w+)\s+(?:should\s+|must\s+|needs?\s+to\s+)?"
+                 r"(settle(?:s|d)?(?:\s+at)?|stay(?:s)?(?:\s+under|below|above)?|"
+                 r"reach(?:es)?(?:\s+at\s+least)?|be|equal(?:s|s\s+to)?|within)\s+"
+                 r"(.+)$", t, re.I)
+    if not m:
+        return None
+    net, rest = m.group(1), m.group(3).strip()
+    if net.lower() in ("it", "this", "that", "board", "circuit"):
+        return None
+    if net not in board.nets:
+        return None
+    kind = m.group(0)
+    stat: str | None = None
+    if re.search(r"settle|final|steady", t, re.I):
+        stat = "final"
+    vm = re.match(r"(?:at\s+|to\s+|of\s+)?(-?[\d.]+[kMuunp%]?)\s*V?$", rest, re.I)
+    if vm:
+        op = "=="
+        if re.search(r"under|below|<\s", kind + " " + rest, re.I):
+            op = "<"
+        elif re.search(r"above|over|at\s+least|>\s|min", kind + " " + rest, re.I):
+            op = ">"
+        c: dict[str, object] = {"t": "sim", "kind": "expect", "net": net,
+                                "op": op, "value": vm.group(1)}
+        if stat is not None:
+            c["stat"] = stat
+        return [c]
+    wm = re.match(r"(?:within\s+|between\s+)?(-?[\d.]+[kMuunp%]?)\s*(?:V?\s+|V?\s+and\s+|V?\s*-\s*|V?\s+to\s+)(-?[\d.]+[kMuunp%]?)\s*V?$", rest, re.I)
+    if wm:
+        lo, hi = wm.group(1), wm.group(2)
+        return [{"t": "sim", "kind": "expect", "net": net, "op": ">=",
+                 "value": lo},
+                {"t": "sim", "kind": "expect", "net": net, "op": "<=",
+                 "value": hi}]
+    return None
+
+
 def expect(board: Board) -> list[str]:
     """Evaluate `sim expect NET <op> VALUE` against the DC solve.
     Returns problem strings (`N_OUT=0.02V, want == 2.5V`); empty = all
