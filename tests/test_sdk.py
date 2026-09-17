@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import sys
-import unittest
+import tarfile
 import tempfile
+import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -155,6 +156,37 @@ class SilkScoreTest(unittest.TestCase):
         board.add_part("J2", "CUSTOM", x=5, y=6.3)
         self.assertEqual(tidy(board)["T14_silk_overlap"],
                          {"text_text": 0, "text_copper": 1})
+
+
+class ArchiveReproducibilityTest(unittest.TestCase):
+    def test_odb_metadata_and_bytes(self) -> None:
+        board = Board("reproducible")
+        board.add_part("R1", "R0805", x=5, y=5)
+        board.connect("N", "R1", 1)
+        self.addCleanup(board.unload)
+        for epoch in (0, 1234567890, 5000000000):
+            with self.subTest(epoch=epoch), tempfile.TemporaryDirectory() as root:
+                artifacts = []
+                for index, clock in enumerate((1700000000, 1800000000)):
+                    with patch.dict(os.environ, SOURCE_DATE_EPOCH=str(epoch)), \
+                            patch("time.time", return_value=clock):
+                        path = board.export("odb", outdir=str(Path(root) / str(index)))[0]
+                    artifacts.append(Path(path).read_bytes())
+                    with tarfile.open(path, "r:gz") as archive:
+                        members = archive.getmembers()
+                        self.assertEqual(archive.getnames(), sorted(archive.getnames()))
+                        self.assertTrue(members)
+                        for member in members:
+                            self.assertEqual(member.mtime, epoch)
+                            self.assertEqual((member.uid, member.gid, member.mode),
+                                             (0, 0, 0o644))
+                        netlist = archive.extractfile("odb/steps/pcb/netlists/cadnet/netlist")
+                        self.assertIsNotNone(netlist)
+                        assert netlist is not None
+                        self.assertIn(b"$NET N\n  R1.1\n", netlist.read())
+                self.assertEqual(artifacts[0], artifacts[1])
+                self.assertEqual(int.from_bytes(artifacts[0][4:8], "little"),
+                                 min(epoch, 0xFFFFFFFF))
 
 
 if __name__ == "__main__":

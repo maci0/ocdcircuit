@@ -987,10 +987,11 @@ def export_odb(board: Board, outdir: str = "out") -> list[str]:
     fn = os.path.join(outdir, f"{board.name}.tgz")
     os.makedirs(outdir, exist_ok=True)
     buf = _io.BytesIO()
-    import time as _time
+    import gzip as _gzip
     from . import envcfg as _env
     epoch = int(_env.source_date_epoch())
-    with _tf.open(fileobj=buf, mode="w:gz", compresslevel=9) as z:
+    with _gzip.GzipFile(fileobj=buf, mode="wb", filename="", mtime=min(epoch, 0xFFFFFFFF)) as gz, \
+            _tf.open(fileobj=gz, mode="w") as z:
         for name in sorted(tree):
             data = tree[name].encode("utf-8")
             ti = _tf.TarInfo(f"odb/{name}")
