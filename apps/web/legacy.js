@@ -9,6 +9,7 @@ import { $, api } from './core.js';
 import { collabMeNow, collabReset, collabRevNow, collabStart, collabUserList,
          initCollab, setCollabRev } from './collab.js';
 import { initKb } from './kb.js';
+import { commitBoard, initVcs, loadVCS, setVcs } from './vcs.js';
 let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
 function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy nothing)
@@ -1192,7 +1193,7 @@ $('ed').addEventListener('keydown',e=>{
   else if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey))){e.preventDefault();hist('/redo');}
 });
 // --- project files: browse, open, and say which file is the board -------
-let TREE=[],SRCREL='',VC={},DIR='.',ROOTREL='.';
+let TREE=[],SRCREL='',DIR='.',ROOTREL='.';
 // rows are components (views.js TreePanel): the click is delegated here, so
 // the behaviour stays in this module and the component only describes a row
 $('tree').addEventListener('click',e=>{
@@ -1220,7 +1221,7 @@ function renderTree(){
 async function loadTree(dir){
   const f=await fetch('/fs?dir='+encodeURIComponent(dir||'.')).then(x=>x.json());
   if(f.error){statMsg(f.error);return;}
-  DIR=f.dir||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';VC=f.vcs||{};
+  DIR=f.dir||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';setVcs(f.vcs||{});
   TREE=f.tree||[];
   treeNote();
   renderTree();
@@ -1348,37 +1349,6 @@ $('chat').addEventListener('click',e=>{ // follow-up chip
   if(!b)return;
   chat(b.title,$('chatauto').checked);
 });
-async function loadVCS(){
-  const r=await api('/vcs',{path:SRCREL||null});
-  if(r.error){ui.set({vcsNote:r.error,vcsRevs:[],vcsMsg:'',vcsOpen:'',vcsDiff:''});return;}
-  VC=r.status||{};
-  const note=VC.repo
-    ? `${VC.branch} · `+(VC.dirty?'uncommitted changes in '+VC.board:'clean')
-    : 'not a git repository';
-  if(!VC.repo){
-    ui.set({vcsNote:note,vcsRevs:[],vcsOpen:'',vcsDiff:'',
-      vcsMsg:'commit from the toolbar once this directory is a repo'});
-    return;
-  }
-  ui.set({vcsNote:note,vcsMsg:'',vcsOpen:'',vcsDiff:'',
-    vcsRevs:(r.log||[]).map(c=>({hash:c.hash,date:c.date,subject:c.subject}))});
-}
-// one diff at a time, rendered after the rev it belongs to
-$('vcs').addEventListener('click',async e=>{
-  const b=e.target.closest('button.rev');
-  if(!b)return;
-  const x=await api('/vcs/diff',{hash:b.dataset.hash});
-  ui.set({vcsOpen:b.dataset.hash,vcsDiff:x.error||x.diff});
-});
-async function commitBoard(){
-  if(!VC.repo){statMsg('not a git repository');return;}
-  const m=prompt('commit message',(SRCREL||'board')+': ');
-  if(!m)return;
-  const r=await api('/vcs/commit',{message:m});
-  if(r.error){statMsg(r.error);return;}
-  toast(r.commit||'committed');
-  loadVCS();
-}
 function toast(t){
   ui.set({toast:t});                 // views.js renders the one toast node
   clearTimeout(toast._t);
@@ -1405,7 +1375,7 @@ async function boot(){
   if(r.rev!==undefined)setCollabRev(+r.rev); // the room's rev from the first load
   collabStart(); // realtime: SSE fan-out + presence from here on
   if(f.error){ui.set({treeNote:f.error});return;}
-  DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
+  DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';setVcs(f.vcs||{});
   ui.set({srcNote:`${SRCREL} · ${f.base||'.'} · saved on every good build`});
   ui.set({chatWhere:SRCREL});
   treeNote();
@@ -1486,6 +1456,7 @@ $('chatbtn').onclick=()=>{
 initCollab({markDirty,cancelPush,setEditor,push,toast,
   view:()=>view,board:()=>S,edHl});
 initKb();   // knowledgebase panel: fetches, prefs and its own polling
+initVcs({srcRel:()=>SRCREL,statMsg,toast});
 (async()=>{await boot();})();
 if(location.search.includes('perf')){
 setTimeout(()=>{
