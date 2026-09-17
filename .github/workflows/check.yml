@@ -9,6 +9,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env: {SOURCE_DATE_EPOCH: "0", LC_ALL: C, TZ: UTC}
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
