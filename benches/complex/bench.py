@@ -46,6 +46,12 @@ def run(board: str, seeds: int, iters: int) -> None:
 def main() -> None:
     from benches.complex.convert import FILES
     argv = sys.argv[1:]
+    if "--help" in argv or "-h" in argv:
+        print("usage: python -m benches.complex.bench "
+              "[--board ulx3s|hackrf|virgo|cm4] [seeds] [iters]\n"
+              "  Load, place and route the selected board (default: all boards).\n"
+              "  seeds defaults to 1; iters defaults to 2.")
+        return
     board = argv[argv.index("--board") + 1] if "--board" in argv else None
     args = [a for i, a in enumerate(argv)
             if not (a == "--board" or (i > 0 and argv[i - 1] == "--board"))]

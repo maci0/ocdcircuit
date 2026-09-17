@@ -76,6 +76,12 @@ def inventory() -> list[dict[str, object]]:
 
 
 def main() -> int:
+    argv = sys.argv[1:]
+    if "--help" in argv or "-h" in argv:
+        print("usage: python -m tools.sbom > sbom.cdx.json\n"
+              "  Emit a CycloneDX 1.5 JSON SBOM of the pinned dependencies to\n"
+              "  stdout (no network). Reads requirements-dev.txt and pyproject.toml.")
+        return 0
     raw = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     nm = re.search(r'^name\s*=\s*"([^"]+)"', raw, re.M)
     vm = re.search(r'^version\s*=\s*"([^"]+)"', raw, re.M)

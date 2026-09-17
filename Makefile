@@ -64,6 +64,7 @@ lint:				# types + source lint (no place/route)
 doctor:				# tooling self-check
 	$(HERMETIC) $(PYTHON) -m apps.ocd doctor
 test:				# unit suite + golden snapshots + studio smoke gate
+	$(HERMETIC) $(PYTHON) tests/test_cli.py
 	$(HERMETIC) $(PYTHON) tests/test_sdk.py
 	$(HERMETIC) $(PYTHON) tests/test_all.py
 	$(HERMETIC) $(PYTHON) tests/test_snapshot.py
@@ -96,6 +97,6 @@ fabsweep:			# every board x every fab (profile discrimination check)
 	              + glob.glob(os.path.join('boards', '*', '*.ocd'))) \
 	if 'out' not in f.split(os.sep) and 'lib' not in f.split(os.sep)]"
 sbom:				# CycloneDX JSON from pinned manifests (stdout)
-	$(HERMETIC) $(PYTHON) -m tools.sbom
+	@$(HERMETIC) $(PYTHON) -m tools.sbom
 clean:
 	rm -rf boards/out boards/*/out *-erc.rpt *-drc.rpt __pycache__ apps/__pycache__ */__pycache__ .mypy_cache

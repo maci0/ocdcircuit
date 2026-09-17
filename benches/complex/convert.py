@@ -114,6 +114,11 @@ def _parse_tag(t: str) -> dict[str, object]:
 
 def main() -> None:
     argv = sys.argv[1:]
+    if "--help" in argv or "-h" in argv:
+        print("usage: python -m benches.complex.convert [--board ulx3s|hackrf|virgo|cm4]\n"
+              "  Convert the fetched .kicad_pcb sources to .ocd bench boards\n"
+              "  (default: all four). Requires python -m benches.complex.fetch first.")
+        return
     want = argv[argv.index("--board") + 1] if "--board" in argv else None
     for board in [want] if want else sorted(FILES):
         if board not in FILES:

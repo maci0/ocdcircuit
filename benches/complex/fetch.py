@@ -27,11 +27,17 @@ BOARDS = {
 
 def main() -> None:
     argv = sys.argv[1:]
+    if "--help" in argv or "-h" in argv:
+        print("usage: python -m benches.complex.fetch [--board ulx3s|hackrf|virgo|cm4]\n"
+              "  Download the .kicad_pcb sources for the selected board(s) into\n"
+              "  benches/complex/ (default: all four). Cached files are kept.\n"
+              "  URLs and licenses: see SOURCES.md in the same directory.")
+        return
     want = argv[argv.index("--board") + 1] if "--board" in argv else None
-    items = [(want, BOARDS[want][0], BOARDS[want][1])] if want else \
-        [(n, u, f) for n, (u, f) in BOARDS.items()]
     if want and want not in BOARDS:
         raise SystemExit(f"unknown board {want!r} (pick one of {sorted(BOARDS)})")
+    items = [(want, BOARDS[want][0], BOARDS[want][1])] if want else \
+        [(n, u, f) for n, (u, f) in BOARDS.items()]
     for name, url, fn in items:
         dest = os.path.join(HERE, fn)
         if os.path.exists(dest):
