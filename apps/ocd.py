@@ -29,6 +29,7 @@ USAGE = """usage:
   ocd status [--fab F] [--placer P] [--router R] <circuit.ocd>
   ocd diff <a.ocd> <b.ocd>       parts/nets/size/constraints delta
   ocd pin <circuit.ocd>          pin use lines to current file hashes
+  ocd fp <family> <name> [k=v]   generate a .fp footprint (--out F.fp)
   ocd xray <board.ocd> <fab.png> fab x-ray vs design: score + divergences
   ocd scan [--out DIR] [--mm W] [--no-llm] [--note T] [--doc F]
            [--answer Q=A] <photo|dir|glob>...
@@ -399,6 +400,61 @@ def cmd_diff(agent: object, args: list[str]) -> int:
     except (OSError, ValueError, KeyError, AssertionError) as e:
         return _die(f"ocd: {_exc_msg(e)}")
     print(a.diff(b) or "identical")
+    return 0
+
+
+_FPGENS = ("soic", "ssop", "tssop", "msop", "qfp", "qfn", "dfn", "bga",
+           "bga_rect", "chip", "pinheader", "pinheader2x", "jst",
+           "electrolytic", "fiducial", "mounting_hole", "terminal2")
+
+
+def cmd_fp(agent: object, args: list[str]) -> int:
+    if args and ("-h" in args or "--help" in args):
+        return _usage("usage: ocd fp <family> <name> [k=v ...] [--out F.fp]\n"
+                      f"  families: {', '.join(_FPGENS)}", requested=True)
+    if len(args) < 2 or args[0].startswith("-"):
+        return _usage("usage: ocd fp <family> <name> [k=v ...] [--out F.fp]")
+    fam, name = args[0], args[1]
+    if fam not in _FPGENS:
+        return _die(f"ocd: unknown footprint family {fam!r} "
+                    f"(have: {', '.join(_FPGENS)})")
+    if not name.replace("_", "").replace("-", "").isalnum():
+        return _die(f"ocd: bad footprint name {name!r}")
+    kw: dict[str, object] = {}
+    out: str | None = None
+    rest = args[2:]
+    i = 0
+    while i < len(rest):
+        if rest[i] == "--out":
+            if i + 1 >= len(rest):
+                return _usage("usage: ocd fp <family> <name> [k=v ...] [--out F.fp]")
+            out = rest[i + 1]
+            i += 2
+        elif "=" in rest[i]:
+            k, _, v = rest[i].partition("=")
+            try:
+                kw[k] = int(v)
+            except ValueError:
+                try:
+                    kw[k] = float(v)
+                except ValueError:
+                    return _die(f"ocd: bad value {rest[i]!r} (want k=number)")
+            i += 1
+        else:
+            return _die(f"ocd: bad arg {rest[i]!r} (want k=v or --out F)")
+    from ocdcircuit import parts as _parts
+    from ocdcircuit import footprint as _fpmod
+    try:
+        fp = getattr(_parts, fam)(**kw)
+    except TypeError as e:
+        return _die(f"ocd: {fam}: {e}")
+    text = _fpmod.dumps(name, fp)
+    if out is not None:
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"wrote {out}")
+    else:
+        print(text, end="")
     return 0
 
 
@@ -947,6 +1003,8 @@ def main(argv: list[str]) -> int:
         return cmd_diff(agent, args[1:])
     if args[0] == "pin":
         return cmd_pin(agent, args[1:])
+    if args[0] == "fp":
+        return cmd_fp(agent, args[1:])
     if args[0] == "xray":
         return cmd_xray(agent, args[1:])
     if args[0] == "scan":

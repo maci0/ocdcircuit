@@ -1920,6 +1920,16 @@ with _tf.TemporaryDirectory() as _td:
                                          "--fab", "nope"]) == 1
     assert _ocd.cmd_quote(_ocd._boot(), ["--help"]) == 0
     assert _ocd.main(["ocd", "quote", "--help"]) == 0
+    # ocd fp: parametric footprint → .fp text/file, errors are exit 1
+    with tempfile.TemporaryDirectory() as _fpd:
+        _fpf = os.path.join(_fpd, "x.fp")
+        assert _ocd.cmd_fp(_ocd._boot(), ["soic", "XSOIC", "n=8", "--out", _fpf]) == 0
+        from ocdcircuit import footprint as _fpmod
+        _fn, _ffp = _fpmod.loads(open(_fpf).read())
+        assert (_fn, len(cast(dict[str, object], _ffp["pads"]))) == ("XSOIC", 8), (_fn, _ffp)
+        assert _ocd.cmd_fp(_ocd._boot(), ["bogus", "X"]) == 1
+        assert _ocd.cmd_fp(_ocd._boot(), ["soic", "X", "n=lots"]) == 1
+        assert _ocd.main(["ocd", "fp", "--help"]) == 0
     # main() dispatch: shorthand, flags, help, usage errors (README quickstart)
     assert _ocd.main(["ocd", os.path.join(_np, "newproj.ocd")]) == 0
     assert _ocd.main(["ocd", "run", "--placer", "compact", "--router", "maze",
