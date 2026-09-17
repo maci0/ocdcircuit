@@ -7,7 +7,8 @@
     ocd xray <board.ocd> <fab.png>  fab x-ray vs design: score + divergences
     ocd scan <photos...>     reverse-engineer a real board from photos
     ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
-    ocd score <circuit.ocd>  OCD neatness 0-100 + breakdown (no mutation)
+    ocd score <circuit.ocd>  display neatness badge 0-100 + tidy breakdown
+                             (no mutation; badge is not for cross-board rank)
     ocd lint <circuit.ocd>   static source lint, no place/route
     ocd kb list|search|read|add|fetch|index|ask  board knowledgebase (`kb/`)
     ocd doctor               tooling self-check (no file needed)
@@ -35,6 +36,8 @@ USAGE = """usage:
                                  a manual/datasheet; the model may ask back)
   ocd quote <board.ocd> [qty] [--bare] [--fab F]  fab price comparison
   ocd score [--fab F] [--placer P] [--router R] <circuit.ocd>
+                                 display neatness badge + tidy breakdown
+                                 (badge is glance-only — not for ranking)
   ocd lint <circuit.ocd>         static source lint, no place/route
   ocd kb list|search|read|add|fetch|index|ask  kb/: notes + datasheets
   ocd doctor                     tooling self-check (no file needed)

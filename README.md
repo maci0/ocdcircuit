@@ -121,7 +121,8 @@ stated as a word in a pill.
 - **Copper pours**: `pour GND on 0` renders negative Gerber planes + KiCad
   zones; routers skip poured nets, DRC exempts plane copper and flags
   keepout-stranded pads (`pour-isolated`).
-- **mypy strict**, zero `Any`, zero errors. The code is aligned too.
+- **mypy `--strict`**, zero errors under `make lint`. Optional numpy/Pillow
+  surfaces use `Any` at those boundaries; the typed Board/plugin API does not.
 - **`block`/`instance` + hierarchical placer**: repeat a channel 3×, solve
   it once, stamp rigidly (`placer:hierarchical`). Pico demo does exactly this.
 - **1–32 layers**: placer, maze router (any-layer vias + rip-up retry),
@@ -148,7 +149,7 @@ stated as a word in a pill.
 - **Textured 3D**: `render("gltf")` with PBR materials (mask/copper/silk/
   chip/tantalum/electrolytic/LED/steel); studio canvas shades faces live.
 - **Simulators are plugins** (`simulate:mna`): DC operating point +
-  transient (trapezoidal→Euler MNA, stdlib) via `sim` constraints;
+  transient (Backward-Euler MNA, stdlib) via `sim` constraints;
   `ocd --sim dc|tran`, studio ⚡ readout, MCP `simulate` tool.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,

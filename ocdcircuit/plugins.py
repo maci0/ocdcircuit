@@ -1503,7 +1503,11 @@ class LintPlugin(Plugin[dict[str, object]]):
 
 
 class ScorePlugin(Plugin[dict[str, object]]):
-    """Neatness scorecard: tidy components + 0-100 scalar."""
+    """Neatness scorecard: tidy() components, or display-only 0-100 badge.
+
+    Default `score()` returns total/grade for human glance — never compare
+    across boards and never feed into placer cost(). Pass tidy=True for the
+    normative component vector (docs/tidy-metrics.md)."""
     kind, key = "score", "std"
 
     def run(self, board: Board, *a: object, **k: object) -> dict[str, object]:

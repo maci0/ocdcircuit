@@ -1,6 +1,7 @@
 """OCD Studio: visual editor. Stdlib only (http.server + inline JS, no deps).
 
-Layout (tmog cockpit: whole-system state at a glance, no tabs hiding answers):
+Layout (tmog cockpit: whole-system state at a glance by default; view tabs
+are opt-in focus, not a second app):
   .ocd editor (highlighted) | PCB canvas | SCH canvas | 3D preview | DRC panel
 
 Interactions:

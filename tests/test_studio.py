@@ -176,8 +176,8 @@ def main() -> None:
     # chat turn lock: a second ask while busy must not reach the LLM
     _st_ui.H.chat_busy = True
     try:
-        _busy = _st_ui.H.ask("hello", False)
-        assert "already thinking" in str(_busy.get("error")), _busy
+        _chat_busy = _st_ui.H.ask("hello", False)
+        assert "already thinking" in str(_chat_busy.get("error")), _chat_busy
     finally:
         _st_ui.H.chat_busy = False
     # shelf account names must not appear in stderr paths

@@ -19,15 +19,16 @@ apps/mcp.py ───┘         │                        │                 
 
 - **Board** (`circuit.py`): model (parts/nets/traces/constraints/meta) +
   one dispatch method per plugin kind (`place/route_board/check/export/
-  render/silk/import_fp/import_sym/calc/simulate/lint/score/doctor/diff/
-  collab/xray/scan/quote/price/configure`) plus Board-owned gallery helpers
+  render/silk/import_fp/import_sym/calc/simulate/lint/recommend/score/
+  doctor/diff/collab/xray/scan/quote/price/configure`) plus Board-owned gallery helpers
   (`candidates`/`restore_candidate`/`feasible`) that deferred-import the
   solver so apps never touch engines. Never calls engines at module level.
   `_run()` funnels all plugin dispatch: a crashing plugin is
   marked failed, the previous entry keeps serving, explicit `use()` re-arms.
   Fixable input errors (`ValueError`/`KeyError`/`OSError`/`AssertionError`/`TimeoutExpired`)
   bypass the fence — retry works without re-arm. Recommendations are
-  `ocdcircuit.recommend.recommend(board)` (module API), not a mounted plugin.
+  `ocdcircuit.recommend.recommend(board)` (module API); `Board.recommend`
+  exists for kind symmetry but no default plugin is mounted.
 - **Registry** (`core.py`): `items[(kind,key)]`, one `active` per kind,
   `failed` map. `UiSlots` beside it: named UI slots (`toolbar/panel-left/
   panel-right/view/status`), plugins register render fns, crash abdicates.

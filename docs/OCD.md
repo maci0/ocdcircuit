@@ -111,6 +111,7 @@ route-grid 0.2               # maze cell size (default 0.25); finer closes
 route-penalty bend 3 via 20  # maze cost knobs (defaults 1.5/8.0);
                              # higher bend = straighter, higher via = fewer layers
 silk 2                       # 0=refs 1=+values 2=+pin-1+outlines 3=+nets
+                             # (omit → level 1; plugins map 0→ref, 1–2→full, 3→fab)
 ```
 
 `pour NET on L` floods layer L with NET copper (negative Gerber plot +

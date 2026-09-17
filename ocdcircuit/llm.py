@@ -472,9 +472,12 @@ def _selfcheck() -> None:
         assert f"dropped {5}" in last or "dropped 5" in last, last
         return "stopped"
     seen6: list[str] = []
+    def _list6(p: str, _b: object) -> str:
+        seen6.append(p)
+        return "ok"
     out6 = run([{"role": "user", "content": "go"}],
                {"fs.read": lambda _p, _b: "",
-                "fs.list": lambda p, _b: (seen6.append(p) or "ok")}, chat_fn=fake6)
+                "fs.list": _list6}, chat_fn=fake6)
     assert out6["reply"] == "stopped", out6
     assert len(seen6) == MAX_CALLS, (len(seen6), seen6)
     assert any("overflow" in ln for ln in cast(list[str], out6["log"])), out6

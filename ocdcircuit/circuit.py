@@ -521,7 +521,8 @@ class Board(Component):
     def import_fp(self, key: str | None = None, **k: object) -> dict[str, object]:
         """Import: fp / kicad / eagle (.lbr) / eagle-brd (.brd) /
         tscircuit / pcb (.kicad_pcb, .brd, .pcb, Altium ASCII — sniffed) /
-        easyeda (Std JSON) / altium (Altium ASCII or P-CAD .pcb)."""
+        easyeda (Std JSON) / altium (.PcbDoc / ASCII / P-CAD) /
+        altium-sch (.SchDoc)."""
         out = self._run("importer", key, **k)
         assert isinstance(out, dict)
         return out
@@ -561,7 +562,8 @@ class Board(Component):
         return out
 
     def score(self, key: str | None = None, **k: object) -> dict[str, object]:
-        """Neatness scorecard. Prefer tidy components over the scalar."""
+        """Neatness scorecard. Default is a display-only 0-100 badge
+        (never compare across boards); pass tidy=True for components."""
         out = self._run("score", key, **k)
         assert isinstance(out, dict)
         return out

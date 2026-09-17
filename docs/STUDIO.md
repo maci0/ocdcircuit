@@ -1,8 +1,10 @@
 # OCD Studio — operator guide
 
 Visual editor for `.ocd` boards: source pane, PCB, schematic, 3D, DRC —
-one cockpit, no tabs. Edits are real: every good build is saved to disk
-and committed to a 100-deep undo history.
+cockpit shows every panel at once by default; Layout / Schematic / 3D /
+Docs tabs are opt-in focus (double-click a tab or pick `All` to return).
+Edits are real: every good build is saved to disk and committed to a
+100-deep undo history.
 
 ```bash
 make run                            # :8077, blinky_555
@@ -62,7 +64,8 @@ and that choice is remembered across reloads.
   (vendor tile from `ocdcircuit/assets/fabs/`, embedded by `fab.logo()`
   as a data URI) next to the name. The public landing strip loads the
   same tiles from `/fab-logo/<key>` so ~100 KB of PNGs stay off the first HTML.
-- **status pills:** `cost` (wirelength) · `OCD nn/100 (grade)` neatness ·
+- **status pills:** `cost` (wirelength) · `OCD nn/100 (grade)` neatness
+  badge (display-only — do not compare across boards) ·
   routing feasibility per layer count (`1L routable`, `2L unroutable (this
   board)`) — wirelength is a hint, the real verdict is the DRC panel.
 

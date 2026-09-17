@@ -18,7 +18,7 @@ help:				# list contributor commands (default)
 	  '  make run        studio webui on :8077 (BOARD=$(BOARD))' \
 	  '  make snap       re-pin golden snapshots after intentional change' \
 	  '  make bench      5420-part stress (~5 min, not in check)' \
-	  '  make farm       load+solve every board' \
+	  '  make farm       load+solve every board (skips breath_ketone)' \
 	  '  make fabsweep   every board × every fab profile' \
 	  '  make sbom       CycloneDX inventory from pinned manifests' \
 	  '  make clean      wipe out/ caches and report leftovers' \
@@ -50,7 +50,7 @@ snap:				# re-pin goldens after intended geometry change
 	$(HERMETIC) env SNAP=1 python tests/test_snapshot.py
 bench:				# 5420-part stress (~5 min, not in check)
 	$(HERMETIC) python -m benches.discrete6502.bench 1 5
-farm:				# every board loads+solves (breath-ketone density excepted)
+farm:				# every board loads+solves (breath_ketone density excepted)
 	$(HERMETIC) python -c "import sys, glob, os; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent; \
 	[(_b := agent.loads(open(f, encoding="utf-8").read(), base=os.path.dirname(f)), \
@@ -58,7 +58,8 @@ farm:				# every board loads+solves (breath-ketone density excepted)
 	print(f, len(_b.check()['errors']), 'errors')) \
 	for f in sorted(glob.glob(os.path.join('boards', '*.ocd')) \
 	              + glob.glob(os.path.join('boards', '*', '*.ocd'))) \
-	if 'out' not in f.split(os.sep) and 'lib' not in f.split(os.sep)]"
+	if 'out' not in f.split(os.sep) and 'lib' not in f.split(os.sep) \
+	and 'breath_ketone' not in f.split(os.sep)]"
 fabsweep:			# every board x every fab (profile discrimination check)
 	$(HERMETIC) python -c "import sys, glob, os; sys.path.insert(0, '.'); \
 	from ocdcircuit import agent, fab; \
