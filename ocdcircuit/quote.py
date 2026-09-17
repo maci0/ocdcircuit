@@ -183,6 +183,7 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
             + _D(joints) * _D(JLC_SMT_JOINT))
     parts_total = Decimal(0)
     unpriced: list[str] = []
+    via_alt: list[str] = []
     sources: dict[str, int] = {}
     for r in rows:
         v, src = unit_price(board, str(r["ref"]))
@@ -191,6 +192,8 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
             unpriced.append(str(r["ref"]))
         else:
             parts_total += _D(v)
+            if "+alt:" in src:
+                via_alt.append(f"{r['ref']}({src.split('+alt:')[1]})")
     ext = sum(1 for r in rows if not str(r.get("lcsc", "")).startswith("C"))
     ext_fee = _D(ext) * _D(JLC_EXTENDED_FEE) if rows else Decimal(0)
     # Round fee and per-board parts to cents first, then form the order
@@ -203,6 +206,7 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     return {"fees": _usd(fees_d), "parts_per_board": _usd(parts_d),
             "total": _usd(total_d), "per_board": _usd(total_d / qty),
             "joints": joints, "parts": len(rows), "unpriced": unpriced,
+            "via_alt": via_alt,
             "sources": sources, "extended_parts": ext,
             "note": "JLC Economic PCBA single-side; parts from live JLC or price= attr"}
 

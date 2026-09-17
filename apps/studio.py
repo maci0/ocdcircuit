@@ -1960,8 +1960,12 @@ if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open boa
     const q=Math.max(1,parseInt($('qqty').value)||5);
     const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
     if(r.error){$('qout').textContent=r.error;statMsg(r.error);return;}
+    const _asm=(r.rows||[]).find(x=>x.asm)||{};
+    const _alt=_asm.via_alt||[],_unp=_asm.unpriced||[];
     $('qout').innerHTML=(r.rows||[]).map(x=>
       `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="${x.fab} logo" width=64 height=21>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
+      +(_alt.length?`<div class=dim>via substitute: ${_alt.join(', ')}</div>`:'')
+      +(_unp.length?`<div class=warn>unpriced: ${_unp.join(', ')}</div>`:'')
       +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
     statMsg('');
   });
