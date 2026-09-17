@@ -942,6 +942,26 @@ except ValueError as e:
 _kb.add_footprint("K9X", {"w": 9.0, "h": 9.0})
 _kb.add_footprint("K9X", {"w": 8.0, "h": 8.0})
 assert _kb.custom_fp["K9X"]["w"] == 8.0
+for _definition_kind in ("fp", "sym"):
+    for _original_src in (None, f"original.{_definition_kind}"):
+        _undo_board = Board()
+        _register = (_undo_board.add_footprint if _definition_kind == "fp"
+                     else _undo_board.add_symbol)
+        _definitions = (_undo_board.custom_fp if _definition_kind == "fp"
+                        else _undo_board.custom_sym)
+        _sources = (_undo_board.fp_src if _definition_kind == "fp"
+                    else _undo_board.sym_src)
+        _original: dict[str, object] = {"w": 2.0, "h": 3.0}
+        _register("UNDO_CUSTOM", _original, src=_original_src)
+        _source_before = dict(_sources)
+        _text_before = agent.dumps(_undo_board)
+        _undo_snapshot = _undo_board.ctx.snapshot()
+        _register("UNDO_CUSTOM", {"w": 8.0, "h": 9.0},
+                  src=f"replacement.{_definition_kind}")
+        _undo_board.ctx.rollback(_undo_snapshot)
+        assert _definitions["UNDO_CUSTOM"] is _original
+        assert _sources == _source_before, (_definition_kind, _sources)
+        assert agent.dumps(_undo_board) == _text_before
 # add_symbol validates too (not KeyError 'w' at symbol_of)
 _badsyms: list[dict[str, object]] = [{}, {"w": 1}, {"w": 1, "h": 2, "pins": "x"}]
 for _badsym in _badsyms:

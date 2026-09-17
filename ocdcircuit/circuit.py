@@ -684,6 +684,8 @@ class Board(Component):
                 self.custom_fp[name] = old
                 if old_src is not None:
                     self.fp_src[name] = old_src
+                else:
+                    self.fp_src.pop(name, None)
             else:
                 self.custom_fp.pop(name, None)
                 self.fp_src.pop(name, None)
@@ -719,6 +721,8 @@ class Board(Component):
                 self.custom_sym[name] = old
                 if old_src is not None:
                     self.sym_src[name] = old_src
+                else:
+                    self.sym_src.pop(name, None)
             else:
                 self.custom_sym.pop(name, None)
                 self.sym_src.pop(name, None)
