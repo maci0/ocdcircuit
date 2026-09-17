@@ -24,7 +24,7 @@ def zone_at(board: Board, c: object) -> dict[str, object]:
 def pour_layers(board: Board) -> dict[str, list[int]]:
     """{net: sorted layers} with `pour` constraints. One funnel for maze
     (skip poured-net legs), DRC (skip poured traces), Gerber/KiCad (plots)."""
-    out: dict[str, list[int]] = {}
+    out: dict[str, set[int]] = {}
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "pour":
             n = str(c.get("net", ""))
@@ -33,12 +33,8 @@ def pour_layers(board: Board) -> dict[str, list[int]]:
             except (TypeError, ValueError):
                 continue
             if n in board.nets and 0 <= ll < board.layers:
-                out.setdefault(n, [])
-                if ll not in out[n]:
-                    out[n].append(ll)
-    for n in out:
-        out[n].sort()
-    return out
+                out.setdefault(n, set()).add(ll)
+    return {n: sorted(ls) for n, ls in out.items()}
 
 
 def in_zone(c: object, x: float, y: float,
@@ -57,13 +53,17 @@ def in_zone(c: object, x: float, y: float,
     return dx < _f(c["w"]) / 2 + px and dy < _f(c["h"]) / 2 + py
 
 
-def fp_keepouts(board: Board, ref: str) -> list[dict[str, object]]:
+def fp_keepouts(board: Board, ref: str,
+                lib: dict[str, dict[str, object]] | None = None,
+                ) -> list[dict[str, object]]:
     """Footprint keepouts as live board-frame zones: footprint-frame
     (dx, dy, w/h or d) rotated into the part frame (rot-aware), centered
     on the part. Follows placement like `keepout near` — synthesized at
-    consumption (maze/DRC/export), never materialized as constraints."""
+    consumption (maze/DRC/export), never materialized as constraints.
+    Pass a hoisted `lib` when calling for every part in a hot loop."""
     p = board.parts[ref]
-    lib = board._lib()
+    if lib is None:
+        lib = board._lib()
     meta = lib.get(p.fp, {})
     out: list[dict[str, object]] = []
     ko = meta.get("keepouts")
@@ -238,7 +238,6 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 ph / 2 + edge <= p.y <= board.height - ph / 2 - edge):
             errors.append(f"edge {p.ref}")
     from .parts import hole_drill, slot_of
-    lib = board._lib()
     for p in parts:
         for pin in p.pins_of(lib):
             dr = hole_drill(p.fp, pin, lib)
@@ -252,7 +251,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
         if isinstance(c, dict) and c.get("t") == "class":
             classes[str(c.get("name", ""))] = float(cast(float, c.get("clearance", 0.0)))
     for net in board.nets.values():
-        if len([1 for r, _ in net.pins if r in board.parts]) == 1:
+        if sum(1 for r, _ in net.pins if r in board.parts) == 1:
             errors.append(f"floating {net.name}")
         if net.width < min_trace:
             errors.append(f"width {net.name}={net.width}")
@@ -265,6 +264,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             else:
                 warnings.append(f"airwire {t.net} (maze fallback — re-route?)")
     poured = pour_layers(board)
+    poured_set = {n: set(ls) for n, ls in poured.items()}
 
     def _zone_warns(c: dict[str, object]) -> None:
         z = zone_at(board, c)
@@ -277,28 +277,28 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                 # design (mitox U4); review, don't block
                 warnings.append(f"keepout {p.ref}")
         for t in board.traces:
-            if t.layer in poured.get(t.net, []):
+            if t.layer in poured_set.get(t.net, ()):
                 continue  # plane copper, not a trace — keepouts don't apply
             mx, my = (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2
             if in_zone(z, mx, my, t.width / 2):
                 warnings.append(f"keepout-trace {t.net}")
 
+    fp_zones: list[dict[str, object]] = []
+    for ref in board.parts:
+        fp_zones.extend(fp_keepouts(board, ref, lib))
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "keepout":
             _zone_warns(c)
     # footprint keepouts (antenna zones etc.): same warnings, synthesized
-    for ref in board.parts:
-        for c in fp_keepouts(board, ref):
-            _zone_warns(c)
+    for c in fp_zones:
+        _zone_warns(c)
     # stranded pour pads: plane is cut inside keepouts AND routers skip
     # poured nets, so a poured pad in a keepout floats electrically. Error:
     # fab-correct, circuit-broken.
     if poured:
         zones = [zone_at(board, c) for c in board.constraints
                  if isinstance(c, dict) and c.get("t") in ("keepout", "cutout")]
-        for ref in board.parts:
-            for c in fp_keepouts(board, ref):
-                zones.append(zone_at(board, c))
+        zones.extend(zone_at(board, c) for c in fp_zones)
         for n, net in board.nets.items():
             if n not in poured:
                 continue
@@ -329,7 +329,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
                     errors.append(f"bend-part {p.ref}")
             if c.get("dynamic", True):
                 # pours flood the board: any plane crosses the bend and cracks
-                for n in sorted(pour_layers(board)):
+                for n in sorted(poured):
                     errors.append(f"bend-pour {n} (plane crosses dynamic bend)")
             # radius vs finished thickness: 6x static, 10x dynamic (JLC FPC)
             th = float(cast(tuple[float, float], P["thickness"])[1])

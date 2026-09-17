@@ -3619,8 +3619,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 continue
             props.append({"id": rel, "path": rel, "text": text,
                           "diff": _unified(old, text, rel), "rev": H.rev})
-        H.props = props + [p for p in H.props if str(p["id"]) not in
-                           {str(q["id"]) for q in props}]
+        # Cap like hist/chat: proposals carry full file texts and unbounded
+        # growth across a long session would pin megabytes in RAM.
+        H.props = (props + [p for p in H.props if str(p["id"]) not in
+                            {str(q["id"]) for q in props}])[:20]
         return props, refused
 
     @staticmethod
@@ -4432,7 +4434,7 @@ class H(http.server.BaseHTTPRequestHandler):
                     {"x1": t.x1, "y1": t.y1, "x2": t.x2,
                      "y2": t.y2, "layer": t.layer, "w": t.width}
                     for t in b.traces], cast(float, cands[idx]["cost"]), drc)
-                H._decorate(st, b, b.score(tidy=True), b.feasible(),
+                H._decorate(st, b, b.score().get("tidy", {}), b.feasible(),
                             b.plugins().list("placer"), b.plugins().list("router"),
                             req.get("silk", "full"), b.plugins().list("silk"))
                 H.src_text = str(st["text"])
@@ -4934,8 +4936,10 @@ class H(http.server.BaseHTTPRequestHandler):
             st_tidy = {"coverage": "skipped (board is dense — run the CLI)"}
             st_score = {"total": 0, "grade": "?", "dense": True}
         else:
-            st_tidy = b.score(tidy=True)
+            # score() already embeds tidy(); calling both re-ran the full
+            # metric card (virgo ~0.8s × 2 per rebuild).
             st_score = b.score()
+            st_tidy = st_score.get("tidy", {})
         st_lint = b.lint()
         feas = {} if dense else b.feasible()
         # `net` is not in the payload: the canvas colours by layer, and a dense

@@ -96,8 +96,9 @@ def _keepouts(board: Board) -> list[dict[str, object]]:
     from .drc import fp_keepouts, zone_at
     zones = [zone_at(board, c) for c in board.constraints
              if isinstance(c, dict) and c.get("t") == "keepout"]
+    lib = board._lib()
     for ref in board.parts:
-        zones.extend(fp_keepouts(board, ref))
+        zones.extend(fp_keepouts(board, ref, lib))
     return zones
 
 
@@ -187,22 +188,34 @@ def cost(board: Board, pads: dict[tuple[str, str], XY] | None = None) -> float:
         if na in board.parts and nb in board.parts:
             qa, qb = board.parts[na], board.parts[nb]
             c += wgt * (abs(qa.x - qb.x) + abs(qa.y - qb.y))
-    c += _match_cost(board) + _diff_cost(board) + _keepout_cost(board)
+    by_net: dict[str, list[object]] | None = None
+    if board.traces and any(
+            isinstance(con, dict) and con.get("t") in ("match", "diff")
+            for con in board.constraints):
+        by_net = {}
+        for s in board.traces:
+            by_net.setdefault(s.net, []).append(s)
+    c += _match_cost(board, by_net) + _diff_cost(board, by_net) + _keepout_cost(board)
     return c
 
 
-def _net_length(board: Board, net: str) -> float:
+def _net_length(board: Board, net: str,
+                by_net: dict[str, list[object]] | None = None) -> float:
     """Routed length if traces exist, else Manhattan estimate from pads."""
-    segs = [s for s in board.traces if s.net == net]
+    if by_net is not None:
+        segs = by_net.get(net, [])
+    else:
+        segs = [s for s in board.traces if s.net == net]
     if segs:
-        return sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)
+        return sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)  # type: ignore[attr-defined]
     pts = [board.pad_pos(r, q) for r, q in board.nets[net].pins if r in board.parts]
     if len(pts) < 2:
         return 0.0
     return sum(abs(p[0] - pts[0][0]) + abs(p[1] - pts[0][1]) for p in pts[1:])
 
 
-def _match_cost(board: Board) -> float:
+def _match_cost(board: Board,
+                by_net: dict[str, list[object]] | None = None) -> float:
     """match NET... within TOL: penalize max length deviation × 50."""
     c = 0.0
     for con in board.constraints:
@@ -211,12 +224,13 @@ def _match_cost(board: Board) -> float:
         nets = [n for n in cast(list[str], con.get("nets", [])) if n in board.nets]
         if len(nets) < 2:
             continue
-        lens = [_net_length(board, n) for n in nets]
+        lens = [_net_length(board, n, by_net) for n in nets]
         c += 50.0 * (max(lens) - min(lens))
     return c
 
 
-def _diff_cost(board: Board) -> float:
+def _diff_cost(board: Board,
+               by_net: dict[str, list[object]] | None = None) -> float:
     """diff P N gap G: penalize pair length mismatch × 100 + gap error × 20."""
     c = 0.0
     for con in board.constraints:
@@ -225,7 +239,7 @@ def _diff_cost(board: Board) -> float:
         p, n = str(con.get("p")), str(con.get("n"))
         if p not in board.nets or n not in board.nets:
             continue
-        c += 100.0 * abs(_net_length(board, p) - _net_length(board, n))
+        c += 100.0 * abs(_net_length(board, p, by_net) - _net_length(board, n, by_net))
         gap = float(cast(float, con.get("gap", 0.3)))
         pp = [board.pad_pos(r, q) for r, q in board.nets[p].pins if r in board.parts]
         np_ = [board.pad_pos(r, q) for r, q in board.nets[n].pins if r in board.parts]
@@ -794,12 +808,12 @@ def _hier_once(board: Board, groups: dict[str, list[str]], iters: int, seed: int
     # --- level 1: prototype = first instance of each owner, solved alone ---
     offsets: dict[str, dict[str, XY]] = {}  # owner → {ref: (dx, dy)}
     anchors: dict[str, XY] = {}  # owner → prototype centroid after solve
+    lib = board._lib()
     for owner, refs in groups.items():
         proto = _Board("proto", board.width, board.height, board.layers)
         proto.custom_fp.update(board.custom_fp)  # blocks may use custom `fp`
         for ref in refs:
             p = board.parts[ref]
-            lib = board._lib()
             meta = lib[p.fp]
             w = meta["w"]
             h = meta["h"]
@@ -1197,6 +1211,17 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
             o: _sig(refs) for o, refs in groups.items()}
         proto_done: dict[tuple[tuple[str, str], ...], dict[str, XY]] = {}
         offsets: dict[str, dict[str, XY]] = {}
+        # One pass over the netlist (same as hierarchical): avoids
+        # owners × nets rescans on boards like discrete6502.
+        net_pins: dict[str, dict[str, list[tuple[str, str]]]] = {
+            o: {} for o in groups}
+        for n, net in board.nets.items():
+            for r, q in net.pins:
+                p = board.parts.get(r)
+                if p is None or p.owner not in net_pins:
+                    continue
+                net_pins[p.owner].setdefault(n, []).append((r, q))
+        lib = board._lib()
         for owner, refs in groups.items():
             sig = sig_of[owner]
             if sig in proto_done:
@@ -1209,15 +1234,13 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
             proto.custom_fp.update(board.custom_fp)  # blocks may use custom `fp`
             for ref in refs:
                 p = board.parts[ref]
-                meta = board._lib()[p.fp]
+                meta = lib[p.fp]
                 w, h = meta["w"], meta["h"]
                 assert isinstance(w, float) and isinstance(h, float)
                 from .circuit import Part as _Part
                 proto.parts[ref] = _Part(ref=ref, fp=p.fp, value=p.value,
                                      x=p.x, y=p.y, w=w, h=h)
-            for n, net in board.nets.items():
-                pins = [(r, q) for r, q in net.pins
-                        if r in board.parts and board.parts[r].owner == owner]
+            for n, pins in net_pins[owner].items():
                 if len(pins) >= 2:
                     for r, q in pins:
                         proto.net(n).pins.append((r, q))

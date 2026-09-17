@@ -137,9 +137,9 @@ def render_top(board: Board, pxmm: float = 10.0) -> bytes:
             pw, ph = pad_size(p.fp, pin, lib)
             c.rect(dx - pw / 2, dy - ph / 2, dx + pw / 2, dy + ph / 2,
                    board.height, (217, 168, 50))
-            if hole_drill(p.fp, pin, lib) > 0:
-                c.disc(dx, dy, board.height, hole_drill(p.fp, pin, lib) / 2,
-                       (11, 61, 11))
+            dr = hole_drill(p.fp, pin, lib)
+            if dr > 0:
+                c.disc(dx, dy, board.height, dr / 2, (11, 61, 11))
     for p in board.parts.values():
         for body in bodies_of(p.fp, lib):
             box = body.get("box")

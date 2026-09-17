@@ -96,13 +96,14 @@ def _elements(board: Board) -> tuple[list[dict[str, object]], list[dict[str, obj
     """(passives, sources) from parts + sim constraints."""
     passives: list[dict[str, object]] = []
     sources: list[dict[str, object]] = []
+    # Invert nets once: O(pins) instead of O(parts × nets × pins).
+    pinnets: dict[str, dict[str, str]] = {}
+    for nn, net in board.nets.items():
+        for r, pin in net.pins:
+            if r in board.parts:
+                pinnets.setdefault(r, {})[str(pin)] = nn
     for ref, p in board.parts.items():
-        # pin→net map for this part
-        pinnet: dict[str, str] = {}
-        for nn, net in board.nets.items():
-            for r, pin in net.pins:
-                if r == ref:
-                    pinnet[str(pin)] = nn
+        pinnet = pinnets.get(ref, {})
         fp = p.fp.upper()
         if fp.startswith("R") or fp.startswith("L0805") or fp.startswith("L1206") \
                 or fp.startswith("IND"):

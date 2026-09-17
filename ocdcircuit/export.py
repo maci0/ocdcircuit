@@ -122,7 +122,7 @@ def plane_plots(board: Board) -> dict[int, list[Draw]]:
                         hh = _f(z.get("h", 0.0)) / 2 + gap
                         cuts.append((cx - hw, cy - hh, cx + hw, cy + hh))
             for ref in board.parts:
-                for z in fp_keepouts(board, ref):
+                for z in fp_keepouts(board, ref, lib):
                     zz = zone_at(board, z)
                     cx, cy = _f(zz["x"]), _f(zz.get("y", 0.0))
                     hw = _f(zz.get("w", 0.0)) / 2 + gap
@@ -759,8 +759,9 @@ def export_kicad(board: Board, outdir: str = "out") -> list[str]:
                   f'(layer "Cmts.User") (width 0.05))')
             A(f'  (gr_text "{tag}" (at {cx:.4f} {cy:.4f}) (layer "Cmts.User"))')
     # footprint keepouts (antenna zones etc.) ride along as Cmts.User art
+    _lib = board._lib()
     for ref in sorted(board.parts):
-        for c in fp_keepouts(board, ref):
+        for c in fp_keepouts(board, ref, _lib):
             _cmts(zone_at(board, c))
     # pours: copper zones (KiCad refills geometry on load; hatch marks intent)
     from .drc import pour_layers as _pours

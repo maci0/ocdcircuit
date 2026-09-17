@@ -62,15 +62,16 @@ def _delay(p_attrs: dict[str, str]) -> int:
 def _logic_parts(board: Board) -> list[tuple[str, str, list[str], str]]:
     """(ref, kind, [input nets...], output net) for parts with logic= attr."""
     out: list[tuple[str, str, list[str], str]] = []
+    pinnets: dict[str, dict[str, str]] = {}
+    for nn, net in board.nets.items():
+        for r, pin in net.pins:
+            if r in board.parts:
+                pinnets.setdefault(r, {})[str(pin)] = nn
     for ref, p in board.parts.items():
         kind = p.attrs.get("logic", "").upper()
         if kind not in GATES:
             continue
-        pinnet: dict[str, str] = {}
-        for nn, net in board.nets.items():
-            for r, pin in net.pins:
-                if r == ref:
-                    pinnet[str(pin)] = nn
+        pinnet = pinnets.get(ref, {})
         nums = sorted(pinnet, key=lambda q: (len(q), q))
         if kind in ("DFF", "JK"):
             n_in, clk_idx = (2, 1) if kind == "DFF" else (3, 2)

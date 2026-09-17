@@ -134,6 +134,20 @@ def _net_span(board: Board, net: Net) -> float:
     return float((dx * dx + dy * dy) ** 0.5)
 
 
+def _novia_cells(board: Board, grid: float) -> set[tuple[int, int]]:
+    """Dynamic bend rects: traces pass, layer jumps forbidden. Static for a
+    maze() pass — hoist once rather than rebuild per net."""
+    novia: set[tuple[int, int]] = set()
+    for c in board.constraints:
+        if c.get("t") == "bend" and c.get("dynamic", True):
+            cx, cy = _f(c["x"]), _f(c["y"])
+            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
+            for gx in range(int((cx - hw) / grid), int((cx + hw) / grid) + 1):
+                for gy in range(int((cy - hh) / grid), int((cy + hh) / grid) + 1):
+                    novia.add((gx, gy))
+    return novia
+
+
 def maze(board: Board, frames: list[Frame] | None = None) -> int:
     """Route every net on the grid, avoiding parts + foreign copper."""
     from .core import Plugin
@@ -158,8 +172,9 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     zones: list[dict[str, object]] = [
         c for c in board.constraints
         if isinstance(c, dict) and c.get("t") in ("keepout", "cutout")]
+    lib = board._lib()
     for ref in board.parts:
-        zones.extend(fp_keepouts(board, ref))
+        zones.extend(fp_keepouts(board, ref, lib))
     for _c in zones:
         c = zone_at(board, _c)
         cx, cy = _f(c["x"]), _f(c["y"])
@@ -183,6 +198,17 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
                 for gx in (int(px / grid) - 1, int(px / grid), int(px / grid) + 1):
                     for gy in (int(py / grid) - 1, int(py / grid), int(py / grid) + 1):
                         pad_cells.setdefault((gx, gy), n)
+    # Expand pads onto every layer once; per-net route subtracts own pads
+    # instead of walking pad_cells × layers for every net.
+    nl = board.layers
+    all_pads_3d: set[tuple[int, int, int]] = set()
+    own_pads_3d: dict[str, set[tuple[int, int, int]]] = {}
+    for cell, owner in pad_cells.items():
+        for ll in range(nl):
+            t = (cell[0], cell[1], ll)
+            all_pads_3d.add(t)
+            own_pads_3d.setdefault(owner, set()).add(t)
+    novia = _novia_cells(board, grid)
     old = list(board.traces)
     new: list[Seg] = []
     copper: set[tuple[int, int, int]] = set()  # per-layer routed cells
@@ -193,23 +219,25 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
     # is open; small point-to-point wires thread the gaps after. Small-first
     # walls big nets off (breath_ketone: 190 → 46 jumpers). Within a size
     # class, wide spans still go last (short paths grab direct routes).
+    spans = {n.name: _net_span(board, n) for n in board.nets.values()}
     order = sorted(board.nets.values(),
-                   key=lambda n: (len(n.pins), -_net_span(board, n)),
+                   key=lambda n: (len(n.pins), -spans[n.name]),
                    reverse=True)
     from .drc import pour_layers
-    poured = pour_layers(board)  # poured nets need no traces on pour layers
+    poured = {n: set(ls) for n, ls in pour_layers(board).items()}
     failed: list[str] = []
     # negotiated-congestion history: cells used by ripped/failed routes
     # cost extra on retries, steering around past congestion (doc §order-a).
     hist: dict[tuple[int, int, int], float] = {}
     for net in order:
-        if net.layer is not None and net.layer in poured.get(net.name, []):
+        if net.layer is not None and net.layer in poured.get(net.name, ()):
             continue  # plane covers this layer — nothing to route
         if not _route_one(board, net, grid, bend, via, nx, ny, base_blocked,
-                          pad_cells, copper, halo, cells_of, new, frames, hist):
+                          pad_cells, copper, halo, cells_of, new, frames, hist,
+                          novia, all_pads_3d, own_pads_3d):
             failed.append(net.name)
-            for cell in cells_of.get(net.name, ()):
-                hist[cell] = hist.get(cell, 0.0) + 1.0
+            for hcell in cells_of.get(net.name, ()):
+                hist[hcell] = hist.get(hcell, 0.0) + 1.0
     # rip-up retry: victim = blocker with most cells inside the failed net's
     # corridor (pads bbox grown 4mm), not nearest endpoints — big blockers
     # wall off whole regions. A 2nd round runs only if the 1st strictly
@@ -256,12 +284,14 @@ def maze(board: Board, frames: list[Frame] | None = None) -> int:
             del cells_of[best]
             _rebuild_blocked(copper, halo, cells_of)
             if _route_one(board, fnet, grid, bend, via, nx, ny, base_blocked,
-                          pad_cells, copper, halo, cells_of, new, frames, hist):
+                          pad_cells, copper, halo, cells_of, new, frames, hist,
+                          novia, all_pads_3d, own_pads_3d):
                 bnet = board.nets[best]
                 bpts = [(r, board.pad_pos(r, q)) for r, q in bnet.pins if r in board.parts]
                 if len(bpts) >= 2 and not _route_one(
                         board, bnet, grid, bend, via, nx, ny, base_blocked,
-                        pad_cells, copper, halo, cells_of, new, frames, hist):
+                        pad_cells, copper, halo, cells_of, new, frames, hist,
+                        novia, all_pads_3d, own_pads_3d):
                     if _round == 1:
                         _fallback(bnet, bpts, new)
                     else:
@@ -312,7 +342,11 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
                copper: set[tuple[int, int, int]], halo: set[tuple[int, int, int]],
                cells_of: dict[str, set[tuple[int, int, int]]],
                new: list[Seg], frames: list[Frame] | None,
-               hist: dict[tuple[int, int, int], float] | None = None) -> bool:
+               hist: dict[tuple[int, int, int], float] | None = None,
+               novia: set[tuple[int, int]] | None = None,
+               all_pads_3d: set[tuple[int, int, int]] | None = None,
+               own_pads_3d: dict[str, set[tuple[int, int, int]]] | None = None,
+               ) -> bool:
     """Route one net with current blockage. Returns True if maze-succeeded.
     copper/halo are per-layer (FR4 isolates); pads expand onto all layers.
     Legs follow a rectilinear MST over pads (research §5), not pin order —
@@ -322,21 +356,20 @@ def _route_one(board: Board, net: Net, grid: float, bend: float, via: float,
         return True
     legs = _mst_pairs(pts)
     layer = net.layer if net.layer is not None else 0
-    # dynamic bend rects: traces pass, layer jumps forbidden
-    novia: set[tuple[int, int]] = set()
-    for c in board.constraints:
-        if c.get("t") == "bend" and c.get("dynamic", True):
-            cx, cy = _f(c["x"]), _f(c["y"])
-            hw, hh = _f(c["w"]) / 2, _f(c["h"]) / 2
-            for gx in range(int((cx - hw) / grid), int((cx + hw) / grid) + 1):
-                for gy in range(int((cy - hh) / grid), int((cy + hh) / grid) + 1):
-                    novia.add((gx, gy))
+    if novia is None:
+        novia = _novia_cells(board, grid)
     nl = board.layers
-    blocked = set(copper) | halo
-    for cell, owner in pad_cells.items():
-        if owner != net.name:
-            for ll in range(nl):  # PTH pads/vias span every layer
-                blocked.add((cell[0], cell[1], ll))
+    if all_pads_3d is None or own_pads_3d is None:
+        blocked = set(copper) | halo
+        for cell, owner in pad_cells.items():
+            if owner != net.name:
+                for ll in range(nl):
+                    blocked.add((cell[0], cell[1], ll))
+    else:
+        # Foreign pads only — do not subtract own pads from copper|halo
+        # (a pad cell can still be blocked by another net's copper/halo).
+        foreign = all_pads_3d - own_pads_3d.get(net.name, set())
+        blocked = copper | halo | foreign
     soft = set(base_blocked)
     for _, (px, py) in pts:
         r = 1.0

@@ -8,7 +8,7 @@ from __future__ import annotations
 from .util import numpy as _numpy
 import math
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from .circuit import Board, Part, Seg
@@ -85,8 +85,10 @@ def _t2_bends(board: Board) -> float | None:
     if not segs:
         return None
     bends = 0
-    for net in {s.net for s in segs}:
-        run = [s for s in segs if s.net == net]
+    by_net: dict[str, list[Seg]] = {}
+    for s in segs:
+        by_net.setdefault(s.net, []).append(s)
+    for run in by_net.values():
         for p, q in zip(run, run[1:]):
             d1 = (p.x2 - p.x1, p.y2 - p.y1)
             d2 = (q.x2 - q.x1, q.y2 - q.y1)
@@ -160,14 +162,32 @@ def _t6_skew(board: Board) -> dict[str, object]:
 
 
 def _t7_align(board: Board) -> float | None:
-    """Shared-x/y fraction @ EPS. <2 parts → None."""
+    """Shared-x/y fraction @ EPS. <2 parts → None.
+
+    Sort+sweep instead of O(n²): a part is aligned when another shares
+    x or y within EPS (same predicate as the pairwise scan)."""
     parts = list(board.parts.values())
-    if len(parts) < 2:
+    n = len(parts)
+    if n < 2:
         return None
-    hit = sum(1 for i, p in enumerate(parts)
-              if any(abs(p.x - q.x) < EPS or abs(p.y - q.y) < EPS
-                     for j, q in enumerate(parts) if j != i))
-    return hit / len(parts)
+    aligned = [False] * n
+
+    def _mark(sorted_xy: list[tuple[float, int]]) -> None:
+        for k, (v, i) in enumerate(sorted_xy):
+            for j in range(k - 1, -1, -1):
+                if v - sorted_xy[j][0] >= EPS:
+                    break
+                aligned[i] = True
+                aligned[sorted_xy[j][1]] = True
+            for j in range(k + 1, n):
+                if sorted_xy[j][0] - v >= EPS:
+                    break
+                aligned[i] = True
+                aligned[sorted_xy[j][1]] = True
+
+    _mark(sorted((p.x, i) for i, p in enumerate(parts)))
+    _mark(sorted((p.y, i) for i, p in enumerate(parts)))
+    return sum(aligned) / n
 
 
 def _t8_gridsnap(board: Board) -> float | None:
@@ -229,23 +249,26 @@ def _t9_spacing(board: Board) -> float | None:
 def _t10_orient(board: Board) -> dict[str, object]:
     """0/90/180/270 fraction + entropy over p.rot."""
     import math
+    from collections import Counter
     rots = [p.rot for p in board.parts.values()]
     if not rots:
         return {"cardinal": None, "entropy": None}
     card = sum(r in (0, 90, 180, 270) for r in rots) / len(rots)
     ent = 0.0
-    for r in set(rots):
-        f = rots.count(r) / len(rots)
-        ent -= f * math.log2(f)
+    for f in Counter(rots).values():
+        frac = f / len(rots)
+        ent -= frac * math.log2(frac)
     return {"cardinal": round(card, 3), "entropy": round(ent, 3)}
 
 
-def _t14_silk(board: Board) -> dict[str, object] | None:
+def _t14_silk(board: Board,
+              texts: list[Any] | None = None) -> dict[str, object] | None:
     """Silk overlap RAW counts (text–text, text–copper). Scored, never veto.
     Text extents from the SVG renderer's font metric (fs=4·S/10 at S=10 →
     4px/mm units, ~0.6 aspect): box = len·2.4 × 4.0 board-mm centered."""
     from .silk import labels
-    texts = labels(board).texts
+    if texts is None:
+        texts = list(labels(board).texts)
     if not texts:
         return None
     # silk text ~1.0mm tall (AtlasPCB rule), ~0.6 aspect, centered on Text.xy
@@ -339,17 +362,20 @@ def _t11_copper_balance(board: Board) -> dict[str, object] | None:
     return {"tile_sigma": round(var ** 0.5, 3), "layer_delta": round(delta, 3)}
 
 
-def _t15_silk_consistency(board: Board) -> float | None:
+def _t15_silk_consistency(board: Board,
+                          texts: list[Any] | None = None) -> float | None:
     """Modal ref-label offset direction %. None if no labels."""
     from .silk import labels
-    texts = [t for t in labels(board).texts if t.cls == "silk-ref"]
-    if not texts:
+    if texts is None:
+        texts = list(labels(board).texts)
+    refs = [t for t in texts if getattr(t, "cls", None) == "silk-ref"]
+    if not refs:
         return None
     by_ref: dict[str, tuple[float, float]] = {}
-    for t in texts:
+    for t in refs:
         by_ref.setdefault(t.s, (t.x, t.y))
     dirs = []
-    for t in texts:
+    for t in refs:
         p = board.parts.get(t.s)
         if p is None:
             continue
@@ -404,6 +430,8 @@ def tidy(board: Board) -> dict[str, object]:
     # T1 and T5 fold the same foreign-pair walk: do it once for both.
     routed = _routed(board)
     t1, closest = _t1_t5(board) if routed else (0, float("inf"))
+    from .silk import labels as _silk_labels
+    silk_texts = list(_silk_labels(board).texts)
     m: dict[str, object] = {
         "T1_crossings": t1 if routed else None,
         "T2_bends_per_mm": _t2_bends(board),
@@ -419,8 +447,8 @@ def tidy(board: Board) -> dict[str, object]:
         "T11_copper_balance": _t11_copper_balance(board),
         "T12_acid_traps": _t12_acid_traps(board),
         "T13_schematic": _t13_schematic(board),
-        "T14_silk_overlap": _t14_silk(board),
-        "T15_silk_consistency": _t15_silk_consistency(board),
+        "T14_silk_overlap": _t14_silk(board, silk_texts),
+        "T15_silk_consistency": _t15_silk_consistency(board, silk_texts),
         "routed_segs": nets,
     }
     defined = sum(1 for k, v in m.items()
@@ -447,14 +475,16 @@ def score(board: Board) -> dict[str, object]:
     subs["orientation"] = round(card * 100, 1) if card is not None else 50.0
     parts = list(board.parts.values())
     bad = 0
-    for i in range(len(parts)):
-        for j in range(i + 1, len(parts)):
-            a, b = parts[i], parts[j]
-            aw, ah = a.wh()
-            bw, bh = b.wh()
-            if (abs(a.x - b.x) < (aw + bw) / 2 and
-                    abs(a.y - b.y) < (ah + bh) / 2):
-                bad += 1
+    sizes = [p.wh() for p in parts]
+    boxes = [(p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2)
+             for p, (w, h) in zip(parts, sizes)]
+    for i, j in grid_pairs(boxes, 5.0):
+        a, b = parts[i], parts[j]
+        aw, ah = sizes[i]
+        bw, bh = sizes[j]
+        if (abs(a.x - b.x) < (aw + bw) / 2 and
+                abs(a.y - b.y) < (ah + bh) / 2):
+            bad += 1
     subs["spacing"] = round(max(0, 100 - 25 * bad), 1)
     from .fab import get as _fab_get
     edge = float(cast(float, _fab_get(board.fab).get("edge", 0.3)))
