@@ -816,13 +816,14 @@ def _git(*args: str, timeout: float = 20.0) -> str:
 
 
 def _git_log(n: int = 30, path: object = None) -> list[dict[str, str]]:
-    """Commits touching the open board (or the whole project when asked).
-    %x1f unit separator so a commit subject with spaces survives."""
-    args = ["log", f"-{n}", "--date=short",
-            "--pretty=format:%h%x1f%ad%x1f%an%x1f%s"]
-    target = _rel(path) if path is not None else "."
-    if target != ".":
-        args += ["--", target]
+    """Commits touching one authorized board file."""
+    target = os.path.relpath(SRC, ROOT) if path is None else str(path)
+    full = _abs(target, must_exist=True, near=ROOT)
+    if not os.path.isfile(full) or os.path.splitext(full)[1].lower() != ".ocd":
+        raise ValueError("history requires a board file")
+    target = os.path.relpath(full, ROOT)
+    args = ["--literal-pathspecs", "log", f"-{n}", "--date=short",
+            "--pretty=format:%h%x1f%ad%x1f%an%x1f%s", "--", target]
     out = _git(*args)
     rows = []
     for line in out.splitlines():
@@ -2475,11 +2476,15 @@ class H(http.server.BaseHTTPRequestHandler):
                     if not _GIT_HASH_RE.match(h):
                         self._send({"error": "hash must be a hex git object id"})
                         return
-                    self._send({"diff": _git("show", "--stat", "--patch",
-                                             "--no-color", h)[:20000]})
+                    rel = os.path.relpath(SRC, ROOT)
+                    self._send({"diff": _git("--literal-pathspecs", "show",
+                                             "--format=", "--stat", "--patch",
+                                             "--no-color", h + "^{commit}",
+                                             "--", rel)[:20000]})
                 else:
                     rel = _rel(os.path.relpath(SRC, ROOT))
-                    self._send({"diff": _git("diff", "--no-color", "--", rel)[:20000]})
+                    self._send({"diff": _git("--literal-pathspecs", "diff",
+                                             "--no-color", "--", rel)[:20000]})
             elif self.path == "/vcs/commit":
                 rel = _rel(os.path.relpath(SRC, ROOT))
                 msg = str(req.get("message", "")).strip() or (

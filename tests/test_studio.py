@@ -282,6 +282,65 @@ class KnowledgebaseImportTests(unittest.TestCase):
                 self.assertEqual(len(kb.docs()), 1)
 
 
+class RevisionAccessTests(unittest.TestCase):
+    def test_revision_queries_are_scoped_to_authorized_board_files(self) -> None:
+        import io
+        from email.message import Message
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+
+        with tempfile.TemporaryDirectory() as root:
+            for rel in ("board.ocd", ".users/alice/private.ocd",
+                        ".users/bob/own.ocd", "literal*.ocd"):
+                full = os.path.join(root, rel)
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                with open(full, "w", encoding="utf-8") as f:
+                    f.write("board fixture 40x30\n")
+            with patch.multiple(studio, ROOT=root, BASE=root, START_DIR=root,
+                                SRC=os.path.join(root, "board.ocd")), \
+                    patch.object(studio, "_authed", return_value="bob"), \
+                    patch.object(studio, "_git_status", return_value={}), \
+                    patch.object(studio, "_git", return_value="") as git:
+                cases: tuple[tuple[str, dict[str, object], str | None], ...] = (
+                    ("/vcs", {"path": ".users/alice/private.ocd"}, None),
+                    ("/vcs", {"path": "."}, None),
+                    ("/vcs", {"path": ".users"}, None),
+                    ("/vcs", {"path": ".ocd-users"}, None),
+                    ("/vcs", {"path": ":(glob)**"}, None),
+                    ("/vcs", {}, "board.ocd"),
+                    ("/vcs", {"path": ".users/bob/own.ocd"},
+                     ".users/bob/own.ocd"),
+                    ("/vcs", {"path": "literal*.ocd"}, "literal*.ocd"),
+                    ("/vcs/diff", {"hash": "abcd1234"}, "board.ocd"),
+                    ("/vcs/diff", {}, "board.ocd"),
+                )
+                for route, payload, target in cases:
+                    with self.subTest(route=route, payload=payload):
+                        git.reset_mock()
+                        handler = studio.H.__new__(studio.H)
+                        handler.path = route
+                        body = json.dumps(payload).encode()
+                        handler.headers = Message()
+                        handler.headers["Content-Length"] = str(len(body))
+                        handler.rfile = io.BytesIO(body)
+                        with patch.object(handler, "_send") as send:
+                            handler.do_POST()
+                        response = send.call_args.args[0]
+                        if target is None:
+                            self.assertIn("error", response)
+                            git.assert_not_called()
+                        else:
+                            self.assertNotIn("error", response)
+                            args = git.call_args.args
+                            self.assertEqual(args[0], "--literal-pathspecs")
+                            self.assertEqual(args[-2:], ("--", target))
+                            if payload.get("hash"):
+                                self.assertIn("abcd1234^{commit}", args)
+                                self.assertIn("--format=", args)
+
+
 class UploadTests(unittest.TestCase):
     def run_handler(self, start: str, end: str, drive: str) -> None:
         node = shutil.which("node")

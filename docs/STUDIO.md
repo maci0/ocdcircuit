@@ -111,6 +111,11 @@ structured ops through the `collab` plugin. Any failure
 returns `{"error": "Type: msg"}` — the server never 500s the UI thread.
 Unknown POST paths also return that JSON envelope (not a bare HTTP 404).
 
+`/vcs` lists history for one accessible `.ocd` file (`path`, defaulting to
+the open board); directories and other accounts' shelves are refused.
+`/vcs/diff` returns only the open board's patch and file statistics, including
+when a commit hash is supplied. Paths are literal, not Git pathspec patterns.
+
 ## Realtime collab (Google-docs-shaped, N engineers)
 
 Open the same board in any number of browsers: the room pill in the header
