@@ -1905,21 +1905,24 @@ class KnollPrice(Plugin[dict[str, object]]):
         lcsc = k.get("lcsc", "")
         mpn = k.get("mpn", "")
         assert isinstance(lcsc, str) and isinstance(mpn, str)
-        v, src = _knoll_price(lcsc, mpn)
+        v, src, stock = _knoll_price(lcsc, mpn)
         if v is None:
             return {"price": None, "source": "unpriced"}
         assert math.isfinite(v) and v >= 0
-        return {"price": v, "source": src}
+        out: dict[str, object] = {"price": v, "source": src}
+        if stock is not None:
+            out["stock"] = stock
+        return out
 
 
 _KNOLL_WARNED = False  # one stderr line per process for knoll load/lookup fails
 
 
-def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
+def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str, int | None]:
     """Live JLC lookup via an optional knoll checkout. KNOLL_SRC, when set,
     is the only candidate (a typo must not silently use another tree). When
     unset, try ~/Desktop/knoll/src. Load/lookup failure → unpriced, logged
-    once."""
+    once. Returns (price, source, stock-or-None)."""
     import importlib.util
     import math
     import os
@@ -1950,19 +1953,21 @@ def _knoll_price(lcsc: str, mpn: str) -> tuple[float | None, str]:
                 print(f"price:knoll failed ({mod}): {type(e).__name__}: {e}",
                       file=sys.stderr)
                 _KNOLL_WARNED = True
-            return None, "unpriced"
+            return None, "unpriced", None
         if not isinstance(r, dict) or r.get("price") is None:
-            return None, "unpriced"
+            return None, "unpriced", None
         pv = r["price"]
         assert isinstance(pv, (int, float, str))
         try:
             v = float(pv)
             if not math.isfinite(v) or v < 0:
-                return None, "unpriced"
+                return None, "unpriced", None
         except (TypeError, ValueError):
-            return None, "unpriced"
-        return v, "jlc-live"
-    return None, "unpriced"
+            return None, "unpriced", None
+        st = r.get("stock")
+        stock = int(st) if isinstance(st, (int, float)) and st >= 0 else None
+        return v, "jlc-live", stock
+    return None, "unpriced", None
 
 
 class JlcApiPrice(Plugin[dict[str, object]]):

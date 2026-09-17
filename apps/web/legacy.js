@@ -3,6 +3,7 @@
 // on purpose: they drive the DOM directly, not the VDOM.
 // Loaded as a module AFTER workshop.js, so every id it reaches for exists.
 // NOTE: modules are strict mode — never assign to an undeclared name here.
+import { ui } from './store.js';
 const $=id=>document.getElementById(id);
 async function api(path,body){const r=await fetch(path,{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
@@ -423,11 +424,11 @@ function animate(frames,traces,done){
       for(const r in to){const a=from[r]||to[r],b=to[r];
         S.cur.parts[r]={...S.cur.parts[r],x:a[0]+(b[0]-a[0])*e,y:a[1]+(b[1]-a[1])*e};}
       dirty=true;
-      $('cost').textContent=`cost ${f.cost}`;
+      ui.set({cost:`cost ${f.cost}`});
       if(k<N)anim=requestAnimationFrame(tw);else{for(const r in to)S.cur.parts[r]={...S.cur.parts[r],x:to[r][0],y:to[r][1]};i++;step();}})();}
   step();
 }
-function statMsg(txt,ok){const el=$('stat');el.textContent=txt||'';el.title=txt||'';el.className=!txt?'':ok?'ok':'err';}
+function statMsg(txt,ok){ui.set({stat:txt||'',statOk:!!ok});}
 async function withBusy(btn,label,fn){ // long actions: disable + say what is happening
   if(!btn||btn.disabled)return;
   const was=btn.textContent;btn.disabled=true;
@@ -466,7 +467,7 @@ function applyState(r,live){
   S=r;S.cur=r;markDirty();spinBriefly(); // render live on the state itself (bw/bh/pours/fixed ride along)
   notePlacement(r);
   if(live&&r.frames&&r.frames.length)animate(r.frames,r.traces,()=>{drawDRC(r);});
-  else{S.cur.traces=r.traces;$('cost').textContent=`cost ${r.cost}`;drawDRC(r);}
+  else{S.cur.traces=r.traces;ui.set({cost:`cost ${r.cost}`});drawDRC(r);}
   drawFeas(r);renderLayers(r);renderParts(r);
   if(document.activeElement!==$('ed'))setEditor(r.text);
 }
@@ -475,18 +476,16 @@ function applyState(r,live){
 // edited first, so reload their text (never auto-merge, never clobber).
 function collabPaint(users){
   collabUsers=users||[];
-  const el=$('room');if(!el)return;
   const others=collabUsers.filter(u=>u.name!==collabMe);
   // the pill never grows past three names no matter the room size —
   // the full roster lives in the tooltip.
   const head=collabUsers.slice(0,3).map(u=>u.name).join(', ')
     +(collabUsers.length>3?` +${collabUsers.length-3}`:'');
-  el.textContent=others.length?`${others.length+1} here: ${head}`
-    :((collabUsers.length?'solo · '+head:'solo'));
-  el.className='pill'+(others.length?' ok':'');
-  el.title=collabUsers.map(u=>`${u.name}${u.ref?' on '+u.ref:''}`).join('\n')||'no one else here yet';
-  const note=$('roomnote');
-  if(note)note.textContent=others.length?`live now: ${head}`:'just you here — copy the link to co-edit';
+  ui.set({room:others.length?`${others.length+1} here: ${head}`
+      :((collabUsers.length?'solo · '+head:'solo')),
+    roomOk:!!others.length,
+    roomTitle:collabUsers.map(u=>`${u.name}${u.ref?' on '+u.ref:''}`).join('\n')||'no one else here yet',
+    roomNote:others.length?`live now: ${head}`:'just you here — copy the link to co-edit'});
   markDirty();
 }
 let collabSyncSeq=0; // monotonic: a slow sync must not land on a newer room
@@ -540,14 +539,14 @@ function collabStart(){
   };
 }
 function drawFeas(r){
-  const f=r.feasible||{},el=$('feas');if(!el)return;
+  const f=r.feasible||{};
   const ks=Object.keys(f).sort();
   if(!ks.length)return;
   // state is a word: the current layer count is marked, every count reads ok/unroutable
-  el.innerHTML='routing feasibility per layer count: '+ks.map(L=>{
+  ui.set({feas:'routing feasibility per layer count: '+ks.map(L=>{
     const v=f[L],here=+L===r.layers;
     const cg=v.congestion?`, congestion ${v.congestion.crossings}/${v.congestion.pairs} crossings`:'' ;
-    return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}${cg}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ');
+    return `<span class="feasline ${v.ok?'fok':'fbad'}${here?' here':''}" title="${v.segs} segments, ${v.wirelength}mm of wire at ${L} layer${L==='1'?'':'s'}${cg}">${L}L ${v.ok?'routable':'unroutable'}${here?' (this board)':''}</span>`;}).join(' ')});
 }
 // --- layer and part visibility controls (view state, never a board edit) --
 function renderLayers(st){
@@ -775,7 +774,7 @@ function drawTidy(r){
     $('tidycov').textContent='';
     $('tidy').innerHTML='<div class=dim>tidy metrics skipped on a dense board '
       +`(${Object.keys(r.parts||{}).length} parts) — run the CLI for the full report</div>`;
-    $('ocdscore').textContent='OCD n/a (dense)';
+    ui.set({ocd:'OCD n/a (dense)'});
     return;
   }
   $('tidycov').textContent=t.coverage?`(${t.coverage})`:'';
@@ -783,7 +782,7 @@ function drawTidy(r){
     .map(([k,v])=>`<div><span class=dim>${k}</span> ${tidyVal(v)}</div>`).join('');
   $('tidy').innerHTML=rows;
   const sc=r.score; // OCD neatness 0-100 next to cost
-  if(sc&&!sc.dense)$('ocdscore').textContent=`OCD ${sc.total}/100 (${sc.grade})`;
+  if(sc&&!sc.dense)ui.set({ocd:`OCD ${sc.total}/100 (${sc.grade})`});
 }
 // A dense board says so: it is loaded from the file's own positions, its
 // metrics are skipped, and its parts list is capped. Never let the page look
@@ -986,11 +985,12 @@ if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open boa
     const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
     if(r.error){$('qout').textContent=r.error;statMsg(r.error);return;}
     const _asm=(r.rows||[]).find(x=>x.asm)||{};
-    const _alt=_asm.via_alt||[],_unp=_asm.unpriced||[];
+    const _alt=_asm.via_alt||[],_unp=_asm.unpriced||[],_low=_asm.low_stock||[];
     $('qout').innerHTML=(r.rows||[]).map(x=>
       `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="${x.fab} logo" width=64 height=21>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
       +(_alt.length?`<div class=dim>via substitute: ${_alt.join(', ')}</div>`:'')
       +(_unp.length?`<div class=warn>unpriced: ${_unp.join(', ')}</div>`:'')
+      +(_low.length?`<div class=warn>low stock: ${_low.join(', ')}</div>`:'')
       +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
     statMsg('');
   });
@@ -1540,7 +1540,7 @@ async function loadBoard(){ // parse + route what is on disk; never re-place
 async function boot(){
   // whoami: a stale cookie lands here sessionless — bounce to the gate.
   try{const me=await api('/auth/me',{});
-    if(me&&me.user){$('me').textContent=me.user;}
+    if(me&&me.user){ui.set({me:me.user});}
     else{location.href='/';return;}}catch(e){location.href='/';return;}
   // /load parses the file and routes what is there. It does not re-place:
   // a 5k-part board takes minutes to place, and the file already says where
@@ -1588,19 +1588,14 @@ async function boot(){
 }
 function setDark(on){
   document.body.classList.toggle('dark',on);
-  $('themebtn').textContent=on?'paper':'dark';
-  $('themebtn').setAttribute('aria-pressed',on?'true':'false');
+  ui.set({dark:!!on});
   try{localStorage.setItem('ocd-studio-dark',on?'1':'0');}catch(e){}
   markDirty();
 }
 function showCockpit(){ // every panel at once — the default, and a real control (All)
   document.body.classList.remove('tabs');
   delete document.body.dataset.view;
-  document.querySelectorAll('#viewtabs button').forEach(b=>{
-    const all=b.dataset.v==='all';
-    b.classList.toggle('on',all);
-    b.setAttribute('aria-selected',all?'true':'false');
-    b.tabIndex=all?0:-1;});
+  ui.set({tabs:false,view:'all'});   // tab classes are rendered from this
   try{localStorage.setItem('ocd-studio-view','all');}catch(e){}
   renderAll();markDirty();
 }
@@ -1610,10 +1605,7 @@ function setView(v){
   if(!tabs){ // first pick enables tab mode (cockpit is the default)
     document.body.classList.add('tabs');tabs=true;}
   document.body.dataset.view=v;
-  document.querySelectorAll('#viewtabs button').forEach(b=>{
-    const on=b.dataset.v===v;b.classList.toggle('on',tabs&&on);
-    b.setAttribute('aria-selected',tabs&&on?'true':'false');
-    b.tabIndex=tabs&&on?0:-1;});
+  ui.set({tabs:true,view:v});
   try{localStorage.setItem('ocd-studio-view',v);}catch(e){}
   renderAll();markDirty();
 }
@@ -1636,8 +1628,7 @@ $('placer').onchange=$('router').onchange=$('fab').onchange=$('silk').onchange=p
 $('chatbtn').onclick=()=>{
   document.body.classList.toggle('chatty');
   const on=document.body.classList.contains('chatty');
-  $('chatbtn').classList.toggle('primary',on);
-  $('chatbtn').setAttribute('aria-pressed',on?'true':'false');
+  ui.set({chat:on});
   if(on)$('ask').focus();
 };
 (async()=>{await boot();})();

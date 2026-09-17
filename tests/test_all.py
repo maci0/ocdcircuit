@@ -668,19 +668,20 @@ _qalt = agent.loads("board q2 40x30 2L\npart U1 SOIC8 NE555 mpn=NE555P alternate
 def _qaltprice(self: _QAltBoard, ref: str, key: str | None = None,
                **kw: object) -> dict[str, object]:
     if kw.get("mpn") == "LM555CN":
-        return {"price": 0.31, "source": "testdb"}
+        return {"price": 0.31, "source": "testdb", "stock": 3}
     return {"price": None, "source": "unpriced"}
 with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
     _qaltgot = _qq.unit_price(_qalt, "U1")
-assert _qaltgot == (0.31, "testdb+alt:LM555CN"), _qaltgot
+assert _qaltgot == (0.31, "testdb+alt:LM555CN", 3), _qaltgot
 with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
     _qalt2 = agent.loads("board q3 40x30 2L\npart U1 SOIC8 NE555 mpn=NE555P\n"
                          "N :: U1.1 U1.2\nGND :: U1.3 U1.4\n", base=EX)
-    assert _qq.unit_price(_qalt2, "U1") == (None, "unpriced")
+    assert _qq.unit_price(_qalt2, "U1") == (None, "unpriced", None)
 with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
     _qalta = _qq.assembled(_qalt, qty=5)
 assert _qalta["via_alt"] == ["U1(LM555CN)"], _qalta
 assert _qalta["unpriced"] == [], _qalta
+assert _qalta["low_stock"] == ["U1(3<5)"], _qalta  # stock 3 < qty 5
 # unknown footprint must not invent a 2-pad joint count (silent misprice)
 try:
     _qq._pads("NOPE", {})

@@ -99,12 +99,13 @@ def assembly_parts(board: Board) -> list[dict[str, object]]:
     return rows
 
 
-def unit_price(board: Board, ref: str) -> tuple[float | None, str]:
-    """One part's unit USD: the board's `price` providers in order (std:
-    `price=` attr + offline DB; jlc-api: official JLC API; knoll: keyless
-    live lookup); else unpriced. Provider calls go through Board.price →
-    _run, so a crashing provider is fenced in failure memory like every
-    other plugin (not silently swallowed)."""
+def unit_price(board: Board, ref: str) -> tuple[float | None, str, int | None]:
+    """One part's (unit USD, source, stock-or-None): the board's `price`
+    providers in order (std: `price=` attr + offline DB; jlc-api: official
+    JLC API; knoll: keyless live lookup); else unpriced. Stock rides along
+    only when the winning provider reports it (knoll live). Provider calls
+    go through Board.price → _run, so a crashing provider is fenced in
+    failure memory like every other plugin (not silently swallowed)."""
     p = board.parts.get(ref)
     if p is None:  # KeyError on unknown ref (fixable input)
         raise KeyError(f"no part {ref!r}")
@@ -131,8 +132,10 @@ def unit_price(board: Board, ref: str) -> tuple[float | None, str]:
             if math.isfinite(pv) and pv >= 0:
                 if cmpn and cmpn != mpn:
                     src = f"{src}+alt:{cmpn}"
-                return float(pv), src
-    return None, "unpriced"
+                st = out.get("stock")
+                stock = int(st) if isinstance(st, (int, float)) and st >= 0 else None
+                return float(pv), src, stock
+    return None, "unpriced", None
 
 
 def bare(board: Board, fab: str, qty: int = 5) -> dict[str, object]:
@@ -184,9 +187,10 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     parts_total = Decimal(0)
     unpriced: list[str] = []
     via_alt: list[str] = []
+    low_stock: list[str] = []
     sources: dict[str, int] = {}
     for r in rows:
-        v, src = unit_price(board, str(r["ref"]))
+        v, src, stock = unit_price(board, str(r["ref"]))
         sources[src] = sources.get(src, 0) + 1
         if v is None:
             unpriced.append(str(r["ref"]))
@@ -194,6 +198,8 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
             parts_total += _D(v)
             if "+alt:" in src:
                 via_alt.append(f"{r['ref']}({src.split('+alt:')[1]})")
+            if stock is not None and stock < qty:
+                low_stock.append(f"{r['ref']}({stock}<{qty})")
     ext = sum(1 for r in rows if not str(r.get("lcsc", "")).startswith("C"))
     ext_fee = _D(ext) * _D(JLC_EXTENDED_FEE) if rows else Decimal(0)
     # Round fee and per-board parts to cents first, then form the order
@@ -206,7 +212,7 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     return {"fees": _usd(fees_d), "parts_per_board": _usd(parts_d),
             "total": _usd(total_d), "per_board": _usd(total_d / qty),
             "joints": joints, "parts": len(rows), "unpriced": unpriced,
-            "via_alt": via_alt,
+            "via_alt": via_alt, "low_stock": low_stock,
             "sources": sources, "extended_parts": ext,
             "note": "JLC Economic PCBA single-side; parts from live JLC or price= attr"}
 
