@@ -2377,9 +2377,9 @@ class H(http.server.BaseHTTPRequestHandler):
                             as_rel = os.path.relpath(rp, root).replace(
                                 os.sep, "/")
                             _ensure_shelf_rel(as_rel, src)
-                            if not os.path.isfile(rp):
+                            src = _abs(as_rel, must_exist=True, near=root)
+                            if not os.path.isfile(src):
                                 raise ValueError(f"{src}: no such file")
-                            src = rp
                         else:
                             src = _abs(src, must_exist=True, near=BASE)
                     self._send(kb.add(src))

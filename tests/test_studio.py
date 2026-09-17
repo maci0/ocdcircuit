@@ -81,6 +81,50 @@ for (const card of cards) {
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class KnowledgebaseImportTests(unittest.TestCase):
+    def test_local_imports_use_project_access_checks(self) -> None:
+        import io
+        from email.message import Message
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+        from ocdcircuit.kb import KB
+
+        with tempfile.TemporaryDirectory() as root:
+            kb = KB(root)
+            source = os.path.join(root, "notes.md")
+            with open(source, "w", encoding="utf-8") as f:
+                f.write("project notes\n")
+            with open(os.path.join(root, ".ocd-users"), "w", encoding="utf-8") as f:
+                f.write("account fixture\n")
+            with patch.multiple(studio, ROOT=root, BASE=root, START_DIR=root,
+                                SRC=os.path.join(root, "board.ocd")), \
+                    patch.object(studio, "_authed", return_value="tester"), \
+                    patch.object(studio, "_kb", return_value=kb):
+                for path, allowed in ((source, True), ("notes.md", True),
+                                      (os.path.join(root, ".ocd-users"), False),
+                                      (".ocd-users", False)):
+                    with self.subTest(path=path):
+                        handler = studio.H.__new__(studio.H)
+                        handler.path = "/kb/add"
+                        body = json.dumps({"src": path}).encode()
+                        handler.headers = Message()
+                        handler.headers["Content-Length"] = str(len(body))
+                        handler.rfile = io.BytesIO(body)
+                        with patch.object(handler, "_send") as send:
+                            handler.do_POST()
+                        response = send.call_args.args[0]
+                        if allowed:
+                            self.assertNotIn("error", response)
+                            self.assertEqual(kb.text(response["added"]),
+                                             "project notes\n")
+                        else:
+                            self.assertIn("outside the project root",
+                                          response["error"])
+                self.assertEqual(len(kb.docs()), 2)
+
+
 class UploadTests(unittest.TestCase):
     def run_handler(self, start: str, end: str, drive: str) -> None:
         node = shutil.which("node")
@@ -723,6 +767,8 @@ def main() -> None:
                          cookie=_ck_second)
         assert "error" in _kb_steal and "shelf" in str(
             _kb_steal["error"]).lower(), _kb_steal
+        _kb_creds = post(base, "/kb/add", {"src": os.path.join(troot, ".ocd-users")})
+        assert "outside the project root" in str(_kb_creds.get("error", "")), _kb_creds
         # restore tester onto the launch board for the rest of the suite
         _back = post(base, "/fs/open", {"path": "blinky_555.ocd"})
         assert "error" not in _back, _back
