@@ -237,6 +237,48 @@ for (const card of cards) {
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class LoadTests(unittest.TestCase):
+    def test_load_preserves_positions_without_running_placer(self) -> None:
+        import io
+        from email.message import Message
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+        from ocdcircuit import collab
+        from ocdcircuit.circuit import Board
+
+        text = ("board load_test 40x30 2L\n"
+                "part R1 R0805 1k x=5 y=10\n"
+                "part R2 R0805 1k\n"
+                "fix R2 at 25 20\n"
+                "net N: R1.2 R2.1\n")
+        handler = studio.H.__new__(studio.H)
+        handler.path = "/load"
+        handler.headers = Message()
+        handler.headers["Content-Length"] = "2"
+        handler.rfile = io.BytesIO(b"{}")
+        with (patch.object(studio.H, "src_text", text),
+              patch.object(studio, "BASE", os.path.dirname(BOARD)),
+              patch.object(studio, "_authed", return_value="tester"),
+              patch.object(collab, "_ROOMS", {}),
+              patch.object(Board, "place", autospec=True,
+                           return_value=42.0) as place,
+              patch.object(handler, "_write_bytes") as response):
+            handler.do_POST()
+            self.assertEqual(response.call_args.args[0], 200)
+            state = json.loads(response.call_args.args[1])
+            self.assertNotIn("error", state)
+            self.assertIs(state["placed"], False)
+            place.assert_not_called()
+            for ref, xy in (("R1", (5, 10)), ("R2", (25, 20))):
+                part = state["parts"][ref]
+                self.assertEqual((part["x"], part["y"]), xy)
+            self.assertTrue(state["traces"])
+            self.assertIn("errors", state)
+            self.assertEqual(state["frames"], [])
+
+
 class KnowledgebaseImportTests(unittest.TestCase):
     def test_local_imports_use_project_access_checks(self) -> None:
         import io
