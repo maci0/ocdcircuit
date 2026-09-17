@@ -577,7 +577,7 @@ assert _asvg.count("stroke-dasharray") == 1 and "<line" in _asvg, _asvg[:300]
 _xr = cast(str, bj.render("xray"))
 assert _xr.startswith("<svg") and "#05070d" in _xr and "x-ray" in _xr
 from ocdcircuit import xray as _xray
-from ocdcircuit.raster import _png as _xray_png
+from ocdcircuit.raster import _png as _xray_png, decode_png
 # a scan painted straight from the design mask must score ~100
 _xgw, _xgh, _xgm = _xray.expected(bj)
 _xscanpx = bytearray()
@@ -599,7 +599,7 @@ assert cast(float, _xbad["score"]) < cast(float, _xproxy["score"])
 assert len(cast(list[object], _xbad["divs"])) > 0, _xbad
 assert "fill-opacity" in cast(str, _xbad["overlay"])
 try:
-    _xray.decode_png(b"not a png")
+    decode_png(b"not a png")
     raise AssertionError("should have raised")
 except ValueError:
     pass

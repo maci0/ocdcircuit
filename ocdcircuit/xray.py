@@ -8,8 +8,6 @@ boxed. dx/dy/scale re-register a scan that doesn't sit exactly on the
 design grid (real scans never do); thr sets the copper brightness cutoff.
 """
 from __future__ import annotations
-import struct
-import zlib
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -87,82 +85,6 @@ def expected(board: Board, pxmm: float = 10.0) -> tuple[int, int, bytearray]:
     return gw, gh, g
 
 
-def decode_png(raw: bytes) -> tuple[int, int, bytearray]:
-    """PNG → (w, h, RGB triplets). 8-bit gray/RGB(A), non-interlaced only;
-    anything else is a ValueError (fixable input: re-export the scan)."""
-    if raw[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("not a PNG (upload the fab x-ray as .png)")
-    pos, w, h, ctype, idat = 8, 0, 0, 0, b""
-    while pos < len(raw):
-        if pos + 12 > len(raw):
-            raise ValueError("truncated PNG (re-export the scan)")
-        (ln,) = struct.unpack(">I", raw[pos:pos + 4])
-        typ = raw[pos + 4:pos + 8]
-        if pos + 12 + ln > len(raw):
-            raise ValueError("truncated PNG (re-export the scan)")
-        if typ == b"IHDR":
-            if ln != 13:
-                raise ValueError("bad PNG header (re-export the scan)")
-            w, h, bd, ctype, _cp, _fl, iv = struct.unpack(">IIBBBBB", raw[pos + 8:pos + 21])
-            if bd != 8 or iv != 0 or ctype not in (0, 2, 6):
-                raise ValueError(
-                    f"unsupported PNG (need 8-bit gray/RGB(A) non-interlaced, "
-                    f"got depth={bd} type={ctype} interlace={iv})")
-        elif typ == b"IDAT":
-            idat += raw[pos + 8:pos + 8 + ln]
-        pos += 12 + ln
-    if w == 0 or h == 0 or not idat:
-        raise ValueError("empty PNG (no pixels — re-export the scan)")
-    ch = {0: 1, 2: 3, 6: 4}[ctype]
-    try:
-        data = zlib.decompress(idat)
-    except zlib.error as e:
-        raise ValueError(f"bad PNG data ({e} — re-export the scan)")
-    if len(data) < h * (1 + w * ch):
-        raise ValueError("truncated PNG (re-export the scan)")
-    px = bytearray(w * h * 3)
-    prev = bytearray(w * ch)
-    p = 0
-    for y in range(h):
-        if p + 1 + w * ch > len(data):
-            raise ValueError("truncated PNG (re-export the scan)")
-        f = data[p]
-        p += 1
-        line = bytearray(data[p:p + w * ch])
-        p += w * ch
-        if f == 1:
-            for i in range(ch, w * ch):
-                line[i] = (line[i] + line[i - ch]) & 255
-        elif f == 2:
-            for i in range(w * ch):
-                line[i] = (line[i] + prev[i]) & 255
-        elif f == 3:
-            for i in range(w * ch):
-                a = line[i - ch] if i >= ch else 0
-                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
-        elif f == 4:
-            for i in range(w * ch):
-                a = line[i - ch] if i >= ch else 0
-                b = prev[i]
-                c = prev[i - ch] if i >= ch else 0
-                pp = a + b - c
-                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
-                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                line[i] = (line[i] + pr) & 255
-        elif f != 0:
-            raise ValueError(f"bad PNG filter {f} (re-export the scan)")
-        prev = line
-        for x in range(w):
-            o = x * ch
-            if ch == 1:
-                r = gg = bb = line[o]
-            else:
-                r, gg, bb = line[o], line[o + 1], line[o + 2]
-            qq = (y * w + x) * 3
-            px[qq], px[qq + 1], px[qq + 2] = r, gg, bb
-    return w, h, px
-
-
 def render(board: Board, scale: float = 10.0) -> str:
     """X-ray reference SVG: stacked copper on black, ghost outlines, dim refs."""
     from xml.sax.saxutils import escape
@@ -236,6 +158,7 @@ def compare(board: Board, raw: bytes, pxmm: float = 10.0, thr: int = 100,
             min_cells: int = 3, max_divs: int = 50) -> dict[str, object]:
     """Fab scan vs design: {score 0-100, divs [{kind,x,y,w,h,cells}], svg, overlay}.
     divs are flood-filled copper regions (mm bbox, y-up), biggest first."""
+    from .raster import decode_png
     if not isinstance(thr, int) or isinstance(thr, bool) or not 0 <= thr <= 255:
         raise ValueError(f"thr {thr!r} must be an int 0-255")
     if not isinstance(scale, (int, float)) or not scale > 0:

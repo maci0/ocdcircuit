@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ocdcircuit.core import (Component, Context, Entry, Fiber, InactiveAccess,
-                             Registry, UiSlots, UndeclaredAccess, classify,
+                             Plugin, Registry, UiSlots, UndeclaredAccess, classify,
                              execute, stale_entries)
 
 # Alg 1: effect folds yielded inverses LIFO, dispose fires once
@@ -501,6 +501,46 @@ _rg.fail("zz", "boom", "RuntimeError: x")
 _rg._drop("zz", "boom")
 _rg._add("zz", "boom", object())
 assert _rg.get("zz", "boom") is not None, "stale failure outlived the entry"
+
+def _check_plugin_removal() -> None:
+    ctx = Context()
+    registry = Registry()
+    ctx.set("plugins", registry)
+    plugins: dict[str, Plugin[object]] = {}
+    for key in ("a-failed", "b-healthy", "c-active", "d-inactive"):
+        plugin = Plugin[object](key)
+        plugin.kind = "renderer"
+        plugin.key = key
+        plugin.mount(ctx)
+        plugins[key] = plugin
+    unrelated = object()
+    registry._add("router", "maze", unrelated)
+    registry.use("router", "maze")
+    registry.fail("renderer", "a-failed", "unavailable")
+    plugins["c-active"].use(ctx)
+    plugins["d-inactive"].unmount(ctx)
+    assert registry.get("renderer") is plugins["c-active"]
+    plugins["c-active"].unmount(ctx)
+    assert registry.get("renderer") is plugins["b-healthy"]
+    assert registry.get("router") is unrelated
+    plugins["b-healthy"].unmount(ctx)
+    assert "renderer" not in registry.active
+    assert ("renderer", "a-failed") in registry.failed
+    try:
+        registry.get("renderer")
+        raise AssertionError("failed plugins must not become the fallback")
+    except KeyError:
+        pass
+    plugins["a-failed"].unmount(ctx)
+    assert registry.list("renderer") == []
+    plugins["b-healthy"].mount(ctx)
+    assert registry.get("renderer") is plugins["b-healthy"]
+    ctx.undo()
+    assert "renderer" not in registry.active
+    assert registry.get("router") is unrelated
+
+
+_check_plugin_removal()
 
 # UI slot: dispose clears the crash verdict, so a reload renders again
 _slots = UiSlots()

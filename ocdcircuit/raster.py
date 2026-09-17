@@ -1,6 +1,6 @@
-"""Stdlib PNG rasterizer: 2D board top view → PNG bytes. No deps
-(zlib + struct). Painter: bg, traces (layer colors), pads, silk refs.
-Text = 3x5 blocks per char (no font files)."""
+"""Stdlib PNG rasterizer + codec: 2D board top view → PNG bytes, and PNG →
+pixels. No deps (zlib + struct). Painter: bg, traces (layer colors), pads,
+silk refs. Text = 3x5 blocks per char (no font files)."""
 from __future__ import annotations
 import struct
 import zlib
@@ -43,6 +43,82 @@ def _png(w: int, h: int, px: bytearray) -> bytes:
         raw += px[y * w * 3:(y + 1) * w * 3]
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b""))
+
+
+def decode_png(raw: bytes) -> tuple[int, int, bytearray]:
+    """PNG → (w, h, RGB triplets). 8-bit gray/RGB(A), non-interlaced only;
+    anything else is a ValueError (fixable input: re-export the scan)."""
+    if raw[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG (upload the fab x-ray as .png)")
+    pos, w, h, ctype, idat = 8, 0, 0, 0, b""
+    while pos < len(raw):
+        if pos + 12 > len(raw):
+            raise ValueError("truncated PNG (re-export the scan)")
+        (ln,) = struct.unpack(">I", raw[pos:pos + 4])
+        typ = raw[pos + 4:pos + 8]
+        if pos + 12 + ln > len(raw):
+            raise ValueError("truncated PNG (re-export the scan)")
+        if typ == b"IHDR":
+            if ln != 13:
+                raise ValueError("bad PNG header (re-export the scan)")
+            w, h, bd, ctype, _cp, _fl, iv = struct.unpack(">IIBBBBB", raw[pos + 8:pos + 21])
+            if bd != 8 or iv != 0 or ctype not in (0, 2, 6):
+                raise ValueError(
+                    f"unsupported PNG (need 8-bit gray/RGB(A) non-interlaced, "
+                    f"got depth={bd} type={ctype} interlace={iv})")
+        elif typ == b"IDAT":
+            idat += raw[pos + 8:pos + 8 + ln]
+        pos += 12 + ln
+    if w == 0 or h == 0 or not idat:
+        raise ValueError("empty PNG (no pixels — re-export the scan)")
+    ch = {0: 1, 2: 3, 6: 4}[ctype]
+    try:
+        data = zlib.decompress(idat)
+    except zlib.error as e:
+        raise ValueError(f"bad PNG data ({e} — re-export the scan)")
+    if len(data) < h * (1 + w * ch):
+        raise ValueError("truncated PNG (re-export the scan)")
+    px = bytearray(w * h * 3)
+    prev = bytearray(w * ch)
+    p = 0
+    for y in range(h):
+        if p + 1 + w * ch > len(data):
+            raise ValueError("truncated PNG (re-export the scan)")
+        f = data[p]
+        p += 1
+        line = bytearray(data[p:p + w * ch])
+        p += w * ch
+        if f == 1:
+            for i in range(ch, w * ch):
+                line[i] = (line[i] + line[i - ch]) & 255
+        elif f == 2:
+            for i in range(w * ch):
+                line[i] = (line[i] + prev[i]) & 255
+        elif f == 3:
+            for i in range(w * ch):
+                a = line[i - ch] if i >= ch else 0
+                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
+        elif f == 4:
+            for i in range(w * ch):
+                a = line[i - ch] if i >= ch else 0
+                b = prev[i]
+                c = prev[i - ch] if i >= ch else 0
+                pp = a + b - c
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 255
+        elif f != 0:
+            raise ValueError(f"bad PNG filter {f} (re-export the scan)")
+        prev = line
+        for x in range(w):
+            o = x * ch
+            if ch == 1:
+                r = gg = bb = line[o]
+            else:
+                r, gg, bb = line[o], line[o + 1], line[o + 2]
+            qq = (y * w + x) * 3
+            px[qq], px[qq + 1], px[qq + 2] = r, gg, bb
+    return w, h, px
 
 
 class Canvas:

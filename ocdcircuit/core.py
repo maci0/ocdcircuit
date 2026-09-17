@@ -658,7 +658,8 @@ class Registry:
         # kind:key stays refused forever (paper §3 temporal composability).
         self.failed.pop((kind, key), None)
         if self.active.get(kind) == key:
-            rest = sorted(k for (k, _kk) in self.items if k == kind)
+            rest = sorted(kk for (k, kk) in self.items
+                          if k == kind and (k, kk) not in self.failed)
             if rest:
                 self.active[kind] = rest[0]
             else:

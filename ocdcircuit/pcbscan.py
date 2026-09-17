@@ -91,7 +91,7 @@ def load(path: str) -> Any:
         raise RuntimeError(
             f"{os.path.basename(path)} is not a PNG and Pillow is not "
             "installed (pip install Pillow for JPEG support)")
-    from .xray import decode_png
+    from .raster import decode_png
     with open(path, "rb") as f:
         w, h, px = decode_png(f.read())
     return np.frombuffer(bytes(px), dtype=np.uint8).reshape(h, w, 3).copy()
