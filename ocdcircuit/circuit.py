@@ -21,7 +21,7 @@ CONSTRAINT_TYPES = frozenset({
     "near", "fixed", "near-group", "edge", "layer", "width", "route-grid",
     "route-penalty", "silk", "nc", "pour", "keepout", "cutout", "hole",
     "bend", "stiffener", "sim", "match", "diff", "power", "class",
-    "assert",
+    "assert", "panel",
 })
 
 

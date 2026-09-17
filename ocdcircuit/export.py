@@ -19,6 +19,20 @@ Flash = tuple[float, float]
 Draw = tuple[float, float, float, float]
 
 
+def panel_offsets(board: Board) -> list[tuple[float, float]]:
+    """Panel copy origins: [(0,0)] without a panel line, else the
+    cols×rows grid with gap between copies. Export-only — DRC, place
+    and route all see the single board."""
+    for c in board.constraints:
+        if isinstance(c, dict) and c.get("t") == "panel":
+            cols = max(1, int(cast(int, c.get("cols", 1))))
+            rows = max(1, int(cast(int, c.get("rows", 1))))
+            gap = max(0.0, _f(c.get("gap", 2.5)))
+            return [(cx * (board.width + gap), cy * (board.height + gap))
+                    for cy in range(rows) for cx in range(cols)]
+    return [(0.0, 0.0)]
+
+
 def _gerber(flashes: list[Flash], draws: list[Draw], aperture: float,
               negative: str | None = None,
               widths: list[float] | None = None,
@@ -195,30 +209,44 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     planes = plane_plots(board)
     poured_nets = {n: sorted(ll) for n, ll in _pours(board).items()}
     edge = float(cast(float, _fab_get(board.fab).get("edge", 0.3)))
+    offs = panel_offsets(board)
+    def _tile_fl(fl: list[Flash]) -> list[Flash]:
+        return [(x + ox, y + oy) for ox, oy in offs for x, y in fl]
+    def _tile_dr(dr: list[Draw]) -> list[Draw]:
+        return [(x1 + ox, y1 + oy, x2 + ox, y2 + oy)
+                for ox, oy in offs for x1, y1, x2, y2 in dr]
     for ll, nm in enumerate(layer_names(board.layers)):
         fn = os.path.join(outdir, f"{board.name}.{nm}.gbr")
         if ll in planes:
             # no flashes: flood connects own-net pads directly; cutouts
             # clear foreign copper (flashes would punch wrong-size voids)
             cuts = planes[ll]
-            x0, y0, x1, y1 = edge, edge, board.width - edge, board.height - edge
-            flood = [(x0, y0, x1, y0), (x1, y0, x1, y1),
-                     (x1, y1, x0, y1), (x0, y1, x0, y0)]
-            open(fn, "w", encoding="utf-8").write(_gerber([], flood + cuts, 0.4,
+            flood: list[Draw] = []
+            for ox, oy in offs:
+                x0, y0 = edge + ox, edge + oy
+                x1, y1 = board.width - edge + ox, board.height - edge + oy
+                flood += [(x0, y0, x1, y0), (x1, y0, x1, y1),
+                          (x1, y1, x0, y1), (x0, y1, x0, y0)]
+                flood += [(a + ox, b + oy, c + ox, d + oy)
+                          for a, b, c, d in cuts]
+            open(fn, "w", encoding="utf-8").write(_gerber([], flood, 0.4,
                                         negative=",".join(
                                             f"{n}@L{ll}" for n, lls in poured_nets.items() if ll in lls)))
         else:
-            open(fn, "w", encoding="utf-8").write(_gerber(flashes.get(ll, []), draws.get(ll, []), 0.4,
-                                        widths=widths.get(ll, [])))
+            tfl, tdr = _tile_fl(flashes.get(ll, [])), _tile_dr(draws.get(ll, []))
+            tw = [w for _ in offs for w in widths.get(ll, [])]
+            open(fn, "w", encoding="utf-8").write(_gerber(tfl, tdr, 0.4, widths=tw))
         files.append(fn)
     # paste (top only — single-sided SMT like the mitox board)
     fn = os.path.join(outdir, f"{board.name}.GTP.gbr")
-    open(fn, "w", encoding="utf-8").write(_gerber(paste, [], 0.4, fsizes=psizes))
+    open(fn, "w", encoding="utf-8").write(_gerber(_tile_fl(paste), [], 0.4,
+                                        fsizes=[s for _ in offs for s in psizes]))
     files.append(fn)
     # mask: openings over pads (empty file = full mask = unsolderable).
     # Bottom is pad-free (single-sided SMT), so empty GBS is correct there.
     fn = os.path.join(outdir, f"{board.name}.GTS.gbr")
-    open(fn, "w", encoding="utf-8").write(_gerber(flashes.get(0, []), [], 0.5, fsizes=msizes))
+    open(fn, "w", encoding="utf-8").write(_gerber(_tile_fl(flashes.get(0, [])), [], 0.5,
+                                        fsizes=[s for _ in offs for s in msizes]))
     files.append(fn)
     if board.layers > 1:
         fn = os.path.join(outdir, f"{board.name}.GBS.gbr")
@@ -235,7 +263,7 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     silk_draws += [(b.x0, b.y1, b.x0, b.y0) for b in sk.boxes]
     silk_fl: list[Flash] = [(d.x, d.y) for d in sk.dots]
     fn = os.path.join(outdir, f"{board.name}.GTO.gbr")
-    open(fn, "w", encoding="utf-8").write(_gerber(silk_fl, silk_draws, 0.2))
+    open(fn, "w", encoding="utf-8").write(_gerber(_tile_fl(silk_fl), _tile_dr(silk_draws), 0.2))
     files.append(fn)
     if board.layers > 1:
         fn = os.path.join(outdir, f"{board.name}.GBO.gbr")
@@ -243,18 +271,21 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
         files.append(fn)
     W, H = board.width, board.height
     fn = os.path.join(outdir, f"{board.name}.GKO.gbr")
-    outl: list[Draw] = [(0.0, 0.0, W, 0.0), (W, 0.0, W, H),
-                        (W, H, 0.0, H), (0.0, H, 0.0, 0.0)]
+    outl: list[Draw] = []
+    for ox, oy in offs:
+        outl += [(ox, oy, ox + W, oy), (ox + W, oy, ox + W, oy + H),
+                 (ox + W, oy + H, ox, oy + H), (ox, oy + H, ox, oy)]
     from .drc import zone_at as _za
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "cutout":
             z = _za(board, c)
             hw, hh = _f(z["w"]) / 2, _f(z["h"]) / 2
             cx, cy = _f(z["x"]), _f(z.get("y", 0.0))
-            outl += [(cx - hw, cy - hh, cx + hw, cy - hh),
-                     (cx + hw, cy - hh, cx + hw, cy + hh),
-                     (cx + hw, cy + hh, cx - hw, cy + hh),
-                     (cx - hw, cy + hh, cx - hw, cy - hh)]
+            for ox, oy in offs:
+                outl += [(ox + cx - hw, oy + cy - hh, ox + cx + hw, oy + cy - hh),
+                         (ox + cx + hw, oy + cy - hh, ox + cx + hw, oy + cy + hh),
+                         (ox + cx + hw, oy + cy + hh, ox + cx - hw, oy + cy + hh),
+                         (ox + cx - hw, oy + cy + hh, ox + cx - hw, oy + cy - hh)]
     open(fn, "w", encoding="utf-8").write(_gerber([], outl, 0.1))
     files.append(fn)
     # drill: PTH holes (soldering) + vias (layer changes).
@@ -288,6 +319,14 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             z = zone_at(board, c)
             drills.setdefault(_f(z["d"]), set()).add(
                 (round(_f(z["x"]), 3), round(_f(z.get("y", 0.0)), 3)))
+    if len(offs) > 1:  # panel: replicate drills + slots per copy
+        drills = {dr: {(round(x + ox, 3), round(y + oy, 3))
+                       for ox, oy in offs for x, y in pts}
+                  for dr, pts in drills.items()}
+        slots = {w: [(round(x1 + ox, 3), round(y1 + oy, 3),
+                      round(x2 + ox, 3), round(y2 + oy, 3))
+                     for ox, oy in offs for x1, y1, x2, y2 in segs]
+                 for w, segs in slots.items()}
     fn = os.path.join(outdir, f"{board.name}.TXT")
     d = ["M48", "METRIC,TZ"]
     tools = sorted(set(drills) | set(slots))
@@ -338,8 +377,10 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
         for p in board.parts.values():
             if p.attrs.get("dnp"):
                 continue
-            cw.writerow([p.ref, f"{p.x:.3f}mm", f"{p.y:.3f}mm", "Top",
-                        int(p.attrs.get("rot", 0))])
+            for ci, (ox, oy) in enumerate(offs):
+                ref = p.ref if len(offs) == 1 else f"{p.ref}_P{ci}"
+                cw.writerow([ref, f"{p.x + ox:.3f}mm", f"{p.y + oy:.3f}mm",
+                            "Top", int(p.attrs.get("rot", 0))])
     files.append(fn)
     return files
 

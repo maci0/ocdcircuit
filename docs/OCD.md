@@ -112,6 +112,7 @@ route-penalty bend 3 via 20  # maze cost knobs (defaults 1.5/8.0);
                              # higher bend = straighter, higher via = fewer layers
 silk 2                       # 0=refs 1=+values 2=+pin-1+outlines 3=+nets
                              # (omit → level 1; plugins map 0→ref, 1–2→full, 3→fab)
+panel 2x3 gap 2.5            # panelize export: cols x rows, gap mm
 ```
 
 `pour NET on L` floods layer L with NET copper (negative Gerber plot +
@@ -120,6 +121,10 @@ copper from clearance/keepout). EasyEDA/Eagle carry the net as ratsnest
 (pads keep net assignments; no plane polygon — those formats have no
 consumer here yet). Flex `bend`/`stiffener` enforced by
 `jlc-flex` DRC only (see `docs/FAB.md`).
+
+`panel 2x3 gap 2.5` tiles the Gerber/drill/CPL export into a cols×rows
+array with gap mm between copies (export-only — DRC, place and route
+see the single board). CPL refs gain `_P0…` suffixes per copy.
 
 ## Simulation (`sim`, one per line)
 

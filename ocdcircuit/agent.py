@@ -283,6 +283,11 @@ def parse_constraint(text: str, *, layers: int = 2) -> Constraint | None:
     if m:
         return {"t": "hole", "x": float(m.group(1)), "y": float(m.group(2)),
                 "d": float(m.group(3))}
+    # panelize for fab: `panel 2x3 gap 2.5` (cols x rows, mm between).
+    m = re.match(r"panel (\d+)x(\d+)(?: gap ([\d.]+))?$", t, re.I)
+    if m:
+        return {"t": "panel", "cols": int(m.group(1)), "rows": int(m.group(2)),
+                "gap": float(m.group(3) or 2.5)}
     m = re.match(r"bend ([\d.\-]+) ([\d.\-]+) ([\d.]+)x([\d.]+) r([\d.]+)( static)?$", t, re.I)
     if m:
         return {"t": "bend", "x": float(m.group(1)), "y": float(m.group(2)),
@@ -508,6 +513,9 @@ def dumps(board: Board) -> str:
             L.append(f"cutout {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}")
         elif t == "hole":
             L.append(f"hole {_f(c['x']):g} {_f(c['y']):g} {_f(c['d']):g}")
+        elif t == "panel":
+            L.append(f"panel {_i(c.get('cols'), 1)}x{_i(c.get('rows'), 1)}"
+                     f" gap {_f(c.get('gap'), 2.5):g}")
         elif t == "bend":
             dyn = "" if c.get("dynamic") else " static"
             L.append(f"bend {_f(c['x']):g} {_f(c['y']):g} {_f(c['w']):g}x{_f(c['h']):g}"

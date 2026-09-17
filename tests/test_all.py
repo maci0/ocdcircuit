@@ -235,7 +235,8 @@ for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6
               "sim expect N == 5", "sim r R1 10k", "sim op N V 0 5",
               "sim lib x.lib", "sim ac 10 1000 5",
               "sim expect N final == 5", "sim expect N max ~ 5 tol 2%",
-              "assert R1.1 connected", "assert N != GND", "assert parts <= 40"]:
+              "assert R1.1 connected", "assert N != GND", "assert parts <= 40",
+              "panel 2x2 gap 2"]:
     _cb2 = agent.loads(_pre + _line + "\n", base=EX)
     _rt = agent.dumps(_cb2)
     assert agent.parse_constraint(_line) is not None, _line
@@ -1127,6 +1128,20 @@ with tempfile.TemporaryDirectory() as d:
     _cpl = open([f for f in _bb.export("jlc", outdir=tempfile.mkdtemp())
                  if f.endswith(".CPL.csv")][0]).read()
     assert "J3," in _cpl and ",180" in _cpl, _cpl
+    # panel: 2x2 copies tile outline (4 frames), copper, and CPL refs
+    _pan = agent.loads("board t 20x10 2L\npart R1 R0805 10k x=3 y=5\n"
+                       "part C1 C0805 100n x=17 y=5\nN :: R1.1 C1.1\n"
+                       "GND :: R1.2 C1.2\npanel 2x2 gap 2\n", base=EX)
+    _pan.place(seeds=1, iters=20)
+    _pan.route_board()
+    _pfl = _pan.export("jlc", outdir=tempfile.mkdtemp())
+    _pgko = open([f for f in _pfl if f.endswith(".GKO.gbr")][0]).read()
+    assert _pgko.count("D02*") == 16, _pgko.count("D02*")
+    assert "X42.0000Y22.0000D02*" in _pgko, _pgko[-200:]
+    _pgtl = open([f for f in _pfl if f.endswith(".GTL.gbr")][0]).read()
+    assert "X38.0500Y5.0000D03*" in _pgtl, _pgtl[:300]
+    _pcpl = open([f for f in _pfl if f.endswith(".CPL.csv")][0]).read()
+    assert "R1_P3," in _pcpl and "25.000mm" in _pcpl, _pcpl
     # fp lines keep as-written (relative) paths through dumps (like `use`):
     # absolutized saves would unportablize the file + dirty the tree
     _rfl = [ln for ln in agent.dumps(_bb).splitlines() if ln.startswith("fp ")]
