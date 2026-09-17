@@ -1597,6 +1597,35 @@ _shn = list(_shb.traces)
 assert _mz._shove(_shb, "N", 0, 40, 0, 30, 0.25, set(), set(), set(), {}, _shn)
 _shb.traces[:] = _shn
 assert _shb.check()["errors"] == [], _shb.check()["errors"]
+# drag-shove: all-or-nothing. It either moves copper as one undoable effect,
+# or refuses and leaves the board byte-identical — never a partial push.
+_sh_board = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 4k7\n"
+                    "part C1 C0805 100n\nnet VIN: R1.1\nnet VO: R1.2 R2.1 C1.1\n"
+                    "net GND: R2.2 C1.2\n", base=EX)
+_sh_board.place(seeds=1, iters=60)
+_sh_board.route_board("maze")
+_sh_grid = _mz._constraints(_sh_board)["grid"]
+
+
+def _shsnap(bb: Board) -> list[tuple[str, float, float, float, float, int]]:
+    return [(s.net, s.x1, s.y1, s.x2, s.y2, s.layer) for s in bb.traces]
+
+
+_sh_before = _shsnap(_sh_board)
+_sh_pushed = _sh_board.shove("VO", 0, _sh_grid, 0.0)
+if _sh_pushed:
+    assert _shsnap(_sh_board) != _sh_before, "shove reported a move and changed nothing"
+    _sh_board.ctx.undo()
+    assert _shsnap(_sh_board) == _sh_before, "shove is not undoable"
+else:
+    assert _shsnap(_sh_board) == _sh_before, "refused shove mutated the board"
+try:
+    _sh_board.shove("VO", 99, _sh_grid, 0.0)
+    raise AssertionError("out-of-range seg accepted")
+except ValueError:
+    pass
+assert _shsnap(_sh_board) == _sh_before, "rejected shove still moved copper"
+print(f"drag-shove ok (accepted={_sh_pushed}, atomic either way)")
 assert _call("use_plugin", {"kind": "placer", "key": "compact"}) == {"active": "compact"}
 assert _call("use_plugin", {"kind": "placer", "key": "diffusion"}) == {"active": "diffusion"}
 with tempfile.TemporaryDirectory() as _md:

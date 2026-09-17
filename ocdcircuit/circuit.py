@@ -498,6 +498,12 @@ class Board(Component):
         from . import maze as _maze
         return _maze.reroute(self, net)
 
+    def shove(self, net: str, idx: int, dx: float, dy: float) -> bool:
+        """Interactive push-shove: move one seg, spring-push foreign
+        copper aside. All-or-nothing, one undoable effect."""
+        from . import maze as _maze
+        return _maze.drag_shove(self, net, idx, dx, dy)
+
     def check(self, key: str | None = None, **k: object) -> DrcReport:
         out = self._run("drc", key, **k)
         assert isinstance(out, dict)

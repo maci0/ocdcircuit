@@ -582,6 +582,85 @@ def _shove(board: Board, victim: str,
     return moved
 
 
+def drag_shove(board: Board, net: str, idx: int,
+               dx: float, dy: float, depth: int = 3) -> bool:
+    """Interactive push-shove: move one seg by (dx, dy), spring-push any
+    foreign copper it would short, recursively to depth. All-or-nothing:
+    returns False with zero mutation when anything is unpushable (pads,
+    part courtyards, board edge, depth exhausted). One undoable effect."""
+    from .circuit import Seg as S
+    segs = [s for s in board.traces if s.net == net]
+    if not (0 <= idx < len(segs)):
+        raise ValueError(f"seg {idx} out of range for net {net!r}")
+    grid = _constraints(board)["grid"]
+    lib = board._lib()
+    # immovable: part courtyards + pads (grid cells, every layer)
+    base_blocked = _blocked(board, grid)
+    from .parts import pads_of
+    for p in board.parts.values():
+        for pin in pads_of(p.fp, lib):
+            px, py = board.pad_pos(p.ref, pin)
+            for gx in (int(px / grid) - 1, int(px / grid), int(px / grid) + 1):
+                for gy in (int(py / grid) - 1, int(py / grid), int(py / grid) + 1):
+                    base_blocked.add((gx, gy))
+    moves: dict[int, tuple[float, float]] = {}  # id(seg) -> (dx, dy)
+
+    def _cells(s: Seg, ox: float, oy: float) -> set[tuple[int, int, int]]:
+        out: set[tuple[int, int, int]] = set()
+        x1, x2 = sorted((s.x1 + ox, s.x2 + ox))
+        y1, y2 = sorted((s.y1 + oy, s.y2 + oy))
+        for gx in range(int(x1 / grid), int(x2 / grid) + 1):
+            for gy in range(int(y1 / grid), int(y2 / grid) + 1):
+                out.add((gx, gy, s.layer))
+        return out
+
+    def _push(s: Seg, ox: float, oy: float, d: int) -> bool:
+        if d < 0:
+            return False
+        want = _cells(s, ox, oy)
+        # board edge + courtyards/pads block
+        if any((c[0], c[1]) in base_blocked for c in want):
+            return False
+        if any(not (0 <= c[0] * grid <= board.width and
+                    0 <= c[1] * grid <= board.height) for c in want):
+            return False
+        for o in board.traces:
+            if o is s or o.layer != s.layer:
+                continue
+            ox0, oy0 = moves.get(id(o), (0.0, 0.0))
+            ocells = _cells(o, ox0, oy0)
+            if want & ocells and o.net != s.net:
+                # push perpendicular away from s, one grid cell
+                horiz = abs(s.x2 - s.x1) >= abs(s.y2 - s.y1)
+                for sign in (1.0, -1.0):
+                    px, py = (0.0, sign * grid) if horiz else (sign * grid, 0.0)
+                    if _push(o, ox0 + px, oy0 + py, d - 1):
+                        moves[id(o)] = (ox0 + px, oy0 + py)
+                        break
+                else:
+                    return False
+        moves[id(s)] = (ox, oy)
+        return True
+
+    target = segs[idx]
+    if not _push(target, dx, dy, depth):
+        return False
+    old = list(board.traces)
+    new: list[Seg] = []
+    for s in board.traces:
+        if id(s) in moves:
+            ox, oy = moves[id(s)]
+            ns = S(s.net, s.x1 + ox, s.y1 + oy, s.x2 + ox, s.y2 + oy,
+                   s.layer, s.width)
+            ns.via, ns.jumper = s.via, s.jumper
+            new.append(ns)
+        else:
+            new.append(s)
+    board.emit(lambda: board.traces.__setitem__(slice(None), new),
+               lambda: board.traces.__setitem__(slice(None), old))
+    return True
+
+
 def _rebuild_blocked(copper: set[tuple[int, int, int]],
                      halo: set[tuple[int, int, int]],
                      cells_of: dict[str, set[tuple[int, int, int]]]) -> None:
