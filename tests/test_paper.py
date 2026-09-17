@@ -351,6 +351,9 @@ hld.reload(list(hld.entries.values()))  # clean reload, same factories
 _xf = hld.entries["x"].fiber
 assert _xf is not None and _xf.state == Fiber.ACTIVE
 assert hld.entries["y"].fiber is not None
+assert calls == ["x", "y", "x", "y"], calls
+_before_import = {key: (entry.factory, entry.component, entry.fiber)
+                  for key, entry in hld.entries.items()}
 
 
 def _reimport(e: object) -> Callable[[], Component]:
@@ -363,9 +366,14 @@ def _reimport(e: object) -> Callable[[], Component]:
 try:
     hld.reload(list(hld.entries.values()), _reimport)
     raise AssertionError("should raise")
-except RuntimeError:
-    pass
-# x swapped then restored; y never swapped — both ACTIVE on old factories
+except RuntimeError as _import_error:
+    assert str(_import_error) == "import boom", _import_error
+_after_import = {key: (entry.factory, entry.component, entry.fiber)
+                 for key, entry in hld.entries.items()}
+assert _after_import == _before_import, (
+    "failed reimport left a swap behind",
+    _before_import, _after_import)
+assert calls == ["x", "y", "x", "y"], calls
 _xf2 = hld.entries["x"].fiber
 _yf2 = hld.entries["y"].fiber
 assert _xf2 is not None and _xf2.state == Fiber.ACTIVE
@@ -392,6 +400,10 @@ assert _xf3 is not None and _xf3.state == Fiber.ACTIVE
 yf = hld.entries["y"].fiber
 assert yf is not None and yf.state == Fiber.FAILED
 assert isinstance(yf.error, RuntimeError)
+assert str(yf.error) == "mount boom", yf.error
+assert calls == ["x", "y", "x", "y", "x", "y", "x-v3"], calls
+_xcomp = hld.entries["x"].component
+assert _xcomp is not None and _xcomp.name == "x-v3"
 frt = Context()
 
 
@@ -632,14 +644,19 @@ with tempfile.TemporaryDirectory() as _td:
 
 # OLE name truncation must not leave a lone UTF-16 high surrogate
 from ocdcircuit.foreign import _ole_name as _ole_nm
-_ent = bytearray(128)
-_ole_nm(_ent, "x" * 30 + "\U0001F600")  # 30 BMP + astral = 32 units → must drop orphan
-_raw = bytes(_ent[:64])
-assert b"\x00\x00" in _raw
-_units = _raw.split(b"\x00\x00", 1)[0]
-if len(_units) >= 2:
-    _last = int.from_bytes(_units[-2:], "little")
-    assert not (0xD800 <= _last <= 0xDBFF), hex(_last)
+for _name, _expected, _name_size in (
+        ("", "", 2),
+        ("x" * 31, "x" * 31, 64),
+        ("x" * 32, "x" * 31, 64),
+        ("x" * 29 + "\U0001F600", "x" * 29 + "\U0001F600", 64),
+        ("x" * 30 + "\U0001F600", "x" * 30, 62)):
+    _ent = bytearray(128)
+    _ole_nm(_ent, _name)
+    assert len(_ent) == 128, len(_ent)
+    _size = int.from_bytes(_ent[64:66], "little")
+    assert _size == _name_size, (_name, _size)
+    assert _ent[_size - 2:_size] == b"\x00\x00", _name
+    assert _ent[:_size - 2].decode("utf-16-le") == _expected, _name
 
 # kb URL gate: no LAN / loopback / metadata / userinfo / plain http
 from ocdcircuit import kb as _kb_ssrf
