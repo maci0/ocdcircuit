@@ -35,5 +35,20 @@ class FootprintDimensionsTest(unittest.TestCase):
                 board.unload()
 
 
+class SilkScoreTest(unittest.TestCase):
+    def test_single_column_copper(self) -> None:
+        from ocdcircuit.score import tidy
+
+        board = Board("single-column")
+        board.add_footprint("CUSTOM", {
+            "w": 1.0, "h": 1.0,
+            "pads": {"1": (0.0, 0.0, 1.0, 1.0)},
+        })
+        board.add_part("J1", "CUSTOM", x=5, y=5)
+        board.add_part("J2", "CUSTOM", x=5, y=6.3)
+        self.assertEqual(tidy(board)["T14_silk_overlap"],
+                         {"text_text": 0, "text_copper": 1})
+
+
 if __name__ == "__main__":
     unittest.main()

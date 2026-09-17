@@ -284,8 +284,7 @@ def _t14_silk(board: Board,
     copper += [(s.x1, s.y1) for s in board.traces] + [(s.x2, s.y2) for s in board.traces]
     tc = 0
     if copper:
-        xs = [c[0] for c in copper]
-        cell = (max(xs) - min(xs)) / max(1, int(len(copper) ** 0.5)) + 1e-9
+        cell = max(max(x1 - x0, y1 - y0) for x0, y0, x1, y1 in boxes)
         grid: dict[tuple[int, int], list[tuple[float, float]]] = {}
         for cx, cy in copper:
             grid.setdefault((int(cx // cell), int(cy // cell)), []).append((cx, cy))
