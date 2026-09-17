@@ -373,6 +373,9 @@ def cmd_status(agent: object, args: list[str]) -> int:
            + ("".join(f"- {e}\n" for e in derr[:10]))
            + ("".join(f"- {w}\n" for w in dwarn[:10]))
            + (f"{simline}\n" if simline else "")
+           + (f"jumpers: {', '.join(b.jumper_nets())} "
+              f"(wire bridges — retry one with alt-click reroute)\n"
+              if b.jumper_nets() else "")
            + f"parts: {len(b.parts)}, nets: {len(b.nets)}, "
            + f"traces: {len(b.traces)}, layers: {b.layers}\n"
            + f"solved: {pl_used}/{rt_used} @ {b.fab}\n"

@@ -1530,6 +1530,13 @@ assert len(cast(dict[str, object], _call("fabs", {})["fabs"])) == 11
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert cast(float, _call("place", {})["cost"]) >= 0  # every tool invoked live
 assert cast(int, _call("route", {})["segments"]) > 0  # blinky must actually route
+assert _call("route", {})["jumpers"] == []  # 2L blinky routes clean
+# jumper_nets names fallback nets: 1L forces wire bridges
+_jb = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
+_jb.place(seeds=1, iters=30)
+_jb.layers = 1
+_jb.route_board("maze")
+assert _jb.jumper_nets(), "1L blinky must need wire bridges"
 # reroute: single net against live copper, net set preserved, undoable
 _rb = agent.loads(open(os.path.join(EX, "blinky_555.ocd")).read(), base=EX)
 _rb.place(seeds=1, iters=30)

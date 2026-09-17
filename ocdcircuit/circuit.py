@@ -478,6 +478,11 @@ class Board(Component):
         from . import solver
         return solver.feasible(self, layers)
 
+    def jumper_nets(self) -> list[str]:
+        """Nets whose route fell back to flagged jumpers (wire bridges).
+        Empty = maze routed everything. Pair with reroute() per net."""
+        return sorted({t.net for t in self.traces if t.jumper})
+
     def route_board(self, key: str | None = None, **k: object) -> int:
         if key is None and len(self.parts) >= 1000:
             # coarse-grid maze drafts huge boards ~10x faster; refine

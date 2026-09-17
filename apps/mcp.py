@@ -128,7 +128,7 @@ def t_route(a: dict[str, object]) -> dict[str, object]:
     key = key or b.proj_str("router")
     frames: list[dict[str, object]] = []
     n = b.route_board(key, frames=frames if a.get("frames") else None)
-    out: dict[str, object] = {"segments": n}
+    out: dict[str, object] = {"segments": n, "jumpers": b.jumper_nets()}
     if a.get("frames"):
         out["frames"] = frames
     return out
