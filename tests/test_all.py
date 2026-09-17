@@ -1470,7 +1470,9 @@ assert _call("lint", {})["errors"] == []  # still alive
 import subprocess as _sp2
 from unittest import mock as _mock
 _tbto = agent.loads("board t 40x30 2L\npart R1 R0805 10k\nnet N: R1.1 R1.2\n", base=EX)
-with _mock.patch("subprocess.run", side_effect=_sp2.TimeoutExpired("kicad-cli", 300)):
+# which() runs before subprocess.run; fake the binary so CI can hit the timeout
+with _mock.patch("shutil.which", return_value="/usr/bin/kicad-cli"), \
+     _mock.patch("subprocess.run", side_effect=_sp2.TimeoutExpired("kicad-cli", 300)):
     try:
         _tbto.render("kicad")
         raise AssertionError("should have raised")

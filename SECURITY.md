@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-This project is pre-1.0 (`version = "0.1.1"` in `pyproject.toml`). Security
+This project is pre-1.0 (`version = "0.1.2"` in `pyproject.toml`). Security
 fixes land on the default development branch when maintainers ship them.
 No other release lines are published from this tree.
 
