@@ -25,6 +25,9 @@ from typing import Any, Callable, cast
 from . import envcfg
 
 MAX_STEPS = 6  # tool rounds before we stop and hand back what we have
+# One model turn can emit dozens of fenced blocks; each burns a tool call and
+# the next round's context. Cap per turn so a confused reply cannot fan out.
+MAX_CALLS = 8
 # Completion budget: without this a runaway reply bills for the whole context
 # window. Override with OCD_LLM_MAX_TOKENS; 0 disables the field (rare).
 MAX_TOKENS = 8192
@@ -170,6 +173,17 @@ def chat(messages: list[dict[str, Any]], *, temperature: float = 0.2,
         if content is None:
             raise LLMError(f"empty content from {c['base']} "
                            f"(finish_reason={doc['choices'][0].get('finish_reason')!r})")
+        # token counts are the only early signal of spend; surface them when
+        # the endpoint reports usage (many local servers omit the field)
+        usage = doc.get("usage")
+        if isinstance(usage, dict):
+            import sys
+            pt = usage.get("prompt_tokens")
+            ct = usage.get("completion_tokens")
+            tt = usage.get("total_tokens")
+            print(f"llm: {c['model']} tokens "
+                  f"prompt={pt} completion={ct} total={tt}",
+                  file=sys.stderr)
         return str(content)
     except LLMError:
         raise
@@ -298,15 +312,12 @@ def run(messages: list[dict[str, str]], tools: dict[str, Callable[[str, str], st
     the caller validates and applies them."""
     if chat_fn is None:
         chat_fn = chat
-    # bound every non-system turn up front: a pasted megabyte into chat is the
-    # same cost bomb as an unclipped fs.read
+    # bound every turn up front — including caller "system" digests/prefs: a
+    # pasted megabyte (or a huge PREFS.md) is the same cost bomb as fs.read
     bounded: list[dict[str, str]] = []
     for m in messages:
-        if m.get("role") == "system":
-            bounded.append(m)
-        else:
-            bounded.append({**m, "content": _clip(m.get("content", ""),
-                                                  MAX_TOOL_CHARS * 2)})
+        bounded.append({**m, "content": _clip(m.get("content", ""),
+                                              MAX_TOOL_CHARS * 2)})
     msgs = [{"role": "system", "content": SYSTEM}] + bounded
     files: dict[str, str] = {}
     log: list[str] = []
@@ -316,6 +327,10 @@ def run(messages: list[dict[str, str]], tools: dict[str, Callable[[str, str], st
         calls = parse_calls(reply)
         if not calls:
             break
+        dropped = 0
+        if len(calls) > MAX_CALLS:
+            dropped = len(calls) - MAX_CALLS
+            calls = calls[:MAX_CALLS]
         results: list[str] = []
         for c in calls:
             tool, path, body = c["tool"], c["path"], c["body"]
@@ -343,6 +358,11 @@ def run(messages: list[dict[str, str]], tools: dict[str, Callable[[str, str], st
             except Exception as e:  # tool refusal is information for the model
                 results.append(f"{name}: FAILED — {e}")
                 log.append(f"{name}: failed — {e}")
+        if dropped:
+            results.append(
+                f"(dropped {dropped} further tool call(s) this turn — "
+                f"limit is {MAX_CALLS}; continue in the next round if needed)")
+            log.append(f"dropped {dropped} overflow tool call(s)")
         msgs.append({"role": "assistant", "content": reply})
         # clip each result, then the joined payload — one huge fs.read must
         # not land verbatim in every later turn
@@ -442,6 +462,35 @@ def _selfcheck() -> None:
                {"fs.read": lambda _p, _b: huge,
                 "fs.list": lambda p, _b: "big.ocd"}, chat_fn=fake5)
     assert out5["reply"] == "got it", out5
+
+    # fan-out cap: a turn with more fences than MAX_CALLS must drop the rest
+    def fake6(msgs: list[dict[str, str]]) -> str:
+        if not any("tool results" in m["content"] for m in msgs):
+            blocks = "".join(f"```fs.list: d{i}\n```\n" for i in range(MAX_CALLS + 5))
+            return "listing\n" + blocks
+        last = msgs[-1]["content"]
+        assert f"dropped {5}" in last or "dropped 5" in last, last
+        return "stopped"
+    seen6: list[str] = []
+    out6 = run([{"role": "user", "content": "go"}],
+               {"fs.read": lambda _p, _b: "",
+                "fs.list": lambda p, _b: (seen6.append(p) or "ok")}, chat_fn=fake6)
+    assert out6["reply"] == "stopped", out6
+    assert len(seen6) == MAX_CALLS, (len(seen6), seen6)
+    assert any("overflow" in ln for ln in cast(list[str], out6["log"])), out6
+
+    # caller system digests are clipped like user turns (cost + injection surface)
+    fat = "x" * (MAX_TOOL_CHARS * 2 + 100)
+
+    def fake7(msgs: list[dict[str, str]]) -> str:
+        sys_bodies = [m["content"] for m in msgs if m["role"] == "system"]
+        assert any("truncated" in s for s in sys_bodies[1:]), sys_bodies
+        return "ok"
+    out7 = run([{"role": "system", "content": fat},
+                {"role": "user", "content": "hi"}],
+               {"fs.read": lambda _p, _b: "", "fs.list": lambda p, _b: ""},
+               chat_fn=fake7)
+    assert out7["reply"] == "ok", out7
 
 
 if __name__ == "__main__":

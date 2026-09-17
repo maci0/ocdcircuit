@@ -669,7 +669,10 @@ def cmd_kb(agent: object, args: list[str]) -> int:
                 print(f"--- {p['doc']}:{p['start']}-{p['end']}  score={p['score']}")
                 print(str(p["text"])[:900])
             if "answer" in r:
-                print(f"\n== answer ==\n{r['answer']}")
+                print(f"\n== answer ==")
+                if r.get("answer_note"):
+                    print(f"# {r['answer_note']}")
+                print(r["answer"])
             if "answer_error" in r:
                 print(f"(no written answer: {r['answer_error']})")
             if r.get("note"):

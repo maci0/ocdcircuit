@@ -88,8 +88,19 @@ def llm_key() -> str:
     return os.environ.get("OCD_LLM_KEY", "").strip()
 
 
+_warned_latest = False
+
+
 def llm_model() -> str:
-    return env_str("OCD_LLM_MODEL", "qwen3.5:latest")
+    """Chat model id. Prefer a pinned tag (not `:latest`): provider updates
+    otherwise silently change agent behaviour."""
+    global _warned_latest
+    mid = env_str("OCD_LLM_MODEL", "qwen3.5:latest")
+    if not _warned_latest and (mid.endswith(":latest") or mid == "latest"):
+        _warned_latest = True
+        print(f"llm: OCD_LLM_MODEL={mid!r} floats on :latest — pin a "
+              "version tag for reproducible behaviour", file=sys.stderr)
+    return mid
 
 
 def llm_embed() -> str:
