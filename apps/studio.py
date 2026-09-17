@@ -1221,6 +1221,9 @@ function drawSCH(st){
     const zw=sch.W||Math.max(...Object.values(sch.px),1)+60; // world px → fit
     const zx=Math.min(1,R.width/Math.max(1,zw)); // shrink-to-fit only, never upscale
     ctx.save();ctx.scale(zx,zx);
+  (sch.sections||[]).forEach(s=>{ctx.fillStyle=C.ink2;ctx.textAlign='center';
+    ctx.font='12px ui-monospace,Menlo,monospace';
+    ctx.fillText(s.name,(s.x0+s.x1)/2,sch.top-48);});
   sch.order.forEach(r=>{const hi=edHl.has(r); // editor selection lights the same box
     ctx.fillStyle=hi?C.wash:C.paper2;ctx.fillRect(sch.px[r]-50,sch.top-34,100,30);
     ctx.strokeStyle=hi?C.signal:C.ink;ctx.lineWidth=hi?2:1;
@@ -2750,7 +2753,9 @@ def _sch_state(b: Board) -> dict[str, object]:
     from ocdcircuit.sch import sch_layout
     lay = sch_layout(b)
     return {"order": lay.order, "px": lay.px, "rail_y": lay.rail_y,
-            "top": lay.top, "W": lay.W}
+            "top": lay.top, "W": lay.W,
+            "sections": [{"name": s.name, "x0": s.x0, "x1": s.x1}
+                         for s in lay.sections]}
 
 
 def board_state(b: Board, text: str, frames: list[dict[str, object]],

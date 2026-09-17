@@ -707,6 +707,10 @@ class SchRenderer(Plugin[str]):
                     el.append(f'<text x="{ax + ox * 1.6:.1f}" y="{ay + oy * 1.6 + 3:.1f}" '
                               f'fill="{text}" font-size="8" text-anchor="middle" '
                               f'font-family="monospace">{lbl}</text>')
+        for s in lay.sections:
+            el.append(f'<text x="{(s.x0 + s.x1) / 2:.1f}" y="{top - 48}" '
+                      f'fill="{text}" font-size="12" text-anchor="middle" '
+                      f'font-family="monospace">{s.name}</text>')
         for i, n in enumerate(nets):
             y = rail_y[n]
             xs = sorted(px[r] for r, _ in board.nets[n].pins if r in px)

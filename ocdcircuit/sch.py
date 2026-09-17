@@ -10,6 +10,13 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 
+class SchSection(NamedTuple):
+    """One schematic section: owner label + column span (world px)."""
+    name: str
+    x0: float
+    x1: float
+
+
 class SchLayout(NamedTuple):
     """Shared schematic geometry. Typed, so consumers stop re-asserting the
     shape of an `object`-valued dict on every field."""
@@ -21,6 +28,7 @@ class SchLayout(NamedTuple):
     top: int
     W: int
     H: int
+    sections: list[SchSection]
 
 
 def sch_layout(board: Board) -> SchLayout:
@@ -55,11 +63,35 @@ def sch_layout(board: Board) -> SchLayout:
             if nb:
                 pos[r] = sum(pos[q] for q in nb) / len(nb)
         order.sort(key=lambda r: pos[r])
-    col_w, top = 120, 70
+    # sections: instance/include owners group their parts; unowned = main.
+    # Stable-group the barycenter order (cross-section neighbors still
+    # pulled together inside their own group), one gap column between.
+    def _sec(r: str) -> str:
+        o = board.parts[r].owner
+        return o.rstrip("_") if o else "main"
+    seen: list[str] = []
+    for r in order:
+        if _sec(r) not in seen:
+            seen.append(_sec(r))
+    grouped = [r for sn in seen for r in order if _sec(r) == sn]
+    col_w, top, gap = 120, 70, 60
+    px: dict[str, float] = {}
+    sects: list[SchSection] = []
+    x = 10.0
+    for sn in seen:
+        x0 = x
+        for r in grouped:
+            if _sec(r) != sn:
+                continue
+            px[r] = x + col_w / 2
+            x += col_w
+        sects.append(SchSection(name=sn, x0=x0, x1=x))
+        x += gap
+    order = grouped
     return SchLayout(
-        order=order, nets=nets,
-        px={r: 10 + i * col_w + col_w / 2 for i, r in enumerate(order)},
+        order=order, nets=nets, px=px,
         rail_y={n: top + 20 + i * 26 for i, n in enumerate(nets)},
         col_w=col_w, top=top,
-        W=max(1, len(order)) * col_w + 20,
-        H=top + len(nets) * 26 + 30 + 40)
+        W=max(1, int(x - gap)) + 20,
+        H=top + len(nets) * 26 + 30 + 40,
+        sections=sects)
