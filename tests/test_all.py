@@ -633,6 +633,23 @@ assert [r["fab"] for r in _qrows][:2] == ["jlc", "allpcb"], _qrows[:3]
 _jasm = cast(dict[str, object], [r for r in _qrows if r["fab"] == "jlc"][0]["asm"])
 assert _jasm["parts_per_board"] == 0.03 and _jasm["sources"] == {"manual": 2}, _jasm
 assert _jasm["unpriced"] == [], _jasm
+# alternates price when the primary MPN is unpriced (stock-out fallback)
+from unittest import mock as _qaltmock
+from ocdcircuit.circuit import Board as _QAltBoard
+_qalt = agent.loads("board q2 40x30 2L\npart U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN,TLC555CP\n"
+                    "N :: U1.1 U1.2\nGND :: U1.3 U1.4\n", base=EX)
+def _qaltprice(self: _QAltBoard, ref: str, key: str | None = None,
+               **kw: object) -> dict[str, object]:
+    if kw.get("mpn") == "LM555CN":
+        return {"price": 0.31, "source": "testdb"}
+    return {"price": None, "source": "unpriced"}
+with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
+    _qaltgot = _qq.unit_price(_qalt, "U1")
+assert _qaltgot == (0.31, "testdb+alt:LM555CN"), _qaltgot
+with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
+    _qalt2 = agent.loads("board q3 40x30 2L\npart U1 SOIC8 NE555 mpn=NE555P\n"
+                         "N :: U1.1 U1.2\nGND :: U1.3 U1.4\n", base=EX)
+    assert _qq.unit_price(_qalt2, "U1") == (None, "unpriced")
 # unknown footprint must not invent a 2-pad joint count (silent misprice)
 try:
     _qq._pads("NOPE", {})

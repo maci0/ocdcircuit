@@ -109,21 +109,29 @@ def unit_price(board: Board, ref: str) -> tuple[float | None, str]:
     if p is None:  # KeyError on unknown ref (fixable input)
         raise KeyError(f"no part {ref!r}")
     lcsc, mpn = str(p.attrs.get("lcsc", "")), str(p.attrs.get("mpn", ""))
-    for key in ("std", "jlc-api", "knoll"):
-        try:
-            out = board.price(ref, key, lcsc=lcsc, mpn=mpn)
-        except (ValueError, KeyError, OSError, AssertionError):
-            continue  # unmounted / bad input: next source, quote still prices
-        except Exception:
-            continue  # fenced provider (failure memory): next source
-        pv = out.get("price")
-        if pv is None:
-            continue
-        src = out.get("source", "price")
-        assert isinstance(pv, (int, float)) and isinstance(src, str)
-        import math
-        if math.isfinite(pv) and pv >= 0:
-            return float(pv), src
+    alts = [a.strip() for a in str(p.attrs.get("alternates", "")).split(",")
+            if a.strip()]
+    # primary MPN/LCSC first, then each alternate MPN (stock-out fallback)
+    cands: list[tuple[str, str]] = [(lcsc, mpn)]
+    cands += [("", a) for a in alts if a != mpn]
+    for clcsc, cmpn in cands:
+        for key in ("std", "jlc-api", "knoll"):
+            try:
+                out = board.price(ref, key, lcsc=clcsc, mpn=cmpn)
+            except (ValueError, KeyError, OSError, AssertionError):
+                continue  # unmounted / bad input: next source, quote prices
+            except Exception:
+                continue  # fenced provider (failure memory): next source
+            pv = out.get("price")
+            if pv is None:
+                continue
+            src = out.get("source", "price")
+            assert isinstance(pv, (int, float)) and isinstance(src, str)
+            import math
+            if math.isfinite(pv) and pv >= 0:
+                if cmpn and cmpn != mpn:
+                    src = f"{src}+alt:{cmpn}"
+                return float(pv), src
     return None, "unpriced"
 
 
