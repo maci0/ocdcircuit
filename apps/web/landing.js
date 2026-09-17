@@ -138,13 +138,22 @@ function App() {
     if (el) el.focus();
   }, [err]);
 
-  // native <dialog>: focus trap, Esc, backdrop — no library, no state machine
+  // native <dialog>: focus trap, Esc, backdrop — no library, no state machine.
+  // Esc and backdrop clicks close it at the DOM, so 'cancel' syncs the state
+  // or reopening only re-fires showModal and never opens.
   useEffect(() => {
     const d = dlg.current;
     if (!d) return;
     if (dialog && !d.open) d.showModal();
     if (!dialog && d.open) d.close();
   }, [dialog]);
+  useEffect(() => {
+    const d = dlg.current;
+    if (!d) return;
+    const cancel = () => setDialog(false);
+    d.addEventListener('cancel', cancel);
+    return () => d.removeEventListener('cancel', cancel);
+  }, []);
 
   async function showShelf() {                     // shelf after login
     setShelf(true);
