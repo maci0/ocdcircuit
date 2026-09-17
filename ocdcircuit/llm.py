@@ -350,8 +350,7 @@ def run(messages: list[dict[str, str]], tools: dict[str, Callable[[str, str], st
                         files[path] = apply_replace(text, body)
                     else:
                         new = body if body.endswith("\n") else body + "\n"
-                        if known:
-                            _no_truncate(path, text, new)  # raises before staging
+                        _no_truncate(path, text, new)  # raises before staging
                         files[path] = new
                     results.append(f"{name}: staged ({len(files[path])} bytes)")
                 else:
@@ -444,6 +443,20 @@ def _selfcheck() -> None:
     out4 = run([{"role": "user", "content": "go"}],
                {"fs.read": rd, "fs.list": lambda p, _b: "b.ocd"}, chat_fn=fake4)
     assert out4["files"] == {}, out4  # replace on a missing file is refused
+
+    for staged_path in ("b.ocd", "new.ocd"):
+        for separate_turn in (False, True):
+            turns = [f"```write: {staged_path}\n{here['b.ocd']}```\n"
+                     "```write: other.ocd\nother\n```",
+                     f"```write: {staged_path}\nshort\n```"]
+            replies = iter([*turns, "done"] if separate_turn
+                           else ["\n".join(turns), "done"])
+            repeated = run([], {"fs.read": rd},
+                           chat_fn=lambda _msgs: next(replies))
+            assert repeated["files"] == {
+                staged_path: here["b.ocd"], "other.ocd": "other\n"}, repeated
+            assert any("would drop" in line
+                       for line in cast(list[str], repeated["log"])), repeated
 
     # clip: a multi-megabyte tool result must not re-enter the next prompt whole
     assert "truncated" in _clip("x" * (MAX_TOOL_CHARS + 50))
