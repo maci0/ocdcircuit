@@ -1,8 +1,9 @@
 # Threat model (living)
 
-Last reviewed: 2026-09-17 (from code). Owner / review cadence: unset
-(organizational — do not invent). This document models attack surface and
-gaps; point fixes belong to sec-review, not here.
+Last reviewed: 2026-09-18 (Studio HTTP/authentication, proposal validation,
+and KB download controls checked against code). Other surfaces retain their
+2026-09-17 assessment. Owner and review cadence: unset. This document models
+attack surface and gaps; point fixes belong to sec-review, not here.
 
 ## Risk-ranked summary
 
@@ -12,8 +13,8 @@ gaps; point fixes belong to sec-review, not here.
 | 2 | Secrets ride outbound LLM/JLC calls; `OCD_LLM_BASE` is any http(s) host | Secrets → vendors (B2) | Bearer `OCD_LLM_KEY` is sent to `envcfg.llm_base()` (`ocdcircuit/llm.py` `_post_json`); JLC creds authorize spend | Redaction in `envcfg.summary()`; `.gitignore` for `.env` / `.ocd-users`; base must be http(s) with a host | No host allowlist on LLM base; poisoned env exfiltrates the key; no rotation/expiry in-app |
 | 3 | Optional knoll checkout is `exec_module` of local Python | Build/path → runtime (B4) | `plugins._knoll_price` loads `KNOLL_SRC/.../knoll/stock.py` (or `~/Desktop/knoll/src` when unset) via `importlib` | Opt-in / degrade to unpriced on failure; set `KNOLL_SRC` does not fall through to Desktop | No integrity check; a planted `stock.py` runs as the studio/CLI/MCP OS user |
 | 4 | MCP stdio tools inherit the host agent's trust | Host agent → MCP (B3) | `load_board`, `export`, `kb` add/fetch, `import_footprint`, `solve` act as the OS user (`apps/mcp.py` `TOOLS`) | Stdio-only (no network listener) | No authn between host and tools; path/URL inputs are host-trusted |
-| 5 | Authenticated DoS / cost amplification | B1 / B2 | `/solve`, `/candidates`, `/scan`, `/chat`, `/kb/fetch`, foreign import parse are CPU-, disk-, and token-heavy | POST `_MAX_BODY` 20MB; `/fs/import` 2MB + ext allowlist; `OCD_SCAN_MAX_MB`; LLM `max_tokens` | No per-user quotas on solve/scan/chat; login rate limit only |
-| 6 | Outbound HTTPS fetch from board/kb URLs | App → network (B2) | `kb._download` / LCSC / JLC leave the host | HTTPS-only + size cap (`kb.MAX_BYTES`); LCSC host suffix for `lcsc=` | `datasheet=` / `kb add` URL has no host allowlist (SSRF-class to other HTTPS targets) |
+| 5 | Authenticated DoS / cost amplification | B1 / B2 | `/solve`, `/candidates`, `/reroute`, `/scan`, `/chat`, `/kb/fetch`, foreign import parse are CPU-, disk-, and token-heavy | POST 20MB cap (`apps/studio.py:1630`); import 2MB cap (`apps/studio.py:768`); chat single-flight (`apps/studio.py:1116`); scan single-flight, 40-photo cap, temporary-tree cleanup (`apps/studio.py:2197`) | These bounds do not impose per-user compute or spending quotas; serial calls can still monopolize resources |
+| 6 | Outbound HTTPS fetch from board/kb URLs | App → network (B2) | User-supplied datasheet URLs cause host network requests | `_assert_public_https` rejects non-global IPs and DNS answers, local hostnames, and URL credentials; redirects are rechecked; downloads are capped at 64MiB (`ocdcircuit/kb.py:172`, `ocdcircuit/kb.py:213`, `ocdcircuit/kb.py:223`) | No destination allowlist or aggregate download quota; DNS validation and connection are separate, not address-pinned (`ocdcircuit/kb.py:201`, `ocdcircuit/kb.py:233`) |
 
 ## Attack surface inventory
 
@@ -27,14 +28,21 @@ Not bound to `0.0.0.0`.
 |-------|------|-------|----------|
 | `GET /` landing + login HTML | Public | Gate for workshop UI | `apps/studio.py` `do_GET` |
 | `GET /fab-logo/<key>` | Public | Key charset-restricted `[a-z0-9-]+` | `do_GET` |
-| `GET /slots` | Public | Plugin slot inventory probe | `do_GET` |
+| `GET /slots` | Public | Plugin slot inventory probe | `apps/studio.py:1470` |
+| `GET /web/*` | Public | Frontend assets under `apps/web`; extension/path-pattern checks and rejection of `..`; deployment must keep this tree trusted, including symlinks (no realpath containment check) | `apps/studio.py:1352`, `apps/studio.py:1456` |
+| `GET /fabs` | Public | Fab profile names, keys, and URLs, not account or board data | `apps/studio.py:1461` |
+| `POST /reroute` | Session + open-board guard | Maze rerouting of a selected net or jumpers; commits and saves the resulting board | `apps/studio.py:1653`, `apps/studio.py:2015` |
 | `POST /auth/signup\|login\|logout\|me\|profile` | Public keyhole | Signup/login rate-limited (`_auth_rate_ok`); whole `/auth/*` prefix bypasses the “log in first” gate | `do_POST` |
 | `GET /poll`, `/fs`, `/collab/events` | Session | Shelf / open-board guards | `do_GET` |
 | `POST /shelf*`, `/init`, `/build`, `/solve`, `/candidates`, `/pick`, `/export`, `/render`, `/xray`, `/quote`, `/simulate`, `/undo`, `/redo`, `/scan`, `/doctor`, `/kb/*`, `/chat*`, `/fs/*`, `/vcs*`, `/collab/*`, `/load`, `/reload`, `/diff_prev` | Session | Board + project ops; `/fs/import` is base64 upload → `fp/`/`sym/` | `do_POST`; route list also in `docs/STUDIO.md` |
 
-Client-supplied paths for `/fs/*` and related routes go through `_rel` /
-`_abs` (`apps/studio.py`): must realpath inside `ROOT`; `.ocd-users` and
-other users' `.users/<name>/` shelves refused.
+Explicit `/fs/open` and `/fs/read` paths use `_abs` through `open_file` /
+`_read`: realpath must be inside `ROOT`; `.ocd-users` and other users'
+shelves are refused (`apps/studio.py:656`, `apps/studio.py:729`,
+`apps/studio.py:1037`). This is not a universal filesystem sandbox:
+`/fs/import` constructs its destination under `BASE/fp` or `BASE/sym`
+without `_abs`, so it relies on trusted directory/symlink layout in addition
+to the open-board check (`apps/studio.py:748`, `apps/studio.py:1653`).
 
 ### MCP (stdio JSON-RPC)
 
@@ -168,11 +176,18 @@ No separate admin/debug HTTP port beyond studio. CI:
 
 - **Information disclosure:** Bearer key posted to attacker-chosen
   `OCD_LLM_BASE` (`llm._post_json`).
-- **SSRF-class:** `kb._download` requires `https` and size limit; does not
-  restrict destination host for arbitrary URLs (`ocdcircuit/kb.py`). LCSC
-  path checks `*.lcsc.com`.
-- **Tampering:** LLM/tool replies applied only after `/build` validation in
-  the chat path (studio `/chat/apply`).
+- **SSRF-class:** KB downloads reject non-public destinations and recheck
+  redirects (`ocdcircuit/kb.py:172`, `ocdcircuit/kb.py:213`). The connection
+  is not pinned to the validated DNS answer (`ocdcircuit/kb.py:201`,
+  `ocdcircuit/kb.py:233`), so this is not a complete egress boundary.
+  LCSC discovery uses a textual `endswith("lcsc.com")` check, not a
+  domain-label-aware allowlist (`ocdcircuit/kb.py:257`).
+- **Tampering:** Chat proposals pass `_abs` and a writable-extension check.
+  The open board is built before persistence, sibling `.ocd` files are
+  parsed, and other writable files are saved as text (`apps/studio.py:1060`).
+  Manual `/chat/apply` can persist a board with DRC errors and report them
+  afterward (`apps/studio.py:2424`). Build/DRC checks are not a guarantee
+  that vendor or model output is safe or electrically correct.
 
 ### B3 (MCP)
 
@@ -204,7 +219,8 @@ No separate admin/debug HTTP port beyond studio. CI:
 | POST `_MAX_BODY` | Oversized body DoS | `do_POST` |
 | Import ext allowlist + 2MB + ASCII basename | Path smuggling / huge upload | `_import_upload`, `IMPORT_EXTS` |
 | Browser headers nosniff / DENY frame / CSP frame-ancestors | Clickjacking / MIME sniff | `_secure_headers` |
-| HTTPS-only kb download + MAX_BYTES + PDF magic | Cleartext fetch / huge file | `kb._download` |
+| Public HTTPS destination checks, redirect revalidation, 64MiB limit, PDF magic for PDF destinations | Private-address requests (partial), cleartext fetch, oversized downloads; not PDF parser safety | `ocdcircuit/kb.py:172`, `ocdcircuit/kb.py:213`, `ocdcircuit/kb.py:223` |
+| Single-flight chat and scan; 40-photo scan cap and temporary-tree cleanup | Concurrent spend / scan disk accumulation, not cumulative quotas | `apps/studio.py:1116`, `apps/studio.py:2197`, `apps/studio.py:2322` |
 | `llm_base()` http(s)+host check | Non-URL / empty base | `envcfg.llm_base` |
 | Env secret redaction in doctor | Accidental secret log in health output | `envcfg.summary` |
 | Atomic writes for users + kb | Truncated credential/doc files | `_atomic_write`, `kb._download` |
@@ -215,20 +231,24 @@ all high-impact routes; (2) localhost bind is the only control against
 remote exposure; (3) process env + optional knoll path carry secrets and
 code trust with no second factor.
 
-**Doc vs code:** `docs/STUDIO.md` and `.env.example` claim `127.0.0.1` only —
-matches `ThreadingHTTPServer(("127.0.0.1", port), H)`. `DESIGN.md` session
-cookie attributes match Set-Cookie construction. STUDIO “invite link” is a
-board URL share helper, not invite-gated auth — matches open signup. No
-false *mitigation* claims found in those files this pass; prior gap was
-omission of knoll/`OCD_LLM_BASE` surfaces (now listed above).
+**Security policy cross-check:** `SECURITY.md` correctly describes a loopback
+listener (`apps/studio.py:2659`), open signup (`apps/studio.py:1663`), and
+cookie sessions (`apps/studio.py:501`, `apps/studio.py:1411`). Neither the
+listener nor these cookies turn Studio into an internet-facing multi-tenant
+service. Cookie HttpOnly prevents script access to the token, not script use
+of an authenticated session; the CSP has no script restriction
+(`apps/studio.py:1326`).
 
 ## Abuse cases (authenticated, hostile)
 
 1. **Shared-tree rewrite:** User A and user B both authed; B opens/writes a
    board under public `ROOT` (not under `.users/B/`) via `/fs` or shelf-adjacent
    paths — enabling path in `_abs` when `_shelf_owner` is `None`.
-2. **Compute burn:** Repeated `/solve` or `/scan` with large inputs — enabled
-   by authed `do_POST` branches; only body size gated.
+2. **Compute burn:** Repeated authenticated `/solve`, `/reroute`, `/scan`, or
+   `/chat` requests consume shared compute or vendor credits. Scan and chat
+   reject overlapping calls, but have no per-user cumulative budget
+   (`apps/studio.py:1942`, `apps/studio.py:2015`, `apps/studio.py:2197`,
+   `apps/studio.py:1116`).
 3. **Signup spray then shelf fill:** `/auth/signup` creates `.users/<name>/`
    (rate-limited, not invite-gated).
 4. **Import parser burn:** Authed `/fs/import` of crafted Eagle/KiCad/Altium
