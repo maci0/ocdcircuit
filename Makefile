@@ -28,7 +28,7 @@ help:				# list contributor commands (default)
 	  '  make setup      create .venv + install gate tools and optionals' \
 	  '  make doctor     tooling self-check (Python, optionals, plugins)' \
 	  '  make lint       mypy + ruff + ocd lint on $$(BOARD)' \
-	  '  make test       all four test scripts (what CI runs after lint)' \
+	  '  make test       all test scripts (what CI runs after lint)' \
 	  '  make check      lint + test — full gate before push' \
 	  '  make run        studio webui on :8077 (BOARD=$(BOARD))' \
 	  '  make snap       re-pin golden snapshots after intentional change' \
@@ -40,6 +40,7 @@ help:				# list contributor commands (default)
 	  '' \
 	  'Single suite (edit-test loop):' \
 	  '  $(PYTHON) tests/test_paper.py      # core paper (~0.1s)' \
+	  '  $(PYTHON) tests/test_sdk.py        # SDK integration' \
 	  '  $(PYTHON) tests/test_all.py        # unit + MCP (~1–2 min)' \
 	  '  $(PYTHON) tests/test_snapshot.py   # golden geometry' \
 	  '  $(PYTHON) tests/test_studio.py     # studio smoke (+ chromium if present)' \
@@ -63,6 +64,7 @@ lint:				# types + source lint (no place/route)
 doctor:				# tooling self-check
 	$(HERMETIC) $(PYTHON) -m apps.ocd doctor
 test:				# unit suite + golden snapshots + studio smoke gate
+	$(HERMETIC) $(PYTHON) tests/test_sdk.py
 	$(HERMETIC) $(PYTHON) tests/test_all.py
 	$(HERMETIC) $(PYTHON) tests/test_snapshot.py
 	$(HERMETIC) $(PYTHON) tests/test_paper.py

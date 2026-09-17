@@ -67,7 +67,7 @@ GND :: R1.1 <--> C1.1
 ```bash
 python -m apps.ocd --placer compact --router maze boards/blinky_555.ocd  # cleanest
 python -m apps.ocd --fab oshpark boards/psu.ocd # same board, stricter fab
-make check                               # full gate (lint + all four test scripts)
+make check                               # full gate (lint + all test scripts)
 python tests/test_paper.py               # fast core loop while editing
 ```
 

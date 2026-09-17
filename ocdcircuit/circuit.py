@@ -789,7 +789,8 @@ class Board(Component):
         meta = lib[fp]
         w = meta["w"]
         h = meta["h"]
-        assert isinstance(w, float) and isinstance(h, float)
+        assert isinstance(w, (int, float)) and isinstance(h, (int, float))
+        w, h = float(w), float(h)
         # 9-slot signature: (ref, fp, value, x, y, w, h, owner, attrs).
         # Calling with 7 positionals put attrs into owner and then collided
         # with attrs=, so every part with a custom footprint raised TypeError.

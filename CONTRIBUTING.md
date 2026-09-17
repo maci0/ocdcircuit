@@ -22,6 +22,7 @@ Run the suite you touched, not the whole gate:
 | change area | command |
 |---|---|
 | core / paper / context | `python tests/test_paper.py` |
+| SDK integration | `python tests/test_sdk.py` |
 | library / CLI / MCP | `python tests/test_all.py` |
 | placement / routing geometry | `python tests/test_snapshot.py` (`SNAP=1` to re-pin) |
 | studio / HTTP / UI | `python tests/test_studio.py` |
