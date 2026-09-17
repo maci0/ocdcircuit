@@ -201,7 +201,7 @@ _slot("view", "vcs",
 _slot("view", "pcb",
                lambda s: '<section id=pcbwrap>'
                          '<header class=panel-head><span class=panel-title>PCB</span>'
-                         '<span class=panel-note>drag a part to pin it &middot; double-click unpins &middot; right-click rotates &middot; alt-click a trace re-routes its net</span>'
+                         '<span class=panel-note>drag a part to pin it &middot; double-click unpins &middot; right-click rotates &middot; alt-click a trace re-routes its net &middot; shift-drag a trace previews the shove</span>'
                          '<details id=layerbox title="show or hide layers and marks on this canvas">'
                          '<summary>layers</summary>'
                          '<div id=layers role=group aria-label="visible layers">'
@@ -1142,11 +1142,19 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
   for(const b of buckets.values()){
     ctx.strokeStyle=b.color;ctx.lineWidth=b.lw;ctx.beginPath();
     for(const g of b.segs){
+      // shift-drag preview: the dragged segment draws at its drop point
+      let ox=0,oy=0;
+      if(segDrag&&segDrag.seg===g){ox=segDrag.dx*s;oy=-segDrag.dy*s;}
       // a fresh moveTo per segment: segments stay separate (no spurious joins)
-      ctx.moveTo(X(g.x1),Y(g.y1));ctx.lineTo(X(g.x2),Y(g.y2));
-      ctx.moveTo(X(g.x2),Y(g.y2));
+      ctx.moveTo(X(g.x1)+ox,Y(g.y1)+oy);ctx.lineTo(X(g.x2)+ox,Y(g.y2)+oy);
+      ctx.moveTo(X(g.x2)+ox,Y(g.y2)+oy);
     }
     ctx.stroke();}
+  if(segDrag){ // drop target: crosshair at the dragged midpoint
+    ctx.strokeStyle=C.signal;ctx.lineWidth=1.5;ctx.beginPath();
+    const mx=X((segDrag.seg.x1+segDrag.seg.x2)/2)+segDrag.dx*s;
+    const my=Y((segDrag.seg.y1+segDrag.seg.y2)/2)-segDrag.dy*s;
+    ctx.moveTo(mx-8,my);ctx.lineTo(mx+8,my);ctx.moveTo(mx,my-8);ctx.lineTo(mx,my+8);ctx.stroke();}
   for(const r in st.parts){
     if(!partShown(r,st))continue;
     const p=st.parts[r];
@@ -1833,6 +1841,9 @@ function hit(mx,my){for(const r in S.cur.parts){
   const x=view.ox+p.x*view.s,y=view.oy+(S.bh-p.y)*view.s;
   if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4)return r;}return null;}
 function hitTrace(mx,my){ // nearest segment within 6px → its net
+  const h=hitSeg(mx,my);
+  return h?h.seg.net:null;}
+function hitSeg(mx,my){ // nearest segment object (for drag preview)
   if(!S||!S.cur||!S.cur.traces)return null;
   let best=null,bd=36;
   for(const g of S.cur.traces){
@@ -1841,8 +1852,9 @@ function hitTrace(mx,my){ // nearest segment within 6px → its net
     const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;
     const t=L2?Math.max(0,Math.min(1,((mx-x1)*dx+(my-y1)*dy)/L2)):0;
     const dd=(mx-x1-t*dx)**2+(my-y1-t*dy)**2;
-    if(dd<bd){bd=dd;best=g.net;}}
-  return best;}
+    if(dd<bd){bd=dd;best=g;}}
+  return best?{seg:best}:null;}
+let segDrag=null; // {seg, dx, dy} board-mm preview offset while shift-dragging
 c.addEventListener('mousedown',async e=>{if(!S)return;const R=c.getBoundingClientRect();
   if(e.altKey){ // alt-click a trace: rip + re-route that net
     const net=hitTrace(e.clientX-R.left,e.clientY-R.top);
@@ -1851,20 +1863,34 @@ c.addEventListener('mousedown',async e=>{if(!S)return;const R=c.getBoundingClien
       if(r.error){statMsg(r.error);return;}
       statMsg(r.retried?`${net} re-routed`:`${net} still blocked`,r.retried);applyState(r,true);});
     return;}
+  if(e.shiftKey){ // shift-drag a trace: preview the shove, release re-routes
+    const h=hitSeg(e.clientX-R.left,e.clientY-R.top);
+    if(h){segDrag={seg:h.seg,dx:0,dy:0,
+      x0:e.clientX-R.left,y0:e.clientY-R.top};dirty=true;}
+    return;}
   drag=hit(e.clientX-R.left,e.clientY-R.top);
   // rigid group: an instanced part drags its whole owner-group (offsets kept)
   dragGroup=null;
   if(drag){const o=S.cur.parts[drag].owner;
     if(o)dragGroup=Object.keys(S.cur.parts).filter(r=>S.cur.parts[r].owner===o);}});
 c.addEventListener('mousemove',e=>{const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
-  if(drag){const p=S.cur.parts[drag];
+  if(segDrag){segDrag.dx=Math.round(((mx-segDrag.x0)/view.s)*10)/10;
+    segDrag.dy=Math.round(((segDrag.y0-my)/view.s)*10)/10;dirty=true;}
+  else if(drag){const p=S.cur.parts[drag];
     const nx=Math.round(((mx-view.ox)/view.s)*10)/10,ny=Math.round((S.bh-(my-view.oy)/view.s)*10)/10;
     const dx=nx-p.x,dy=ny-p.y;p.x=nx;p.y=ny;
     if(dragGroup)for(const r of dragGroup){if(r===drag)continue;
       const q=S.cur.parts[r];q.x=Math.round((q.x+dx)*10)/10;q.y=Math.round((q.y+dy)*10)/10;}
     dirty=true;}
   else if(S)S.cur.hover=hit(mx,my);});
-c.addEventListener('mouseup',async()=>{if(!drag)return;const moved=dragGroup||[drag];dragGroup=null;const r=drag;drag=null;
+c.addEventListener('mouseup',async()=>{
+  if(segDrag){const net=segDrag.seg.net;segDrag=null;dirty=true;
+    await withBusy(c,`rerouting ${net}…`,async()=>{
+      const r=await api('/reroute',{net});
+      if(r.error){statMsg(r.error);return;}
+      statMsg(r.retried?`${net} re-routed`:`${net} still blocked`,r.retried);applyState(r,true);});
+    return;}
+  if(!drag)return;const moved=dragGroup||[drag];dragGroup=null;const r=drag;drag=null;
   const gone=new Set(moved);
   const lines=$('ed').innerText.split('\n').filter(l=>{const m=l.match(/^fix\s+(\S+)\s+at\s/);return !m||!gone.has(m[1]);});
   // drop fix lines right after board/use block (group order kept)

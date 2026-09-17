@@ -777,6 +777,9 @@ def main() -> None:
         _page2 = get(base, "/").decode()
         assert "shift-click to compare" in _page2, "gallery compare hint missing"
         assert "function galDelta(" in _page2, "galDelta missing from page"
+        assert "shift-drag a trace previews the shove" in _page2, \
+            "seg-drag hint missing"
+        assert "function hitSeg(" in _page2, "hitSeg missing from page"
         if shutil.which("node"):
             with tempfile.TemporaryDirectory() as _td2:
                 _ent2 = os.path.join(_td2, "gal.js")

@@ -43,7 +43,8 @@ starting from the prompt, or picking a template opens the workshop immediately
    thumbs to compare (Δcost + parts moved); shift-click again clears.
 4. **diff** shows what changed since the previous revision (undo-history diff).
 5. **reroute**: alt-click a trace on the PCB to rip + re-route its net
-   (no net = every jumper net retried).
+   (no net = every jumper net retried). Shift-drag a trace previews the
+   shove with a crosshair; release re-routes.
 
 ## Header, left to right
 
