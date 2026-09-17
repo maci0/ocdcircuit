@@ -47,6 +47,40 @@ console.log(out.join('|'));
 HL_EXPECT = "PSU_J1|U1:U1.7|R1,R2,U1|true:0"
 
 
+class LandingTests(unittest.TestCase):
+    def test_collaboration_is_labeled_as_illustrative(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        with open(os.path.join(ROOT, "apps", "web", "landing.js")) as source:
+            script = source.read().split("const PEOPLE =", 1)[1].split(
+                "const FabTile =", 1)[0]
+        drive = """
+import assert from 'node:assert/strict';
+import html from './apps/web/html.js';
+""" + "const PEOPLE =" + script + """
+const group = Collab();
+assert.match(group.props['aria-label'], /example/i);
+const cards = group.props.children.flat(Infinity);
+assert.equal(cards.length, 3);
+function text(node) {
+  if (node == null) return '';
+  if (typeof node !== 'object') return String(node);
+  return [node.props.children].flat(Infinity).map(text).join('');
+}
+for (const card of cards) {
+  const copy = text(card);
+  assert.match(copy, /Illustrative example/);
+  assert.match(copy, /not a live session/);
+  assert.doesNotMatch(copy, /rev 42|pushing/);
+}
+"""
+        result = subprocess.run(
+            [node, "--input-type=module"], input=drive, cwd=ROOT,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class UploadTests(unittest.TestCase):
     def run_handler(self, start: str, end: str, drive: str) -> None:
         node = shutil.which("node")

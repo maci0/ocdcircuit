@@ -56,12 +56,12 @@ const PEOPLE = [
    'pour GND on 0\nkeep U1 near C1 3\npower VCC GND'],
 ];
 
-const Collab = () => html`<div class=collab role=group aria-label="three engineers editing one board live">
+const Collab = () => html`<div class=collab role=group aria-label="Example: three engineers editing one board">
   ${PEOPLE.map(([hue, who, doing, src]) => html`<div class=person key=${who}>
     <b class=who><i style=${`background:${hue}`}></i>${who}</b>
     <p>${doing}</p>
     <div class=mini>${src}</div>
-    <small><b>● live</b> · rev 42 · pushing</small></div>`)}
+    <small><b>Illustrative example</b> · not a live session</small></div>`)}
 </div>`;
 
 // supported-fabs strip: vendor tiles + profile urls come from /fabs (one source

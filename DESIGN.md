@@ -26,8 +26,8 @@ link, you're co-editing"), glowing board card (signal-green border + glow,
 never category purple) over the live collab canvas (cursors, traces arc,
 glow dots travel, deterministic starfield, gold pads — authored, never a
 stock photo), one CTA ("Start a board together"). Below the fold: the collab
-strip (maya + leo + priya, rev 42 — realtime story in one row) and the AI
-engine story (copilot drafts schematic → places → routes, you stay lead).
+strip (maya + leo + priya, explicitly labeled as illustrative examples,
+not a live session) and the AI engine story (copilot drafts schematic → places → routes, you stay lead).
 Honest flow strip (1 idea → 2 schematic → 3 layout → 4 make — no invented
 counts). Known exception: the board card carries a signal-green glow on dark
 (detector dark-glow) — deliberate, it is the hero's one authored moment,
