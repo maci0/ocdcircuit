@@ -362,6 +362,12 @@ class KB:
             by_token.setdefault(ref, []).append(ref)
             if mpn:
                 by_token.setdefault(mpn, []).append(ref)
+            # alternates are orderable substitutes: their datasheets
+            # answer for this part too
+            for alt in str(attrs.get("alternates", "")).split(","):
+                alt = alt.strip()
+                if alt:
+                    by_token.setdefault(alt, []).append(ref)
         return by_lcsc, by_token
 
     def _parts_of(self, name: str,

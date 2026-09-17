@@ -1461,6 +1461,15 @@ with tempfile.TemporaryDirectory() as _kbt:
         _docs = _kb_lcsc.docs()
         assert cast(list[str], _docs[0]["parts"]) == ["C9"], _docs
         _kbsh.rmtree(_k2dir)
+        # alternate MPNs map docs to their part (substitute datasheets answer)
+        _kadir = tempfile.mkdtemp()
+        _ba = agent.loads("board q 10x10 2L\n"
+                          "part U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN\n"
+                          "net N: U1.1 U1.2\n", base=_kadir)
+        _kb_alt = _kbmod.KB(_kadir, board=_ba)
+        _idx = _kb_alt._part_index()
+        assert _idx[1].get("LM555CN") == ["U1"], _idx
+        _kbsh.rmtree(_kadir)
 
 # kb recall: embeddings index (injected fake — no endpoint needed), reuse,
 # staleness, and the lexical floor when no embedder answers at all
