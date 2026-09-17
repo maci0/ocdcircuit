@@ -39,7 +39,8 @@ starting from the prompt, or picking a template opens the workshop immediately
    outlines with `Z1`/`Z2`… tags (one hue each). **stamp** appends
    another copy of the hovered instance and rebuilds.
 3. **candidates** generates N candidate layouts (a filmstrip across the
-   top) → click picks, drag nudges, re-run any engine.
+   top) → click picks, drag nudges, re-run any engine. Shift-click two
+   thumbs to compare (Δcost + parts moved); shift-click again clears.
 4. **diff** shows what changed since the previous revision (undo-history diff).
 
 ## Header, left to right

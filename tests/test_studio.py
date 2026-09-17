@@ -753,6 +753,29 @@ def main() -> None:
             assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
             print("editor highlight → pcb/sch ok")
 
+        # gallery compare affordance ships + delta math holds on fixtures
+        _page2 = get(base, "/").decode()
+        assert "shift-click to compare" in _page2, "gallery compare hint missing"
+        assert "function galDelta(" in _page2, "galDelta missing from page"
+        if shutil.which("node"):
+            with tempfile.TemporaryDirectory() as _td2:
+                _ent2 = os.path.join(_td2, "gal.js")
+                open(_ent2, "w").write(
+                    "const $=()=>({});const S={};\n"
+                    + _page2[_page2.index("function galDelta("):
+                             _page2.index("function thumb(")])
+                _djs = ("const a={cost:100,pos:{R1:[0,0],C1:[10,10]}};"
+                        "const b={cost:95,pos:{R1:[0,0],C1:[15,10]}};"
+                        "const d=galDelta(a,b);"
+                        "if(d.dcost!==-5||d.moved!==1)throw new Error(JSON.stringify(d));"
+                        "console.log('gal delta ok');")
+                open(_ent2, "a").write(_djs)
+                _rn2 = subprocess.run(["node", _ent2], capture_output=True,
+                                      text=True, timeout=60)
+                assert _rn2.returncode == 0, _rn2.stderr[-400:]
+                assert "gal delta ok" in _rn2.stdout, _rn2.stdout
+            print("gallery compare ok")
+
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
         import re

@@ -1673,12 +1673,19 @@ document.addEventListener('keydown',e=>{
 });
 // --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
 let galSeed=0;
+let galBase=null; // shift-clicked compare base: {i, cand}
+function galDelta(a,b){ // cost delta + parts moved >2mm between candidates
+  let moved=0;for(const r in a.pos){const q=b.pos[r];if(!q)continue;
+    const dx=a.pos[r][0]-q[0],dy=a.pos[r][1]-q[1];
+    if(dx*dx+dy*dy>4)moved++;}
+  return {dcost:+(b.cost-a.cost).toFixed(1),moved};
+}
 function thumb(cand,i){
   const fig=document.createElement('button');fig.type='button';fig.className='galpick';
-  fig.setAttribute('aria-label',`adopt candidate ${i}, cost ${cand.cost}`);
+  fig.setAttribute('aria-label',`adopt candidate ${i}, cost ${cand.cost} (shift-click to compare)`);
   const cv=document.createElement('canvas');cv.width=300;cv.height=220;fig.appendChild(cv);
   const cap=document.createElement('span');cap.className='galcap';cap.textContent=`#${i} cost ${cand.cost}`;fig.appendChild(cap);
-  fig.onclick=()=>pickCand(i);
+  fig.onclick=e=>{if(e&&e.shiftKey)galCompare(i,cand,fig);else pickCand(i);};
   const ctx=cv.getContext('2d'),W=300,H=220,s=Math.min(W/S.bw,H/S.bh),ox=(W-S.bw*s)/2,oy=(H-S.bh*s)/2;
   ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
   ctx.strokeStyle=C.line2;ctx.strokeRect(ox,oy+S.bh*s,S.bw*s,-S.bh*s);
@@ -1696,14 +1703,29 @@ async function genCands(){
   await withBusy($('dice'),`generating ${n}…`,async()=>{
     const r=await api('/candidates',{placer:$('placer').value,n,seed:galSeed,iters:400});
     if(r.error){statMsg(r.error);return;}
-    galMeta={n,seed:galSeed};
+    galMeta={n,seed:galSeed};galCands=r.candidates;galBase=null;
     const g=$('gal');g.innerHTML='';r.candidates.forEach((c,i)=>g.appendChild(thumb(c,i)));
     $('galwrap').style.display='';
     drawFeas({feasible:r.feasible,layers:r.layers});
-    statMsg(`${n} candidates — click one to pick`,true);
+    statMsg(`${n} candidates — click to pick, shift-click two to compare`,true);
   });
 }
 let galMeta={n:4,seed:0};
+function galCompare(i,cand,fig){
+  const g=$('gal');
+  if(galBase&&galBase.i===i){ // toggle off
+    galBase=null;g.querySelectorAll('.galcap').forEach((c,j)=>{c.textContent=`#${j} cost ${galCands[j].cost}`;});
+    statMsg(`${galCands.length} candidates — click one to pick`,true);return;
+  }
+  if(!galBase){galBase={i,cand};
+    fig.querySelector('.galcap').textContent=`#${i} cost ${cand.cost} (base — click another)`;
+    statMsg(`comparing from #${i} — click another candidate`,true);return;}
+  const d=galDelta(galBase.cand,cand);
+  fig.querySelector('.galcap').textContent=
+    `#${i} cost ${cand.cost} (Δ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} moved)`;
+  statMsg(`#${galBase.i}→#${i}: Δcost ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} parts moved — click to pick`,true);
+}
+let galCands=[];
 async function pickCand(i){
   await withBusy($('dice'),`picking #${i}…`,async()=>{
     const r=await api('/pick',{placer:$('placer').value,router:$('router').value,
