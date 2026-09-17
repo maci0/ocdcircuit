@@ -42,6 +42,8 @@ starting from the prompt, or picking a template opens the workshop immediately
    top) → click picks, drag nudges, re-run any engine. Shift-click two
    thumbs to compare (Δcost + parts moved); shift-click again clears.
 4. **diff** shows what changed since the previous revision (undo-history diff).
+5. **reroute**: alt-click a trace on the PCB to rip + re-route its net
+   (no net = every jumper net retried).
 
 ## Header, left to right
 
@@ -94,7 +96,7 @@ parser accepts (`<-->`-joined, attrs preserved).
 
 ## Endpoints (same shapes as MCP tools)
 
-`/init /build /solve /candidates /pick /render /export /diff_prev`
+`/init /build /solve /candidates /pick /reroute /render /export /diff_prev`
 `/simulate /doctor /undo /redo` (POST JSON) · `/quote /xray /scan` ·
 `/kb/list /kb/read /kb/search /kb/ask /kb/add /kb/fetch` (the board's
 knowledgebase; `/kb/fetch` runs in a worker thread and reports through

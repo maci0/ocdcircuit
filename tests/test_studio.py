@@ -848,6 +848,15 @@ def main() -> None:
         assert not pk.get("error"), pk
         assert cast(list[object], pk["traces"]), "picked board routes"
         print(f"gallery ok ({len(cands)} candidates, pick routed)")
+        # reroute: single net rip + maze, unknown net is a clean error.
+        # (runs on the rc board the simulate test left open: VIN/VO/GND)
+        _rr = post(base, "/reroute", {"net": "VO"})
+        assert not _rr.get("error"), _rr
+        assert cast(list[object], _rr["traces"]), "rerouted board routes"
+        assert "retried" in _rr, _rr
+        assert "unknown net" in str(post(base, "/reroute",
+                                         {"net": "NOPE"}).get("error")), _rr
+        print("reroute ok (VO rip + maze)")
         post(base, "/build", {"text": text, "placer": "diffusion",
                               "router": "maze"})
 

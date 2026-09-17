@@ -201,7 +201,7 @@ _slot("view", "vcs",
 _slot("view", "pcb",
                lambda s: '<section id=pcbwrap>'
                          '<header class=panel-head><span class=panel-title>PCB</span>'
-                         '<span class=panel-note>drag a part to pin it &middot; double-click unpins &middot; right-click rotates</span>'
+                         '<span class=panel-note>drag a part to pin it &middot; double-click unpins &middot; right-click rotates &middot; alt-click a trace re-routes its net</span>'
                          '<details id=layerbox title="show or hide layers and marks on this canvas">'
                          '<summary>layers</summary>'
                          '<div id=layers role=group aria-label="visible layers">'
@@ -1832,7 +1832,25 @@ function hit(mx,my){for(const r in S.cur.parts){
   const p=S.cur.parts[r];
   const x=view.ox+p.x*view.s,y=view.oy+(S.bh-p.y)*view.s;
   if(Math.abs(mx-x)<p.w*view.s/2+4&&Math.abs(my-y)<p.h*view.s/2+4)return r;}return null;}
-c.addEventListener('mousedown',e=>{if(!S)return;const R=c.getBoundingClientRect();
+function hitTrace(mx,my){ // nearest segment within 6px → its net
+  if(!S||!S.cur||!S.cur.traces)return null;
+  let best=null,bd=36;
+  for(const g of S.cur.traces){
+    const x1=view.ox+g.x1*view.s,y1=view.oy+(S.bh-g.y1)*view.s;
+    const x2=view.ox+g.x2*view.s,y2=view.oy+(S.bh-g.y2)*view.s;
+    const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;
+    const t=L2?Math.max(0,Math.min(1,((mx-x1)*dx+(my-y1)*dy)/L2)):0;
+    const dd=(mx-x1-t*dx)**2+(my-y1-t*dy)**2;
+    if(dd<bd){bd=dd;best=g.net;}}
+  return best;}
+c.addEventListener('mousedown',async e=>{if(!S)return;const R=c.getBoundingClientRect();
+  if(e.altKey){ // alt-click a trace: rip + re-route that net
+    const net=hitTrace(e.clientX-R.left,e.clientY-R.top);
+    if(net)await withBusy(c,`rerouting ${net}…`,async()=>{
+      const r=await api('/reroute',{net});
+      if(r.error){statMsg(r.error);return;}
+      statMsg(r.retried?`${net} re-routed`:`${net} still blocked`,r.retried);applyState(r,true);});
+    return;}
   drag=hit(e.clientX-R.left,e.clientY-R.top);
   // rigid group: an instanced part drags its whole owner-group (offsets kept)
   dragGroup=null;
@@ -4584,6 +4602,40 @@ class H(http.server.BaseHTTPRequestHandler):
                 from ocdcircuit import collab as _collab_p
                 st["rev"] = _collab_p.get_room(H._room_key(), H.src_text).set_text(
                     H.src_text, _authed(self.headers) or "pick")
+                if serr:
+                    st["save_error"] = serr
+                self._send(st)
+            elif self.path == "/reroute":  # rip one net, maze it again
+                b = agent.loads(H.src_text, base=BASE)
+                net = req.get("net")
+                assert net is None or isinstance(net, str)
+                b.route_board("maze")
+                if isinstance(net, str) and net:
+                    if net not in b.nets:
+                        self._send({"error": f"unknown net {net!r}"})
+                        return
+                    ok = b.reroute(net)
+                else:
+                    ok = True
+                    for t in b.traces:
+                        if t.jumper and not b.reroute(t.net):
+                            ok = False
+                from ocdcircuit.solver import cost as _rcost
+                drc = b.check()
+                st = board_state(b, agent.dumps(b), [], [
+                    {"x1": t.x1, "y1": t.y1, "x2": t.x2,
+                     "y2": t.y2, "layer": t.layer, "w": t.width}
+                    for t in b.traces], _rcost(b), drc)
+                H._decorate(st, b, b.score().get("tidy", {}), b.feasible(),
+                            b.plugins().list("placer"), b.plugins().list("router"),
+                            req.get("silk", "full"), b.plugins().list("silk"))
+                H.src_text = str(st["text"])
+                H.commit(H.src_text)
+                serr = H.save()
+                from ocdcircuit import collab as _collab_r
+                st["rev"] = _collab_r.get_room(H._room_key(), H.src_text).set_text(
+                    H.src_text, _authed(self.headers) or "reroute")
+                st["retried"] = ok
                 if serr:
                     st["save_error"] = serr
                 self._send(st)
