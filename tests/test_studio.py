@@ -844,7 +844,7 @@ def main() -> None:
             # blank page (this is the gate the inline page got for free)
             for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
                          "html.js", "api.js", "store.js", "core.js", "collab.js",
-                         "kb.js", "vcs.js", "gallery.js"):
+                         "kb.js", "vcs.js", "gallery.js", "scan.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
