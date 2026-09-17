@@ -8,7 +8,7 @@
 // htm rule: every void element needs its slash (<input ... />).
 import { render } from './vendor/preact.module.js';
 import html from './html.js';
-import { ui, useUI } from './store.js';
+import { useUI } from './store.js';
 import { Panels } from './panels.js';
 import { CalcBlock, DiceButton, DlButton, Engines, ExtBanner, FabDlButton,
          HealthOut, QgoButton, QuoteOut, SimButton, SolveButton,

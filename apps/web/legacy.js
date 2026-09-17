@@ -5,12 +5,10 @@
 // NOTE: modules are strict mode — never assign to an undeclared name here.
 import { ui } from './store.js';
 import { scanPaint, thumbPaint } from './views.js';
-const $=id=>document.getElementById(id);
-async function api(path,body){const r=await fetch(path,{method:'POST',
-headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
-const j=await r.json();
-if(j&&j.login){location.href='/';throw new Error('login');} // session died mid-work
-return j;}
+import { $, api } from './core.js';
+import { collabMeNow, collabReset, collabRevNow, collabStart, collabUserList,
+         initCollab, setCollabRev } from './collab.js';
+import { initKb } from './kb.js';
 let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
 function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy nothing)
@@ -190,7 +188,7 @@ function drawPCB(st, t){ // t: 0..1 trace reveal + part blend handled by caller
     // Several cursors can share one part — stack the name tags so N users
     // stay readable instead of overprinting.
     let stack=0;
-    for(const u of collabUsers){if(u.ref!==r||u.name===collabMe)continue;
+    for(const u of collabUserList()){if(u.ref!==r||u.name===collabMeNow())continue;
       const pad=3+stack*2;
       ctx.strokeStyle=u.color||'#1d5fa8';ctx.lineWidth=2;ctx.setLineDash([4,3]);
       ctx.strokeRect(X(p.x-p.w/2)-pad,Y(p.y+p.h/2)-pad,p.w*s+pad*2,p.h*s+pad*2);
@@ -441,14 +439,14 @@ function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
 $('ed').addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(push,400);});
 async function push(){
   const text=$('ed').innerText, seq=++pulseq;
-  const r=await api('/collab/push',{text,rev:collabRev,src:SRCREL,thash:heldThash,
+  const r=await api('/collab/push',{text,rev:collabRevNow(),src:SRCREL,thash:heldThash,
     placer:$('placer').value,router:$('router').value,
     fab:$('fab').value,silk:$('silk').value});
   if(seq!==pulseq)return;   // the editor moved on (or another board opened)
   if(r.stale){ // someone else edited first: adopt their text (undo keeps ours)
     cancelPush();
     if(r.text!==undefined)setEditor(r.text);
-    if(r.rev!==undefined)collabRev=+r.rev;
+    if(r.rev!==undefined)setCollabRev(+r.rev);
     statMsg(r.error||'reloaded a collaborator edit (yours is in undo)',true);
     push();return;
   }
@@ -457,87 +455,19 @@ async function push(){
 }
 
 let heldThash='', heldTraces=[];
-let collabRev=-1, collabOn=false, collabUsers=[], collabTimer=null, collabMe='';
 function applyState(r,live){
   if(r.thash){ // server skipped the trace list: keep the one we already have
     if(r.thash!==heldThash){heldTraces=r.traces||[];}
     r.traces=(r.traces&&r.traces.length)?r.traces:heldTraces;
     heldThash=r.thash;
   }
-  if(r.rev!==undefined&&r.rev!==null)collabRev=+r.rev; // the room's rev rides every build
+  if(r.rev!==undefined&&r.rev!==null)setCollabRev(+r.rev); // the room's rev rides every build
   S=r;S.cur=r;markDirty();spinBriefly(); // render live on the state itself (bw/bh/pours/fixed ride along)
   notePlacement(r);
   if(live&&r.frames&&r.frames.length)animate(r.frames,r.traces,()=>{drawDRC(r);});
   else{S.cur.traces=r.traces;ui.set({cost:`cost ${r.cost}`});drawDRC(r);}
   drawFeas(r);renderLayers(r);renderParts(r);
   if(document.activeElement!==$('ed'))setEditor(r.text);
-}
-// --- realtime collab: one SSE stream per board, rev-guarded pushes --------
-// Same banner pattern as the file-watch: a rev mismatch means someone else
-// edited first, so reload their text (never auto-merge, never clobber).
-function collabPaint(users){
-  collabUsers=users||[];
-  const others=collabUsers.filter(u=>u.name!==collabMe);
-  // the pill never grows past three names no matter the room size —
-  // the full roster lives in the tooltip.
-  const head=collabUsers.slice(0,3).map(u=>u.name).join(', ')
-    +(collabUsers.length>3?` +${collabUsers.length-3}`:'');
-  ui.set({room:others.length?`${others.length+1} here: ${head}`
-      :((collabUsers.length?'solo · '+head:'solo')),
-    roomOk:!!others.length,
-    roomTitle:collabUsers.map(u=>`${u.name}${u.ref?' on '+u.ref:''}`).join('\n')||'no one else here yet',
-    roomNote:others.length?`live now: ${head}`:'just you here — copy the link to co-edit'});
-  markDirty();
-}
-let collabSyncSeq=0; // monotonic: a slow sync must not land on a newer room
-async function collabSync(){ // pull the room's text (first connect + on rev bump)
-  const seq=++collabSyncSeq;
-  const r=await api('/collab/sync',{});
-  if(seq!==collabSyncSeq)return; // a newer sync is already in flight
-  if(r.error||r.text===undefined)return;
-  collabMe=r.hello||collabMe;
-  collabPaint(r.users);
-  if(r.rev!==undefined)collabRev=+r.rev;
-  if(r.text!==$('ed').innerText&&document.activeElement!==$('ed')){
-    cancelPush();setEditor(r.text);push(); // parse + render their text
-  }
-}
-let collabES=null; // one stream per board: rehomed on openFile (old room dies)
-function collabStart(){
-  if(collabOn)return;collabOn=true;
-  collabSync();
-  if(collabES){try{collabES.close();}catch(err){}}
-  const es=collabES=new EventSource('/collab/events');
-  es.onmessage=e=>{
-    let m;try{m=JSON.parse(e.data);}catch(err){return;}
-    if(m.hello!==undefined)collabMe=m.hello;
-    if(m.users)collabPaint(m.users);
-    if(m.rev!==undefined&&+m.rev!==collabRev&&(m.by||'')!==collabMe
-       &&(m.by!==undefined||m.rev>collabRev)){ // somebody's push landed
-      collabRev=+m.rev;collabSync();
-    }
-  };
-  es.onerror=()=>{ // the stream drops (sleep, proxy): re-sync, the next rev heals
-    if(collabES!==es)return; // rehomed already — this stream is dead, stay dead
-    try{es.close();}catch(err){}
-    collabES=null;collabOn=false;setTimeout(collabStart,3000);
-  };
-  // presence: cursor + selected ref, every 5s (the server prunes at 15s)
-  clearInterval(collabTimer);
-  collabTimer=setInterval(async()=>{
-    try{
-      const r=await api('/collab/cursor',{x:view.t||0,y:0,
-        ref:((S&&S.cur&&S.cur.hover)||(edHl.size?[...edHl][0]:''))});
-      if(r.users)collabPaint(r.users);
-      if(r.rev!==undefined)collabRev=+r.rev;
-    }catch(err){}
-  },5000);
-  const sh=$('sharebtn');
-  if(sh)sh.onclick=async()=>{
-    try{await navigator.clipboard.writeText(location.href);
-      toast('link copied — send it to your collaborator');}
-    catch(err){toast('copy failed — select the URL from the address bar');}
-  };
 }
 function drawFeas(r){
   const f=r.feasible||{};
@@ -1303,16 +1233,12 @@ async function previewFile(path){
 }
 async function openFile(path){
   cancelPush();  // a queued rebuild of the old board must not follow us here
-  collabSyncSeq++; // a sync for the old board must not land on the new one
-  if(collabES){try{collabES.close();}catch(err){}collabES=null;}
-  collabOn=false; // collabStart re-opens the stream on the new board's room
   const r=await api('/fs/open',{path});
   if(r.error){statMsg(r.error);return;}
   statMsg('');ui.set({msgs:[],followups:[]});
   heldThash='';heldTraces=[];  // a different board: its traces are not ours
   setQueue([]);  // the server dropped the old board's proposals with it
-  collabRev=(r.rev!==undefined)?+r.rev:-1; // re-home the room to the new board
-  collabPaint([]);
+  collabReset(r.rev!==undefined?+r.rev:-1); // re-home the room to the new board
   applyState(r,false);
   collabStart(); // join the new board's room: sync + fresh SSE stream
   toast('opened '+path);
@@ -1476,7 +1402,7 @@ async function boot(){
   ui.set({placers:r.placers,routers:r.routers,silks:r.silks,
     fabOpts:r.fabs,silkSel:r.silk});   // views.js Engines renders the options
   setEditor(r.text);applyState(r,false);
-  if(r.rev!==undefined)collabRev=+r.rev; // the room's rev from the first load
+  if(r.rev!==undefined)setCollabRev(+r.rev); // the room's rev from the first load
   collabStart(); // realtime: SSE fan-out + presence from here on
   if(f.error){ui.set({treeNote:f.error});return;}
   DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
@@ -1555,6 +1481,11 @@ $('chatbtn').onclick=()=>{
   ui.set({chat:on});
   if(on)$('ask').focus();
 };
+// the collab stream needs live reads of the board, the view and the
+// selection: hand it the runtime instead of importing the cycle back
+initCollab({markDirty,cancelPush,setEditor,push,toast,
+  view:()=>view,board:()=>S,edHl});
+initKb();   // knowledgebase panel: fetches, prefs and its own polling
 (async()=>{await boot();})();
 if(location.search.includes('perf')){
 setTimeout(()=>{
@@ -1593,106 +1524,4 @@ $('app').addEventListener('click',async e=>{
   setEditor(r.text);applyState(r,false);
   ui.set({extBanner:false});lastHash=null;
 });
-// --- knowledgebase panel: notes + datasheets, the agent's own files -----
-// The panel is a component (views.js KbPanel): this shapes what it shows and
-// keeps the fetches, the file writes and the preference calls.
-let KBDOCS=[];
-async function kbLoad(){
-  const r=await api('/kb/list',{});
-  if(r.error){ui.set({kbNote:r.error});return;}
-  KBDOCS=r.docs||[];
-  const parts=KBDOCS.reduce((n,d)=>n+(d.parts||[]).length,0);
-  ui.set({
-    kbNote:`${KBDOCS.length} document${KBDOCS.length===1?'':'s'} · `
-      +`${parts} part link${parts===1?'':'s'} · `+(r.dir||'kb/'),
-    kbRows:KBDOCS.map(d=>({doc:d.name,name:d.name,
-      kind:d.kind+(d.source?' · from url':''),tail:(d.parts||[]).join(' '),
-      title:d.source?('source: '+d.source):d.name,start:1})),
-    kbTail:(KBDOCS.length&&r.total&&r.total>KBDOCS.length)
-      ?`… showing ${KBDOCS.length} of ${r.total} documents — ask or search to reach the rest`
-      :'',
-    kbStat:r.busy?'fetching datasheets…'
-      :((r.log||[]).length?(r.log||[]).slice(-3).join(' · '):'')});
-}
-async function kbOpen(doc,start){
-  const r=await api('/kb/read',{doc,start:start||1,lines:120});
-  if(r.error){ui.set({kbStat:r.error});return;}
-  ui.set({kbView:`${doc}  lines ${r.start}-${r.end} of ${r.total_lines}\n\n${r.text}`});
-}
-async function kbGo(semantic,answer){
-  const q=$('kbq').value.trim();if(!q){ui.set({kbStat:'type a question first'});return;}
-  ui.set({kbStat:answer?'asking the local model…':'searching kb/…'});
-  const r=await api(semantic?'/kb/ask':'/kb/search',{q,limit:8,answer:!!answer});
-  if(r.error){ui.set({kbStat:r.error});return;}
-  const hits=r.passages||r.hits||[];
-  ui.set({
-    kbStat:`${hits.length} hit${hits.length===1?'':'s'}`
-      +(r.method?' · '+r.method+(r.model?' · '+r.model:''):'')
-      +((r.note&&!r.answer)?' · '+r.note:''),
-    kbRows:hits.map(h=>{
-      const line=h.line!==undefined?h.line:h.start;
-      return {doc:h.doc||'(no doc)',name:h.doc||'(no doc)',
-        kind:line!==undefined?'line '+line:'passage',
-        tail:h.score!==undefined?String(h.score):'',
-        title:String(h.text||'').slice(0,400),
-        start:Math.max(1,(line||1)-3)};}),
-    kbTail:'',
-    kbView:r.answer?('answer (from kb/ only)'
-      +(r.answer_note?'\n('+r.answer_note+')':'')+'\n\n'+r.answer)
-      :(r.answer_error?('(no written answer: '+r.answer_error+')'):'')});
-}
-// the rows name their document and line; the click comes back here
-$('kblist').addEventListener('click',e=>{
-  const b=e.target.closest('button.kbname[data-doc]');
-  if(b)kbOpen(b.dataset.doc,+(b.dataset.start||1));
-});
-$('kbask').onclick=()=>kbGo(true,false);
-$('kbgrep').onclick=()=>kbGo(false,false);
-$('kbans').onclick=()=>kbGo(true,true);
-$('kbaddbtn').onclick=async()=>{
-  const src=$('kburl').value.trim();if(!src)return;
-  ui.set({kbStat:'adding '+src+'…'});
-  const r=await api('/kb/add',{src});
-  if(r.error){ui.set({kbStat:r.error});return;}
-  ui.set({kbStat:`added ${r.added} (${r.bytes} bytes)`});
-  $('kburl').value='';kbLoad();
-};
-$('kbfetch').onclick=async()=>{
-  const r=await api('/kb/fetch',{});
-  ui.set({kbStat:r.error||r.note||'fetch started'});
-  kbLoad();
-};
-// preferences: Flux's Knowledge approvals. The file is the store; the buttons
-// flip the `# ok` suffix and the agent reads what is approved.
-$('kbprefsbtn').onclick=async()=>{
-  const open=ui.state.kbPrefsOpen;
-  ui.set({kbPrefsOpen:!open});
-  if(!open)kbPrefs();
-};
-async function kbPrefs(){
-  const r=await api('/kb/prefs',{});
-  if(r.error){ui.set({kbStat:r.error});return;}
-  ui.set({kbPrefs:(r.prefs||[]).map(p=>({id:p.id,when:p.when,
-    text:p.text,approved:!!p.approved}))});
-}
-$('kbprefslist').addEventListener('click',async e=>{
-  const b=e.target.closest('button[data-pref]');
-  if(!b)return;
-  const x=await api('/kb/prefs/set',
-    {id:+b.dataset.pref,approved:b.dataset.approve==='1'});
-  if(x.error)ui.set({kbStat:x.error});else kbPrefs();
-});
-$('kbprefsgo').onclick=async()=>{
-  if($('kbprefsgo').disabled)return;$('kbprefsgo').disabled=true;
-  try{const r=await api('/kb/prefs/add',{when:$('kbwhen').value,text:$('kbwhat').value});
-    if(r.error){ui.set({kbStat:r.error});return;}
-    $('kbwhen').value='';$('kbwhat').value='';kbPrefs();}
-  finally{$('kbprefsgo').disabled=false;}
-};
-$('kbq').addEventListener('keydown',e=>{
-  if(e.key==='Enter'){e.preventDefault();kbGo(true,false);}});
-$('kburl').addEventListener('keydown',e=>{
-  if(e.key==='Enter'){e.preventDefault();$('kbaddbtn').click();}});
-kbLoad();
-setInterval(()=>{if(ui.state.kbStat.startsWith('fetching'))kbLoad();},3000);
 setInterval(watch,2000);
