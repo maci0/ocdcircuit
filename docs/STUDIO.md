@@ -85,8 +85,10 @@ names on the PCB and in the schematic (a pin like `U1.7` rings that pin).
 
 ## Schematic
 
-Click pin → click net to rewire · alt-click drops a pin ·
-double-click a label renames the net. All edits rewrite `.ocd` lines the
+Click pin → click net to rewire · click pin → click empty canvas
+starts a new net with that pin · alt-click drops a pin ·
+double-click a label renames the net · double-click empty canvas adds
+a part. All edits rewrite `.ocd` lines the
 parser accepts (`<-->`-joined, attrs preserved).
 
 ## Endpoints (same shapes as MCP tools)

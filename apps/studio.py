@@ -1294,6 +1294,36 @@ function schRename(net){
   }
   schCommit(lines);
 }
+function schNextRef(){
+  const lines=schLines(),have=new Set();
+  lines.forEach(l=>{const m=l.match(/^part\s+(\S+)/);if(m)have.add(m[1]);});
+  let i=1;while(have.has('U'+i))i++;return 'U'+i;
+}
+function schNextNet(){
+  const have=new Set(schNets().map(n=>n.name));
+  let i=1;while(have.has('N'+i))i++;return 'N'+i;
+}
+function schAddPart(){
+  const ref=prompt('new part ref:',schNextRef());
+  if(!ref||!/^\w+$/.test(ref)){if(ref!==null)statMsg('ref must be word chars');return;}
+  if(schLines().some(l=>l.match(new RegExp('^part\\s+'+schEsc(ref)+'\\b')))){statMsg(ref+' already exists');return;}
+  const fp=prompt(`footprint for ${ref} (e.g. R0805, SOIC8):`,'R0805');
+  if(fp===null)return;
+  if(!fp.trim()){statMsg('footprint cannot be blank');return;}
+  const lines=schLines();
+  let i=lines.findIndex(l=>/^\s*part\s/.test(l));
+  if(i<0)i=lines.findIndex(l=>/^\s*(net\s|\S+\s*::)/.test(l));
+  if(i<0)i=lines.length;
+  lines.splice(i,0,`part ${ref} ${fp.trim()}`);
+  schCommit(lines);statMsg(`added ${ref}`,true);
+}
+function schNewNet(pp){
+  const name=prompt('new net name:',schNextNet());
+  if(!name||!/^\w+$/.test(name)){if(name!==null)statMsg('net name must be word chars');return;}
+  const lines=schLines();
+  lines.push(`${name} :: ${pp}`);
+  schCommit(lines);schSel=null;
+}
 (()=>{const c=$('sch');
 c.addEventListener('mousedown',e=>{if(!S||!S._schmap)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
   for(const p of S._schmap.pins){
@@ -1303,9 +1333,11 @@ c.addEventListener('mousedown',e=>{if(!S||!S._schmap)return;const R=c.getBoundin
   for(const n of S._schmap.nets){
     if(Math.abs(mx-n.x)<60&&Math.abs(my-n.y)<9){
       if(schSel){schMovePin(schSel,n.n);schSel=null;}schDirty=true;return;}}
+  if(schSel){schNewNet(schSel);return;}
   schSel=null;schDirty=true;});
 c.addEventListener('dblclick',e=>{if(!S||!S._schmap)return;const R=c.getBoundingClientRect(),mx=e.clientX-R.left,my=e.clientY-R.top;
-  for(const n of S._schmap.nets)if(Math.abs(mx-n.x)<60&&Math.abs(my-n.y)<9){schRename(n.n);return;}});
+  for(const n of S._schmap.nets)if(Math.abs(mx-n.x)<60&&Math.abs(my-n.y)<9){schRename(n.n);return;}
+  schAddPart();});
 })();
 function draw3D(st,rot){
   const [ctx,R]=fit($('t3d'));

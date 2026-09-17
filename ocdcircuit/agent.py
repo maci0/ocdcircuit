@@ -130,6 +130,10 @@ def _apply_patch_inner(board: Board, ops: list[dict[str, object]]) -> int:
                             board.nets[_n].attrs[k] = v
 
                 board.emit(_do, _undo)
+        elif k == "disconnect":
+            board.disconnect(_s(op["net"]), _s(op["ref"]), _s(op["pin"]))
+        elif k == "drop_net":
+            board.drop_net(_s(op["net"]))
         elif k == "constrain":
             c = op["c"]
             assert isinstance(c, dict)

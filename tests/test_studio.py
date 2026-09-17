@@ -665,6 +665,19 @@ def main() -> None:
             assert not r.get("error"), (key, r.get("error"))
             assert len(cast(str, r["data"])) > 1000, (key, len(cast(str, r["data"])))
         print("render svg+sch+xray ok")
+        # sch creation path: bare part + single-pin new net build clean.
+        # no /state endpoint — /build with no text reuses the open board.
+        _b1 = post(base, "/build", {})
+        assert not _b1.get("error"), _b1.get("error")
+        with open(BOARD, encoding="utf-8") as _bf:
+            _curtext = _bf.read()
+        _new = _curtext.rstrip() + "\npart U9 SOIC8\nN9 :: U9.1\n"
+        _b2 = post(base, "/build", {"text": _new, "placer": "diffusion",
+                                    "router": "lroute"})
+        assert not _b2.get("error"), _b2.get("error")
+        post(base, "/build", {"text": _curtext, "placer": "diffusion",
+                              "router": "lroute"})
+        print("sch create part+net ok")
         # x-ray compare: own PNG mostly agrees, bad upload is an error not a 500
         _own = post(base, "/render", {"key": "png"})
         assert not _own.get("error"), _own.get("error")
