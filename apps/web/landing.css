@@ -1,0 +1,162 @@
+/* OCD Studio landing — moved verbatim out of apps/studio.py (LOGIN_PAGE).
+   Tokens are the DESIGN.md dark family; no framework, no build step. */
+:root{
+--term:#101418;--term-2:#1a2129;--term-line:#2a333d;--term-text:#d8e2dc;
+--term-faint:#7f8b94;--term-bad:#ff7364;--term-ok:#5fd894;--term-key:#ffd8a0;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--term);color:var(--term-text);font:1rem/1.55 var(--sans)}
+/* hero: nav, hook, glowing prompt over the live board, one CTA. The prompt
+sits over the visual (like Flux's card over its PCB render), so the canvas
+is atmosphere behind real content — never decoration. */
+.hero{position:relative;overflow:hidden;text-align:center;
+padding:1rem 1.5rem 3.5rem;min-height:92vh;display:flex;flex-direction:column}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%}
+.hero>*:not(canvas){position:relative}
+.nav{display:flex;align-items:center;gap:.6rem 1rem;flex-wrap:wrap;
+max-width:70rem;margin:0 auto;width:100%}
+.brand{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.1rem;
+letter-spacing:-.02em;color:#fff;text-decoration:none}
+.brand em{font-style:normal;color:var(--term-ok)}
+.nav .sp{flex:1}
+.nav button{font:600 .9rem var(--sans);padding:.5rem 1rem;border-radius:8px;cursor:pointer}
+#loginbtn{background:transparent;color:var(--term-text);border:1px solid var(--term-line)}
+#loginbtn:hover{border-color:var(--term-ok)}
+#topcta{background:var(--term-ok);border:1px solid var(--term-ok);color:#06130d}
+#topcta:hover{filter:brightness(1.07)}
+/* one centred stack instead of a 12vh margin that pushed the hero past the
+fold on short viewports; auto margins centre it and the content sets the height. */
+.herobody{flex:1;display:flex;flex-direction:column;justify-content:center;
+max-width:70rem;margin:0 auto;width:100%;padding:3rem 0 0}
+
+h1{font-size:clamp(2.2rem,5vw,3.4rem);line-height:1.08;letter-spacing:-.03em;
+margin:0 0 .6rem;color:#fff;text-wrap:balance}
+.dek{color:var(--term-faint);font-size:clamp(1rem,1.6vw,1.15rem);margin:0 auto 2rem;max-width:34rem}
+/* the hero's one authored glow — signal green, the product's own colour,
+never a category purple that belongs to no token here. */
+.prompt{max-width:34rem;margin:0 auto;width:100%;background:rgba(16,20,24,.92);
+border:1px solid var(--term-ok);border-radius:14px;padding:1.1rem 1.2rem;text-align:left;
+box-shadow:0 0 0 1px rgba(95,216,148,.22),0 18px 60px -12px rgba(95,216,148,.45)}
+.prompt p{margin:0 0 .9rem;font-size:1.02rem;line-height:1.7;color:var(--term-text)}
+.prompt button{width:100%;font:600 1rem var(--sans);padding:.8rem;border-radius:9px;
+border:1px solid var(--term-ok);background:var(--term-ok);color:#06130d;cursor:pointer}
+.prompt button:hover{filter:brightness(1.07)}
+/* honest strip: the flow, never invented counts (no fake builders stat).
+An ordered list, because that is what four numbered steps are; the arrow is
+CSS so screen readers hear the steps, not "right arrow" four times. */
+.flowline{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;
+margin:2.2rem 0 0;padding:0;list-style:none;font:.82rem var(--mono);color:var(--term-faint)}
+.flowline li{display:flex;align-items:center;gap:.6rem}
+.flowline li:not(:last-child)::after{content:"→";color:var(--term-line)}
+.flowline b{color:var(--term-ok);font-weight:600}
+/* gate: the account form, one click behind the hero */
+.gate{display:none;min-height:100dvh;grid-template-columns:minmax(0,34rem) 1fr}
+body.authed .hero,body.gating .hero{display:none}
+body.gating .gate{display:grid}
+/* min-width:0 — as a grid item it defaults to min-content, so a long board
+name in a shelf card stretched the whole column past a phone viewport. */
+.form{padding:clamp(2rem,6vh,4.5rem) clamp(1.5rem,4vw,3.5rem);display:flex;flex-direction:column;
+justify-content:center;gap:1rem;max-width:30rem;width:100%;margin:0 auto;min-width:0}
+.form h2{font-size:1.6rem;letter-spacing:-.02em;margin:.5rem 0 0;color:#fff}
+.sub{color:var(--term-faint);font-size:.92rem;margin:0 0 .5rem}
+label{display:grid;gap:.3rem;font-size:.85rem;font-weight:600}
+input{font:1rem var(--sans);padding:.7rem .9rem;border-radius:9px;border:1px solid var(--term-line);
+background:var(--term-2);color:var(--term-text)}
+input:focus{outline:2px solid var(--term-ok);outline-offset:1px;border-color:var(--term-ok)}
+.form button{font:600 1rem var(--sans);padding:.75rem;border-radius:9px;border:1px solid var(--term-ok);
+background:var(--term-ok);color:#06130d;cursor:pointer}
+.form button:hover{filter:brightness(1.07)}
+button.ghost{background:transparent;color:var(--term-text);border-color:var(--term-line)}
+button.ghost:hover{border-color:var(--term-ok);background:rgba(95,216,148,.06)}
+/* the credential form is a stack: full-width submit, then the mode swap.
+Inline-flow buttons sized themselves to their label and read as a mismatched pair. */
+#f{display:grid;gap:.85rem}
+/* shelf controls belong to a logged-in shelf, never to the signup form */
+#promptbox,#newprojbtn,.shelfonly{display:none}
+body.shelf #promptbox{display:flex}
+body.shelf #newprojbtn,body.shelf .shelfonly{display:block}
+:focus-visible{outline:2px solid var(--term-ok);outline-offset:2px}
+/* the gate was a one-way door: entering it hid the hero with no way back */
+.backlink{align-self:start;background:none;border:0;padding:.3rem 0;cursor:pointer;
+color:var(--term-faint);font:.85rem var(--sans)}
+.backlink:hover{color:var(--term-ok)}
+body.shelf .backlink{display:none}
+#err{color:var(--term-bad);font:.85rem var(--mono);min-height:1.4em;margin:0}
+#err:empty{min-height:0}
+#err.ok{color:var(--term-ok)}
+#shelf{display:none;gap:.6rem}
+#shelf.has{display:grid}
+.scard{text-align:left;background:var(--term-2);color:var(--term-text);
+border:1px solid var(--term-line);border-radius:10px;padding:.7rem .9rem;cursor:pointer}
+.scard:hover{border-color:var(--term-ok)}
+.scard b{display:block;font-size:.95rem}
+.scard span{display:block;font-size:.8rem;color:var(--term-faint)}
+.scard small{font:.75rem var(--mono);color:var(--term-faint)}
+/* board names and paths are user data: wrap them, never widen the layout */
+.scard b,.scard span,.scard small{overflow-wrap:anywhere}
+#newboard{display:none;gap:.5rem}
+body.shelf #newboard.has{display:grid}
+#profrow{gap:.5rem}
+body.shelf #profrow{display:flex}
+#profrow input{flex:1;min-width:0}
+#profrow button{white-space:nowrap}
+.fine{color:var(--term-faint);font-size:.78rem;margin:.2rem 0 0}
+.tsec{font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint);margin:.6rem 0 0}
+#promptbox{gap:.5rem;margin-bottom:.4rem}  /* display owned by body.shelf above */
+#promptbox input{flex:1;min-width:0}
+#promptbox button{white-space:nowrap}
+/* new-project modal: search + grid + blank CTA over the dimmed shelf.
+Native <dialog>: focus trap, Esc, backdrop — no library, no state. */
+#newproj{border:1px solid var(--term-line);border-radius:14px;background:var(--term);
+color:var(--term-text);padding:1.2rem;max-width:40rem;width:calc(100vw - 3rem)}
+#newproj::backdrop{background:rgba(0,0,0,.6)}
+#newproj h3{margin:0 0 .6rem;font-size:1.1rem}
+#npsearch{width:100%;margin-bottom:.8rem}
+#npgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.6rem;
+max-height:50vh;overflow:auto}
+#npblank{margin-top:.8rem;width:100%}
+.visual{position:relative;min-height:100dvh;overflow:hidden;background:#0a0f14;margin:0}
+.visual canvas{position:absolute;inset:0;width:100%;height:100%}
+/* the caption sat on bare canvas; a scrim keeps it legible over any frame */
+.visual figcaption{position:absolute;left:0;right:0;bottom:0;color:#fff;
+font:.85rem var(--mono);padding:3rem 1.5rem 1.2rem;
+background:linear-gradient(transparent,rgba(6,10,14,.85))}
+/* collab strip: a live crowd on one board, the realtime story in one row */
+/* min-width:0 all the way down: the .mini blocks are white-space:pre, so their
+min-content width (563px) would otherwise blow the grid past a phone viewport. */
+.collab{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(17rem,100%),1fr));
+gap:1.2rem;margin:2.6rem auto 0;max-width:62rem;width:100%;min-width:0;text-align:left}
+.person{background:rgba(16,20,24,.92);border:1px solid var(--term-line);
+border-radius:14px;padding:1rem 1.1rem;position:relative;min-width:0}
+.person b.who{display:block;margin:0 0 .2rem;font-size:.95rem;color:#fff;font-weight:700}
+.person b.who i{display:inline-block;width:.65rem;height:.65rem;border-radius:50%;margin-right:.45rem}
+.person p{margin:.15rem 0 .7rem;font-size:.85rem;color:var(--term-faint)}
+.mini{border:1px solid var(--term-line);border-radius:8px;background:#0a0f14;
+font:.72rem/1.7 var(--mono);color:var(--term-text);padding:.6rem .7rem;
+white-space:pre;overflow-x:auto}  /* pre would overflow the card on narrow screens */
+.person small{display:block;margin-top:.6rem;font:.75rem var(--mono);color:var(--term-faint)}
+.person small b{color:var(--term-ok);font-weight:600}
+/* below the fold: AI engine story — never inside the hero CTA card */
+.aistory{max-width:34rem;margin:2.4rem auto 0;color:var(--term-faint);
+font-size:.95rem;line-height:1.65;text-wrap:balance}
+.aistory b{color:var(--term-text);font-weight:600}
+a{color:var(--term-ok)}
+/* supported-fabs strip: real vendor tiles, links out to capabilities */
+.fabstrip{display:flex;gap:.4rem .8rem;justify-content:center;align-items:center;flex-wrap:wrap;
+margin:2.6rem auto 0;max-width:62rem}
+.fabkicker{font:.72rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--term-faint)}
+.fabfine{font:.72rem var(--mono);color:var(--term-faint)}
+.fabcell{display:inline-flex;align-items:center;text-decoration:none;
+border:1px solid var(--term-line);border-radius:9px;padding:.3rem}
+.fabcell:hover{border-color:var(--term-ok)}
+.fabcell img{display:block;border-radius:5px;width:96px;height:32px;object-fit:contain}
+@media(max-width:760px){.gate{grid-template-columns:1fr}.visual{display:none}
+.hero{padding:1rem 1.1rem 2.5rem}.herobody{padding-top:2rem}
+/* offer + CTA first; collab proof and AI story follow below the fold */
+.collab{order:2;margin-top:1.8rem}.aistory{order:3}.fabstrip{order:4}
+.mini{white-space:pre-wrap}}
+/* reduced motion keeps the authored frame — paint() already stops after one
+pass, so hiding the canvas threw away the visual instead of the animation. */
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

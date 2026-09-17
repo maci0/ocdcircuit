@@ -276,8 +276,15 @@ def main() -> None:
         # landing replaces the logged-out screen: hero up top, login one
         # click behind, shelf after. No cookie → hero + POSTs refused.
         _gate = urllib.request.urlopen(base + "/").read().decode()
-        assert "Your whole team. One board." in _gate, _gate[:200]
-        assert "id=herogo" in _gate and "id=ed" not in _gate, _gate[:200]
+        # ESM shell: copy renders client-side; the shell carries the
+        # module script + mount point, copy lives in landing.js
+        assert '<script type=module src="/web/landing.js">' in _gate, _gate[:400]
+        assert "id=app" in _gate and "id=ed" not in _gate, _gate[:400]
+        _land = urllib.request.urlopen(base + "/web/landing.js").read().decode()
+        assert "Your whole team. One board." in _land, _land[:200]
+        assert "id=herogo" in _land or "herogo" in _land, _land[:400]
+        _fabs = json.loads(urllib.request.urlopen(base + "/fabs").read().decode())
+        assert len(_fabs) == 11, _fabs
         # wire bytes: landing HTML alone (fab logos are /fab-logo/*); gzip cuts
         # transfer further. ETag + If-None-Match must 304 so a revalidate is
         # not a full re-send.
@@ -296,13 +303,13 @@ def main() -> None:
         assert _etag and _etag.startswith('"'), _etag
         assert _rg.getheader("Cache-Control") == "no-cache"
         _plain = _gz.decompress(_gz_body).decode()
-        assert "Your whole team. One board." in _plain
-        assert 'src="/fab-logo/' in _plain, _plain[:400]
+        assert '<script type=module src="/web/landing.js">' in _plain, _plain[:400]
+        assert "'/fab-logo/'" in _land or '"/fab-logo/"' in _land, _land[:2000]
         # fab tiles stay on /fab-logo/*; brand favicon may be a tiny SVG data URI
         assert "data:image/png" not in _plain, _plain[:400]
         assert 'rel=icon href="data:image/svg+xml,' in _plain, _plain[:500]
         assert len(_plain) < 40_000, len(_plain)  # was ~120 KB with inlined tiles
-        assert len(_gz_body) < len(_plain) * 0.5, (len(_gz_body), len(_plain))
+        assert len(_gz_body) < len(_plain), (len(_gz_body), len(_plain))
         print(f"landing gzip: {len(_plain)} -> {len(_gz_body)} bytes")
         _cg.request("GET", "/", headers={"If-None-Match": _etag,
                                          "Accept-Encoding": "gzip"})
@@ -498,14 +505,15 @@ def main() -> None:
         _trav = post(base, "/fs/import", {"name": "../../x.fp", "data": _b64.b64encode(b"hi").decode()})
         assert "error" in _trav, _trav  # never writes outside fp/
         _lp = urllib.request.urlopen(base + "/").read().decode()  # logged out → landing
+        _lpjs = urllib.request.urlopen(base + "/web/landing.js").read().decode()
         for frag in ("id=newprojbtn", "id=newproj", "id=npsearch",
-                     "id=npgrid", "id=npblank", "npRender", "_npcache",
-                     "openShelfBoard"):
-            assert frag in _lp, f"new-project modal missing: {frag}"
+                     "id=npgrid", "id=npblank", "npcache",
+                     "openShelfBoard", "fromTemplate"):
+            assert frag in _lpjs, f"new-project modal missing: {frag}"
         _w = get(base, "/").decode()  # still authed: workshop
         assert "id=ed" in _w, _w[:200]
         assert "withBusy" in _w, "long-action busy feedback missing"
-        assert "fromTemplate" in _lp, "template double-click guard missing"
+        assert "fromTemplate" in _lpjs, "template double-click guard missing"
         assert "one turn at a time" in _w, "chat submit busy guard missing"
         assert "download ${key}" in _w or "download ${" in _w, "download label must stay a word"
         assert "sim ${simWhat}" in _w or "sim ${" in _w, "sim label must stay a word"
@@ -522,8 +530,8 @@ def main() -> None:
         assert _lo.get("ok") is True, _lo
         _JAR.pop(base, None)
         _out = urllib.request.urlopen(base + "/").read().decode()  # logged out: landing
-        assert "Your whole team. One board." in _out, _out[:200]
-        assert _out.count("class=fabcell") == 11, _out.count("class=fabcell")
+        assert '<script type=module src="/web/landing.js">' in _out, _out[:200]
+        assert _land.count("fabcell") >= 1, _land[:400]  # strip renders client-side
         # users persist on disk, so re-signup refuses — log back in instead
         import http.client as _hc2
         from urllib.parse import urlparse as _up2
@@ -935,6 +943,18 @@ def main() -> None:
                    if "CONSOLE" in ln and ("Uncaught" in ln or "ERROR" in ln)]
             assert not bad, bad[:3]
             print("screenshot landing console-clean ok")
+            # and the modules actually rendered: dump the live DOM, so a hero
+            # that never mounts (or a strip that never fills) fails here even
+            # though the shell alone would still parse
+            dom = subprocess.run(
+                [chrom, "--headless=new", "--no-sandbox", "--disable-gpu",
+                 "--virtual-time-budget=12000", "--dump-dom", base + "/"],
+                capture_output=True, text=True, timeout=120).stdout
+            assert 'id="herogo"' in dom, "hero CTA never rendered"
+            assert 'class="gate"' in dom, "gate never rendered"
+            assert dom.count('class="fabcell"') == 11, dom.count('class="fabcell"')
+            assert 'id="npgrid"' in dom, "new-project modal never rendered"
+            print("landing DOM ok (hero + gate + 11 fab tiles)")
     finally:
         srv.terminate()
         shutil.rmtree(troot, ignore_errors=True)

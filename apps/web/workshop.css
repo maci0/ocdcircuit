@@ -1,0 +1,284 @@
+/* OCD Studio workshop — moved verbatim out of apps/studio.py (PAGE).
+   Token family from DESIGN.md; no framework, no build step. */
+/* Paper spec sheet, one terminal. Tokens follow the recompile.online design
+   system: warm paper ground, white cards, one signal green, one dark surface
+   (the job-file editor). Sans carries what a person reads; mono is the
+   machine's voice (source, readouts, listings). State is a word in a pill. */
+:root{
+--paper:#f7f5f0;--paper-2:#efece4;--card:#fffdf8;--line:#e2ddd0;--line-2:#cfc8b6;
+--ink:#1a1d21;--ink-2:#4d545c;--ink-3:#5c646c;
+--signal:#0f5c37;--signal-ink:#0c4a2d;--signal-wash:#dcefe1;--ok-border:#9cc6aa;
+--bad:#8a2318;--bad-wash:#f5c9c2;--danger-border:#d59f96;
+--warn:#6b4a00;--warn-wash:#f2dbaa;--warn-border:#cbab72;
+--term:#101418;--term-2:#1a2129;--term-line:#2a333d;--term-text:#d8e2dc;
+--term-faint:#7f8b94;--term-key:#ffd8a0;--term-ok:#5fd894;--term-bad:#ff7364;
+--r:10px;--r-control:9px;--shadow:0 1px 2px rgba(26,29,33,.06),0 8px 24px -12px rgba(26,29,33,.18);
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:1rem/1.55 var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+/* mount point: preact renders the chrome AND the panel grid into #app, so #app
+   has to continue the body's flex column for header+main to fill the viewport
+   (main is flex:1 1 0;height:0, which only works inside a flex parent) */
+#app{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+.skip{position:absolute;left:-9999px}.skip:focus{left:8px;top:8px;z-index:9;background:var(--card);padding:8px 12px;border:1px solid var(--line-2);border-radius:var(--r-control)}
+/* --- header: brand left, labelled control groups, status pills right --- */
+header.top{background:var(--card);border-bottom:1px solid var(--line)}
+header.top .inner{display:flex;align-items:center;gap:20px;padding:10px 20px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:1.02rem;letter-spacing:-.02em;color:var(--ink)}
+.brand svg{color:var(--ink)}
+.brand i{font-style:normal;font-weight:400;color:var(--ink-3)}
+.menubar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;flex:1}
+.menubar>details.menu{position:relative;display:inline-block}
+.menubar>details.menu>summary{padding:9px 13px;list-style:none;display:inline-block;cursor:pointer;
+font:600 .9rem/1.3 var(--sans);color:var(--ink);background:var(--card);border:1px solid transparent;border-radius:var(--r-control)}
+.menubar>details.menu>summary::-webkit-details-marker{display:none}
+.menubar>details.menu>summary:hover{background:var(--paper-2)}
+.menubar>details.menu[open]>summary{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+.menubar .mpop{position:absolute;left:0;top:calc(100% + 6px);z-index:5;display:flex;flex-direction:column;
+gap:2px;align-items:stretch;background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+box-shadow:var(--shadow);padding:6px;min-width:15rem;max-width:22rem}
+.menubar .mpop>button{text-align:left;background:none;border:0;border-radius:6px;padding:8px 10px;
+display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.menubar .mpop>button:hover{background:var(--paper-2)}
+.menubar .mpop>label{display:flex;align-items:center;justify-content:space-between;gap:8px;
+font-size:.85rem;color:var(--ink-2);padding:6px 10px;border-radius:6px}
+.menubar .mpop>label:hover{background:var(--paper-2)}
+.menubar .mpop select{max-width:9rem}
+.menubar .mpop details{margin:0}
+.menubar .mpop details>summary{width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:6px}
+.menubar .mpop details>summary:hover{background:var(--paper-2)}
+.menubar .mpop details[open]>:not(summary){position:static;box-shadow:none;border:0;border-top:1px solid var(--line);
+border-radius:0;min-width:0;padding:10px}
+.mrow{display:flex;gap:6px;align-items:center;padding:2px 4px}
+.mrow button{flex:1}
+.mnote{font-size:.78rem;color:var(--ink-3);padding:4px 10px}
+.kbd{font:.72rem var(--mono);color:var(--ink-3);margin-left:auto;padding-left:1rem}
+.mastat{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap}
+.mlive{display:flex;align-items:center;gap:6px;margin-left:8px}
+button,select,input,summary{font:600 .9rem/1.3 var(--sans);color:var(--ink);background:var(--card);border:1px solid var(--line-2);border-radius:var(--r-control);padding:9px 13px;cursor:pointer}
+button:hover,select:hover,summary:hover{background:var(--paper-2)}
+button:active{transform:translateY(1px)}
+button.primary{background:var(--signal);border-color:var(--signal-ink);color:#fff;box-shadow:0 1px 2px rgba(12,74,45,.3)}
+button.primary:hover{background:var(--signal-ink)}
+/* dark signal green is light: white label fails 1.4.3; ink on green keeps ≥4.5:1 */
+body.dark button.primary{color:#06130d;box-shadow:none}
+body.dark button.primary:hover{filter:brightness(1.06);background:var(--signal)}
+button[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+input{cursor:text;font-weight:400;font-variant-numeric:tabular-nums;padding:8px 10px}
+#ncand{width:3.2rem;text-align:center}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,[contenteditable]:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+details{position:relative;display:inline-block}
+summary{padding:9px 13px;list-style:none;display:inline-block}
+summary::-webkit-details-marker{display:none}
+details[open]>summary{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+details[open]>:not(summary){position:absolute;left:0;top:calc(100% + 6px);z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;min-width:max-content}
+details label{display:flex;align-items:center;gap:5px;font-size:.85rem;color:var(--ink-2)}
+details input{width:4.4rem}
+/* layer/part visibility: a column panel, not the one-row calculator dropdown */
+.panel-head{overflow:visible} /* the dropdown panels must escape the head */
+#layerbox>#layers,#partbox>#partpanel{display:block;flex-direction:column;width:17rem;min-width:0;gap:0;left:auto;right:0}
+#pcbwrap>header{flex-wrap:wrap;row-gap:6px}
+#layerbox,#partbox{margin-left:auto}
+#layerbox+details{margin-left:0}
+#layers .lbl{display:block;font-size:.68rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:6px 0 4px}
+#layers .row{display:flex;flex-wrap:wrap;gap:4px}
+#layers label{display:inline-flex;align-items:center;gap:4px;font:.75rem var(--mono);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:6px 10px;min-height:24px;cursor:pointer}
+#layers label.on{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink);font-weight:600}
+#layers label.off{color:var(--ink-3);text-decoration:line-through}
+#layers input{width:auto;margin:0;accent-color:var(--signal)}
+#layersall{margin-top:8px;font-size:.78rem;padding:6px 10px;min-height:24px}
+#partbar{display:flex;gap:6px;align-items:center;padding-bottom:6px;border-bottom:1px solid var(--line)}
+#partfilter{width:100%;font-size:.82rem;padding:5px 8px}
+#parthide,#partshow{font-size:.75rem;padding:6px 10px;min-height:24px}
+#partlist{max-height:15rem;overflow:auto;margin-top:4px}
+#partlist label{display:flex;align-items:center;gap:6px;font:.8rem var(--mono);padding:6px 4px;min-height:24px;border-radius:4px;cursor:pointer;white-space:nowrap}
+#partlist label:hover{background:var(--paper-2)}
+#partlist label.hidden{color:var(--ink-3);text-decoration:line-through}
+#partlist input{width:auto;margin:0;accent-color:var(--signal)}
+#partlist .pv{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
+#partnote{font-size:.72rem;color:var(--ink-3);margin-left:auto;white-space:nowrap}
+.selpart{font-weight:600;color:var(--signal-ink)}
+#cout,#dout{font:.82rem var(--mono);color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:8rem}
+/* --- pills: state is a word, never a bare colour --- */
+.pill{font-size:.75rem;font-weight:600;letter-spacing:.02em;padding:5px 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper-2);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill:empty{display:none}
+.pill.ok{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+.pill.bad{background:var(--bad-wash);border-color:var(--danger-border);color:var(--bad)}
+.feasline{font-size:.72rem;font-weight:600;padding:3px 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper-2);color:var(--ink-2);font-variant-numeric:tabular-nums}
+.feasline.fok{background:var(--signal-wash);border-color:var(--ok-border);color:var(--signal-ink)}
+.feasline.fbad{background:var(--warn-wash);border-color:var(--warn-border);color:var(--warn)}
+.feasline.here{outline:2px solid var(--signal);outline-offset:1px}
+#stat:empty{display:none}
+#stat{font-size:.85rem;font-weight:600;padding:5px 10px;border-radius:var(--r-control);max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stat.ok{background:var(--signal-wash);color:var(--signal-ink);border:1px solid var(--ok-border)}
+#stat.err{background:var(--bad-wash);color:var(--bad);border:1px solid var(--danger-border)}
+/* --- grid of panel cards on the paper ground --- */
+main{flex:1 1 0;height:0;display:grid;grid-template-columns:minmax(320px,400px) 1fr 1fr;grid-template-rows:minmax(0,1.5fr) minmax(0,1fr);gap:16px;padding:16px 20px 20px;min-height:0;overflow:auto}
+section{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.panel-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--paper-2);border-bottom:1px solid var(--line);padding:8px 14px}
+.panel-title{font:.78rem/1.4 var(--mono);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.panel-note{font-size:.8rem;color:var(--ink-3)}
+.panel-note:last-child{margin-left:auto;text-align:right}
+/* job file left, tall; schematic + 3D/tidy right; PCB centre */
+#edwrap{grid-column:1;grid-row:1/3;min-height:34rem}
+#pcbwrap{grid-column:2;grid-row:1/3;position:relative}
+#schwrap{grid-column:3;grid-row:1}
+#wrap3d{grid-column:3;grid-row:2;overflow:auto}
+#galwrap{grid-column:1/4}
+#vcswrap{grid-column:1/4}
+#kbwrap{grid-column:1/4;min-height:16rem}
+#scanbar,#scanbar2{display:flex;gap:8px;align-items:center;padding:10px 14px 0;flex-wrap:wrap}
+#scanbar2 input[type=search]{flex:1;min-width:0}
+#scanstat{padding:8px 14px;font-size:13px}
+#scanq{padding:0 14px}
+.scanqa{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+.scanqa label{flex:1;min-width:220px;font-size:13px}
+.scanqa input{flex:1;min-width:0}
+#scanout{max-height:340px;overflow:auto;white-space:pre-wrap;padding:0 14px}
+#scanview{padding:0 14px 12px}
+#scanviewbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 0;font-size:13px}
+.scancheck{display:flex;gap:4px;align-items:center}
+#scanhover{margin-left:auto;color:var(--ink-2);min-height:1.2em}
+.scanstage{position:relative;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#000}
+.scanstage img{display:block;width:100%;height:auto}
+.scanstage svg{position:absolute;inset:0;width:100%;height:100%}
+.scanstage .bx{fill:rgba(46,204,113,.10);stroke:#2ecc71;stroke-width:1.5}
+.scanstage .bx.unc{fill:rgba(231,76,60,.14);stroke:#e74c3c}
+.scanstage text{font:11px var(--mono);paint-order:stroke;stroke:#000;stroke-width:3px}
+#scanparts{display:flex;flex-direction:column;gap:2px;margin-top:8px;max-height:220px;overflow:auto}
+.scanprow{display:flex;gap:8px;align-items:center;font:.8rem var(--mono);padding:6px 4px;min-height:28px;border-radius:4px}
+.scanprow.unc{background:rgba(231,76,60,.10)}
+.scanprow input{width:9ch}
+.scanprow select{max-width:12ch}
+#kbbar,#kbadd{display:flex;gap:8px;align-items:center;padding:10px 14px 0}
+#kbbar input,#kbadd input{flex:1;min-width:0}
+#kbstat{padding:8px 14px 0;font:.8rem var(--mono);color:var(--ink-2);min-height:1.3em}
+#kblist{flex:1;min-height:3rem;overflow:auto;padding:8px 14px}
+#kblist .kbrow{display:flex;gap:8px;align-items:baseline;padding:6px 4px;min-height:28px;border-radius:4px}
+#kblist .kbrow:hover{background:var(--paper-2)}
+/* quote rows wear the fab logo next to the name */
+#qout .qrow{display:flex;gap:8px;align-items:center;padding:2px 0}
+#qout .qlogo{border-radius:4px;flex:none;width:64px;height:21px;object-fit:contain;background:#fff}
+#kblist button.kbname{flex:1;min-width:0;background:none;border:0;padding:4px 0;min-height:24px;font:inherit;color:var(--signal-ink);
+  cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#kblist .kbkind{color:var(--ink-3);font:.72rem var(--mono);font-variant-numeric:tabular-nums}
+#kblist .kbparts{margin-left:auto;color:var(--signal-ink);font:.72rem var(--mono)}
+#kbview{margin:0;border-top:1px solid var(--line);padding:10px 14px;overflow:auto;max-height:44%;
+  background:var(--card);font:.78rem/1.6 var(--mono);white-space:pre-wrap;word-break:break-word}
+/* job file column: editor, project files, then the agent chat */
+#edwrap{display:grid;grid-template-rows:auto minmax(12rem,min(52%,34rem)) minmax(0,1fr);overflow:hidden;min-height:0}
+#srcpanels{display:grid;grid-template-rows:minmax(6rem,11rem) minmax(0,1fr);gap:12px;padding:12px;border-top:1px solid var(--line);min-height:0;overflow:hidden}
+#srcpanels section{box-shadow:none;overflow:hidden}
+#filetree{min-height:0;max-height:11rem}
+.side{min-height:0}
+#tree{flex:1;min-height:0;overflow:auto;padding:8px 10px;font:.85rem/1.5 var(--mono)}
+#tree .trow{display:flex;gap:6px;align-items:baseline;width:100%;text-align:left;
+font:inherit;color:inherit;background:none;border:0;padding:6px 8px;min-height:28px;
+border-radius:4px;cursor:pointer;white-space:nowrap}
+#tree .trow:hover{background:var(--paper-2)}
+#tree .trow.active{background:var(--signal-wash);color:var(--signal-ink);font-weight:600}
+#tree .trow.tdir{color:var(--ink-3);cursor:pointer}
+#tree .trow:disabled,#tree .trow.tdir:disabled{cursor:default;opacity:1}
+#tree .tsize{color:var(--ink-3);font-size:.72rem;margin-left:auto;font-variant-numeric:tabular-nums}
+#msgs{overflow:auto;padding:10px 12px;flex:1;min-height:4rem}
+.msg{margin:0 0 10px;font-size:.9rem;line-height:1.55}
+.msg .who{font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);display:block}
+.msg.me{color:var(--ink-2)}
+.msg.bot{color:var(--ink)}
+.msg.err{color:var(--bad);background:var(--bad-wash);border:1px solid var(--danger-border);border-radius:var(--r-control);padding:8px 10px}
+.msg.bot pre{background:var(--paper-2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow:auto;font:.8rem/1.6 var(--mono);margin:6px 0 0}
+.msg .tools{color:var(--ink-3);font:.75rem var(--mono);display:block;margin-top:4px}
+/* agent timeline: a turn reads as thought → tools → reply, not a bare log.
+Flux shows its work; the log lines already exist, they just needed a shape. */
+.thought{margin:0 0 4px;font-size:.8rem;color:var(--ink-3)}
+.thought summary{padding:2px 0;border:0;background:none;font:.78rem var(--mono);cursor:pointer}
+.thought summary:hover{background:none;text-decoration:underline}
+.thought ul{margin:4px 0 6px;padding-left:1.1rem;font:.78rem/1.7 var(--mono)}
+.thought li.ok{color:var(--ink-2)}
+.thought li.bad{color:var(--bad)}
+#followups{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px}
+#followups:empty{display:none}
+#followups button{font-size:.78rem;padding:4px 10px}
+#composer{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--paper-2)}
+#composer textarea{flex:1;resize:none;font:.9rem/1.5 var(--sans);padding:9px 11px;border:1.5px solid var(--line-2);border-radius:var(--r-control);background:var(--card);color:var(--ink)}
+#composer textarea:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
+#composer button{align-self:flex-end}
+label.auto{display:inline-flex;align-items:center;gap:4px;font-size:.75rem;font-weight:600;color:var(--ink-2)}
+label.auto input{width:auto;padding:0}
+/* proposals: a diff you accept or refuse, never a silent write */
+.prop{border:1px solid var(--line-2);border-radius:var(--r-control);background:var(--card);margin:8px 0 0;overflow:hidden}
+.prop .phead{display:flex;align-items:center;gap:8px;background:var(--paper-2);border-bottom:1px solid var(--line);padding:6px 10px;font-size:.78rem}
+.prop .phead b{font-family:var(--mono)}
+.prop .phead .grow{flex:1}
+.prop .prow{display:flex;gap:8px;padding:8px 10px;border-top:1px solid var(--line)}
+.prop pre{margin:0;max-height:16rem;overflow:auto;padding:8px 10px;font:.78rem/1.55 var(--mono);background:var(--term);color:var(--term-text)}
+.dl-add{color:var(--term-ok)}.dl-del{color:var(--term-bad)}.dl-at{color:var(--term-faint)}
+#vcs{overflow:auto;padding:6px 12px 12px;font:.85rem/1.7 var(--mono);max-height:16rem}
+#vcs .rev{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;
+font:inherit;color:inherit;background:none;border:0;padding:6px 4px;min-height:28px;
+cursor:pointer;white-space:nowrap}
+#vcs .rev:hover{color:var(--signal-ink)}
+#vcs .rh{color:var(--signal-ink);font-weight:600}
+#vcs .rd{color:var(--ink-3)}
+#vcs .rs{overflow:hidden;text-overflow:ellipsis}
+#vcs pre{margin:8px 0 0;background:var(--term);color:var(--term-text);border-radius:6px;padding:10px 12px;overflow:auto;font:.78rem/1.6 var(--mono);max-height:22rem}
+#vcs .dirty{color:var(--warn)}
+/* the agent panel is opt-in: off by default, so the first thing the studio
+   shows is the board, not a chat box */
+#chat{display:none}  /* its 1fr row collapses with it: the tree grows */
+body.chatty #chat{display:flex}
+.toast{position:fixed;right:18px;bottom:18px;z-index:9;background:var(--term);color:var(--term-text);
+  border:1px solid var(--term-line);border-radius:var(--r-control);padding:9px 13px;font:.85rem var(--mono);
+  box-shadow:var(--shadow);max-width:40ch;overflow:hidden;text-overflow:ellipsis}
+#gal{display:flex;gap:14px;overflow-x:auto;padding:14px}
+#gal canvas{width:190px;height:140px;border:1px solid var(--line-2);border-radius:6px;background:var(--card);pointer-events:none}
+#gal button.galpick{margin:0;padding:0;border:0;background:none;cursor:pointer;text-align:center;
+font:inherit;color:inherit;font-size:.8rem;border-radius:6px}
+#gal button.galpick:hover canvas{border-color:var(--signal)}
+#gal button.galpick:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+#gal .galcap{display:block;color:var(--ink-3);font-variant-numeric:tabular-nums;padding-top:4px}
+#ed{overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;word-break:break-all;padding:14px 16px;outline:none;flex:1;min-height:0;background:var(--term);color:var(--term-text);font:.82rem/1.7 var(--mono);tab-size:2}
+#ed:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+#pcbwrap .platewrap{position:relative;flex:1;min-height:0;background:var(--paper-2);border-radius:0 0 var(--r) var(--r);overflow:hidden}
+canvas{width:100%;height:100%;display:block}
+#pcb{cursor:grab}
+#wrap3d canvas{flex:1;min-height:0}
+#tidy{padding:4px 14px 12px;font:.82rem/1.9 var(--mono);color:var(--ink-2);overflow:auto;max-height:32%;font-variant-numeric:tabular-nums}
+#tidy div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* DRC reads as a listing: dark terminal strip over the PCB plate */
+#drc{position:absolute;left:0;right:0;bottom:0;max-height:44%;overflow:auto;background:var(--term);color:var(--term-text);border-top:1px solid var(--term-line);padding:10px 14px;font:.82rem/1.75 var(--mono);font-variant-numeric:tabular-nums}
+#drc:empty{display:none}
+.err{color:var(--term-bad)}.warn{color:var(--term-key)}.ok{color:var(--term-ok)}
+#tidy .dim,#drc .dim{color:var(--term-faint)}
+#tidy .err{color:var(--bad)}#tidy .warn{color:var(--warn)}#tidy .ok{color:var(--signal-ink)}#tidy .dim{color:var(--ink-3)}
+.tok-k{color:#7fb4ff}.tok-c{color:var(--term-faint)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:1100px){main{grid-template-columns:minmax(0,1fr) 1fr;grid-template-rows:none}
+#edwrap,#pcbwrap{grid-column:auto;grid-row:auto;min-height:70vh}
+#galwrap,#schwrap,#wrap3d,#vcswrap{grid-column:1/3}}
+@media(max-width:760px){main{grid-template-columns:minmax(0,1fr);padding:12px}
+#galwrap,#schwrap,#wrap3d,#vcswrap{grid-column:1}#edwrap,#pcbwrap{min-height:60vh}
+#srcpanels{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+.mastat,.mlive{margin-left:0}}
+@media(min-width:1500px){#srcpanels{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-rows:minmax(0,1fr)}}
+/* Flux-dark: the same tokens, re-pointed. One class, no second stylesheet. */
+body.dark{--paper:#101418;--paper-2:#1a2129;--card:#161c22;--line:#2a333d;--line-2:#3a4550;
+--ink:#d8e2dc;--ink-2:#aeb8c0;--ink-3:#7f8b94;
+--signal:#5fd894;--signal-ink:#5fd894;--signal-wash:#123526;--ok-border:#2a5a3d;
+--bad:#ff7364;--bad-wash:#3a1a16;--danger-border:#6a2a22;
+--warn:#ffd8a0;--warn-wash:#3a2c14;--warn-border:#6a522a;}
+body.dark #ed{background:#0a0d11}
+body.dark #composer{background:var(--paper-2)}
+/* view tabs: Flux's Docs/Schematic/Layout/3D row, our panels underneath */
+#viewtabs{display:flex;gap:4px;margin-left:8px}
+#viewtabs button{font-size:.8rem;padding:8px 12px;min-height:32px}
+#viewtabs button.on{background:var(--signal);border-color:var(--signal-ink);color:#fff}
+body.dark #viewtabs button.on{color:#06130d}
+body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{display:none}
+body.tabs[data-view=pcb] #pcbwrap{display:flex}
+body.tabs[data-view=sch] #schwrap{display:flex}
+body.tabs[data-view=t3d] #wrap3d{display:flex}
+body.tabs[data-view=docs] #kbwrap{display:flex}
+body.tabs #pcbwrap,body.tabs #schwrap,body.tabs #wrap3d,body.tabs #kbwrap{grid-column:2/4;grid-row:1/3}

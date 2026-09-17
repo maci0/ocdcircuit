@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "file": "hooks.module.js",
+    "patch": "import \"preact\" -> \"./preact.module.js\" (bare specifier, no import map / bundler: one occurrence, nothing else changed)",
+    "sha256": "f3555e7a8dba84175c94f17148ba6670e4b3716888fe06b3330a485637296a38",
+    "upstream_sha256": "a6ee626f2d01570592dd569a792e3f050154aa02890eead8c223fa3ed5aa3d5a",
+    "url": "https://unpkg.com/preact@10.29.8/hooks/dist/hooks.module.js",
+    "version": "10.29.8"
+  },
+  "htm": {
+    "file": "htm.module.js",
+    "sha256": "ab33dd3f38059b9be4d5f5350128eefb2356639c4e0bbe9d9e8b3ba75847e9e4",
+    "url": "https://unpkg.com/htm@3.1.1/dist/htm.module.js",
+    "version": "3.1.1"
+  },
+  "preact": {
+    "file": "preact.module.js",
+    "sha256": "c30e721ebfdc6e2ad4c18c14d2dfb82667829c8aec27de1207774e3fc16858a8",
+    "url": "https://unpkg.com/preact@10.29.8/dist/preact.module.js",
+    "version": "10.29.8"
+  }
+}
