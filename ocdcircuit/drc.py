@@ -453,6 +453,24 @@ def erc(board: Board) -> dict[str, object]:
             warnings.append(f"nrnd {ref} (not recommended for new designs)")
         elif ls == "eol":
             warnings.append(f"eol {ref} (end of life — find a substitute)")
+    # pin directions (RFC-0002 ports lite): two outputs driving one net
+    # fight. pwr/in pins are exempt — rails fan out by design.
+    from typing import cast as _castd
+    for n, net in board.nets.items():
+        outs: list[str] = []
+        for ref, pin in net.pins:
+            if ref not in board.parts:
+                continue
+            try:
+                sym = board.symbol_of(ref)
+            except (KeyError, ValueError):
+                continue
+            dirs = _castd(dict[str, str], sym.get("dirs", {}))
+            if dirs.get(str(pin)) == "out":
+                outs.append(f"{ref}.{pin}")
+        if len(outs) > 1:
+            errors.append(f"out-out {n}: {' + '.join(sorted(outs))} "
+                          f"(two drivers — want in|pwr on all but one)")
     # power nets sharing pins = shorted rails (AUTO_JOIN rails plus
     # any net a `power` constraint marks as power — custom rails short too)
     power_nets = set(AUTO_JOIN)

@@ -27,6 +27,7 @@ def loads(text: str) -> tuple[str, Symbol]:
     name = ""
     w = h = 0.0
     pins: dict[str, tuple[str, int, str]] = {}
+    dirs: dict[str, str] = {}
     counts: dict[str, int] = {}
     label = ""
     notch = zigzag = False
@@ -48,10 +49,16 @@ def loads(text: str) -> tuple[str, Symbol]:
         elif kw == "pin":
             toks = line.split()
             if len(toks) < 3 or toks[2].lower() not in ("left", "right", "top", "bottom"):
-                raise err("want: pin NUM left|right|top|bottom [LABEL]")
+                raise err("want: pin NUM left|right|top|bottom [dir=DIR] [LABEL]")
             side = toks[2].lower()
             counts[side] = counts.get(side, 0) + 1
-            pins[toks[1]] = (side, counts[side] - 1, " ".join(toks[3:]))
+            rest = toks[3:]
+            if rest and rest[0].lower().startswith("dir="):
+                direction = rest.pop(0).split("=", 1)[1].lower()
+                if direction not in ("in", "out", "pwr"):
+                    raise err(f"bad dir={direction!r} (want in|out|pwr)")
+                dirs[toks[1]] = direction
+            pins[toks[1]] = (side, counts[side] - 1, " ".join(rest))
         elif kw == "notch":
             notch = True
         elif kw == "label":
@@ -65,8 +72,11 @@ def loads(text: str) -> tuple[str, Symbol]:
             raise err("unknown statement")
     if not name:
         raise ValueError("missing symbol header")
-    return name, {"w": w, "h": h, "pins": pins, "notch": notch,
+    out: Symbol = {"w": w, "h": h, "pins": pins, "notch": notch,
                    "zigzag": zigzag, "label": label}
+    if dirs:
+        out["dirs"] = dirs
+    return name, out
 
 
 def dumps(name: str, sym: Symbol) -> str:
@@ -80,9 +90,11 @@ def dumps(name: str, sym: Symbol) -> str:
 
     w, h = _n(sym["w"]), _n(sym["h"])
     L = [f"symbol {name} {w:g}x{h:g}"]
+    dirs = cast(dict[str, str], sym.get("dirs", {}))
     for num, (side, _order, label) in sorted(
             cast(dict[str, tuple[str, int, str]], sym.get("pins", {})).items()):
-        L.append(f"pin {num} {side}" + (f" {label}" if label else ""))
+        d = f" dir={dirs[num]}" if num in dirs else ""
+        L.append(f"pin {num} {side}{d}" + (f" {label}" if label else ""))
     if sym.get("notch"):
         L.append("notch")
     if sym.get("zigzag"):
@@ -134,9 +146,12 @@ def sized(sym: Symbol) -> Symbol:
             max([o for s, o, _l in pins.values() if s == "right"] + [-1]) + 1,
             2)
         w, h = (w or 6.0), (h or max(4.0, float(rows)))
-    return {"w": w, "h": h, "pins": dict(pins),
-            "notch": bool(sym["notch"]), "zigzag": bool(sym["zigzag"]),
-            "label": str(sym.get("label", ""))}
+    out: Symbol = {"w": w, "h": h, "pins": dict(pins),
+                   "notch": bool(sym["notch"]), "zigzag": bool(sym["zigzag"]),
+                   "label": str(sym.get("label", ""))}
+    if sym.get("dirs"):
+        out["dirs"] = dict(cast(dict[str, str], sym["dirs"]))
+    return out
 
 
 def _box(pins: list[str], notch: bool = False) -> Symbol:

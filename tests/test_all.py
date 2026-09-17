@@ -509,6 +509,23 @@ _symd: dict[str, object] = {"w": 6.0, "h": 4.0, "pins": {"1": ["left", 0, ""],
                             "notch": True, "zigzag": False, "label": "{ref}"}
 assert _sym.loads(_sym.dumps("S9", _symd))[0] == "S9"
 assert _sym.loads(_sym.dumps("S9", _symd))[1]["notch"] is True
+# symbol pin dirs: grammar, round-trip, out-out ERC
+_dn, _dsym = _sym.loads("symbol T 6x4\npin 1 left dir=out OUT\npin 2 right dir=in IN\n")
+assert _dsym["dirs"] == {"1": "out", "2": "in"}, _dsym
+assert _sym.loads(_sym.dumps(_dn, _dsym))[1]["dirs"] == {"1": "out", "2": "in"}
+try:
+    _sym.loads("symbol T 6x4\npin 1 left dir=bogus X\n")
+    raise AssertionError("should have raised")
+except ValueError as e:
+    assert "bad dir=" in str(e), e
+with tempfile.TemporaryDirectory() as _dtd:
+    open(os.path.join(_dtd, "t.sym"), "w").write(
+        "symbol T 6x4\npin 1 left dir=out OUT\npin 2 right dir=in IN\n")
+    _db = agent.loads("board t 40x30 2L\nsym t.sym\n"
+                      "part U1 R0805 1k sym=T\npart U2 R0805 1k sym=T\n"
+                      "N :: U1.1 U2.1\nGND :: U1.2 U2.2\n", base=_dtd)
+    assert any("out-out N" in e for e in _db.check("erc")["errors"]), \
+        _db.check("erc")["errors"]
 _jc.add_symbol("S9", _symd)
 _sfiles = _jc.export("ocd", outdir=tempfile.mkdtemp())
 _srt = agent.loads(open(_sfiles[0]).read(), base=os.path.dirname(_sfiles[0]))

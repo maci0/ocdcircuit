@@ -184,8 +184,9 @@ sym opamp.sym                # custom symbol (body + pin stubs + label)
 
 `.fp` format: `footprint NAME WxH [edge]` · `pad PIN dx dy w h` ·
 `hole PIN dx dy drill` · `body box|cyl …` · `keepout …`.
-`.sym` format: `symbol NAME [WxH]` · `pin NUM side [LABEL]` ·
+`.sym` format: `symbol NAME [WxH]` · `pin NUM side [dir=in|out|pwr] [LABEL]` ·
 `label TEXT` (`{ref} {value} {fp}` interpolate) · `notch` · `zigzag`.
+Two `out` pins on one net is an ERC error (RFC-0002 ports lite).
 Footprint shadowing of stdlib is an error (rename it).
 
 ## Rules
