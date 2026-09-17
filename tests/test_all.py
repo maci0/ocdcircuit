@@ -233,7 +233,8 @@ for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6
               "sim vcc N 5", "sim sine N 1 1 1000", "sim isrc N 0.01",
               "sim tran 0.01 100", "sim probe N", "sim clk N 2",
               "sim expect N == 5", "sim r R1 10k", "sim op N V 0 5",
-              "sim lib x.lib", "sim ac 10 1000 5"]:
+              "sim lib x.lib", "sim ac 10 1000 5",
+              "assert R1.1 connected", "assert N != GND", "assert parts <= 40"]:
     _cb2 = agent.loads(_pre + _line + "\n", base=EX)
     _rt = agent.dumps(_cb2)
     assert agent.parse_constraint(_line) is not None, _line

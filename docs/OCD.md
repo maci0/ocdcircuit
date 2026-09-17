@@ -181,6 +181,9 @@ Footprint shadowing of stdlib is an error (rename it).
   the net line as `Ln`/`wn` (conflicting dupes stay as `route`/`trace`);
   `x=/y=` on parts dump as `fix REF at x y` (never as part attrs).
 - A fact that parses but violates design rules builds, then exits 2.
+- Design intent (`assert R1.1 connected`, `assert N != GND`,
+  `assert parts <= 40`) is checked by ERC: violations are build errors.
+  Voltages belong to `sim expect`, not `assert`.
 
 Duplicate sources resolve last-wins, uniformly: a later `fix R1 at …`
 overrides the `x=/y=` on the part line; a later net line's `L0 w0.5`

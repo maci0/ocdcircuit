@@ -442,4 +442,32 @@ def erc(board: Board) -> dict[str, object]:
     for n, net in board.nets.items():
         if len(net.pins) > 12:
             warnings.append(f"big-net {n} ({len(net.pins)} pins — intentional?)")
+    # design intent: `assert` constraints fail the build when violated
+    for c in board.constraints:
+        if not isinstance(c, dict) or c.get("t") != "assert":
+            continue
+        kind = str(c.get("kind", ""))
+        if kind == "connected":
+            apin = str(c.get("pin", ""))
+            aref, dot, ap = apin.partition(".")
+            if not dot or (aref, ap) not in connected:
+                errors.append(f"assert failed: {apin} not connected")
+        elif kind == "nets":
+            an, bn, aop = str(c.get("a")), str(c.get("b")), str(c.get("op"))
+            ana = board.nets.get(an)
+            anb = board.nets.get(bn)
+            sa = {(r, str(pp)) for r, pp in ana.pins} if ana else set()
+            sb = {(r, str(pp)) for r, pp in anb.pins} if anb else set()
+            same = sa == sb and bool(sa)
+            if (aop == "==" and not same) or (aop == "!=" and same):
+                errors.append(f"assert failed: {an} {aop} {bn}")
+        elif kind == "parts":
+            have, pop = len(board.parts), str(c.get("op"))
+            want = c.get("n", 0)
+            wantn = want if isinstance(want, int) else 0
+            ok = {"<": have < wantn, "<=": have <= wantn, ">": have > wantn,
+                  ">=": have >= wantn, "==": have == wantn,
+                  "!=": have != wantn}.get(pop, True)
+            if not ok:
+                errors.append(f"assert failed: parts {pop} {wantn} (have {have})")
     return {"errors": errors, "warnings": warnings}

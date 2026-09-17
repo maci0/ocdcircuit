@@ -350,6 +350,20 @@ def parse_constraint(text: str, *, layers: int = 2) -> Constraint | None:
     m = re.match(r"board ([\d.]+)\s*x\s*([\d.]+)$", t, re.I)
     if m:
         return {"t": "board", "w": float(m.group(1)), "h": float(m.group(2))}
+    # Design intent, checked at build (structural only — voltages
+    # belong to `sim expect`): `assert R1.1 connected`,
+    # `assert N1 != N2`, `assert parts <= 40`.
+    m = re.match(r"assert (\w+\.\w+) connected$", t, re.I)
+    if m:
+        return {"t": "assert", "kind": "connected", "pin": m.group(1)}
+    m = re.match(r"assert (\w+) (!=|==) (\w+)$", t, re.I)
+    if m:
+        return {"t": "assert", "kind": "nets", "op": m.group(2),
+                "a": m.group(1), "b": m.group(3)}
+    m = re.match(r"assert parts (<=|>=|<|>|==|!=) (\d+)$", t, re.I)
+    if m:
+        return {"t": "assert", "kind": "parts", "op": m.group(1),
+                "n": int(m.group(2))}
     return None
 
 
@@ -510,6 +524,8 @@ def dumps(board: Board) -> str:
             rest = " ".join(f"{k}={_f(v):g}" if isinstance(v, float) else f"{k}={_q(v)}"
                             for k, v in sorted(c.items()) if k not in ("t", "name"))
             L.append(f"class {c.get('name')}{(' ' + rest) if rest else ''}")
+        elif t == "assert":
+            L.append(_dump_assert(c))
     return "\n".join(L) + "\n"
 
 
@@ -549,6 +565,17 @@ def _dump_sim(c: Constraint) -> str:
             s += f" {_i(c.get('npts'), 50)}"
         return s
     return f"sim {k} {c.get('ref', '')} {c.get('value', '')}"
+
+
+def _dump_assert(c: Constraint) -> str:
+    k = str(c.get("kind", ""))
+    if k == "connected":
+        return f"assert {c.get('pin')} connected"
+    if k == "nets":
+        return f"assert {c.get('a')} {c.get('op')} {c.get('b')}"
+    if k == "parts":
+        return f"assert parts {c.get('op')} {_i(c.get('n'), 0)}"
+    return f"assert {k}"
 
 
 @contextmanager
