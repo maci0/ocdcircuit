@@ -878,6 +878,7 @@ def _merge_nets(parent: Board, child: Board, pre: str,
     """Connect child's nets onto parent under prefix/join rules."""
     for n, net in child.nets.items():
         target = _remap_net(n, pre, joins, join)
+        parent.net(target)
         for ref, pin in net.pins:
             parent.connect(target, pre + ref, pin)
         if net.attrs:
@@ -1068,11 +1069,11 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
             if w is None:
                 raise err(f"{ctx}bad net attribute {a!r} (want L<n>, w<n>, or k=v)")
             b.constrain({"t": "width", "net": name, "width": w})
-    if nattrs:
-        try:
-            b.net(name).attrs.update(nattrs)
-        except ValueError as e:
-            raise err(f"{ctx}{e}")
+    try:
+        net = b.net(name)
+    except ValueError as e:
+        raise err(f"{ctx}{e}")
+    net.attrs.update(nattrs)
     for tok in pins.replace("<-->", " ").split():
         ref, dot, pin = tok.partition(".")
         if not dot or not ref or not pin:
@@ -1080,10 +1081,6 @@ def _exec_net(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
         # order-free: parts may be declared later in the file; _validate
         # checks existence at the end (unlike Board.connect, which is
         # immediate and validates now)
-        try:
-            net = b.net(name)
-        except ValueError as e:
-            raise err(f"{ctx}{e}")
         entry = (ref, pin)
         if entry not in net.pins:
             net.pins.append(entry)
@@ -1222,6 +1219,7 @@ def from_ir(doc: dict[str, object]) -> Board:
     explicit = {(c.get("t"), str(c.get("net"))) for c in constraints
                 if c.get("t") in ("layer", "width")}
     for n, net in cast(dict[str, dict[str, object]], doc.get("nets", {})).items():
+        b.net(n)
         for ref, pin in cast(list[list[object]], net.get("pins", [])):
             b.connect(n, str(ref), str(pin))
         nattrs = net.get("attrs", {})

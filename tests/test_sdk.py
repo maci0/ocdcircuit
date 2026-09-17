@@ -15,6 +15,69 @@ from ocdcircuit import Board
 from ocdcircuit.kb import KB
 
 
+class BoardSerializationTest(unittest.TestCase):
+    def test_empty_nets_survive_text_round_trip(self) -> None:
+        from ocdcircuit import agent
+
+        board = Board("empty_nets")
+        self.addCleanup(board.unload)
+        board.net("UNUSED")
+        board.net("SIGNAL")
+        board.set_net_attrs("SIGNAL", {"class": "signal"})
+        source = agent.dumps(board)
+        restored = agent.loads(source)
+        self.addCleanup(restored.unload)
+        self.assertEqual(set(restored.nets), {"UNUSED", "SIGNAL"})
+        self.assertEqual(agent.dumps(restored), source)
+        restored.unload()
+        self.assertEqual(restored.nets, {})
+
+    def test_empty_block_ports_survive_instantiation(self) -> None:
+        from ocdcircuit import agent
+
+        for attrs in ("", " class=signal"):
+            with self.subTest(attrs=attrs):
+                source = ("board empty_ports 40x30 2L\n"
+                          "block channel ports OUT\n"
+                          f"  OUT{attrs} ::\n"
+                          "end\n"
+                          "instance channel as A\n")
+                board = agent.loads(source)
+                self.addCleanup(board.unload)
+                self.assertEqual(set(board.nets), {"A_OUT"})
+                self.assertEqual(board.nets["A_OUT"].pins, [])
+                self.assertEqual(board.nets["A_OUT"].attrs,
+                                 {"class": "signal"} if attrs else {})
+                restored = agent.loads(agent.dumps(board))
+                self.addCleanup(restored.unload)
+                self.assertEqual(agent.dumps(restored), agent.dumps(board))
+
+    def test_empty_nets_survive_json_round_trip(self) -> None:
+        from ocdcircuit import agent
+
+        board = Board("empty_nets")
+        self.addCleanup(board.unload)
+        board.add_part("R1", "R0805")
+        board.connect("N", "R1", 1)
+        board.set_net_attrs("N", {"class": "signal"})
+        board.net("UNUSED")
+        snap = board.ctx.snapshot()
+        board.disconnect("N", "R1", 1)
+
+        restored = agent.from_json(agent.to_json(board))
+        self.addCleanup(restored.unload)
+        self.assertEqual(agent.ir(restored), agent.ir(board))
+        self.assertEqual(set(restored.nets), {"N", "UNUSED"})
+        self.assertEqual(restored.nets["N"].pins, [])
+        self.assertEqual(restored.nets["N"].attrs, {"class": "signal"})
+        self.assertEqual(restored.nets["UNUSED"].pins, [])
+        board.ctx.rollback(snap)
+        self.assertEqual(board.nets["N"].pins, [("R1", "1")])
+        self.assertEqual(restored.nets["N"].pins, [])
+        restored.unload()
+        self.assertEqual(restored.nets, {})
+
+
 class FootprintDimensionsTest(unittest.TestCase):
     def test_numeric_dimensions_and_rollback(self) -> None:
         for width, height in ((4, 2), (4, 2.5), (4.5, 2), (4.5, 2.5)):
