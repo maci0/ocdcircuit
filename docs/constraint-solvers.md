@@ -13,8 +13,8 @@ at 0.67–0.71× golden wirelength in ~3 s on the dense pico_tmc2209 demo
 proofs / prove-infeasible answers but cost a dependency plus a linearized
 formulation — scoped by `benches/exact_overlap_pilot.py` (stdlib
 backtracking proxy for AddNoOverlap2D): loose feasibility is trivial at
-n≤20; undersized prove-no times out at n=20 (>3 s, 9M nodes); chain-WL-capped
-exact search times out at n=12. Keep them optional-verifier only; do not take
+n≤20; undersized prove-no times out at n=20; chain-WL-capped
+exact search times out at n=12 on the tight cap. Keep them optional-verifier only; do not take
 an OR-Tools dep for day-to-day place. The cheapest remaining upgrades, in
 order: (1) negotiated-congestion history hardening in the maze router (gated
 2-round rip-up retry + per-cell HIST already shipped — remaining gain is
@@ -71,8 +71,8 @@ cost + DRC warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
   out at n=12 (`benches/exact_overlap_pilot.py`), while diffusion places
   n=20 dense zero-error in ~3 s. Lazy rule: hand-rolled backtracking/greedy
   first; CP-SAT only if search stalls or "prove infeasible / optimality gap"
-  is required (prove-no itself times out at n=20 undersized without a real
-  propagator). Never start with raw CNF.
+  is required (the stdlib proxy proves no infeasibility only by exhausting
+  its grid, and stalls at n=20 undersized; CP-SAT numbers are unmeasured). Never start with raw CNF.
 
 ### 2. ILP/MILP + simulated annealing / metaheuristics
 
@@ -206,7 +206,8 @@ cost + DRC warnings, no placer term). Cost = Manhattan wirelength + 1e6 overlap
 Quantitative leg: dense pico_tmc2209 diffusion 0.67–0.71× golden WL,
 zero-error in ~3 s (`docs/research/dense-demo-experiment.md`). Exact-methods
 leg: `benches/exact_overlap_pilot.py` — feasibility cheap, prove-no and
-WL-capped exact search time out by n=12–20, so CP-SAT stays optional-verifier
+WL-capped exact search time out by n=12–20 in the stdlib proxy, so CP-SAT
+stays optional-verifier
 under the zero-dep axiom. Remaining legs in this brief (FR/graph-drawing
 analogy, Song & Ermon annealed-Langevin abstract, Quilter marketing) are
 supporting context, not the architecture proof.
@@ -218,7 +219,8 @@ supporting context, not the architecture proof.
    exact feasibility is cheap at n≤20; WL-capped exact search times out at
    n=12; undersized prove-no times out at n=20. Diffusion+_repair wins the
    day-to-day regime; exact backends stay prove-infeasible / gap tools only
-   (and still need a real propagator before n=20 prove-no is practical).
+   (the proxy stalls by exhaustive search; CP-SAT's own numbers remain
+   unmeasured).
 2. ~~Does a second rip-up pass close the airwire-fallback gap on dense demo
    boards (pico: ~197 maze warnings w/ fallbacks vs 26 lroute clearance
    warnings)?~~ ANSWERED (round 77): yes — gated 2nd round took pico 79→4

@@ -1362,15 +1362,27 @@ def main() -> None:
                               "document.querySelector('#scanfiles').files=dt.files;"
                               "return 1;})()")
                     time.sleep(2)
-                    _cdp.eval("(()=>{document.querySelector('#scango').click();"
+                    _cdp.eval("(()=>{window.__scanFetch=window.fetch;"
+                              "window.fetch=(url,opts)=>{if(url==='/scan'){"
+                              "opts={...opts,body:JSON.stringify({"
+                              "...JSON.parse(opts.body),llm:false})};}"
+                              "return window.__scanFetch(url,opts);};"
+                              "document.querySelector('#scango').click();"
                               "return 1;})()")
                     for _ in range(240):
                         time.sleep(1.0)
-                        if int(str(_cdp.eval(
-                                "document.querySelectorAll('#scanq>*').length"))):
+                        if not bool(_cdp.eval(
+                                "document.querySelector('#scanview').hidden")):
                             break
+                        _scanstat = str(_cdp.eval(
+                            "document.querySelector('#scanstat').textContent"))
+                        if not bool(_cdp.eval(
+                                "document.querySelector('#scango').disabled")):
+                            raise AssertionError(f"scan failed: {_scanstat}")
                     else:
                         raise AssertionError("scan never produced a review")
+                    _cdp.eval("(()=>{window.fetch=window.__scanFetch;"
+                              "delete window.__scanFetch;return 1;})()")
                     assert "registered" in str(_cdp.eval(
                         "document.querySelector('#scanstat').textContent")), \
                         "scan status missing"
