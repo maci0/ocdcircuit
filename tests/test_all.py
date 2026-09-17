@@ -212,7 +212,7 @@ _mnd = agent.loads("board t 80x40 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
                    "fix R3 at 5 30\nfix R4 at 12 30\n", base=EX)
 _mnd.place(seeds=1, iters=30)
 _mnd.route_board("maze")
-from ocdcircuit.solver import _net_length as _mlen
+from ocdcircuit.netmetrics import net_length as _mlen
 _mskew = abs(_mlen(_mnd, "A") - _mlen(_mnd, "B"))
 assert _mskew < 1.0, _mskew  # converged (was ~13 without meander)
 assert _mnd.check()["errors"] == []
@@ -225,6 +225,42 @@ _mt.place(seeds=1, iters=20)
 _mt.route_board()
 assert any("match skew" in e and "> tol 0.01mm" in e for e in _mt.check()["errors"]), \
     _mt.check()["errors"]
+from ocdcircuit.netmetrics import match_cost as _match_metric, diff_cost as _diff_metric
+from ocdcircuit.circuit import Seg as _MetricSeg
+from ocdcircuit import score as _metric_score
+
+_metrics = agent.loads("board metrics 40x30 2L\n"
+                       "part R1 R0805 x=5 y=5\npart R2 R0805 x=15 y=5\n"
+                       "part R3 R0805 x=5 y=15\npart R4 R0805 x=9 y=15\n"
+                       "A :: R1.1 R2.1\nB :: R3.1 R4.1\n"
+                       "match A B tol 1\ndiff A B gap 10 tol 1\n", base=EX)
+_metrics.place(seeds=1, iters=1)
+assert abs(_mlen(_metrics, "A") - 10.0) < 1e-9
+assert abs(_mlen(_metrics, "B") - 4.0) < 1e-9
+assert abs(_match_metric(_metrics) - 300.0) < 1e-9
+assert abs(_diff_metric(_metrics) - 600.0) < 1e-9
+assert _metric_score.tidy(_metrics)["T6_skew"] == {
+    "match:A+B": {"skew_mm": 6.0, "estimated": True},
+    "diff:A/B": {"skew_mm": 6.0, "estimated": True}}
+_metrics.traces = [_MetricSeg("A", 5, 5, 12, 5, 0, 0.3)]
+_metric_index = {"A": _metrics.traces}
+assert _mlen(_metrics, "A", _metric_index) == _mlen(_metrics, "A") == 7.0
+assert _mlen(_metrics, "B", _metric_index) == _mlen(_metrics, "B")
+assert abs(_mlen(_metrics, "B") - 4.0) < 1e-9
+assert _match_metric(_metrics, _metric_index) == _match_metric(_metrics)
+assert abs(_match_metric(_metrics) - 150.0) < 1e-9
+assert _diff_metric(_metrics, _metric_index) == _diff_metric(_metrics)
+assert abs(_diff_metric(_metrics) - 300.0) < 1e-9
+_metric_check = _metrics.check()
+assert "length-mismatch skew~3.0mm" in _metric_check["warnings"]
+assert "diff-pair skew/gap dev~3.0mm" in _metric_check["warnings"]
+assert "match skew 3.00mm > tol 1mm (A B)" in _metric_check["errors"]
+assert "diff skew 3.00mm > tol 1mm (A/B)" in _metric_check["errors"]
+_metric_cost = _cost(_metrics)
+_metrics.constraints.clear()
+assert abs(_metric_cost - _cost(_metrics) - 450.0) < 1e-9
+assert _match_metric(_metrics) == _diff_metric(_metrics) == 0.0
+
 # codec fixpoint: every grammar production dumps→parses→dumps identically
 _pre = ("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
         "net N: R1.1 C1.2\nnet GND: R1.2 C1.1\n")

@@ -336,7 +336,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             need = (10 if c.get("dynamic", True) else 6) * th
             if _f(c["r"]) < need:
                 errors.append(f"bend-radius {c['r']} < {need:g} (dynamic={c.get('dynamic', True)})")
-    from .solver import diff_cost, match_cost, _net_length
+    from .netmetrics import diff_cost, match_cost, net_length
     mc = match_cost(board)
     if mc > 5.0:
         warnings.append(f"length-mismatch skew~{mc / 50.0:.1f}mm")
@@ -351,8 +351,8 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
             mnets = [mn for mn in cast(list[str], c.get("nets", []))
                      if mn in board.nets]
             if len(mnets) >= 2:
-                skew = max(_net_length(board, mn) for mn in mnets) - \
-                    min(_net_length(board, mn) for mn in mnets)
+                skew = max(net_length(board, mn) for mn in mnets) - \
+                    min(net_length(board, mn) for mn in mnets)
                 if skew > float(cast(float, c["tol"])):
                     errors.append(f"match skew {skew:.2f}mm > tol "
                                   f"{float(cast(float, c['tol'])):g}mm "
@@ -360,7 +360,7 @@ def check(board: Board, fab: str | None = None) -> dict[str, object]:
         elif c.get("t") == "diff":
             dp, dn = str(c.get("p")), str(c.get("n"))
             if dp in board.nets and dn in board.nets:
-                skew = abs(_net_length(board, dp) - _net_length(board, dn))
+                skew = abs(net_length(board, dp) - net_length(board, dn))
                 if skew > float(cast(float, c["tol"])):
                     errors.append(f"diff skew {skew:.2f}mm > tol "
                                   f"{float(cast(float, c['tol'])):g}mm ({dp}/{dn})")

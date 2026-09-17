@@ -19,6 +19,7 @@ import random
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 from .circuit import Part, Seg
+from .netmetrics import match_cost, diff_cost
 from .types import BIG_RAILS as BIG_RAILS, BBox, Frame, GNDS as GNDS, XY
 
 if TYPE_CHECKING:
@@ -182,73 +183,15 @@ def cost(board: Board, pads: dict[tuple[str, str], XY] | None = None) -> float:
         if na in board.parts and nb in board.parts:
             qa, qb = board.parts[na], board.parts[nb]
             c += wgt * (abs(qa.x - qb.x) + abs(qa.y - qb.y))
-    by_net: dict[str, list[object]] | None = None
+    by_net: dict[str, list[Seg]] | None = None
     if board.traces and any(
             isinstance(con, dict) and con.get("t") in ("match", "diff")
             for con in board.constraints):
         by_net = {}
         for s in board.traces:
             by_net.setdefault(s.net, []).append(s)
-    c += _match_cost(board, by_net) + _diff_cost(board, by_net) + _keepout_cost(board)
+    c += match_cost(board, by_net) + diff_cost(board, by_net) + _keepout_cost(board)
     return c
-
-
-def _net_length(board: Board, net: str,
-                by_net: dict[str, list[object]] | None = None) -> float:
-    """Routed length if traces exist, else Manhattan estimate from pads."""
-    if by_net is not None:
-        segs = by_net.get(net, [])
-    else:
-        segs = [s for s in board.traces if s.net == net]
-    if segs:
-        return sum(abs(s.x2 - s.x1) + abs(s.y2 - s.y1) for s in segs)  # type: ignore[attr-defined]
-    pts = [board.pad_pos(r, q) for r, q in board.nets[net].pins if r in board.parts]
-    if len(pts) < 2:
-        return 0.0
-    return sum(abs(p[0] - pts[0][0]) + abs(p[1] - pts[0][1]) for p in pts[1:])
-
-
-def _match_cost(board: Board,
-                by_net: dict[str, list[object]] | None = None) -> float:
-    """match NET... within TOL: penalize max length deviation × 50."""
-    c = 0.0
-    for con in board.constraints:
-        if con.get("t") != "match":
-            continue
-        nets = [n for n in cast(list[str], con.get("nets", [])) if n in board.nets]
-        if len(nets) < 2:
-            continue
-        lens = [_net_length(board, n, by_net) for n in nets]
-        c += 50.0 * (max(lens) - min(lens))
-    return c
-
-
-def _diff_cost(board: Board,
-               by_net: dict[str, list[object]] | None = None) -> float:
-    """diff P N gap G: penalize pair length mismatch × 100 + gap error × 20."""
-    c = 0.0
-    for con in board.constraints:
-        if con.get("t") != "diff":
-            continue
-        p, n = str(con.get("p")), str(con.get("n"))
-        if p not in board.nets or n not in board.nets:
-            continue
-        c += 100.0 * abs(_net_length(board, p, by_net) - _net_length(board, n, by_net))
-        gap = float(cast(float, con.get("gap", 0.3)))
-        pp = [board.pad_pos(r, q) for r, q in board.nets[p].pins if r in board.parts]
-        np_ = [board.pad_pos(r, q) for r, q in board.nets[n].pins if r in board.parts]
-        if pp and np_:
-            # closest pad-pair distance should equal gap (coupling entry)
-            d = min(abs(a[0] - b[0]) + abs(a[1] - b[1]) for a in pp for b in np_)
-            c += 20.0 * abs(d - gap)
-    return c
-
-
-# In-tree public leaf math for sibling engines (drc warnings, score).
-# Apps use Board.feasible/candidates — not these cost terms.
-net_length = _net_length
-match_cost = _match_cost
-diff_cost = _diff_cost
 
 
 def edge_margin(board: Board) -> float:

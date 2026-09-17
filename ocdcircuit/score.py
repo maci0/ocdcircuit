@@ -139,7 +139,7 @@ def _headroom_of(board: Board, best: float) -> float | None:
 def _t6_skew(board: Board) -> dict[str, object]:
     """Length skew RAW mm per match group + diff gap info. Uses net_length
     (routed length, else Manhattan pad estimate — flagged via 'estimated')."""
-    from .solver import net_length
+    from .netmetrics import net_length
     out: dict[str, object] = {}
     from typing import cast
     for c in board.constraints:
