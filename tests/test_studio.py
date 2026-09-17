@@ -843,7 +843,8 @@ def main() -> None:
             # them only once authenticated, and a syntax error there is a
             # blank page (this is the gate the inline page got for free)
             for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
-                         "html.js", "api.js", "store.js"):
+                         "html.js", "api.js", "store.js", "core.js", "collab.js",
+                         "kb.js", "vcs.js", "gallery.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
@@ -857,7 +858,8 @@ def main() -> None:
         # gallery compare affordance ships + delta math holds on fixtures
         # the thumb's aria-label is the component's now
         assert "shift-click to compare" in _views, "gallery compare hint missing"
-        assert "function galDelta(" in pjs, "galDelta missing from legacy.js"
+        _gjs = open(os.path.join(_JS, "gallery.js")).read()
+        assert "function galDelta(" in _gjs, "galDelta missing from gallery.js"
         # this hint is panel markup (panels.js), not behaviour
         assert "shift-drag a trace previews the shove" in _panels, \
             "seg-drag hint missing"
@@ -868,7 +870,7 @@ def main() -> None:
                 # just the function: the region after it now holds a delegated
                 # listener that needs a real DOM
                 import re as _re2
-                _gal = _re2.search(r"function galDelta\(a,b\)\{.*?\n\}", pjs, _re.S)
+                _gal = _re2.search(r"function galDelta\([^)]*\)\s*\{.*?\n\}", _gjs, _re.S)
                 assert _gal, "galDelta body not found"
                 open(_ent2, "w").write(
                     "const $=()=>({});const S={};\n" + _gal.group(0))

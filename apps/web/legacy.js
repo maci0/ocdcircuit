@@ -10,6 +10,7 @@ import { collabMeNow, collabReset, collabRevNow, collabStart, collabUserList,
          initCollab, setCollabRev } from './collab.js';
 import { initKb } from './kb.js';
 import { commitBoard, initVcs, loadVCS, setVcs } from './vcs.js';
+import { genCands, initGallery } from './gallery.js';
 let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
 function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy nothing)
@@ -578,71 +579,6 @@ document.addEventListener('keydown',e=>{
   if(map[k]){e.preventDefault();const d=$(map[k]);d.open=!d.open;}
 });
 // --- candidate gallery: N layouts, pick → nudge (drag=fix) → re-run ---
-let galSeed=0;
-let galBase=null; // shift-clicked compare base: {i, cand}
-function galDelta(a,b){ // cost delta + parts moved >2mm between candidates
-  let moved=0;for(const r in a.pos){const q=b.pos[r];if(!q)continue;
-    const dx=a.pos[r][0]-q[0],dy=a.pos[r][1]-q[1];
-    if(dx*dx+dy*dy>4)moved++;}
-  return {dcost:+(b.cost-a.cost).toFixed(1),moved};
-}
-thumbPaint.fn=(cand,i,cv)=>{ // the filmstrip's pixels: canvas, never VDOM
-  const ctx=cv.getContext('2d'),W=300,H=220,s=Math.min(W/S.bw,H/S.bh),ox=(W-S.bw*s)/2,oy=(H-S.bh*s)/2;
-  ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle=C.line2;ctx.strokeRect(ox,oy+S.bh*s,S.bw*s,-S.bh*s);
-  for(const r in cand.pos){const p=S.parts[r];if(!p)continue;
-    const [x,y]=cand.pos[r];
-    const fixed=S.fixed&&S.fixed[r];
-    ctx.fillStyle=fixed?C.wash:C.ink2;ctx.fillRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);
-    ctx.strokeStyle=fixed?C.signal:C.ink;ctx.strokeRect(ox+(x-p.w/2)*s,oy+(S.bh-y-p.h/2)*s,p.w*s,p.h*s);}
-};
-// one click for the whole strip: shift-click compares, plain click adopts
-$('gal').addEventListener('click',e=>{
-  const b=e.target.closest('button.galpick');
-  if(!b)return;
-  const i=+b.dataset.i,cand=galCands[i];
-  if(e.shiftKey)galCompare(i,cand);else pickCand(i);
-});
-async function genCands(){
-  if(!S)return;
-  const n=Math.max(1,Math.min(8,parseInt($('ncand').value||'4',10)));
-  galSeed=(galSeed+1)%1000;
-  await withBusy($('dice'),`generating ${n}…`,async()=>{
-    const r=await api('/candidates',{placer:$('placer').value,n,seed:galSeed,iters:400});
-    if(r.error){statMsg(r.error);return;}
-    galMeta={n,seed:galSeed};galCands=r.candidates;galBase=null;
-    ui.set({galOpen:true,galThumbs:r.candidates.map((c,i)=>
-      ({i,cand:c,label:`#${i} cost ${c.cost}`}))});
-    drawFeas({feasible:r.feasible,layers:r.layers});
-    statMsg(`${n} candidates — click to pick, shift-click two to compare`,true);
-  });
-}
-let galMeta={n:4,seed:0};
-function galLabel(i,text){ // rewrite one caption
-  ui.set({galThumbs:ui.state.galThumbs.map(t=>t.i===i?{...t,label:text}:t)});
-}
-function galCompare(i,cand){
-  if(galBase&&galBase.i===i){ // toggle off
-    galBase=null;
-    ui.set({galThumbs:galCands.map((c,j)=>({i:j,cand:c,label:`#${j} cost ${c.cost}`}))});
-    statMsg(`${galCands.length} candidates — click one to pick`,true);return;
-  }
-  if(!galBase){galBase={i,cand};
-    galLabel(i,`#${i} cost ${cand.cost} (base — click another)`);
-    statMsg(`comparing from #${i} — click another candidate`,true);return;}
-  const d=galDelta(galBase.cand,cand);
-  galLabel(i,`#${i} cost ${cand.cost} (Δ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} moved)`);
-  statMsg(`#${galBase.i}→#${i}: Δcost ${d.dcost>=0?'+':''}${d.dcost}, ${d.moved} parts moved — click to pick`,true);
-}
-let galCands=[];
-async function pickCand(i){
-  await withBusy($('dice'),`picking #${i}…`,async()=>{
-    const r=await api('/pick',{placer:$('placer').value,router:$('router').value,
-      index:i,n:galMeta.n,seed:galMeta.seed,iters:400,silk:$('silk').value});
-    if(r.error){statMsg(r.error);return;}
-    statMsg('');ui.set({galOpen:false});applyState(r,true);
-  });
-}
 // The DRC strip and the tidy list are components now (views.js): shape the
 // report into plain lines here, where the report is, and let preact paint it.
 function drawDRC(r){
@@ -1457,6 +1393,7 @@ initCollab({markDirty,cancelPush,setEditor,push,toast,
   view:()=>view,board:()=>S,edHl});
 initKb();   // knowledgebase panel: fetches, prefs and its own polling
 initVcs({srcRel:()=>SRCREL,statMsg,toast});
+initGallery({board:()=>S,palette:()=>C,statMsg,applyState,withBusy,drawFeas});
 (async()=>{await boot();})();
 if(location.search.includes('perf')){
 setTimeout(()=>{
