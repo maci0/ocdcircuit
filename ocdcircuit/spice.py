@@ -11,6 +11,7 @@ Missing binary → RuntimeError naming the apt package (hot-swap back to mna).
 """
 from __future__ import annotations
 from .util import as_float as _num, as_int as _int
+from .types import GNDS as GNDS
 from typing import TYPE_CHECKING
 import math
 import os
@@ -23,8 +24,6 @@ if TYPE_CHECKING:
     from .circuit import Board
 
 NGSPICE = shutil.which("ngspice")
-
-GNDS = ("GND", "VSS", "0")
 
 
 def _norm(net: str) -> str:

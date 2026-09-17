@@ -20,8 +20,17 @@ SlotSpec = tuple[float, float, float, float]  # dx, dy, w, h (milled slot)
 PinLike = str | int
 # Power rails that stay unprefixed across module include joins, and that ERC
 # treats as power nets (shorted when they share a pin). Owned here so agent
-# (language) and drc (engine) share one constant without crossing layers.
+# (language), drc, placer, and routers share one vocabulary.
 AUTO_JOIN = ("VCC", "GND", "VDD", "VSS", "5V", "3V3")
+# Sim/SPICE ground aliases (includes SPICE node "0"). Not the same as
+# AUTO_JOIN: VCC is power, "0" is never an auto-join rail name.
+GNDS = ("GND", "VSS", "0")
+# Placement/routing "no signal" rails. AUTO_JOIN plus casefold aliases so
+# imported/bench netlists (vcc/vss) skip the same nets clustering and
+# wiremask do — one set, not three hand-maintained copies that drift.
+BIG_RAILS = frozenset(AUTO_JOIN) | frozenset(n.casefold() for n in AUTO_JOIN)
+# Digital-gate default-high rails (AUTO_JOIN minus grounds).
+LOGIC_HI = frozenset(n for n in AUTO_JOIN if n not in GNDS)
 
 
 class DrcReport(TypedDict):

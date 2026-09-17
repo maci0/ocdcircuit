@@ -383,7 +383,7 @@ def export_easyeda(board: Board, outdir: str = "out") -> list[str]:
 
     for t in sorted(board.traces, key=lambda s: (s.net, s.layer, s.x1, s.y1, s.x2, s.y2)):
         if t.via:
-            dr = getattr(t, "drill", 0.4)
+            dr = t.drill
             shape.append(f"VIA~{t.x1 * mm:.1f}~{t.y1 * mm:.1f}~{(dr + 0.4) / 0.254:.1f}"
                          f"~{t.net}~{dr / 2 / 0.254:.1f}~gvia")
         else:
@@ -824,7 +824,7 @@ def export_altium(board: Board, outdir: str = "out") -> list[str]:
         ni = nets.get(t.net, -1)
         lay = layers[t.layer] if 0 <= t.layer < len(layers) else "TOPLAYER"
         if t.via:
-            dr = getattr(t, "drill", 0.4)
+            dr = t.drill
             A(f"|RECORD=Via|X={t.x1}mm|Y={t.y1}mm|DIAMETER={dr + 0.4}mm"
               f"|HOLESIZE={dr}mm|STARTLAYER=TOPLAYER|ENDLAYER=BOTTOMLAYER|NET={ni}|")
         else:

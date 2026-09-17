@@ -1965,6 +1965,16 @@ _arms = set(_re2.findall(r'elif t == "([a-z-]+)"',
 _arms |= {"near", "fixed", "near-group", "layer", "width", "pour"}
 from ocdcircuit.circuit import CONSTRAINT_TYPES as _CT
 assert _arms == set(_CT), (_arms ^ set(_CT))
+# rail vocabulary: one source in types.py — placer/gates/sim must not drift
+from ocdcircuit.types import AUTO_JOIN as _AJ, BIG_RAILS as _BR, GNDS as _G, LOGIC_HI as _LH
+assert set(_AJ) <= _BR and all(n.casefold() in _BR for n in _AJ)
+assert _LH == frozenset(_AJ) - frozenset(_G)
+assert "0" in _G and "0" not in _AJ
+from ocdcircuit.solver import BIG_RAILS as _BR2
+from ocdcircuit.gates import GNDS as _G2, LOGIC_HI as _LH2
+from ocdcircuit.sim import GNDS as _G3
+from ocdcircuit.spice import GNDS as _G4
+assert _BR2 is _BR and _G2 is _G is _G3 is _G4 and _LH2 is _LH
 # edge: RFC/solver margin constraint — parse+dumps+constrain round-trip
 from ocdcircuit.solver import edge_margin as _edge_m
 _eb = agent.loads("board t 40x30\npart R1 R0805 1k\nedge 1.25\n", base=EX)

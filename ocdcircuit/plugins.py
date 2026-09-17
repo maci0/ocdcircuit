@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 from .core import Plugin, Registry
 from .parts import pin_offset as _std_pin_offset
-from .types import Constraint, Footprint, Frame, PinLike, XY
+from .types import BIG_RAILS, Constraint, Footprint, Frame, PinLike, XY
 
 if TYPE_CHECKING:
     from .circuit import Board
@@ -203,11 +203,17 @@ class WireMaskRouter(Plugin[int]):
         gen = int(cast(int, k.get("gen", 4)))
         seed = int(cast(int, k.get("seed", 0)))
         rng = random.Random(seed)
-        # evolving set: inter-block nets with ≥2 pins (rails excluded)
+        # evolving set: inter-block nets with ≥2 pins (rails excluded).
+        # BIG_RAILS covers AUTO_JOIN + case aliases; power-constraint nets
+        # (VBUS, VM, …) are rails too — evolving their layer is wasted search.
+        rails = set(BIG_RAILS)
+        for c in board.constraints:
+            if isinstance(c, dict) and c.get("t") == "power":
+                rails.update(str(n) for n in cast(list[object], c.get("nets", [])))
         cands = [n for n, net in board.nets.items()
                  if len({board.parts[r].owner for r, _ in net.pins
                          if r in board.parts}) > 1
-                 and n not in ("vcc", "vss", "GND") and len(net.pins) >= 2]
+                 and n not in rails and len(net.pins) >= 2]
         if not cands or board.layers < 2:
             return _maze.maze(board, frames=cast(list[Frame] | None, k.get("frames")))
         old_traces = list(board.traces)

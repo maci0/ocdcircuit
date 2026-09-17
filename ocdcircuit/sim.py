@@ -19,13 +19,12 @@ Value parser: 10k, 4k7, 100n, 10u, 1m, 1M, 0.11 etc.
 """
 from __future__ import annotations
 from .util import as_float as _f, as_int as _i, as_str as _s
+from .types import GNDS as GNDS
 from typing import TYPE_CHECKING
 import math
 
 if TYPE_CHECKING:
     from .circuit import Board
-
-GNDS = ("GND", "VSS", "0")
 
 
 def parse_value(s: str) -> float:

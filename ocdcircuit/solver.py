@@ -19,16 +19,10 @@ import random
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 from .circuit import Part, Seg
-from .types import BBox, Frame, XY
+from .types import BIG_RAILS as BIG_RAILS, BBox, Frame, GNDS as GNDS, XY
 
 if TYPE_CHECKING:
     from .circuit import Board
-
-
-# Rails with no placement signal (centroid ≈ board center). Used by multilevel
-# clustering and rigid diffusion — keep the sets identical so power nets do not
-# glue instances in one path and get skipped in the other.
-BIG_RAILS = frozenset({"vcc", "vss", "GND", "VCC", "VDD", "VSS", "5V", "3V3"})
 
 
 def _fixed(board: Board) -> dict[str, XY]:
@@ -1283,10 +1277,10 @@ def multilevel(board: Board, seeds: int = 2, iters: int = 200, seed: int = 0,
 
 def assign_layers(board: Board) -> None:
     """Greedy: constrained nets keep layers; rest pick layer with fewer
-    bbox crossings. Power nets default wide; GND goes to the last layer
-    (bottom on 2L, first inner plane on 4L+). 1-layer boards: all → 0.
-    One undoable effect — but only when something actually changes, so
-    routers keep their undo accounting (wiremask emits exactly 1).
+    bbox crossings. Power nets default wide; ground aliases (GND/VSS/0)
+    go to the last layer (bottom on 2L, first inner plane on 4L+). 1-layer
+    boards: all → 0. One undoable effect — but only when something actually
+    changes, so routers keep their undo accounting (wiremask emits exactly 1).
     (Layer/width assignment used to leak through place/route undo —
     caught by the undo fuzzer.)"""
     snap = {n: (net.layer, net.width) for n, net in board.nets.items()}
@@ -1323,7 +1317,12 @@ def assign_layers(board: Board) -> None:
                 continue
             bx: BBox = (min(q[0] for q in pts), min(q[1] for q in pts),
                         max(q[0] for q in pts), max(q[1] for q in pts))
-            if net.layer is None:
+            if net.name in GNDS and net.layer is None:
+                # Doc intent: grounds on the last layer. The old post-loop
+                # `if layer is None` park never ran for connected GND — the
+                # greedy pass above had already assigned it.
+                net.layer = board.layers - 1
+            elif net.layer is None:
                 def hits(ll: int) -> int:
                     return sum(1 for bb in boxes[ll] if not (
                         bx[2] < bb[0] or bx[0] > bb[2] or bx[3] < bb[1] or bx[1] > bb[3]))
@@ -1335,8 +1334,6 @@ def assign_layers(board: Board) -> None:
                 # Clamp into the stackup and route the net somewhere real.
                 net.layer = max(0, min(board.layers - 1, net.layer))
             boxes[net.layer].append(bx)
-        if "GND" in board.nets and board.nets["GND"].layer is None:
-            board.nets["GND"].layer = board.layers - 1
     if any((net.layer, net.width) != snap[n]
            for n, net in board.nets.items() if n in snap):
         def _undo() -> None:

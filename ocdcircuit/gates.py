@@ -7,8 +7,9 @@ footprint: inputs first in pin-number order, output = highest pin
 CLK=3, Q=4, QN=5, CLR=6, PRE=7).
 
 Stimulus comes from `sim` constraints: `sim vcc NET 0|1` (logic level),
-`sim clk NET period [duty]` (square wave). Nets GND/VSS/0 = 0, VCC = 1
-unless driven. Returns {"nets": {net: 0|1}} final state + {"waves": ...}
+`sim clk NET period [duty]` (square wave). Nets GND/VSS/0 = 0; AUTO_JOIN
+rails that are not grounds (VCC/VDD/5V/3V3) default to 1 unless driven.
+Returns {"nets": {net: 0|1}} final state + {"waves": ...}
 per-step levels when `sim tran` present (steps = ticks).
 
 Oscillation guard: combinational loops settle by fixpoint cap (100 iters);
@@ -18,12 +19,11 @@ ring oscillators report X (None) on the loop nets.
 """
 from __future__ import annotations
 from .util import as_float as _f
+from .types import GNDS as GNDS, LOGIC_HI as LOGIC_HI
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .circuit import Board
-
-GNDS = ("GND", "VSS", "0")
 
 # gate: (n_inputs_including_clock, is_clocked)
 GATES = {"NAND": (2, False), "NOR": (2, False), "AND": (2, False),
@@ -113,7 +113,7 @@ def run(board: Board, ticks: int | None = None, **k: object) -> dict[str, object
     for n in board.nets:
         if n in GNDS:
             state[n] = 0
-        elif n == "VCC" and n not in levels:
+        elif n in LOGIC_HI and n not in levels:
             state[n] = 1
     state.update(levels)
     # clock schedule: square wave per tick (tick = half period unit)
