@@ -103,6 +103,12 @@ LOGIN_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>O
 <meta name=description content="Open a board, send the link, co-edit it live. Two cursors, one schematic, zero merge conflicts — with an AI engine that drafts, places and routes beside you.">
 <link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='4' fill='%23101418'/%3E%3Crect x='2' y='2' width='16' height='16' rx='4' fill='none' stroke='%23d8e2dc' stroke-width='1.8'/%3E%3Cpath d='M6.5 7.2 9.3 10l-2.8 2.8' fill='none' stroke='%235fd894' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='11' y1='12.8' x2='14' y2='12.8' stroke='%235fd894' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel=stylesheet href="/web/landing.css">
+<link rel=modulepreload href="/web/vendor/preact.module.js">
+<link rel=modulepreload href="/web/vendor/hooks.module.js">
+<link rel=modulepreload href="/web/vendor/htm.module.js">
+<link rel=modulepreload href="/web/html.js">
+<link rel=modulepreload href="/web/api.js">
+<link rel=modulepreload href="/web/art.js">
 </head><body>
 <div id=app></div>
 <noscript>OCD Studio needs JavaScript: the landing, the gate and the workshop are modules under /web/.</noscript>

@@ -88,6 +88,52 @@ class CompressionTests(unittest.TestCase):
 
 
 class LandingTests(unittest.TestCase):
+    def test_first_paint_modules_are_discovered_in_document(self) -> None:
+        import gzip
+        import io
+        from email.message import Message
+        from html.parser import HTMLParser
+        from unittest.mock import patch
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from apps import studio
+
+        links: list[str] = []
+
+        class Links(HTMLParser):
+            def handle_starttag(self, tag: str,
+                                attrs: list[tuple[str, str | None]]) -> None:
+                values = dict(attrs)
+                href = values.get("href")
+                if tag == "link" and values.get("rel") == "modulepreload" and href:
+                    links.append(href)
+
+        handler = studio.H.__new__(studio.H)
+        handler.path = "/"
+        handler.headers = Message()
+        handler.headers["Accept-Encoding"] = "gzip"
+        handler.wfile = io.BytesIO()
+        with patch.object(studio, "_authed", return_value=None), \
+                patch.object(handler, "send_response"), \
+                patch.object(handler, "send_header"), \
+                patch.object(handler, "end_headers"):
+            handler.do_GET()
+        wire = handler.wfile.getvalue()
+        document = gzip.decompress(wire).decode("utf-8")
+        Links().feed(document)
+        print(f"landing document: {len(wire)} gzip bytes; "
+              f"{len(links)} module dependencies discovered in HTML")
+        self.assertCountEqual(links, [
+            "/web/vendor/preact.module.js",
+            "/web/vendor/hooks.module.js",
+            "/web/vendor/htm.module.js",
+            "/web/html.js",
+            "/web/api.js",
+            "/web/art.js",
+        ])
+        for href in links:
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, "apps", href[1:])))
+
     def test_collaboration_is_labeled_as_illustrative(self) -> None:
         node = shutil.which("node")
         if not node:
