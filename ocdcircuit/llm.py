@@ -17,6 +17,7 @@ withheld until chat()/models() is called, no inverse claimed.
 """
 from __future__ import annotations
 import json
+import math
 import re
 import urllib.error
 import urllib.request
@@ -247,11 +248,38 @@ def embed(texts: list[str], *, model: str | None = None,
                        f"{mid!r}: {detail}. Set OCD_LLM_EMBED.") from e
     try:
         doc = json.loads(raw)
-        rows = sorted(doc["data"], key=lambda d: d.get("index", 0))
-        return [[float(x) for x in d["embedding"]] for d in rows]
-    except (ValueError, KeyError, IndexError, TypeError) as e:
-        raise LLMError(f"unexpected embedding reply from {c['base']}: "
-                       f"{raw[:200]!r}") from e
+        if not isinstance(doc, dict):
+            raise ValueError("response must be an object")
+        rows = doc.get("data")
+        if not isinstance(rows, list) or len(rows) != len(texts):
+            raise ValueError("expected one embedding per input")
+        vectors: dict[int, list[float]] = {}
+        dim: int | None = None
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("embedding row must be an object")
+            index = row.get("index")
+            if (type(index) is not int or not 0 <= index < len(texts)
+                    or index in vectors):
+                raise ValueError("embedding index must be unique and in range")
+            values = row.get("embedding")
+            if not isinstance(values, list) or not values:
+                raise ValueError("embedding must be a nonempty numeric array")
+            vector: list[float] = []
+            for value in values:
+                if type(value) not in (int, float):
+                    raise ValueError("embedding components must be numbers")
+                number = float(value)
+                if not math.isfinite(number):
+                    raise ValueError("embedding components must be finite")
+                vector.append(number)
+            if dim is not None and len(vector) != dim:
+                raise ValueError("embedding dimensions must match")
+            dim = len(vector)
+            vectors[index] = vector
+        return [vectors[i] for i in range(len(texts))]
+    except (ValueError, KeyError, IndexError, TypeError, OverflowError) as e:
+        raise LLMError(f"unexpected embedding reply from {c['base']}: {e}") from e
 
 
 _BLOCK = re.compile(r"```[ \t]*([^\n`]*)\n(.*?)```", re.S)
@@ -571,6 +599,15 @@ def _selfcheck() -> None:
             else:
                 raise AssertionError("run accepted a truncated completion")
             read_tool.assert_not_called()
+        with patch(__name__ + "._post_json", return_value=json.dumps({
+                "data": [{"index": 0, "embedding": [1.0, 2.0]}]
+        }).encode("utf-8")):
+            try:
+                embed(["first passage", "second passage"], model="test")
+            except LLMError:
+                pass
+            else:
+                raise AssertionError("embed accepted fewer vectors than inputs")
 
 
 if __name__ == "__main__":

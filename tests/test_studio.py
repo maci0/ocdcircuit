@@ -87,6 +87,40 @@ class CompressionTests(unittest.TestCase):
                 print(f"{content_type}: {len(body)} -> {len(wire)} bytes")
 
 
+class SimulationReadoutTests(unittest.TestCase):
+    def test_analysis_labels_and_empty_results(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+            script = source.read().split("function drawDRC(r){", 1)[1].split(
+                "function tidyVal", 1)[0]
+        drive = """
+import assert from 'node:assert/strict';
+const ui = {state:{}, set(patch){Object.assign(this.state, patch);}};
+const drawTidy = () => {};
+""" + "function drawDRC(r){" + script + """
+const base = {errors:[], warnings:[], fab:'jlc'};
+drawDRC({...base, sim:{VO:5}, sim_problems:['VO below target'],
+  tran:{VO:[0,5]}, ac:{VO:[1,0.1]}, f1:1000});
+assert.deepEqual(ui.state.drc.slice(1), [
+  {cls:'ok', text:'DC: VO=5V'},
+  {cls:'err', text:'Simulation error: VO below target'},
+  {cls:'ok', text:'Transient: VO 5.00V [0.00,5.00] (2pts)'},
+  {cls:'ok', text:'AC: VO -20.0dB@1000Hz [0.0dB pk] (2pts)'}
+]);
+for (const result of [base, {...base, sim:{}, sim_problems:[], tran:{}, ac:{}}]) {
+  drawDRC(result);
+  assert.equal(ui.state.drc.length, 1);
+  assert.match(ui.state.drc[0].text, /DRC clean/);
+}
+"""
+        result = subprocess.run(
+            [node, "--input-type=module"], input=drive, cwd=ROOT,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class LandingTests(unittest.TestCase):
     def test_first_paint_modules_are_discovered_in_document(self) -> None:
         import gzip

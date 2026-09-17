@@ -154,7 +154,7 @@ stated as a word in a pill.
   (in the fab bundle too).
 - **Simulators are plugins** (`simulate:mna`): DC operating point +
   transient (Backward-Euler MNA, stdlib) via `sim` constraints;
-  `ocd --sim dc|tran`, studio ⚡ readout, MCP `simulate` tool.
+  `ocd --sim dc|tran`, labeled studio simulation readouts, MCP `simulate` tool.
 - **Importers/exporters are plugins**
   (`importer:fp/kicad/eagle/eagle-brd/tscircuit/pcb/easyeda`,
   `exporter:jlc/kicad/easyeda/…`): `b.import_fp("easyeda", path=…)`.

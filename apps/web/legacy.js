@@ -599,11 +599,11 @@ function drawDRC(r){
   items.push(...(li.warnings||[]).slice(0,3).map(w=>({cls:'warn',text:`~ lint: ${w}`})));
   const rec=(r.recommend&&r.recommend.items)||[];
   items.push(...rec.slice(0,6).map(it=>({cls:'warn',text:`+ ${it.kind}: ${it.msg}`})));
-  if(r.sim&&Object.keys(r.sim).length)items.push({cls:'ok',text:'⚡ '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')});
-  if(r.sim_problems&&r.sim_problems.length)items.push(...r.sim_problems.map(p=>({cls:'err',text:`⚡✗ ${p}`})));
-  if(r.tran&&Object.keys(r.tran).length)items.push({cls:'ok',text:'⚡tran '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')});
+  if(r.sim&&Object.keys(r.sim).length)items.push({cls:'ok',text:'DC: '+Object.entries(r.sim).map(([n,v])=>`${n}=${v}V`).join(' ')});
+  if(r.sim_problems&&r.sim_problems.length)items.push(...r.sim_problems.map(p=>({cls:'err',text:`Simulation error: ${p}`})));
+  if(r.tran&&Object.keys(r.tran).length)items.push({cls:'ok',text:'Transient: '+Object.entries(r.tran).map(([n,w])=>`${n} ${w[w.length-1].toFixed(2)}V [${Math.min(...w).toFixed(2)},${Math.max(...w).toFixed(2)}] (${w.length}pts)`).join(' · ')});
   if(r.ac&&Object.keys(r.ac).length){const db=v=>20*Math.log10(Math.max(1e-12,Math.abs(v)));
-    items.push({cls:'ok',text:'⚡ac '+Object.entries(r.ac).map(([n,w])=>`${n} ${db(w[w.length-1]).toFixed(1)}dB@${r.f1||''}Hz [${db(Math.max(...w.map(Math.abs))).toFixed(1)}dB pk] (${w.length}pts)`).join(' · ')});}
+    items.push({cls:'ok',text:'AC: '+Object.entries(r.ac).map(([n,w])=>`${n} ${db(w[w.length-1]).toFixed(1)}dB@${r.f1||''}Hz [${db(Math.max(...w.map(Math.abs))).toFixed(1)}dB pk] (${w.length}pts)`).join(' · ')});}
   ui.set({drc:items});
   drawTidy(r);
 }
