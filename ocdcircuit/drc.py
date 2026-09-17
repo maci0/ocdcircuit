@@ -424,6 +424,14 @@ def erc(board: Board) -> dict[str, object]:
             if (ref, pin) not in connected and f"{ref}.{pin}" not in ncs \
                     and not pin.startswith("NC"):
                 errors.append(f"unconnected {ref}.{pin}")
+    # lifecycle: nrnd/eol parts still build (warning, not error — the
+    # board is valid, ordering it is the risk)
+    for ref, p in board.parts.items():
+        ls = str(p.attrs.get("lcstat", "active"))
+        if ls == "nrnd":
+            warnings.append(f"nrnd {ref} (not recommended for new designs)")
+        elif ls == "eol":
+            warnings.append(f"eol {ref} (end of life — find a substitute)")
     # power nets sharing pins = shorted rails (AUTO_JOIN rails plus
     # any net a `power` constraint marks as power — custom rails short too)
     power_nets = set(AUTO_JOIN)

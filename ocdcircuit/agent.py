@@ -992,6 +992,10 @@ def _exec_part(b: Board, line: str, err: ErrFn, ctx: str = "") -> None:
             r"\d+(\.\d+)?(%|ppm)?", attrs["tol"]):
         raise err(f"{ctx}bad tol={attrs['tol']!r} on part {ref} "
                   "(want 1%, 0.1, 100ppm)")
+    if "lcstat" in attrs and attrs["lcstat"] not in (
+            "active", "nrnd", "eol"):
+        raise err(f"{ctx}bad lcstat={attrs['lcstat']!r} on part {ref} "
+                  "(want active|nrnd|eol)")
     # declarative placement: `part R1 R0805 1k x=3 y=15` ≡ `fix R1 at 3 15`
     if "x" in attrs or "y" in attrs:
         try:

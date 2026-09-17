@@ -1264,6 +1264,23 @@ with tempfile.TemporaryDirectory() as d:
                    if f.endswith(".BOM.csv")][0]).read()
     assert "Tol" in _ltbom.splitlines()[0], _ltbom.splitlines()[0]
     assert "R1,R3" in _ltbom and ",1%," in _ltbom and ",5%," in _ltbom, _ltbom
+    # lcstat= validates at parse, rides its own BOM column, warns in ERC
+    try:
+        agent.loads("board t 40x30 2L\npart R1 R0805 10k lcstat=dead\n"
+                    "N :: R1.1 R1.2\n", base=EX)
+        raise AssertionError("should have raised")
+    except ValueError as e:
+        assert "bad lcstat=" in str(e), e
+    _ls = agent.loads("board t 40x30 2L\npart R1 R0805 10k lcstat=eol\n"
+                      "part C1 C0805 100n lcstat=nrnd\npart C2 C0805 100n\n"
+                      "N :: R1.1 C1.1\nGND :: R1.2 C1.2 C2.1\nM :: C2.2\n", base=EX)
+    _lw = _ls.check("erc")["warnings"]
+    assert any("eol R1" in x for x in _lw) and any("nrnd C1" in x for x in _lw), _lw
+    assert not [x for x in _lw if "C2" in x and ("eol" in x or "nrnd" in x)]
+    _lsbom = open([f for f in _ls.export("jlc", outdir=tempfile.mkdtemp())
+                   if f.endswith(".BOM.csv")][0]).read()
+    assert "Lcstat" in _lsbom.splitlines()[0], _lsbom.splitlines()[0]
+    assert ",eol," in _lsbom and ",nrnd," in _lsbom, _lsbom
     from ocdcircuit.circuit import Seg as _Seg
     _cb.traces = [_Seg("HV", 5, 5, 15, 5, 0, 0.3), _Seg("LV", 5, 5.3, 15, 5.3, 0, 0.3)]
     assert any("clearance HV-LV" in w for w in  # 0.3mm gap < class 0.5
