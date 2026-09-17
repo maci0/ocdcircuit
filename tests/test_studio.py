@@ -1045,7 +1045,9 @@ def main() -> None:
                     _cdp.call("Page.navigate",
                               {"url": f"http://{_uw.hostname}:{_uw.port}/"})
                     _st: dict[str, object] = {}
-                    for _ in range(60):
+                    # CI runners are slow (cold build after the full suite):
+                    # 90s budget, then console errors in the message
+                    for _ in range(180):
                         time.sleep(0.5)
                         _raw = _cdp.eval(
                             "JSON.stringify({pcb:!!document.querySelector('#pcb'),"
@@ -1063,6 +1065,15 @@ def main() -> None:
                             _st = {}
                         if cast(int, _st.get("paint") or 0) > 0:
                             break
+                    if cast(int, _st.get("paint") or 0) <= 0:
+                        _con = [e for e in _cdp.events
+                                if e.get("method") in ("Runtime.exceptionThrown",
+                                                       "Log.entryAdded")]
+                        _cost = str(_cdp.eval(
+                            "document.querySelector('#cost').textContent"))
+                        raise AssertionError(
+                            f"workshop never painted: {_st} cost={_cost!r} "
+                            f"console={json.dumps(_con[:2])[:400]}")
                     assert _st.get("pcb") and _st.get("ed"), _st
                     # every built-in panel is a component now: check the DOM
                     # the browser built, not the markup a slot lambda printed
