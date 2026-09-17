@@ -6,14 +6,9 @@
 // the #pluginpanels / #pluginleft islands.
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
-import { DrcStrip, TidyBlock } from './views.js';
+import { DrcStrip, TidyBlock, TreePanel } from './views.js';
 
-const FileTree = () => html`<section id=filetree class=side>
-  <header class=panel-head><span class=panel-title>project</span>
-    <span class=panel-note id=treenote></span>
-    <label id=importlbl title="import a footprint, symbol, or board (kicad, eagle, tscircuit, altium, easyeda)"
-      >import<input id=importfile type=file hidden /></label></header>
-  <div id=tree></div><div id=importstat role=status aria-live=polite></div></section>`;
+const FileTree = () => html`<${TreePanel} />`;
 
 const Chat = () => html`<section id=chat class=side>
   <header class=panel-head><span class=panel-title>agent</span>

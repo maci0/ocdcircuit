@@ -273,6 +273,11 @@ def main() -> None:
     troot = tempfile.mkdtemp(prefix="ocd-auth-")
     for _fn in ("blinky_555.ocd", "psu.ocd"):
         shutil.copy(os.path.join(ROOT, "boards", _fn), os.path.join(troot, _fn))
+    # the project panel renders folders and non-board files too: give it one of
+    # each, so the tree's browse + preview paths have something to click
+    os.makedirs(os.path.join(troot, "sub"), exist_ok=True)
+    open(os.path.join(troot, "notes.md"), "w").write("notes for the board\n")
+    open(os.path.join(troot, "sub", "inner.md"), "w").write("inner\n")
     env = dict(os.environ, OCD_PORT=str(port), OCD_ROOT=troot)
     srv = subprocess.Popen([sys.executable, "-m", "apps.studio",
                             os.path.join(troot, "blinky_555.ocd")],
@@ -462,9 +467,13 @@ def main() -> None:
         _in = get(base, "/").decode()
         _JS = os.path.join(ROOT, "apps", "web")
         _panels = open(os.path.join(_JS, "panels.js")).read()
+        _views = open(os.path.join(_JS, "views.js")).read()
         assert "id=edwrap" in _panels, "editor panel missing from panels.js"
-        assert "id=importfile" in _panels and "id=importstat" in _panels, \
+        # the project filetree is a component (it re-renders), the editor shell
+        # is not: each id is asserted where it now lives
+        assert "id=importfile" in _views and "id=importstat" in _views, \
             "import picker missing"
+        assert "id=tree" in _views, "project tree missing"
         # the frontend is three files under apps/web/: the panels ride in the
         # shell as slot markup, the chrome is a preact module, the behaviour is
         # a module, and the tokens are a stylesheet. Assert each where it lives.
@@ -816,8 +825,8 @@ def main() -> None:
             # every frontend module must parse as ESM: the browser half sees
             # them only once authenticated, and a syntax error there is a
             # blank page (this is the gate the inline page got for free)
-            for _mod in ("workshop.js", "panels.js", "legacy.js", "html.js",
-                         "api.js", "store.js"):
+            for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
+                         "html.js", "api.js", "store.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
@@ -1123,6 +1132,42 @@ def main() -> None:
                     assert int(str(_cdp.eval(
                         "document.querySelector('#placer').options.length"))) > 1, \
                         "engine select lost its options to a chrome re-render"
+                    # project tree: component rows, legacy-delegated clicks
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#tree button.trow').length"))) >= 4, \
+                        "tree rows missing"
+                    _act = str(_cdp.eval(
+                        "(document.querySelector('#tree .trow.active')||{dataset:{}})"
+                        ".dataset.name || ''"))
+                    assert _act == "blinky_555.ocd", _act
+                    assert "files" in str(_cdp.eval(
+                        "document.querySelector('#treenote').textContent")), \
+                        "tree note missing"
+                    # a text file previews through the delegated click
+                    _cdp.eval("(()=>{const f=[...document.querySelectorAll('#tree .tfile')]"
+                              ".find(b=>b.dataset.name==='notes.md');if(f)f.click();"
+                              "return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "preview of notes.md" in str(_cdp.eval(
+                                "document.querySelector('#msgs').textContent")):
+                            break
+                    else:
+                        raise AssertionError("text file click did not preview")
+                    # a folder row browses into it, and offers a way back up
+                    _cdp.eval("(()=>{const d=[...document.querySelectorAll('#tree .tdir')]"
+                              ".find(b=>b.dataset.name==='sub');if(d)d.click();return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if str(_cdp.eval(
+                                "document.querySelector('#treenote').textContent"
+                        )).startswith("sub"):
+                            break
+                    else:
+                        raise AssertionError("folder click did not browse")
+                    assert str(_cdp.eval(
+                        "document.querySelector('#tree .tdir').dataset.name"
+                    )).startswith(".."), "no way back up out of a folder"
                     # the panel contents are components now (views.js): the
                     # DRC strip and the tidy list render from the store, so a
                     # build that fails must repaint them — no innerHTML in

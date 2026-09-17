@@ -13,6 +13,10 @@ const state = {
   tidyCov: '',        // "(13/15)" coverage note in the tidy header
   tidyRows: [],       // [[metric, {text, dim}]]
   tidyNote: '',       // the dense-board note (replaces the rows)
+  treeUp: null,       // ".. (root)" row while browsing below the root
+  treeRows: [],       // [{name, path, kind, bytes, active}]
+  treeNote: '',       // "dir · N files"
+  importStat: '',     // what the import picker is doing
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

@@ -806,9 +806,9 @@ function setEditor(t){$('ed').innerText=t;}
 if($('importfile'))$('importfile').onchange=()=>{const f=$('importfile').files[0];if(!f)return;
   const rd=new FileReader();rd.onload=async()=>{
     const data=String(rd.result).split(',',1)[1]||'';
-    $('importstat').textContent='importing '+f.name+'…';
+    ui.set({importStat:'importing '+f.name+'…'});
     const r=await api('/fs/import',{name:f.name,data});
-    $('importstat').textContent=r.error||r.note||('imported '+f.name);
+    ui.set({importStat:r.error||r.note||('imported '+f.name)});
     if(!r.error){loadTree(DIR);if(r.text){setEditor(r.text);push();}}};
   rd.readAsDataURL(f);$('importfile').value='';};
 function unpinRefs(gone){ // drop fix lines for refs; true when something left
@@ -1301,38 +1301,36 @@ $('ed').addEventListener('keydown',e=>{
 });
 // --- project files: browse, open, and say which file is the board -------
 let TREE=[],SRCREL='',VC={},DIR='.',ROOTREL='.';
-function treeRow(e,depth){
-  const d=document.createElement('button');d.type='button';
-  d.className='trow '+(e.kind==='dir'?'tdir':'tfile')+(e.path===SRCREL?' active':'');
-  d.style.paddingLeft=(8+depth*13)+'px';
-  d.textContent=e.kind==='dir'?e.name+'/':e.name;
-  d.title=e.kind==='dir'?'folder — click to open it':e.path;
-  d.setAttribute('aria-label',e.kind==='dir'
-    ?('open folder '+e.name):('open '+e.name));
-  if(e.kind==='file'){
-    if(e.bytes){const s=document.createElement('span');s.className='tsize';
-      s.textContent=(+e.bytes/1024).toFixed(1)+'k';d.appendChild(s);}
-    d.onclick=()=>e.name.endsWith('.ocd')?openFile(e.path):previewFile(e.path);
-  }else{
-    d.onclick=()=>loadTree(e.path);
-  }
-  return d;
+// rows are components (views.js TreePanel): the click is delegated here, so
+// the behaviour stays in this module and the component only describes a row
+$('tree').addEventListener('click',e=>{
+  const b=e.target.closest('button.trow');if(!b||!b.dataset.path)return;
+  const path=b.dataset.path;
+  if(b.dataset.kind==='dir')loadTree(path);
+  else if((b.dataset.name||'').endsWith('.ocd'))openFile(path);
+  else previewFile(path);
+});
+function treeNote(){ // one string, three call sites used to write it by hand
+  ui.set({treeNote:`${DIR==='.'?ROOTREL:DIR} · `
+    +`${TREE.filter(e=>e.kind==='file').length} files`});
 }
 function renderTree(){
-  const t=$('tree');t.innerHTML='';
   // one level at a time: this directory, then a way back up while inside root
-  if(DIR!=='.'){const up=DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.';
-    t.appendChild(treeRow({name:'.. ('+(up==='.'?ROOTREL:up)+')',path:up,kind:'dir'},0));}
-  if(!TREE.length){const e=document.createElement('div');e.className='trow tdir';
-    e.setAttribute('role','status');e.textContent='(no text files)';t.appendChild(e);}
-  TREE.forEach(e=>t.appendChild(treeRow(e,1)));
+  const up=DIR!=='.'
+    ?{name:'.. ('+((DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.')==='.'
+        ?ROOTREL:DIR.replace(/\/[^/]*$/,''))+')',
+      path:DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.',kind:'dir'}
+    :null;
+  ui.set({treeUp:up,
+    treeRows:TREE.map(e=>({name:e.name,path:e.path,kind:e.kind,
+      bytes:e.bytes,active:e.path===SRCREL}))});
 }
 async function loadTree(dir){
   const f=await fetch('/fs?dir='+encodeURIComponent(dir||'.')).then(x=>x.json());
   if(f.error){statMsg(f.error);return;}
   DIR=f.dir||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';VC=f.vcs||{};
   TREE=f.tree||[];
-  $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
+  treeNote();
   renderTree();
 }
 async function previewFile(path){
@@ -1360,7 +1358,7 @@ async function openFile(path){
   if(!f.error){DIR=f.base||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';TREE=f.tree||[];
     $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
     $('chatwhere').textContent=SRCREL;
-    $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
+    treeNote();
     renderTree();}
   loadVCS();
 }
@@ -1556,11 +1554,11 @@ async function boot(){
   setEditor(r.text);applyState(r,false);
   if(r.rev!==undefined)collabRev=+r.rev; // the room's rev from the first load
   collabStart(); // realtime: SSE fan-out + presence from here on
-  if(f.error){$('treenote').textContent=f.error;return;}
+  if(f.error){ui.set({treeNote:f.error});return;}
   DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';VC=f.vcs||{};
   $('srcnote').textContent=`${SRCREL} · ${f.base||'.'} · saved on every good build`;
   $('chatwhere').textContent=SRCREL;
-  $('treenote').textContent=`${DIR==='.'?ROOTREL:DIR} · ${TREE.filter(e=>e.kind==='file').length} files`;
+  treeNote();
   renderTree();
   loadVCS();
   $('logoutbtn').onclick=async()=>{await api('/auth/logout',{});location.href='/';};
