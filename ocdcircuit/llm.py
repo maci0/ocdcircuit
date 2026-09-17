@@ -35,6 +35,7 @@ MAX_TOKENS = 8192
 # One tool round can dump a 2 MB file into the next prompt — clip so a single
 # fs.read cannot blow the context (and the bill) for every later step.
 MAX_TOOL_CHARS = 24_000
+MAX_CONTEXT_BYTES = 256_000
 TOOL_NAMES = ("fs.list", "fs.read", "write", "replace")
 
 SYSTEM = """You are the circuit agent inside OCD Studio, a .ocd board editor.
@@ -367,6 +368,9 @@ def run(messages: list[dict[str, str]], tools: dict[str, Callable[[str, str], st
     log: list[str] = []
     reply = ""
     for _ in range(max_steps):
+        if len(json.dumps(msgs).encode("utf-8")) > MAX_CONTEXT_BYTES:
+            raise LLMError("agent context budget exceeded; start a shorter "
+                           "conversation or reduce the requested file scope")
         reply = chat_fn(msgs)
         calls = parse_calls(reply)
         if not calls:
@@ -553,6 +557,39 @@ def _selfcheck() -> None:
     assert out7["reply"] == "ok", out7
 
     from unittest.mock import Mock, patch
+
+    for history in (
+            [{"role": "user", "content": "x" * MAX_TOOL_CHARS}] * 12,
+            [{"role": "user", "content": "界" * MAX_TOOL_CHARS}] * 2,
+            [{"role": "user", "content": ""}] * 10_000):
+        completion = Mock(return_value="done")
+        try:
+            run(history, {}, chat_fn=completion)
+        except LLMError as e:
+            assert "context budget" in str(e), e
+        else:
+            raise AssertionError("oversized history reached the model")
+        completion.assert_not_called()
+
+    history = [{"role": "user", "content": "hello"}]
+    original = [dict(m) for m in history]
+    boundary = len(json.dumps([
+        {"role": "system", "content": SYSTEM}, *history]).encode("utf-8"))
+    with patch(__name__ + ".MAX_CONTEXT_BYTES", boundary):
+        completion = Mock(return_value="done")
+        assert run(history, {}, chat_fn=completion)["reply"] == "done"
+        completion.assert_called_once()
+        completion = Mock(return_value="```fs.read: board.ocd\n```\n")
+        read_tool = Mock(return_value="board b 10x10 2L\n")
+        try:
+            run(history, {"fs.read": read_tool}, chat_fn=completion)
+        except LLMError as e:
+            assert "context budget" in str(e), e
+        else:
+            raise AssertionError("tool round exceeded the context budget")
+        completion.assert_called_once()
+        read_tool.assert_called_once()
+    assert history == original
 
     endpoint = {"base": "http://localhost/v1", "key": "", "model": "test"}
     valid: dict[str, object] = {
