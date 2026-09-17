@@ -737,7 +737,7 @@ def main() -> None:
 
         # the photo-scan panel is a component: it must be in the module that
         # the authed page loads, and (below) in the DOM the browser builds
-        assert "id=scanwrap" in _panels and "id=scanfiles" in _panels, \
+        assert "id=scanwrap" in _views and "id=scanfiles" in _views, \
             "scan panel not served"
         _ui = urllib.request.urlopen(urllib.request.Request(
             base + "/", headers={"Cookie": _JAR.get(base, "")})).read().decode()
@@ -1244,6 +1244,47 @@ def main() -> None:
                             break
                     else:
                         raise AssertionError("compare did not toggle off")
+                    # photo scan: the panel refuses an empty run, then a real
+                    # photo (the board's own render) drives the pipeline and
+                    # the review block, notes and analysis render from state
+                    _cdp.eval("(()=>{document.querySelector('#scango').click();"
+                              "return 1;})()")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "photos first" in str(_cdp.eval(
+                                "document.querySelector('#scanstat').textContent")):
+                            break
+                    else:
+                        raise AssertionError("scan did not refuse an empty run")
+                    assert bool(_cdp.eval("document.querySelector('#scanview').hidden")), \
+                        "review block must start hidden"
+                    _cdp.eval("(async()=>{const r=await fetch('/render',{method:'POST',"
+                              "headers:{'Content-Type':'application/json'},"
+                              "body:JSON.stringify({key:'png'})}).then(x=>x.json());"
+                              "const b=atob(r.data);const u=new Uint8Array(b.length);"
+                              "for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);"
+                              "const dt=new DataTransfer();"
+                              "dt.items.add(new File([u],'top.png',{type:'image/png'}));"
+                              "document.querySelector('#scanfiles').files=dt.files;"
+                              "return 1;})()")
+                    time.sleep(2)
+                    _cdp.eval("(()=>{document.querySelector('#scango').click();"
+                              "return 1;})()")
+                    for _ in range(240):
+                        time.sleep(1.0)
+                        if int(str(_cdp.eval(
+                                "document.querySelectorAll('#scanq>*').length"))):
+                            break
+                    else:
+                        raise AssertionError("scan never produced a review")
+                    assert "registered" in str(_cdp.eval(
+                        "document.querySelector('#scanstat').textContent")), \
+                        "scan status missing"
+                    assert not bool(_cdp.eval("document.querySelector('#scanview').hidden")), \
+                        "review block stayed hidden after a scan"
+                    assert str(_cdp.eval(
+                        "document.querySelector('#scanout').textContent")).strip(), \
+                        "analysis text missing"
                     # quote rows carry their fab's own logo tile, and the
                     # notes under them are state (no innerHTML in legacy.js)
                     _cdp.eval("(()=>{document.querySelector('#qgo').click();return 1;})()")

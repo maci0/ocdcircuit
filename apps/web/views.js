@@ -289,3 +289,73 @@ export const ExtBanner = () => {
         + 'text-align:left'}>file changed on disk — click to reload (your edits stay in undo)</button>`
     : null;
 };
+
+// Photo scan: the review block only exists after a scan, the status and the
+// notes under the bar come from state, the draft rows carry data-ref, and the
+// stitched image + box overlay are painted by legacy.js through scanPaint.fn
+// (mm-to-pixel mapping and the review payload are its state, not the VDOM's).
+export const scanPaint = {fn: null};
+
+const ScanEntry = ({e}) => {
+  if (e.kind === 'open') {
+    return html`<button type=button class=primary data-act=open>${e.text}</button>`;
+  }
+  if (e.kind === 'qa') {
+    return html`<div class=scanqa><label>${e.q}</label
+      ><input data-qi=${e.i} value=${e.a} aria-label=${e.q}
+        placeholder="your answer — then analyse again" /></div>`;
+  }
+  return html`<div class=panel-note>${e.text}</div>`;
+};
+
+const ScanPart = ({p: part}) => html`<div class=${'scanprow' + (part.uncertain ? ' unc' : '')}
+  data-ref=${part.ref} title=${part.tip}
+  ><b>${part.ref}</b><span class=dim>${part.fp + ' · ' + (part.value || '?')}</span
+  >${part.uncertain ? html`<button type=button data-act=confirm
+      title=${'accept ' + part.ref + ' as ' + part.fp + ' ' + (part.value || '?')}>confirm</button
+    ><button type=button data-act=edit
+      title=${'correct ' + part.ref + ' (value / footprint)'}>edit</button>` : ''}<button
+    type=button data-act=remove title=${'drop ' + part.ref + ' from the draft'}
+    >remove</button></div>`;
+
+export const ScanPanel = () => {
+  const s = useUI();
+  const img = useRef(null), svg = useRef(null);
+  useEffect(() => {   // repaint when legacy bumps the sequence
+    if (scanPaint.fn && svg.current && img.current) {
+      scanPaint.fn(svg.current, img.current);
+    }
+  }, [s.scanSeq, s.scanReview]);
+  return html`<section id=scanwrap>
+    <header class=panel-head><span class=panel-title>photo scan</span>
+      <span class=panel-note>photos of a real board → draft design</span></header>
+    <div id=scanbar>
+      <input id=scanfiles type=file multiple accept="image/*"
+        aria-label="photos of the board, both sides" />
+      <label>mm <input id=scanmm size=4 value="" aria-label="board width in mm, if known" /></label>
+      <button id=scango type=button class=primary
+        title="stitch, enhance, and reverse-engineer">analyse</button></div>
+    <div id=scanbar2>
+      <input id=scannote type=search aria-label="what this board is"
+        placeholder="what is it? e.g. scope PSU pulled from a dead unit" />
+      <input id=scandocs type=file multiple accept=".pdf,.txt,.md"
+        aria-label="manual or datasheet" /></div>
+    <div id=scanstat role=status aria-live=polite>${s.scanStat}</div>
+    <div id=scanq>${s.scanEntries.map(e => html`<${ScanEntry} e=${e} key=${e.i} />`)}</div>
+    <div id=scanview hidden=${!s.scanReview}>
+      <div id=scanviewbar>
+        <label>side <select id=scanside aria-label="board side to view">
+          <option value=top>top</option><option value=bottom>bottom</option>
+          </select></label>
+        <label>view <select id=scanviewkind aria-label="which enhancement to show">
+          <option value=stitch>photo</option><option value=contrast>markings</option>
+          </select></label>
+        <label class=scancheck><input id=scanlabels type=checkbox checked /> labels</label>
+        <label class=scancheck><input id=scanboxes type=checkbox checked /> outlines</label>
+        <span id=scanhover role=status aria-live=polite>${s.scanHover}</span></div>
+      <div class=scanstage><img id=scanimg alt="stitched board photo" ref=${img} />
+        <svg id=scansvg aria-hidden=true ref=${svg}></svg></div>
+      <div id=scanparts>${s.scanParts.map(p => html`<${ScanPart} p=${p} key=${p.ref} />`)}</div></div>
+    <pre id=scanout>${s.scanOut}</pre>
+    </section>`;
+};

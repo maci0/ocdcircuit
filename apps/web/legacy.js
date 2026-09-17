@@ -4,7 +4,7 @@
 // Loaded as a module AFTER workshop.js, so every id it reaches for exists.
 // NOTE: modules are strict mode — never assign to an undeclared name here.
 import { ui } from './store.js';
-import { thumbPaint } from './views.js';
+import { scanPaint, thumbPaint } from './views.js';
 const $=id=>document.getElementById(id);
 async function api(path,body){const r=await fetch(path,{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
@@ -983,56 +983,50 @@ $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
 });
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
 // photo scan: upload shots of a physical board, get a draft design back
-const scanAsk=[];
 const b64=f=>new Promise(r=>{const d=new FileReader();
-  d.onload=()=>r({name:f.name,data:String(d.result).split(',',1).length>1?String(d.result).slice(String(d.result).indexOf(',')+1):''});
+  // split(',',1) can only ever return one element, so the old length test was
+  // false for every file and the panel sent empty photo data (the server then
+  // answered UnidentifiedImageError). Take everything after the first comma.
+  d.onload=()=>{const s=String(d.result),i=s.indexOf(',');
+    r({name:f.name,data:i>=0?s.slice(i+1):''});};
   d.readAsDataURL(f);});
 if($('scango'))$('scango').onclick=async()=>{
   const fs=[...($('scanfiles').files||[])];
-  if(!fs.length){$('scanstat').textContent='choose some photos first';return;}
-  $('scanstat').textContent=`stitching ${fs.length} photos — this takes a minute…`;
-  $('scango').disabled=true;$('scanout').textContent='';$('scanq').innerHTML='';
+  if(!fs.length){ui.set({scanStat:'choose some photos first'});return;}
+  ui.set({scanStat:`stitching ${fs.length} photos — this takes a minute…`,
+    scanOut:'',scanEntries:[],scanParts:[],scanReview:false});
+  $('scango').disabled=true;
   try{
     const photos=await Promise.all(fs.map(b64));
     const docs=await Promise.all([...($('scandocs').files||[])].map(b64));
     const body={photos,docs,note:$('scannote').value||'',
-                answers:scanAsk.filter(x=>x.a).map(x=>({q:x.q,a:x.a}))};
+                answers:ui.state.scanEntries.filter(e=>e.kind==='qa'&&e.a)
+                  .map(e=>({q:e.q,a:e.a}))};
     if($('scanmm').value)body.mm=Number($('scanmm').value);
     const r=await api('/scan',body);
-    if(r.error){$('scanstat').textContent=r.error;return;}
+    if(r.error){ui.set({scanStat:r.error});return;}
     const sides=Object.entries(r.sides||{}).map(([k,v])=>
       `${k}: ${v.used}/${v.photos} registered, coverage ${v.coverage_mean}`).join(' · ');
-    $('scanstat').textContent=sides||'scan done';
+    const entries=[];
     Object.entries(r.sides||{}).forEach(([k,v])=>{
       Object.entries(v.dropped_why||{}).forEach(([nm,why])=>{
-        const d=document.createElement('div');d.className='panel-note';
-        d.textContent=`dropped ${k}/${nm}: ${why}`;$('scanq').appendChild(d);});});
-    $('scanout').textContent=r.analysis||r.draft_error||'(no analysis)';
+        entries.push({kind:'note',text:`dropped ${k}/${nm}: ${why}`});});});
+    ui.set({scanStat:sides||'scan done',
+      scanOut:r.analysis||r.draft_error||'(no analysis)'});
     scanRev = r.review||null; scanViews = r.views||{};
     scanDraft = r.draft||'';
     scanShowReview();
-    if(r.draft){const b=document.createElement('button');b.type='button';
-      b.className='primary';b.textContent='open this draft in the editor';
-      b.onclick=()=>{setEditor(r.draft);push();};
-      $('scanq').appendChild(b);}
-    if(r.draft_error){const w=document.createElement('div');
-      w.className='panel-note';w.textContent='draft did not parse: '+r.draft_error;
-      $('scanq').appendChild(w);}
-    if(r.draft&&!r.draft_error){const w=document.createElement('div');
-      w.className='panel-note';
+    if(r.draft)entries.push({kind:'open',text:'open this draft in the editor'});
+    if(r.draft_error){
+      entries.push({kind:'note',text:'draft did not parse: '+r.draft_error});}
+    if(r.draft&&!r.draft_error){
       const fl=(r.floating||[]).length;
-      w.textContent=`buildability: ${r.wired} parts wired, ${r.drc} DRC error(s)`
-        +(fl?` · ${fl} parts have no nets (photos cannot show them) — wire from the datasheet`:'');
-      $('scanq').appendChild(w);}
-    (r.questions||[]).forEach(q=>{
-      const row=document.createElement('div');row.className='scanqa';
-      const lab=document.createElement('label');lab.textContent=q;
-      const inp=document.createElement('input');inp.placeholder='your answer — then analyse again';
-      inp.setAttribute('aria-label',q);
-      const rec={q,a:''};scanAsk.push(rec);
-      inp.oninput=()=>{rec.a=inp.value;};
-      row.appendChild(lab);row.appendChild(inp);$('scanq').appendChild(row);});
-  }catch(e){$('scanstat').textContent='scan failed: '+e;}
+      entries.push({kind:'note',
+        text:`buildability: ${r.wired} parts wired, ${r.drc} DRC error(s)`
+          +(fl?` · ${fl} parts have no nets (photos cannot show them) — wire from the datasheet`:'')});}
+    (r.questions||[]).forEach(q=>entries.push({kind:'qa',q,a:''}));
+    ui.set({scanEntries:entries.map((e,i)=>({...e,i}))});
+  }catch(e){ui.set({scanStat:'scan failed: '+e});}
   finally{$('scango').disabled=false;}
 };
 
@@ -1050,20 +1044,22 @@ function scanSide(){
 }
 function scanShowReview(){
   const has=(scanRev&&scanRev.parts&&scanRev.parts.length)||Object.keys(scanViews).length;
-  $('scanview').hidden=!has;
+  ui.set({scanReview:!!has});
   if(!has)return;
   const side=scanSide();
   if($('scanside').value!==side)$('scanside').value=side;
-  scanDraw();
   scanRows();
+  scanRedraw();
+}
+function scanRedraw(){ // ask the component to repaint through scanPaint.fn
+  ui.set({scanSeq:ui.state.scanSeq+1});
 }
 function scanScale(){
   const cv=((scanRev||{}).canvas||{})[scanSide()]||[0,0];
   const mm=(((scanRev||{}).mm_per_px||{})[scanSide()])||0;
   return {cw:cv[0]||0, ch:cv[1]||0, mm:mm||0};
 }
-function scanDraw(){
-  const img=$('scanimg'), svg=$('scansvg');
+scanPaint.fn=(svg,img)=>{ // the overlay: svg, never VDOM (painter from views.js)
   const side=scanSide();
   const views=scanViews[side]||{};
   img.src=views[($('scanviewkind')||{}).value||'stitch']||views.stitch||'';
@@ -1084,7 +1080,7 @@ function scanDraw(){
     if(showL)h+=`<text x="${x0.toFixed(1)}" y="${(y0-3).toFixed(1)}" data-ref="${p.ref}">${p.ref}</text>`;
   }
   svg.innerHTML=h;
-}
+};
 function scanTip(p){
   const bits=[`${p.ref} · ${p.fp}${p.value&&p.value!=='?'?` · ${p.value}`:''}`,
     `${p.w}×${p.h}mm at (${p.x}, ${p.y})`];
@@ -1093,36 +1089,10 @@ function scanTip(p){
   if(p.note)bits.push(p.note);
   return bits.join(' — ');
 }
-function scanRows(){
-  const box=$('scanparts');box.innerHTML='';
-  for(const p of ((scanRev||{}).parts||[])){
-    const row=document.createElement('div');
-    row.className='scanprow'+(p.uncertain?' unc':'');
-    row.dataset.ref=p.ref;
-    row.title=scanTip(p);
-    const lbl=document.createElement('b');lbl.textContent=p.ref;row.appendChild(lbl);
-    const dim=document.createElement('span');dim.className='dim';
-    dim.textContent=`${p.fp} · ${p.value||'?'}`;row.appendChild(dim);
-    if(p.uncertain){
-      const fix=document.createElement('button');fix.type='button';
-      fix.textContent='confirm';fix.title=`accept ${p.ref} as ${p.fp} ${p.value||'?'}`;
-      fix.onclick=()=>scanConfirm(p.ref);
-      row.appendChild(fix);
-      const ed=document.createElement('button');ed.type='button';
-      ed.textContent='edit';ed.title=`correct ${p.ref} (value / footprint)`;
-      ed.onclick=()=>scanEdit(p.ref);
-      row.appendChild(ed);
-    }
-    const del=document.createElement('button');del.type='button';
-    del.textContent='remove';del.title=`drop ${p.ref} from the draft`;
-    del.onclick=()=>scanRemove(p.ref);
-    row.appendChild(del);
-    box.appendChild(row);
-  }
+function scanRows(){ // rows are components (views.js ScanPanel)
+  ui.set({scanParts:((scanRev||{}).parts||[]).map(p=>({
+    ref:p.ref,fp:p.fp,value:p.value||'?',uncertain:!!p.uncertain,tip:scanTip(p)}))});
 }
-// review edits rewrite the DRAFT text, never Board state: the draft is the
-// review's working copy and /build re-parses it, so the editor, solver and
-// undo history all see the same change they would from a hand edit.
 function scanDraftLines(){return (scanDraft||'').split('\n');}
 function scanSetDraft(lines){
   scanDraft=lines.join('\n');
@@ -1135,7 +1105,7 @@ function scanPartLine(ref){
 }
 function scanCommit(msg){
   setEditor(scanDraft);push();
-  $('scanstat').textContent=msg;
+  ui.set({scanStat:msg});
 }
 function scanConfirm(ref){
   // '?'/hedged value -> keep fp+position, mark certain by writing the value
@@ -1158,8 +1128,8 @@ function scanConfirm(ref){
     scanSetDraft(lines);
   }
   p.uncertain=false;p.note='';
-  scanDraw();scanRows();
-  $('scanstat').textContent=`${ref} confirmed as ${p.fp} ${p.value}`;
+  scanRows();scanRedraw();
+  ui.set({scanStat:`${ref} confirmed as ${p.fp} ${p.value}`});
 }
 function scanEdit(ref, mustName){
   const p=((scanRev||{}).parts||[]).find(x=>x.ref===ref);
@@ -1168,7 +1138,7 @@ function scanEdit(ref, mustName){
   if(val===null)return;
   const fp=prompt(`footprint for ${ref} (Enter keeps ${p.fp})`, p.fp) || p.fp;
   const {lines,i}=scanPartLine(ref);
-  if(i<0){$('scanstat').textContent=`${ref} not found in draft text`;return;}
+  if(i<0){ui.set({scanStat:`${ref} not found in draft text`});return;}
   // splice tokens, keep the rest of the line: the draft may carry attrs the
   // review row does not model (rot=, mpn=...), and a blind rewrite would eat
   // them. x=/y= keep model position unless the line already disagrees.
@@ -1181,12 +1151,12 @@ function scanEdit(ref, mustName){
   toks.splice(2, j-2, fp, ...(val?[qv(val)]:[]));
   lines[i]=toks.join(' ');
   p.value=val;p.fp=fp;p.uncertain=false;p.note='';
-  scanSetDraft(lines);scanDraw();scanRows();
+  scanSetDraft(lines);scanRows();scanRedraw();
   scanCommit(`${ref} corrected — rebuilding`);
 }
 function scanRemove(ref){
   const {lines,i}=scanPartLine(ref);
-  if(i<0){$('scanstat').textContent=`${ref} not found in draft text`;return;}
+  if(i<0){ui.set({scanStat:`${ref} not found in draft text`});return;}
   lines.splice(i,1);
   // a removed part must not leave dangling pins: a net naming a part that
   // no longer exists fails the whole draft ("net GND: unknown part 'U5'").
@@ -1201,11 +1171,29 @@ function scanRemove(ref){
     else lines[k]=cut;
   }
   scanRev.parts=(scanRev.parts||[]).filter(x=>x.ref!==ref);
-  scanSetDraft(lines);scanDraw();scanRows();
+  scanSetDraft(lines);scanRows();scanRedraw();
   scanCommit(`${ref} removed — rebuilding`);
 }
 if($('scanside'))$('scanside').onchange=scanShowReview;
 if($('scanviewkind'))$('scanviewkind').onchange=scanShowReview;
+$('scanparts').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-act]');
+  if(!b)return;
+  const ref=b.closest('[data-ref]').dataset.ref;
+  if(b.dataset.act==='confirm')scanConfirm(ref);
+  else if(b.dataset.act==='edit')scanEdit(ref);
+  else scanRemove(ref);
+});
+$('scanq').addEventListener('click',e=>{
+  if(!e.target.closest('button[data-act=open]'))return;
+  setEditor(scanDraft);push();
+});
+$('scanq').addEventListener('input',e=>{ // typed answers live in the entries
+  const i=e.target.closest('input[data-qi]');
+  if(!i)return;
+  const idx=+i.dataset.qi;
+  ui.set({scanEntries:ui.state.scanEntries.map(en=>en.i===idx?{...en,a:i.value}:en)});
+});
 if($('scanlabels'))$('scanlabels').onchange=scanShowReview;
 if($('scanboxes'))$('scanboxes').onchange=scanShowReview;
 if($('scansvg')){
@@ -1213,9 +1201,9 @@ if($('scansvg')){
     const t=e.target;
     const ref=t&&t.dataset?t.dataset.ref:null;
     const p=((scanRev||{}).parts||[]).find(x=>x.ref===ref);
-    $('scanhover').textContent=p?scanTip(p):'';
+    ui.set({scanHover:p?scanTip(p):''});
   });
-  $('scansvg').addEventListener('mouseleave',()=>{$('scanhover').textContent='';});
+  $('scansvg').addEventListener('mouseleave',()=>ui.set({scanHover:''}));
 }
 
 // x-ray: reference download + fab-scan upload vs the design (score + boxes)

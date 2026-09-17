@@ -46,6 +46,14 @@ const state = {
   xrayStat: '',       // x-ray status line
   xrayDivs: [],       // [{kind, x, y, w, h}] divergences from the fab scan
   extBanner: false,   // "file changed on disk" strip
+  scanStat: 'name files with “top” / “bottom” so the sides are split · shoot '
+    + 'whole-board frames plus mid-range ones; very tight close-ups often fail to line up',
+  scanEntries: [],    // scanq rows: note | open | qa entries
+  scanParts: [],      // [{ref, fp, value, uncertain, tip}] draft review rows
+  scanOut: '',        // the analysis / draft-error text under the review
+  scanReview: false,  // the stitched-photo review block is hidden until a scan
+  scanSeq: 0,         // bump: repaint the overlay (legacy paints the svg)
+  scanHover: '',      // part under the cursor in the review overlay
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

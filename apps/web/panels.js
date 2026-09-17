@@ -7,7 +7,7 @@
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
 import { ChatPanel, CuRows, Gallery, KbPanel, MarkRows, PartBlock,
-         DrcStrip, TidyBlock, TreePanel, VcsPanel, XrayDivs,
+         DrcStrip, ScanPanel, TidyBlock, TreePanel, VcsPanel, XrayDivs,
          XrayStat } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
@@ -64,41 +64,6 @@ const InspectorPanel = () => html`<section id=wrap3d>
   <${XrayStat} />
   <${XrayDivs} />
   <${TidyBlock} /></section>`;
-
-const ScanPanel = () => html`<section id=scanwrap>
-  <header class=panel-head><span class=panel-title>photo scan</span>
-    <span class=panel-note>photos of a real board → draft design</span></header>
-  <div id=scanbar>
-    <input id=scanfiles type=file multiple accept="image/*"
-      aria-label="photos of the board, both sides" />
-    <label>mm <input id=scanmm size=4 value="" aria-label="board width in mm, if known" /></label>
-    <button id=scango type=button class=primary
-      title="stitch, enhance, and reverse-engineer">analyse</button></div>
-  <div id=scanbar2>
-    <input id=scannote type=search aria-label="what this board is"
-      placeholder="what is it? e.g. scope PSU pulled from a dead unit" />
-    <input id=scandocs type=file multiple accept=".pdf,.txt,.md"
-      aria-label="manual or datasheet" /></div>
-  <div id=scanstat role=status aria-live=polite
-    >name files with “top” / “bottom” so the sides are split ·
-    shoot whole-board frames plus mid-range ones; very tight close-ups often fail to line up</div>
-  <div id=scanq></div>
-  <div id=scanview hidden>
-    <div id=scanviewbar>
-      <label>side <select id=scanside aria-label="board side to view">
-        <option value=top>top</option><option value=bottom>bottom</option>
-        </select></label>
-      <label>view <select id=scanviewkind aria-label="which enhancement to show">
-        <option value=stitch>photo</option><option value=contrast>markings</option>
-        </select></label>
-      <label class=scancheck><input id=scanlabels type=checkbox checked /> labels</label>
-      <label class=scancheck><input id=scanboxes type=checkbox checked /> outlines</label>
-      <span id=scanhover role=status aria-live=polite></span></div>
-    <div class=scanstage><img id=scanimg alt="stitched board photo" />
-      <svg id=scansvg aria-hidden=true></svg></div>
-    <div id=scanparts></div></div>
-  <pre id=scanout></pre>
-  </section>`;
 
 // slot render order (panel order in the cockpit)
 export const Panels = () => html`<${EditorPanel} /><${PcbPanel} /><${SchPanel} /><${InspectorPanel} /><${Gallery} /><${VcsPanel} /><${ScanPanel} /><${KbPanel} />`;
