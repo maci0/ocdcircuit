@@ -1563,9 +1563,16 @@ assert _badp["applied"] == 0 and "error" in _badp, _badp
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["parts"] == 10
 assert _call("load_board", {"path": os.path.join(EX, "blinky_555.ocd")})["proj"] == {}
 assert _call("get_state", {})["proj"] == {}
-# large payloads survive stdio framing: 300KB monster board loads intact
-_mtext = open(os.path.join(EX, "..", "benches", "discrete6502",
-                           "discrete6502.ocd")).read()
+# large payloads survive stdio framing: 300KB monster board loads intact.
+# the .ocd is generated + gitignored: build it from tracked JSON when absent.
+_mocd0 = os.path.join(EX, "..", "benches", "discrete6502", "discrete6502.ocd")
+if not os.path.isfile(_mocd0):
+    import io as _io0
+    import contextlib as _cl0
+    from benches.discrete6502 import convert as _mconv0
+    with _cl0.redirect_stdout(_io0.StringIO()):
+        _mconv0.main()
+_mtext = open(_mocd0).read()
 _mload = _call("load_board", {"text": _mtext, "base": os.path.join(
     EX, "..", "benches", "discrete6502")})
 assert _mload["parts"] == 5420 and _mload["nets"] == 9493, _mload
@@ -2365,8 +2372,14 @@ from benches.discrete6502.bench import overlaps as _mov
 _tb2 = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart C1 C0805 100n\n"
                    "net N: R1.1 C1.2\nfix R1 at 3 5\nfix C1 at 8 5\n", base=EX)
 assert _mgolden(_tb2) == {"R1": (3.0, 5.0), "C1": (8.0, 5.0)}
-_mbiz = agent.loads(open(os.path.join(EX, "..", "benches", "discrete6502",
-                                      "discrete6502.ocd")).read(),
+_mocd = os.path.join(EX, "..", "benches", "discrete6502", "discrete6502.ocd")
+if not os.path.isfile(_mocd):
+    import io as _io1
+    import contextlib as _cl1
+    from benches.discrete6502 import convert as _mconv
+    with _cl1.redirect_stdout(_io1.StringIO()):
+        _mconv.main()
+_mbiz = agent.loads(open(_mocd).read(),
                     base=os.path.join(EX, "..", "benches", "discrete6502"))
 assert len(_mbiz.parts) == 5420, len(_mbiz.parts)
 assert len(_mgolden(_mbiz)) == 8875, len(_mgolden(_mbiz))
