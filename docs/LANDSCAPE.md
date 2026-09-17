@@ -37,10 +37,15 @@ check pipeline (tscircuit).
 - **Keepout / fiducial** (tscircuit): DONE — rect/round/part-relative
   keepouts (maze-soft + DRC-flagged), fiducial parts with deadzones.
   Remaining: panel elements.
-- **Typed interfaces + `~`/`~>` wiring** (atopile): illegal connections as
-  compile errors. Needs a type layer on nets — real design work, RFC first.
-- **Units + tolerances + parametric BOM picker** (atopile): value±tol →
-  orderable MPN via LCSC/JLCPCB. Needs distributor data source.
+- **Typed interfaces + `~`/`~>` wiring** (atopile): PARTIAL — RFC-0002
+  net roles (`class role=power|signal`, cross-role shorts fail ERC) +
+  symbol pin `dir=in|out|pwr` (`out-out` drivers fail ERC). Full `~`
+  port wiring still needs direction data on all footprints.
+- **Units + tolerances + parametric BOM picker** (atopile): PARTIAL —
+  `tol=` validated + own BOM column + row splits, `lcstat=` lifecycle
+  with ERC warnings, `alternates=` priced when primary MPN is unpriced
+  (source tagged `+alt:`), live JLC stock threads into `low_stock`.
+  No hosted distributor default.
 - **Package registry** (tscircuit `@tsci/`, atopile packages): PARTIAL —
   `use PATH@SHA` pins includes to content hashes (`ocd pin` rewrites);
   no hosted registry, git files suffice.
@@ -76,9 +81,11 @@ Corpus-wide honesty map — tracked here so briefs don't silently overclaim:
 |--------|----------------|
 | Thermal | placer `thermal` knob only (big bodies → edges); no FEA |
 | SI/PI | DRC skew reports + microstrip Z0/Zdiff closed-form estimates; no impedance/PDN solver |
-| Cost / stock | attrs + optional quote; no live distributor default |
-| Panelization | `panel` tiles Gerber/drill/CPL export; no fab panel elements (rails/fiducials) |
-| Interactive route | no push-shove story (KiCad PNS is the reference, not a port) |
+| Cost / stock | tol/lcstat/alternates attrs + quote with live JLC stock; no hosted distributor default |
+| Panelization | `panel` tiles Gerber/drill/CPL export + outer cut frame; doctor `panel-fit` gates fab max; no fab rails/fiducials |
+| Interactive route | maze shove + single-net reroute + alt-click/shift-drag UI; no spring-drag copper |
+| Enterprise handoff | STEP AP203 + IPC-2581 + ODB++ subsets, honestly labeled; Gerbers stay mfg truth |
+| Agent copilot | `agents/` MCP config + system prompt, registry-tested |
 | Exact layout proof | CP-SAT optional; stdlib proxy piloted in `benches/exact_overlap_pilot.py` (feasibility cheap ≤20; prove-no/WL-cap time out by n=12–20) |
 | Whole-board sim | block-by-block + model-less policy; never one "simulate PCB" button |
 

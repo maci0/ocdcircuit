@@ -2006,6 +2006,20 @@ with _tf.TemporaryDirectory() as _td:
                                          "--fab", "nope"]) == 1
     assert _ocd.cmd_quote(_ocd._boot(), ["--help"]) == 0
     assert _ocd.main(["ocd", "quote", "--help"]) == 0
+    # quote CLI names substitutes + low-stock refs (mocked provider)
+    import io as _qio
+    import contextlib as _qcl
+    _qb2 = os.path.join(_np, "altstock.ocd")
+    open(_qb2, "w").write("board q2 40x30 2L\n"
+                          "part U1 SOIC8 NE555 mpn=NE555P alternates=LM555CN\n"
+                          "N :: U1.1 U1.2\nGND :: U1.3 U1.4\n")
+    with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
+        _buf = _qio.StringIO()
+        with _qcl.redirect_stdout(_buf):
+            assert _ocd.cmd_quote(_ocd._boot(), [_qb2, "5"]) == 0
+    _qout = _buf.getvalue()
+    assert "substitutes (1): U1(LM555CN)" in _qout, _qout
+    assert "low stock (1): U1(3<5)" in _qout, _qout
     # ocd fp: parametric footprint → .fp text/file, errors are exit 1
     with tempfile.TemporaryDirectory() as _fpd:
         _fpf = os.path.join(_fpd, "x.fp")

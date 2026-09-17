@@ -594,6 +594,12 @@ def cmd_quote(agent: object, args: list[str]) -> int:
         if unp:
             _out().print(f"[yellow]unpriced ({len(unp)}): {' '.join(unp[:12])}"
                          f" — add price= attrs or check LCSC codes[/yellow]")
+        alt = cast(list[str], asm.get("via_alt", []))
+        if alt:
+            _out().print(f"substitutes ({len(alt)}): {' '.join(alt[:12])}")
+        low = cast(list[str], asm.get("low_stock", []))
+        if low:
+            _out().print(f"[yellow]low stock ({len(low)}): {' '.join(low[:12])}[/yellow]")
     _out().print(f"[dim]{r['note']}[/dim]")
     return 0
 
