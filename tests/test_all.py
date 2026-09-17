@@ -1847,6 +1847,20 @@ assert len(_ixr.findall(".//i:Component", _ixns)) == len(_bx.parts)
 assert len(_ixr.findall(".//i:Net", _ixns)) == len(_bx.nets)
 assert len(_ixr.findall(".//i:Trace", _ixns)) == len(_bx.traces)
 assert len(_ixr.findall(".//i:Hole", _ixns)) >= 1
+# ODB++ minimal tree: matrix, copper, drill, outline, netlist
+import tarfile as _tfodb
+_odb = _bx.export("odb", outdir=tempfile.mkdtemp())[0]
+assert _odb.endswith(".tgz"), _odb
+_oz = _tfodb.open(_odb, "r:gz")
+_on = _oz.getnames()
+assert "odb/matrix/matrix" in _on and "odb/misc/info/info" in _on, _on
+_otopf = _oz.extractfile("odb/steps/pcb/layers/top/features")
+_onlf = _oz.extractfile("odb/steps/pcb/netlists/cadnet/netlist")
+assert _otopf is not None and _onlf is not None, _on
+_otop = _otopf.read().decode()
+assert _otop.count("\nP ") >= 10, _otop[:200]
+_onl = _onlf.read().decode()
+assert "$NET VCC" in _onl, _onl[:200]
 assert "simulate:ngspice" in cast(list[str], _call("list_plugins", {})["plugins"])
 assert cast(float, _call("calc", {"what": "divider", "vin": 9, "rtop": 10000,
                                   "rbot": 4700})["vout"]) > 2.8

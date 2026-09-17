@@ -899,6 +899,95 @@ def export_altium(board: Board, outdir: str = "out") -> list[str]:
     return [fn]
 
 
+def export_odb(board: Board, outdir: str = "out") -> list[str]:
+    """Write <name>.tgz holding an ODB++ tree (minimal subset for handoff:
+    matrix, per-layer copper features, drill, outline, netlist attrs).
+    Subset, honestly labeled: no soldermask/paste/symbol libraries —
+    features carry inline rect/round geometry. Gerbers stay the mfg truth."""
+    import io as _io
+    import tarfile as _tf
+    from .parts import hole_drill, pad_size, pads_of
+    lib = board._lib()
+    names = [("TOP" if ll == 0 else "BOT" if ll == board.layers - 1 else f"IN{ll}")
+             for ll in range(board.layers)]
+    tree: dict[str, str] = {}
+    rows = ["MS MS 0 0 0 0 0 0 0 0"]
+    for i, nm in enumerate(names):
+        rows.append(f"ROW#{i + 1} {nm} signal top_component={i == 0} "
+                    f"board_side={'top' if i == 0 else 'bottom' if i == len(names) - 1 else 'inner'}")
+    tree["matrix/matrix"] = "UNITS=MM\n" + "\n".join(rows) + "\n"
+    tree["steps/pcb/stephdr"] = (
+        f"X_DATUM_SUB=0\nY_DATUM_SUB=0\n"
+        f"X_DATUM=0\nY_DATUM=0\n"
+        f"BOUNDS={{0 0 {board.width:.3f} {board.height:.3f}}}\n")
+    for ll, nm in enumerate(names):
+        feats: list[str] = [f"#{nm} copper features (ocdcircuit subset)"]
+        for p in board.parts.values():
+            for pin in pads_of(p.fp, lib):
+                x, y = board.pad_pos(p.ref, pin)
+                pw, ph = pad_size(p.fp, pin, lib)
+                feats.append(f"P {x:.3f} {y:.3f} r{pw:.3f}x{ph:.3f}"
+                             f"# {p.ref}.{pin}")
+        for t in board.traces:
+            if t.layer % board.layers == ll:
+                feats.append(f"L {t.x1:.3f} {t.y1:.3f} {t.x2:.3f} {t.y2:.3f} "
+                             f"{t.width:.3f}# {t.net}")
+        tree[f"steps/pcb/layers/{nm.lower()}/features"] = "\n".join(feats) + "\n"
+    drills: list[str] = ["#drill tools + hits"]
+    hits: list[str] = []
+    tools: dict[float, int] = {}
+    def _tool(dr: float) -> int:
+        if dr not in tools:
+            tools[dr] = len(tools) + 1
+            drills.append(f"T{tools[dr]} {dr:.3f}")
+        return tools[dr]
+    seen: set[tuple[float, float, float]] = set()
+    for p in board.parts.values():
+        for pin in pads_of(p.fp, lib):
+            dr = hole_drill(p.fp, pin, lib)
+            if dr > 0:
+                x, y = board.pad_pos(p.ref, pin)
+                seen.add((round(x, 3), round(y, 3), dr))
+    for t in board.traces:
+        if t.via:
+            seen.add((round(t.x1, 3), round(t.y1, 3), 0.4))
+    for x, y, dr in sorted(seen):
+        hits.append(f"P {x:.3f} {y:.3f} T{_tool(dr)}")
+    tree["steps/pcb/layers/drill/tools"] = "\n".join(drills) + "\n"
+    tree["steps/pcb/layers/drill/features"] = "\n".join(hits) + "\n"
+    tree["steps/pcb/layers/outline/features"] = (
+        f"L 0.000 0.000 {board.width:.3f} 0.000 0.100\n"
+        f"L {board.width:.3f} 0.000 {board.width:.3f} {board.height:.3f} 0.100\n"
+        f"L {board.width:.3f} {board.height:.3f} 0.000 {board.height:.3f} 0.100\n"
+        f"L 0.000 {board.height:.3f} 0.000 0.000 0.100\n")
+    nets = sorted(board.nets)
+    nlines: list[str] = []
+    for n in nets:
+        nlines.append(f"$NET {n}")
+        nlines += [f"  {r}.{pin}" for r, pin in sorted(board.nets[n].pins)]
+    tree["steps/pcb/netlists/cadnet/netlist"] = "\n".join(nlines) + "\n" if nlines else "$EMPTY\n"
+    tree["misc/info/info"] = (
+        f"PRODUCT=ocdcircuit subset ODB++\nBOARD={board.name}\n"
+        f"LAYERS={board.layers}\n")
+    fn = os.path.join(outdir, f"{board.name}.tgz")
+    os.makedirs(outdir, exist_ok=True)
+    buf = _io.BytesIO()
+    import time as _time
+    from . import envcfg as _env
+    epoch = int(_env.source_date_epoch())
+    with _tf.open(fileobj=buf, mode="w:gz", compresslevel=9) as z:
+        for name in sorted(tree):
+            data = tree[name].encode("utf-8")
+            ti = _tf.TarInfo(f"odb/{name}")
+            ti.size = len(data)
+            ti.mtime = epoch
+            ti.mode = 0o644
+            z.addfile(ti, _io.BytesIO(data))
+    with open(fn, "wb") as f:
+        f.write(buf.getvalue())
+    return [fn]
+
+
 def export_ipc2581(board: Board, outdir: str = "out") -> list[str]:
     """Write <name>.xml (IPC-2581 subset for enterprise handoff: header,
     stackup, components, netlist, per-layer copper features, drill).

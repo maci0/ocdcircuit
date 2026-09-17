@@ -408,6 +408,17 @@ class PcadExporter(Plugin[list[str]]):
         return export.export_pcad(board, outdir)
 
 
+class OdbExporter(Plugin[list[str]]):
+    """ODB++ minimal tree in .tgz (enterprise handoff — subset, see export)."""
+    kind, key = "exporter", "odb"
+
+    def run(self, board: Board, *a: object, **k: object) -> list[str]:
+        from . import export
+        outdir = k.get("outdir", "out")
+        assert isinstance(outdir, str)
+        return export.export_odb(board, outdir)
+
+
 class Ipc2581Exporter(Plugin[list[str]]):
     """IPC-2581 subset XML (enterprise handoff — subset, see export)."""
     kind, key = "exporter", "ipc2581"
@@ -2079,7 +2090,8 @@ _DEFAULTS = (StdParts, DiffusionPlacer, CompactPlacer, ThermalPlacer,
              FabDrc, Erc, AllDrc,
              FlexDrc, JlcExporter, KicadExporter, KicadSchExporter,
              EagleExporter, EasyedaExporter, EasyedaSchExporter,
-             AltiumExporter, PcadExporter, Ipc2581Exporter, StepExporter,
+             AltiumExporter, PcadExporter, Ipc2581Exporter, OdbExporter,
+             StepExporter,
              SchLibExporter,
              BundleExporter, OcdExporter, JsonExporter,
              RefSilk, FullSilk, FabSilk,

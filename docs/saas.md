@@ -199,7 +199,7 @@ DRC → Gerbers`. No seat, no ACU, no cloud.
   no ODB++, no datasheet→footprint, no interactive
   push-shove, no impedance/PDN solver (closed-form Z0/Zdiff estimates
   only). Shipped since: AC-sweep/Bode UI, multiplayer, panelization,
-  STEP, IPC-2581 subset.
+  STEP, IPC-2581 subset, ODB++ subset.
   §8 orders them by revenue impact.
 
 ## 7. Options
