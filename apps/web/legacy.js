@@ -643,7 +643,7 @@ function setEditor(t){$('ed').innerText=t;}
 // FileReader pattern as the x-ray upload.
 if($('importfile'))$('importfile').onchange=()=>{const f=$('importfile').files[0];if(!f)return;
   const rd=new FileReader();rd.onload=async()=>{
-    const data=String(rd.result).split(',',1)[1]||'';
+    const data=String(rd.result).split(',')[1]||'';
     ui.set({importStat:'importing '+f.name+'…'});
     const r=await api('/fs/import',{name:f.name,data});
     ui.set({importStat:r.error||r.note||('imported '+f.name)});
@@ -853,7 +853,7 @@ $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
 // x-ray: reference download + fab-scan upload vs the design (score + boxes)
 let xrayRaw='';
 if($('xrayfile'))$('xrayfile').onchange=()=>{const f=$('xrayfile').files[0];if(!f)return;
-  const rd=new FileReader();rd.onload=()=>{xrayRaw=String(rd.result).split(',',1)[1]||'';
+  const rd=new FileReader();rd.onload=()=>{xrayRaw=String(rd.result).split(',')[1]||'';
     ui.set({xrayStat:`${f.name} ready — compare to check it`});};
   rd.readAsDataURL(f);};
 if($('xraysvg'))$('xraysvg').onclick=async()=>{

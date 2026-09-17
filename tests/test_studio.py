@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import unittest
 import zlib
 from typing import cast
 
@@ -44,6 +45,67 @@ const d=dirty;pick('U1.7',false);out.push((dirty>d)+':'+[...edHl].length);
 console.log(out.join('|'));
 """
 HL_EXPECT = "PSU_J1|U1:U1.7|R1,R2,U1|true:0"
+
+
+class UploadTests(unittest.TestCase):
+    def run_handler(self, start: str, end: str, drive: str) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+            script = source.read().split(start, 1)[1].split(end, 1)[0]
+        stub = """
+import assert from 'node:assert/strict';
+const elements = {};
+const $ = id => elements[id] ||= {value:'', files:[]};
+const ui = {state:{}, set(patch){Object.assign(this.state, patch);}};
+const calls = [];
+const api = async (path, body) => {
+  calls.push({path, body});
+  return path === '/fs/import' ? {note:'imported test.fp'} :
+    {score:1, missing:0, extra:0, divs:[]};
+};
+const DIR = '.';
+let refreshed = false;
+const loadTree = () => {refreshed = true;};
+const setEditor = () => {};
+const push = () => {};
+let readDone;
+class FileReader {
+  readAsDataURL(file) {
+    this.result = file.url;
+    readDone = Promise.resolve().then(() => this.onload());
+  }
+}
+"""
+        result = subprocess.run(
+            [node, "--input-type=module"], input=stub + start + script + drive,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_import_payload(self) -> None:
+        self.run_handler("if($('importfile'))", "function unpinRefs", """
+const payload = Buffer.from('footprint TINY 1x1\\npad 1 0 0 0.5 0.5\\n').toString('base64');
+$('importfile').files = [{name:'test.fp', url:'data:text/plain;base64,' + payload}];
+$('importfile').onchange();
+await readDone;
+assert.deepEqual(calls, [{path:'/fs/import', body:{name:'test.fp', data:payload}}]);
+assert.equal(ui.state.importStat, 'imported test.fp');
+assert.equal(refreshed, true);
+assert.equal($('importfile').value, '');
+""")
+
+    def test_xray_payload(self) -> None:
+        self.run_handler("let xrayRaw='';", "async function hist", """
+const payload = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
+$('xrayfile').files = [{name:'scan.png', url:'data:image/png;base64,' + payload}];
+$('xrayfile').onchange();
+await readDone;
+assert.match(ui.state.xrayStat, /scan.png ready/);
+await $('xraygo').onclick();
+assert.deepEqual(calls, [{path:'/xray', body:{png:payload, dx:0, dy:0, scale:1, thr:100}}]);
+assert.match(ui.state.xrayStat, /score 1/);
+""")
 
 
 def free_port() -> int:
@@ -100,6 +162,9 @@ def login(base: str) -> str:
 
 
 def main() -> None:
+    uploads = unittest.TextTestRunner().run(
+        unittest.defaultTestLoader.loadTestsFromTestCase(UploadTests))
+    assert uploads.wasSuccessful(), "upload handler tests failed"
     # --help answers usage without booting a server (mcp + studio)
     mh = subprocess.run([sys.executable, "-m", "apps.mcp", "--help"],
                         cwd=ROOT, capture_output=True, timeout=30)
