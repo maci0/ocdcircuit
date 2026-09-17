@@ -116,6 +116,78 @@ class KBAddSourceFileTest(unittest.TestCase):
             self.assertEqual(len({r["added"] for r in results}), 1)
 
 
+class KBAddTextTest(unittest.TestCase):
+    def test_mcp_retries_preserve_content_and_metadata(self) -> None:
+        from apps import mcp
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(mcp, "PROJ", tmp), patch.object(mcp, "BOARD", None):
+            request: dict[str, object] = {"op": "add", "text": "Résumé\n"}
+            first = mcp.t_kb(request)
+            path = Path(tmp) / "kb" / "note.md"
+            before = path.stat()
+            self.assertEqual(mcp.t_kb(request), first)
+            self.assertEqual(path.read_bytes(), "Résumé\n".encode("utf-8"))
+            self.assertEqual(path.stat().st_mtime_ns, before.st_mtime_ns)
+            self.assertEqual(path.stat().st_ino, before.st_ino)
+            self.assertEqual(sorted(p.name for p in path.parent.iterdir()),
+                             ["note.md"])
+
+    def test_changed_text_preserves_versions_and_reuses_collision(self) -> None:
+        for name, relative in (("notes.md", "notes.md"),
+                               ("data.pdf", "datasheets/data.pdf")):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                kb = KB(tmp)
+                first = kb.add(name=name, text="old")
+                second = kb.add(name=name, text="new")
+                self.assertEqual(first["added"], relative)
+                self.assertNotEqual(first["added"], second["added"])
+                self.assertEqual(KB(tmp).add(name=name, text="new"), second)
+                self.assertEqual(KB(tmp).add(name=name, text="old"), first)
+                self.assertEqual(kb.count(), 2)
+                self.assertEqual((Path(kb.dir) / relative).read_bytes(), b"old")
+                self.assertEqual((Path(kb.dir) / str(second["added"])).read_bytes(),
+                                 b"new")
+
+    def test_concurrent_text_retries_publish_one_complete_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            barrier = Barrier(4)
+            link = os.link
+            body = "complete note\n" * 1000
+
+            def publish(src: str, dest: str) -> None:
+                barrier.wait(timeout=10)
+                link(src, dest)
+
+            def add(_: int) -> dict[str, object]:
+                return KB(tmp).add(text=body)
+
+            with patch("ocdcircuit.kb.os.link", side_effect=publish), \
+                    ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(add, range(4)))
+            self.assertTrue(all(result == results[0] for result in results))
+            directory = Path(tmp) / "kb"
+            self.assertEqual(sorted(p.name for p in directory.iterdir()), ["note.md"])
+            self.assertEqual((directory / "note.md").read_text(), body)
+
+    def test_failed_text_write_can_retry_without_partial_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            kb = KB(tmp)
+            with patch("ocdcircuit.kb.os.fsync", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    kb.add(text="complete")
+            self.assertEqual(list(Path(kb.dir).iterdir()), [])
+            self.assertEqual(kb.add(text="complete")["added"], "note.md")
+            self.assertEqual((Path(kb.dir) / "note.md").read_text(), "complete")
+
+    def test_empty_text_retries_reuse_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            kb = KB(tmp)
+            self.assertEqual(kb.add(text=""), {"added": "note.md", "bytes": 0})
+            self.assertEqual(KB(tmp).add(text=""), {"added": "note.md", "bytes": 0})
+            self.assertEqual(kb.count(), 1)
+
+
 class KBAddURLRetryTest(unittest.TestCase):
     def test_url_add_retry_with_stale_source_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

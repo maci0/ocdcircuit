@@ -833,14 +833,20 @@ class KB:
             cand = f"{stem}-{i}{ext}"
         return os.path.join(d, cand)
 
-    def _copy_source(self, src: str, name: str) -> str:
+    def _store_document(self, name: str, *, src: str | None = None,
+                        text: str | None = None) -> str:
         n = _clean(name)
         directory = self.ds if n.lower().endswith(".pdf") else self.dir
         os.makedirs(directory, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=directory, prefix=".kb-", suffix=".tmp")
         os.close(fd)
         try:
-            shutil.copy2(src, tmp)
+            if text is not None:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(text)
+            else:
+                assert src is not None
+                shutil.copy2(src, tmp)
             with open(tmp, "rb") as f:
                 os.fsync(f.fileno())
             stem, ext = os.path.splitext(n)
@@ -869,12 +875,11 @@ class KB:
 
         Re-adding the same URL returns the existing file. Local files reuse
         a matching name and content, including numbered collision variants;
-        different bytes get a new name without overwriting existing files."""
+        different bytes get a new name without overwriting existing files.
+        Text bodies follow the same rule: identical text reuses the slot,
+        changed text lands beside it under a numbered name."""
         if text is not None:
-            dest = self._target(name or "note.md")
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with open(dest, "w", encoding="utf-8") as f:
-                f.write(text)
+            dest = self._store_document(name or "note.md", text=text)
             return {"added": os.path.relpath(dest, self.dir), "bytes": len(text)}
         if not src:
             raise ValueError("add needs a path, a url, or text")
@@ -898,7 +903,7 @@ class KB:
             return {"added": rel, "bytes": size, "url": src}
         if not os.path.isfile(src):
             raise ValueError(f"no such file {src!r} (or pass an http(s) url)")
-        dest = self._copy_source(src, name or src)
+        dest = self._store_document(name or src, src=src)
         return {"added": os.path.relpath(dest, self.dir),
                 "bytes": os.path.getsize(dest), "from": os.path.abspath(src)}
 
