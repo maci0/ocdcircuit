@@ -30,6 +30,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+import ipaddress
+import socket
 import urllib.request
 from itertools import islice
 from operator import mul
@@ -156,16 +158,78 @@ def _clean(name: str, fallback: str = "download") -> str:
     return base[:80] or fallback
 
 
+# Hostnames that must never be fetched even if DNS lies about them being
+# global — cloud metadata and loopback aliases are classic SSRF targets.
+_BLOCKED_HOSTS = frozenset({
+    "localhost",
+    "localhost.localdomain",
+    "metadata",
+    "metadata.google.internal",
+})
+
+
+def _assert_public_https(url: str) -> None:
+    """Raise ValueError unless `url` is https to a public internet host.
+
+    Blocks credentialed URLs, bare hostnames like localhost, IP literals that
+    are not global, and DNS answers that resolve only (or also) to private /
+    loopback / link-local / shared / reserved addresses. Callers use this
+    before every outbound GET so `kb add` / `datasheet=` cannot probe the LAN.
+    """
+    u = urlparse(url)
+    if u.scheme != "https":
+        raise ValueError(f"refusing non-https url {url!r}")
+    if u.username is not None or u.password is not None:
+        raise ValueError(f"refusing url with userinfo {url!r}")
+    host = u.hostname
+    if not host:
+        raise ValueError(f"refusing url without host {url!r}")
+    h = host.lower().rstrip(".")
+    if (h in _BLOCKED_HOSTS or h.endswith(".localhost")
+            or h.endswith(".local") or h.endswith(".internal")):
+        raise ValueError(f"refusing non-public host {host!r}")
+    try:
+        literal = ipaddress.ip_address(h)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if not literal.is_global:
+            raise ValueError(f"refusing non-public host {host!r}")
+        return
+    try:
+        infos = socket.getaddrinfo(h, 443, type=socket.SOCK_STREAM)
+    except OSError as e:
+        raise ValueError(f"refusing unresolved host {host!r}") from e
+    if not infos:
+        raise ValueError(f"refusing unresolved host {host!r}")
+    for info in infos:
+        addr = info[4][0]
+        ip = ipaddress.ip_address(addr)
+        if not ip.is_global:
+            raise ValueError(f"refusing non-public host {host!r}")
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-check every redirect hop — urllib follows Location by default."""
+
+    def redirect_request(self, req: urllib.request.Request, fp: Any, code: int,
+                         msg: str, headers: Any, newurl: str
+                         ) -> urllib.request.Request | None:
+        _assert_public_https(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _download(url: str, dest: str, timeout: float = 60.0) -> int:
-    """Fetch url → dest. Refuses non-https, oversized, and .pdf URLs that
-    aren't PDFs (a login page saved as a datasheet is worse than nothing).
+    """Fetch url → dest. Refuses non-https, non-public hosts, oversized, and
+    .pdf URLs that aren't PDFs (a login page saved as a datasheet is worse
+    than nothing). Redirect hops are re-validated the same way.
 
     Write is atomic (temp + replace): a crash mid-transfer cannot leave a
     truncated dest that a retry would treat as a finished datasheet."""
-    if urlparse(url).scheme != "https":
-        raise ValueError(f"refusing non-https url {url!r}")
+    _assert_public_https(url)
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
+    with opener.open(req, timeout=timeout) as r:
         data = r.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
         raise ValueError(f"{url}: larger than {MAX_BYTES // 1024 // 1024}MB")

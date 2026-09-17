@@ -78,11 +78,12 @@ def fab_strip() -> str:
     (tiles + profile urls) — one source of truth, never a stale copy.
     Logos load from /fab-logo/<key> (lazy) so ~100 KB of PNGs stay off the
     first HTML response; the hero can paint before the strip asks for them."""
+    from html import escape
     from ocdcircuit.fab import PROFILES
     cells = []
     for key in sorted(PROFILES):
-        name = str(PROFILES[key].get("name", key))
-        url = str(PROFILES[key].get("url", ""))
+        name = escape(str(PROFILES[key].get("name", key)))
+        url = escape(str(PROFILES[key].get("url", "")), quote=True)
         cells.append(
             f'<a class=fabcell href="{url}" title="{name} — capabilities" '
             f'rel="noopener noreferrer">'
@@ -3007,7 +3008,11 @@ def _check_user(name: str, password: str) -> bool:
     import hashlib
     import hmac
     users = _read_users()
+    # Always pay for one scrypt: a missing name must not return faster than
+    # a wrong password (timing would otherwise enumerate accounts).
     if name not in users:
+        hashlib.scrypt(password.encode("utf-8"), salt=b"\0" * 16,
+                       n=16384, r=8, p=1)
         return False
     salt_hex, want, _disp = users[name]
     try:
@@ -3882,8 +3887,11 @@ class H(http.server.BaseHTTPRequestHandler):
                              f"{_AUTH_COOKIE}={cookie}; Path=/; HttpOnly; "
                              f"SameSite=Lax; Max-Age={int(_SESSION_TTL)}")
         elif cookie == "":
+            # Same flags as the login Set-Cookie so browsers drop the jar
+            # entry instead of leaving an HttpOnly/SameSite-less twin.
             self.send_header("Set-Cookie",
-                             f"{_AUTH_COOKIE}=; Path=/; Max-Age=0")
+                             f"{_AUTH_COOKIE}=; Path=/; HttpOnly; "
+                             f"SameSite=Lax; Max-Age=0")
         self.end_headers()
         self.wfile.write(out)
 
@@ -4153,7 +4161,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send({"user": user, "display": disp,
                             "needs_setup": not _read_users()})
             elif self.path == "/auth/profile":
-                assert user is not None  # gated above
+                # /auth/* skips the "log in first" gate (signup/login keyhole);
+                # profile is not a keyhole — require a real session, not assert
+                # (asserts vanish under python -O).
+                if user is None:
+                    self._send({"error": "log in first", "login": True})
+                    return
                 disp = _norm_display(str(req.get("display", "")).strip())[:40]
                 if not disp:
                     self._send({"error": "a display name can't be blank"})

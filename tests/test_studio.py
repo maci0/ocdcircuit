@@ -298,6 +298,9 @@ def main() -> None:
         print(f"landing ETag 304 ok; fab-logo/oshpark={len(_logo)} B")
         _refused = post(base, "/build", {"text": "x"})
         assert _refused.get("login") is True, _refused
+        # /auth/profile is under the keyhole prefix but must still demand a session
+        _prof_deny = post(base, "/auth/profile", {"display": "Ghost"})
+        assert _prof_deny.get("login") is True, _prof_deny
         _fs_deny = json.loads(urllib.request.urlopen(base + "/fs", timeout=5).read())
         assert _fs_deny.get("login") is True, _fs_deny
         _poll_deny = json.loads(urllib.request.urlopen(base + "/poll", timeout=5).read())

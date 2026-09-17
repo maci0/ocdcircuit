@@ -568,4 +568,37 @@ if len(_units) >= 2:
     _last = int.from_bytes(_units[-2:], "little")
     assert not (0xD800 <= _last <= 0xDBFF), hex(_last)
 
+# kb URL gate: no LAN / loopback / metadata / userinfo / plain http
+from ocdcircuit import kb as _kb_ssrf
+for _bad_u in (
+        "http://example.com/x.pdf",
+        "https://127.0.0.1/x.pdf",
+        "https://localhost/x.pdf",
+        "https://192.168.0.1/x.pdf",
+        "https://10.0.0.1/x.pdf",
+        "https://169.254.169.254/latest",
+        "https://[::1]/x.pdf",
+        "https://user:pass@example.com/x.pdf",
+        "https://metadata.google.internal/"):
+    try:
+        _kb_ssrf._assert_public_https(_bad_u)
+        raise AssertionError(f"expected refuse for {_bad_u!r}")
+    except ValueError:
+        pass
+
+# spice: sim lib must not pull host files via .. or absolute paths
+from ocdcircuit import spice as _sp_lib
+from ocdcircuit import agent as _ag_lib
+try:
+    _sp_lib.netlist(_ag_lib.loads(
+        "board t 10x10\npart R1 R0805 1k\nnet N: R1.1 R1.2\n"
+        "sim vcc N 5\nsim lib ../../etc/passwd\n"))
+    raise AssertionError("expected sim lib path refuse")
+except ValueError as _sp_e:
+    assert "refused" in str(_sp_e).lower(), _sp_e
+_ok_nl = _sp_lib.netlist(_ag_lib.loads(
+    "board t 10x10\npart R1 R0805 1k\nnet N: R1.1 R1.2\n"
+    "sim vcc N 5\nsim lib models.lib\n"))
+assert ".lib models.lib\n" in _ok_nl, _ok_nl
+
 print("CORE PAPER OK")

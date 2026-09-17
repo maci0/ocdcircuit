@@ -30,6 +30,29 @@ def _norm(net: str) -> str:
     return "0" if net in GNDS else re.sub(r"[^A-Za-z0-9_+-]", "_", net) or "N"
 
 
+def _spice_id(s: object, fallback: str = "X") -> str:
+    """One SPICE identifier: no whitespace or metacharacters that could
+    smuggle a second card into the netlist."""
+    t = re.sub(r"[^A-Za-z0-9_.+-]", "", str(s))[:64]
+    return t or fallback
+
+
+def _spice_lib(path: object) -> str:
+    """Relative library path only — never absolute, `..`, or URL schemes.
+    Board text is shared in studio; a `.lib ../../…` card would otherwise
+    pull arbitrary host files into ngspice."""
+    p = str(path).strip().replace("\\", "/")
+    if (not p or p.startswith("/") or p.startswith("~") or "://" in p
+            or "\n" in p or "\r" in p):
+        raise ValueError(f"sim lib path refused: {path!r}")
+    parts = [x for x in p.split("/") if x and x != "."]
+    if not parts or any(x == ".." for x in parts):
+        raise ValueError(f"sim lib path refused: {path!r}")
+    if any(re.search(r"[^A-Za-z0-9_.+-]", x) for x in parts):
+        raise ValueError(f"sim lib path refused: {path!r}")
+    return "/".join(parts)
+
+
 def _val(board: Board, ref: str, kind: str) -> float | None:
     from .sim import parse_value
     p = board.parts.get(ref)
@@ -58,10 +81,10 @@ def _pinnet(board: Board, ref: str) -> dict[str, str]:
 
 def netlist(board: Board) -> str:
     """SPICE text for ngspice batch. Raises ValueError on unmappable parts."""
-    L = [f"* ocdcircuit: {board.name}", ".options noinit"]
+    L = [f"* ocdcircuit: {_spice_id(board.name, 'board')}", ".options noinit"]
     for c in board.constraints:
         if c.get("t") == "sim" and c.get("kind") == "lib":
-            L.append(f".lib {c.get('path', '')}")
+            L.append(f".lib {_spice_lib(c.get('path', ''))}")
     n_v = 0
     for ref, p in board.parts.items():
         pn = _pinnet(board, ref)
@@ -71,36 +94,40 @@ def netlist(board: Board) -> str:
             v = _val(board, ref, "r")
             if v is None or len(pn) < 2:
                 continue
-            L.append(f"R{ref} {_norm(pn.get('1', ''))} {_norm(pn.get('2', ''))} {v:g}")
+            L.append(f"R{_spice_id(ref)} {_norm(pn.get('1', ''))} "
+                     f"{_norm(pn.get('2', ''))} {v:g}")
         elif fp.startswith("C") or fp.startswith("LED"):
             v = _val(board, ref, "c")
             if v is None or len(pn) < 2:
                 continue
-            L.append(f"C{ref} {_norm(pn.get('1', ''))} {_norm(pn.get('2', ''))} {v:g} ic=0")
+            L.append(f"C{_spice_id(ref)} {_norm(pn.get('1', ''))} "
+                     f"{_norm(pn.get('2', ''))} {v:g} ic=0")
         elif fp.startswith("L") and not fp.startswith("LED"):
             v = _val(board, ref, "l")
             if v is None or len(pn) < 2:
                 continue
-            L.append(f"L{ref} {_norm(pn.get('1', ''))} {_norm(pn.get('2', ''))} {v:g} ic=0")
+            L.append(f"L{_spice_id(ref)} {_norm(pn.get('1', ''))} "
+                     f"{_norm(pn.get('2', ''))} {v:g} ic=0")
         elif fp.startswith("D") and not fp.startswith("DI"):
             model = "1N4148"
             for c in board.constraints:
                 if c.get("t") == "sim" and c.get("kind") == "d" and c.get("ref") == ref:
-                    model = str(c.get("value", model))
+                    model = _spice_id(c.get("value", model), "1N4148")
             if len(pn) < 2:
                 continue
-            L.append(f"D{ref} {_norm(pn.get('1', ''))} {_norm(pn.get('2', ''))} {model}")
+            L.append(f"D{_spice_id(ref)} {_norm(pn.get('1', ''))} "
+                     f"{_norm(pn.get('2', ''))} {model}")
             if model == "1N4148":
                 L.append(".model 1N4148 D(is=2.52n rs=0.568 n=1.752 bv=100 ibv=100u)")
         elif fp.startswith("Q") or fp.startswith("SOT") or fp.startswith("TO"):
             model = "2N3904"
             for c in board.constraints:
                 if c.get("t") == "sim" and c.get("kind") == "q" and c.get("ref") == ref:
-                    model = str(c.get("value", model))
+                    model = _spice_id(c.get("value", model), "2N3904")
             if len(pn) < 3:
                 continue
             # SOT23: 1=base 2=emitter 3=collector
-            L.append(f"Q{ref} {_norm(pn.get('3', ''))} {_norm(pn.get('1', ''))} "
+            L.append(f"Q{_spice_id(ref)} {_norm(pn.get('3', ''))} {_norm(pn.get('1', ''))} "
                      f"{_norm(pn.get('2', ''))} {model}")
             if model == "2N3904":
                 L.append(".model 2N3904 NPN(bf=300 br=7.5 is=14f va=100)")
@@ -129,10 +156,10 @@ def netlist(board: Board) -> str:
         elif k == "op":
             # sim op U1 LM358 3 2 8 4 1 → XU1 out in+ in- vcc vee MODEL
             toks = str(c.get("value", "")).split()
-            ref = str(c.get("ref", ""))
-            model = toks[0] if toks else "OPIDEAL"
+            ref = _spice_id(c.get("ref", ""))
+            model = _spice_id(toks[0] if toks else "OPIDEAL", "OPIDEAL")
             pins = toks[1:]
-            pn = _pinnet(board, ref)
+            pn = _pinnet(board, str(c.get("ref", "")))
             nodes = " ".join(_norm(pn.get(p, "")) for p in pins)
             L.append(f"X{ref} {nodes} {model}")
             if model == "OPIDEAL":
