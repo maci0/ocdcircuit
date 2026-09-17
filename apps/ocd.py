@@ -600,6 +600,9 @@ def cmd_quote(agent: object, args: list[str]) -> int:
         low = cast(list[str], asm.get("low_stock", []))
         if low:
             _out().print(f"[yellow]low stock ({len(low)}): {' '.join(low[:12])}[/yellow]")
+        rsk = cast(list[str], asm.get("risky", []))
+        if rsk:
+            _out().print(f"[yellow]lifecycle risk ({len(rsk)}): {' '.join(rsk[:12])}[/yellow]")
     _out().print(f"[dim]{r['note']}[/dim]")
     return 0
 

@@ -682,6 +682,10 @@ with _qaltmock.patch("ocdcircuit.circuit.Board.price", _qaltprice):
 assert _qalta["via_alt"] == ["U1(LM555CN)"], _qalta
 assert _qalta["unpriced"] == [], _qalta
 assert _qalta["low_stock"] == ["U1(3<5)"], _qalta  # stock 3 < qty 5
+assert _qalta["risky"] == [], _qalta  # no lcstat here
+_lrisky = agent.loads("board t 40x30 2L\npart R1 R0805 10k price=0.02 lcstat=eol\n"
+                      "N :: R1.1 R1.2\n", base=EX)
+assert _qq.assembled(_lrisky, qty=5)["risky"] == ["R1(eol)"]
 # unknown footprint must not invent a 2-pad joint count (silent misprice)
 try:
     _qq._pads("NOPE", {})

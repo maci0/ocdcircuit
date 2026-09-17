@@ -188,10 +188,14 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     unpriced: list[str] = []
     via_alt: list[str] = []
     low_stock: list[str] = []
+    risky: list[str] = []
     sources: dict[str, int] = {}
     for r in rows:
         v, src, stock = unit_price(board, str(r["ref"]))
         sources[src] = sources.get(src, 0) + 1
+        ls = str(board.parts[str(r["ref"])].attrs.get("lcstat", "active"))
+        if ls in ("nrnd", "eol"):
+            risky.append(f"{r['ref']}({ls})")
         if v is None:
             unpriced.append(str(r["ref"]))
         else:
@@ -212,7 +216,7 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     return {"fees": _usd(fees_d), "parts_per_board": _usd(parts_d),
             "total": _usd(total_d), "per_board": _usd(total_d / qty),
             "joints": joints, "parts": len(rows), "unpriced": unpriced,
-            "via_alt": via_alt, "low_stock": low_stock,
+            "via_alt": via_alt, "low_stock": low_stock, "risky": risky,
             "sources": sources, "extended_parts": ext,
             "note": "JLC Economic PCBA single-side; parts from live JLC or price= attr"}
 
