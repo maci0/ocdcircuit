@@ -1154,8 +1154,9 @@ with tempfile.TemporaryDirectory() as d:
     _pan.route_board()
     _pfl = _pan.export("jlc", outdir=tempfile.mkdtemp())
     _pgko = open([f for f in _pfl if f.endswith(".GKO.gbr")][0]).read()
-    assert _pgko.count("D02*") == 16, _pgko.count("D02*")
+    assert _pgko.count("D02*") == 20, _pgko.count("D02*")  # 16 copy + 4 outer
     assert "X42.0000Y22.0000D02*" in _pgko, _pgko[-200:]
+    assert "X42.0000Y22.0000D01*" in _pgko  # outer panel frame
     _pgtl = open([f for f in _pfl if f.endswith(".GTL.gbr")][0]).read()
     assert "X38.0500Y5.0000D03*" in _pgtl, _pgtl[:300]
     _pcpl = open([f for f in _pfl if f.endswith(".CPL.csv")][0]).read()

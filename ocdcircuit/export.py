@@ -275,6 +275,11 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     for ox, oy in offs:
         outl += [(ox, oy, ox + W, oy), (ox + W, oy, ox + W, oy + H),
                  (ox + W, oy + H, ox, oy + H), (ox, oy + H, ox, oy)]
+    if len(offs) > 1:  # panel outer frame (fab cuts copies apart on it)
+        pw = max(ox for ox, _ in offs) + W
+        ph = max(oy for _, oy in offs) + H
+        outl += [(0.0, 0.0, pw, 0.0), (pw, 0.0, pw, ph),
+                 (pw, ph, 0.0, ph), (0.0, ph, 0.0, 0.0)]
     from .drc import zone_at as _za
     for c in board.constraints:
         if isinstance(c, dict) and c.get("t") == "cutout":
