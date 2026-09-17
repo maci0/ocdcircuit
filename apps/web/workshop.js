@@ -10,7 +10,7 @@ import { render } from './vendor/preact.module.js';
 import html from './html.js';
 import { ui, useUI } from './store.js';
 import { Panels } from './panels.js';
-import { CalcBlock, HealthOut, Toast } from './views.js';
+import { CalcBlock, ExtBanner, HealthOut, QuoteOut, Toast } from './views.js';
 
 const BRAND_SVG = html`<svg width=20 height=20 viewBox="0 0 20 20" aria-hidden=true focusable=false
   ><rect x=2 y=2 width=16 height=16 rx=4 fill=none stroke=currentColor stroke-width=1.8></rect
@@ -51,7 +51,7 @@ const Tools = () => html`<details class=menu id=m-tools>
     <label>qty <input id=qqty value=5 size=3 aria-label="boards ordered" /></label>
     <label><input type=checkbox id=qbare /> bare only</label>
     <button id=qgo type=button class=primary title="compare fab prices for the open board">compare</button>
-    <div id=qout role=status aria-live=polite></div></details>
+    <${QuoteOut} /></details>
   </div></details>`;
 
 // The menubar is a nav of <details>; legacy.js closes the others on open and
@@ -143,6 +143,7 @@ const Chrome = () => html`<header class=top><div class=inner>
   <span id=plugintools style="display:contents"></span>
   </div></header>
   <${Toast} />
+  <${ExtBanner} />
   <main id=panels><${Panels} /><span id=pluginpanels style="display:contents"></span></main>`;
 
 render(html`<${Chrome} />`, document.getElementById('app'));

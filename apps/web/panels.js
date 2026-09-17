@@ -7,7 +7,8 @@
 // htm rule: void elements must self-close (<input ... />, <img ... />).
 import html from './html.js';
 import { ChatPanel, CuRows, Gallery, KbPanel, MarkRows, PartBlock,
-         DrcStrip, TidyBlock, TreePanel, VcsPanel } from './views.js';
+         DrcStrip, TidyBlock, TreePanel, VcsPanel, XrayDivs,
+         XrayStat } from './views.js';
 
 const FileTree = () => html`<${TreePanel} />`;
 
@@ -60,8 +61,8 @@ const InspectorPanel = () => html`<section id=wrap3d>
     <label>dy <input id=xraydy value=0 size=3 aria-label="scan y offset mm" /></label>
     <label>sc <input id=xraysc value=1 size=4 aria-label="scan scale" /></label>
     <label>cu <input id=xraythr value=100 size=3 aria-label="copper brightness cutoff" /></label></div>
-  <div id=xraystat role=status aria-live=polite></div>
-  <div id=xraydivs></div>
+  <${XrayStat} />
+  <${XrayDivs} />
   <${TidyBlock} /></section>`;
 
 const ScanPanel = () => html`<section id=scanwrap>

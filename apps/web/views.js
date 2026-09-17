@@ -255,3 +255,37 @@ export const Gallery = () => {
       <span class=panel-note>job file 1F-04 · placer diffusion · 1 seed × 400 iters</span></header>
     <div id=gal>${s.galThumbs.map(t => html`<${Thumb} t=${t} key=${t.i} />`)}</div></section>`;
 };
+
+// fab price comparison: one row per fab (its own logo tile) plus the notes
+// about substitutes, unpriced parts, low stock and the estimate stamp.
+export const QuoteOut = () => {
+  const s = useUI();
+  return html`<div id=qout role=status aria-live=polite
+    >${s.quoteRows.map(r => html`<div class=qrow key=${r.fab}>${r.logo
+        ? html`<img class=qlogo src=${r.logo} alt=${r.fab + ' logo'} width=64 height=21 />`
+        : ''}<span class=dim>${r.fab}</span> bare $${r.bare}${r.asm
+          ? ` asm $${r.asm} ($${r.per}/bd)` : ''}</div>`)}${s.quoteNote.map((n, i) =>
+        html`<div class=${n.cls} key=${i}>${n.text}</div>`)}</div>`;
+};
+
+// x-ray check: the status line and the divergence list
+export const XrayStat = () => html`<div id=xraystat role=status aria-live=polite>${useUI().xrayStat}</div>`;
+
+export const XrayDivs = () => {
+  const divs = useUI().xrayDivs;
+  return html`<div id=xraydivs>${divs.length
+    ? divs.map((d, i) => html`<div key=${i}><span class=dim>${d.kind}</span> ${d.x} ${d.y} ${d.w}x${d.h}mm</div>`)
+    : (useUI().xrayStat ? html`<div class=dim>no divergences</div>` : '')}</div>`;
+};
+
+// "file changed on disk" strip: the user picks the moment to reload, so this
+// is a control, not a notification. The click is delegated in legacy.js.
+export const ExtBanner = () => {
+  const s = useUI();
+  return s.extBanner
+    ? html`<button type=button id=extbanner style=${'width:100%;border:0;border-radius:0;'
+        + 'background:var(--signal);color:' + (s.dark ? '#06130d' : '#fff')
+        + ';padding:10px 14px;min-height:40px;cursor:pointer;font:600 .9rem var(--sans);'
+        + 'text-align:left'}>file changed on disk — click to reload (your edits stay in undo)</button>`
+    : null;
+};

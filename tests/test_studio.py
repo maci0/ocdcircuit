@@ -1244,6 +1244,58 @@ def main() -> None:
                             break
                     else:
                         raise AssertionError("compare did not toggle off")
+                    # quote rows carry their fab's own logo tile, and the
+                    # notes under them are state (no innerHTML in legacy.js)
+                    _cdp.eval("(()=>{document.querySelector('#qgo').click();return 1;})()")
+                    for _ in range(60):
+                        time.sleep(0.5)
+                        if int(str(_cdp.eval(
+                                "document.querySelectorAll('#qout .qrow').length"))):
+                            break
+                    else:
+                        raise AssertionError("quote rows never rendered")
+                    assert int(str(_cdp.eval(
+                        "document.querySelectorAll('#qout .qrow').length"))) >= 5
+                    assert "bare $" in str(_cdp.eval(
+                        "document.querySelector('#qout .qrow').textContent")), "row wording"
+                    assert bool(_cdp.eval("!!document.querySelector('#qout .qlogo')")), \
+                        "quote row lost its fab logo"
+                    assert "estimates" in str(_cdp.eval(
+                        "document.querySelector('#qout').textContent")), "stamp missing"
+                    # x-ray asks for a fabricator PNG before it can compare
+                    _cdp.eval("(()=>{document.querySelector('#xraygo').click();return 1;})()")
+                    for _ in range(10):
+                        time.sleep(0.5)
+                        if "fab PNG" in str(_cdp.eval(
+                                "document.querySelector('#xraystat').textContent")):
+                            break
+                    else:
+                        raise AssertionError("x-ray guard never spoke")
+                    # external edit on disk: the strip appears and the click
+                    # adopts the file (this needs GET /poll, not a POST)
+                    with open(tboard, "a") as _f:
+                        _f.write("\n# external edit from the test\n")
+                    for _ in range(40):
+                        time.sleep(0.5)
+                        if bool(_cdp.eval("!!document.querySelector('#extbanner')")):
+                            break
+                    else:
+                        raise AssertionError("disk-change strip never appeared")
+                    _cdp.eval("(()=>{document.querySelector('#extbanner').click();"
+                              "return 1;})()")
+                    for _ in range(60):
+                        time.sleep(0.5)
+                        if not bool(_cdp.eval("!!document.querySelector('#extbanner')")):
+                            break
+                    else:
+                        raise AssertionError("strip did not clear after reload")
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if "external edit from the test" in str(_cdp.eval(
+                                "document.querySelector('#ed').innerText")):
+                            break
+                    else:
+                        raise AssertionError("reload did not adopt the external edit")
                     # knowledgebase: the document list renders, a row opens
                     # the file, and the preference block starts hidden
                     assert int(str(_cdp.eval(

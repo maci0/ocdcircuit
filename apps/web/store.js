@@ -41,6 +41,11 @@ const state = {
   kbPrefs: [],        // [{id, when, text, approved}]
   galOpen: false,     // the candidates filmstrip is shown while picking
   galThumbs: [],      // [{i, cand, label}] — the canvas is drawn by legacy.js
+  quoteRows: [],      // [{fab, logo, bare, asm, per}] fab price comparison
+  quoteNote: [],      // [{cls, text}] substitute/unpriced/low-stock/stamp lines
+  xrayStat: '',       // x-ray status line
+  xrayDivs: [],       // [{kind, x, y, w, h}] divergences from the fab scan
+  extBanner: false,   // "file changed on disk" strip
 };
 
 import { useEffect, useState } from './vendor/hooks.module.js';

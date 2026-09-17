@@ -955,16 +955,19 @@ if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open boa
   await withBusy($('qgo'),'comparing…',async()=>{
     const q=Math.max(1,parseInt($('qqty').value)||5);
     const r=await api('/quote',{qty:q,no_parts:$('qbare').checked});
-    if(r.error){$('qout').textContent=r.error;statMsg(r.error);return;}
+    if(r.error){ui.set({quoteRows:[],quoteNote:[{cls:'err',text:r.error}]});
+      statMsg(r.error);return;}
     const _asm=(r.rows||[]).find(x=>x.asm)||{};
     const _alt=_asm.via_alt||[],_unp=_asm.unpriced||[],_low=_asm.low_stock||[],_rsk=_asm.risky||[];
-    $('qout').innerHTML=(r.rows||[]).map(x=>
-      `<div class=qrow>${x.logo?`<img class=qlogo src="${x.logo}" alt="${x.fab} logo" width=64 height=21>`:''}<span class=dim>${x.fab}</span> bare $${x.bare_total}${x.asm_total?` asm $${x.asm_total} ($${x.asm_per_board}/bd)`:''}</div>`).join('')
-      +(_alt.length?`<div class=dim>via substitute: ${_alt.join(', ')}</div>`:'')
-      +(_unp.length?`<div class=warn>unpriced: ${_unp.join(', ')}</div>`:'')
-      +(_low.length?`<div class=warn>low stock: ${_low.join(', ')}</div>`:'')
-      +(_rsk.length?`<div class=warn>lifecycle risk: ${_rsk.join(', ')}</div>`:'')
-      +`<div class=dim>${r.stamp} estimates — re-verify before ordering</div>`;
+    ui.set({
+      quoteRows:(r.rows||[]).map(x=>({fab:x.fab,logo:x.logo||'',bare:x.bare_total,
+        asm:x.asm_total||'',per:x.asm_per_board||''})),
+      quoteNote:[
+        ...(_alt.length?[{cls:'dim',text:`via substitute: ${_alt.join(', ')}`}]:[]),
+        ...(_unp.length?[{cls:'warn',text:`unpriced: ${_unp.join(', ')}`}]:[]),
+        ...(_low.length?[{cls:'warn',text:`low stock: ${_low.join(', ')}`}]:[]),
+        ...(_rsk.length?[{cls:'warn',text:`lifecycle risk: ${_rsk.join(', ')}`}]:[]),
+        {cls:'dim',text:`${r.stamp} estimates — re-verify before ordering`}]});
     statMsg('');
   });
 };
@@ -1219,23 +1222,21 @@ if($('scansvg')){
 let xrayRaw='';
 if($('xrayfile'))$('xrayfile').onchange=()=>{const f=$('xrayfile').files[0];if(!f)return;
   const rd=new FileReader();rd.onload=()=>{xrayRaw=String(rd.result).split(',',1)[1]||'';
-    $('xraystat').textContent=`${f.name} ready — compare to check it`;};
+    ui.set({xrayStat:`${f.name} ready — compare to check it`});};
   rd.readAsDataURL(f);};
 if($('xraysvg'))$('xraysvg').onclick=async()=>{
-  const r=await api('/render',{key:'xray'});if(r.error){$('xraystat').textContent=r.error;return;}
+  const r=await api('/render',{key:'xray'});if(r.error){ui.set({xrayStat:r.error});return;}
   const a=document.createElement('a');
   a.href=`data:image/svg+xml,${encodeURIComponent(r.data)}`;
-  a.download=r.name;a.click();$('xraystat').textContent=r.name;};
+  a.download=r.name;a.click();ui.set({xrayStat:r.name});};
 if($('xraygo'))$('xraygo').onclick=async()=>{
-  if(!xrayRaw){$('xraystat').textContent='pick a fab PNG first';return;}
+  if(!xrayRaw){ui.set({xrayStat:'pick a fab PNG first'});return;}
   const pv=(id,fb)=>{const v=parseFloat($(id).value);return Number.isFinite(v)?v:fb;};
   const r=await api('/xray',{png:xrayRaw,dx:pv('xraydx',0),dy:pv('xraydy',0),
     scale:pv('xraysc',1),thr:Math.round(pv('xraythr',100))});
-  if(r.error){$('xraystat').textContent=r.error;return;}
-  $('xraystat').textContent=`score ${r.score} — missing ${r.missing}px extra ${r.extra}px`;
-  $('xraydivs').innerHTML=(r.divs||[]).map(d=>
-    `<div><span class=dim>${d.kind}</span> ${d.x} ${d.y} ${d.w}x${d.h}mm</div>`).join('')
-    ||'<div class=dim>no divergences</div>';
+  if(r.error){ui.set({xrayStat:r.error,xrayDivs:[]});return;}
+  ui.set({xrayStat:`score ${r.score} — missing ${r.missing}px extra ${r.extra}px`,
+    xrayDivs:(r.divs||[]).map(d=>({kind:d.kind,x:d.x,y:d.y,w:d.w,h:d.h}))});
   if(r.overlay){const w=open('','_blank');if(w)w.document.write(r.overlay);}};
 async function hist(op){
   const r=await api(op,{});
@@ -1350,16 +1351,6 @@ function msg(who,text){ // one conversation, one ordered list (views.js renders 
 function diffLines(text){ // data, not DOM: class per diff line
   return String(text).split('\n').map(ln=>({cls:/^@@|^(\+\+\+|---)/.test(ln)?'dl-at'
     :ln.startsWith('+')?'dl-add':ln.startsWith('-')?'dl-del':'',text:ln}));
-}
-function renderDiff(p,text){
-  p.textContent='';
-  String(text).split('\n').forEach(ln=>{
-    const d=document.createElement('div');
-    d.className=ln.startsWith('@@')||/^(\+\+\+|---)/.test(ln)?'dl-at'
-      :ln.startsWith('+')?'dl-add':ln.startsWith('-')?'dl-del':'';
-    d.textContent=ln;
-    p.appendChild(d);
-  });
 }
 function propose(pr,onQueue){
   pushMsg({kind:'prop',prop:pr.id,path:pr.path,lines:diffLines(pr.diff||''),busy:false});
@@ -1600,20 +1591,22 @@ setTimeout(()=>{
 // auto-reload would clobber it — the user picks the moment).
 let lastHash=null;
 async function watch(){try{
-  const p=await api('/poll',{});
+  // /poll is a GET route: api() POSTs, which answered "unknown path /poll"
+  // and left this strip unable to fire. Same-origin fetch carries the cookie.
+  const p=await fetch('/poll').then(r=>r.json());
   if(lastHash===null){lastHash=p.hash;return;}
-  if(p.hash===lastHash||$('extbanner'))return;
+  if(p.hash===lastHash||ui.state.extBanner)return;
   if(p.clean)return;  // our own save (or untouched) — nothing external
   lastHash=p.hash;
-  const b=document.createElement('button');b.type='button';
-  b.id='extbanner';
-  b.style.cssText='width:100%;border:0;border-radius:0;background:var(--signal);color:#fff;'
-    +'padding:10px 14px;min-height:40px;cursor:pointer;font:600 .9rem var(--sans);text-align:left';
-  if(document.body.classList.contains('dark'))b.style.color='#06130d';
-  b.textContent='file changed on disk — click to reload (your edits stay in undo)';
-  b.onclick=async()=>{const r=await api('/reload',{});setEditor(r.text);applyState(r,false);b.remove();lastHash=null;};
-  document.body.prepend(b);
+  ui.set({extBanner:true});   // views.js renders the strip
 }catch(e){}}
+// one delegated listener: the strip asks, this reloads
+$('app').addEventListener('click',async e=>{
+  if(!e.target.closest('#extbanner'))return;
+  const r=await api('/reload',{});
+  setEditor(r.text);applyState(r,false);
+  ui.set({extBanner:false});lastHash=null;
+});
 // --- knowledgebase panel: notes + datasheets, the agent's own files -----
 // The panel is a component (views.js KbPanel): this shapes what it shows and
 // keeps the fetches, the file writes and the preference calls.
