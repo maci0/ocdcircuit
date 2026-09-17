@@ -227,9 +227,10 @@ offer locally.
 1. Solve-API + KiCad round-trip + Stripe credits (B's MVP — funds the rest).
 2. ~~Copilot-over-MCP reference config~~ DONE (`agents/mcp.json` +
    `agents/SYSTEM.md`: server entry, tool policy, language cheatsheet).
-3. Live sourcing: LCSC price/stock on BOM (unblocks fab-affiliate revenue).
-4. ~~AC-sweep/Bode in sim~~ DONE (studio cycle + Bode readout) — model upload still open.
-5. ODB++/IPC-2581/STEP export (enterprise handoff unblock).
+3. Live sourcing: PARTIAL — live JLC price+stock via knoll, alternates
+   fallback, `low_stock`/`risky` flags in quote/STATUS.md. Still open:
+   LCSC price/stock columns on the BOM itself (unblocks fab-affiliate).
+5. ~~ODB++/IPC-2581/STEP export~~ DONE (honestly-labeled subsets).
 6. Hosted studio (A) only when solve-credits prove demand.
 
 Skipped: Altium/Cadence import, SSO/audit, community platform — add when a

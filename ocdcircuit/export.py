@@ -165,7 +165,12 @@ def kicad_layers(n: int) -> list[str]:
     return ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
 
 
-def export_jlc(board: Board, outdir: str = "out") -> list[str]:
+def export_jlc(board: Board, outdir: str = "out",
+               pricing: dict[str, tuple[float | None, int | None]] | None = None,
+               ) -> list[str]:
+    """pricing maps ref -> (unit USD-or-None, stock-or-None): when given,
+    the BOM gains Unit$/Stock columns (quote() output feeds it — the
+    exporter itself never touches the network)."""
     from .parts import pads_of
     os.makedirs(outdir, exist_ok=True)
     files: list[str] = []
@@ -363,10 +368,12 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
     # csv.writer, not ",".join: a value carrying a comma (`1k,1%`) used to shift
     # every column (JLC read Designator="1%"), and quoting by hand is a bug per
     # field. lineterminator keeps the LF the rest of the bundle uses.
+    priced = pricing is not None
     with open(fn, "w", newline="", encoding="utf-8") as f:
         cw = csv.writer(f, lineterminator="\n")
         cw.writerow(["Comment", "Designator", "Footprint", "LCSC", "Tol",
-                     "Lcstat", "Alternates"])
+                     "Lcstat", "Alternates"] +
+                    (["Unit$", "Stock"] if priced else []))
         for (value, fp, lcsc, tol, lcstat, dnp), refs in sorted(groups.items()):
             comment = f"{value} (DNP)" if dnp else value
             # alternates: curated per-part substitute lists (stock-outs);
@@ -375,8 +382,16 @@ def export_jlc(board: Board, outdir: str = "out") -> list[str]:
             alts = sorted({a.strip() for r in refs
                            for a in str(byref[r].attrs.get("alternates", "")).split(",")
                            if a.strip()})
-            cw.writerow([comment, ",".join(sorted(refs)), fp, lcsc, tol,
-                         lcstat, ";".join(alts)])
+            row: list[str] = [comment, ",".join(sorted(refs)), fp, lcsc, tol,
+                              lcstat, ";".join(alts)]
+            if priced:
+                assert pricing is not None
+                ps = [pricing.get(r, (None, None)) for r in refs]
+                units = {p for p, _ in ps if p is not None}
+                stocks = [s for _, s in ps if s is not None]
+                row += [f"{min(units):.4f}" if units else "",
+                        str(min(stocks)) if stocks else ""]
+            cw.writerow(row)
     files.append(fn)
     fn = os.path.join(outdir, f"{board.name}.CPL.csv")
     # DNP excluded: CPL drives the pick-and-place machine, BOM marks the
