@@ -195,7 +195,7 @@ def assembled(board: Board, qty: int = 5) -> dict[str, object]:
     rows = assembly_parts(board)
     joints = sum(cast(int, r["pins"]) for r in rows)
     fees = (_D(JLC_SETUP) + _D(JLC_STENCIL) + _D(JLC_CONFIRM)
-            + _D(joints) * _D(JLC_SMT_JOINT))
+            + _D(joints) * qty * _D(JLC_SMT_JOINT))
     parts_total = Decimal(0)
     unpriced: list[str] = []
     via_alt: list[str] = []

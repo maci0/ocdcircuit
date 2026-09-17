@@ -677,6 +677,12 @@ assert [r["fab"] for r in _qrows][:2] == ["jlc", "allpcb"], _qrows[:3]
 _jasm = cast(dict[str, object], [r for r in _qrows if r["fab"] == "jlc"][0]["asm"])
 assert _jasm["parts_per_board"] == 0.03 and _jasm["sources"] == {"manual": 2}, _jasm
 assert _jasm["unpriced"] == [], _jasm
+assert _jasm["fees"] == 16.33, _jasm
+_qsingle = _qq.assembled(_qb, qty=1)
+_qhundred = _qq.assembled(_qb, qty=100)
+assert _qsingle["joints"] == _qhundred["joints"] == 4
+assert _qsingle["fees"] == 16.31 and _qsingle["total"] == 16.34, _qsingle
+assert _qhundred["fees"] == 16.94 and _qhundred["total"] == 19.94, _qhundred
 # alternates price when the primary MPN is unpriced (stock-out fallback)
 from unittest import mock as _qaltmock
 from ocdcircuit.circuit import Board as _QAltBoard
