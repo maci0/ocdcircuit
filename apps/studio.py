@@ -2805,6 +2805,10 @@ def board_state(b: Board, text: str, frames: list[dict[str, object]],
                         if isinstance(v, (int, float))}
             from ocdcircuit import sim as _sim
             sim_problems = [str(p) for p in _sim.expect(b)]
+            try:
+                sim_problems += [str(p) for p in _sim.expect_tran(b)]
+            except (ValueError, KeyError, AssertionError):
+                pass
         except (ValueError, KeyError, AssertionError):
             sim_nets = {}
     from ocdcircuit.drc import pour_layers as _pours

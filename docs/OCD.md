@@ -134,6 +134,7 @@ sim op U1 LM358 3 2 8 4 1    # ngspice opamp: REF MODEL pin… (simulate:ngspice
 sim ac 10 100000 20          # AC sweep f0 f1 npts (ngspice dec sweep)
 sim lib models.lib           # extra SPICE include for simulate:ngspice
 sim expect VO == 5 tol 0.1   # assertion: VO==5 ±0.1 (red in studio/MCP/CLI)
+sim expect VO final ~ 5      # tran-wave stat: final|min|max over the wave
 sim clk CLK 4                # square-wave stimulus, period [duty] (gates)
 ```
 

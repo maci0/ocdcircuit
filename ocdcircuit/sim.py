@@ -352,3 +352,46 @@ def expect(board: Board) -> list[str]:
         elif not ok:
             out.append(f"sim {net}={got:.3f}V, want {op} {want:g}V")
     return out
+
+
+def expect_tran(board: Board) -> list[str]:
+    """Evaluate `sim expect NET final|min|max <op> VALUE` over the tran wave.
+    Same op/tol semantics as expect(); empty = all pass. No stat = DC path."""
+    wants = [c for c in _sim_constraints(board)
+             if c.get("kind") == "expect" and c.get("stat") is not None]
+    if not wants:
+        return []
+    try:
+        waves = tran(board)
+    except (ValueError, KeyError, AssertionError):
+        return ["sim tran failed — cannot evaluate expectations"]
+    out: list[str] = []
+    for c in wants:
+        net = str(c.get("net", ""))
+        stat = str(c.get("stat", "final"))
+        op = str(c.get("op", "=="))
+        try:
+            want = parse_value(str(c.get("value", "0")))
+            ts = str(c.get("tol", "5%"))
+            tol = float(ts[:-1]) / 100.0 if ts.endswith("%") else parse_value(ts)
+        except ValueError:
+            out.append(f"sim expect {net} {stat}: bad value")
+            continue
+        wave = waves.get(net)
+        if not wave:
+            out.append(f"sim expect {net} {stat}: unknown net")
+            continue
+        got = wave[-1] if stat == "final" else (
+            min(wave) if stat == "min" else max(wave))
+        ok = (abs(got - want) <= abs(want) * tol + 1e-9 if op == "~" else
+              got == want if op == "==" else
+              got != want if op == "!=" else
+              got < want if op == "<" else
+              got > want if op == ">" else
+              got <= want if op == "<=" else
+              got >= want if op == ">=" else None)
+        if ok is None:
+            out.append(f"sim expect {net} {stat}: bad op {op!r}")
+        elif not ok:
+            out.append(f"sim {net} {stat}={got:.3f}V, want {op} {want:g}V")
+    return out

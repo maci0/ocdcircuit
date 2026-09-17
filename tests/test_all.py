@@ -234,6 +234,7 @@ for _line in ["keep R1 near C1 3", "fix R1 at 3 5", "route N on 1", "trace N 0.6
               "sim tran 0.01 100", "sim probe N", "sim clk N 2",
               "sim expect N == 5", "sim r R1 10k", "sim op N V 0 5",
               "sim lib x.lib", "sim ac 10 1000 5",
+              "sim expect N final == 5", "sim expect N max ~ 5 tol 2%",
               "assert R1.1 connected", "assert N != GND", "assert parts <= 40"]:
     _cb2 = agent.loads(_pre + _line + "\n", base=EX)
     _rt = agent.dumps(_cb2)
@@ -3262,6 +3263,19 @@ _sime = agent.loads("board t 40x30\npart R1 R0805 10k\npart R2 R0805 4k7\n"
                     "sim expect VO ~ 2.88\nsim expect VIN == 9\nsim expect VO == 5\n")
 assert _sim.expect(_sime) == ["sim VO=2.878V, want == 5V"], _sim.expect(_sime)
 assert agent.dumps(agent.loads(agent.dumps(_sime), base=EX)) == agent.dumps(_sime)
+# tran-wave assertions: final/max over the wave, same op/tol semantics
+_simt = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                    "net VIN: R1.1\nnet VO: R1.2 C1.1\nnet GND: C1.2\n"
+                    "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n"
+                    "sim expect VO final ~ 5\nsim expect VO max ~ 5\n")
+assert _sim.expect_tran(_simt) == [], _sim.expect_tran(_simt)
+_simtf = agent.loads("board t 40x30\npart R1 R0805 10k\npart C1 C0805 100n\n"
+                     "net VIN: R1.1\nnet VO: R1.2 C1.1\nnet GND: C1.2\n"
+                     "sim vcc VIN 0 5\nsim tran 0.005 500\nsim probe VO\n"
+                     "sim expect VO final == 0\n")
+_got = _sim.expect_tran(_simtf)
+assert len(_got) == 1 and _got[0].startswith("sim VO final=") and "want == 0V" in _got[0], _got
+assert agent.dumps(agent.loads(agent.dumps(_simt), base=EX)) == agent.dumps(_simt)
 # sim r/c/l overrides beat part values in the solve
 _simo = agent.loads("board t 40x30 2L\npart R1 R0805 10k\npart R2 R0805 10k\n"
                     "net VIN: R1.1\nnet VO: R1.2 R2.1\nnet GND: R2.2\n"

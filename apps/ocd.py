@@ -285,6 +285,12 @@ def cmd_run(agent: object, args: list[str]) -> int:  # agent: ocdcircuit.agent
             rows = [(k, f"final={v[-1]:.3f}V min={min(v):.3f} max={max(v):.3f} ({len(v)} pts)")
                     for k, v in sorted(waves.items())]
             _table("sim tran", rows)
+            from ocdcircuit import sim as _simt
+            _tfails = _simt.expect_tran(b)
+            for p in _tfails:
+                _out().print(f"  [red]⚡✗ {p}[/red]")
+            if _tfails:
+                errors = [*errors, *["sim: " + p for p in _tfails]]
     if errors:
         for item in errors:
             _out().print(f"  [red]✗ {item}[/red]")

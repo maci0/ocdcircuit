@@ -325,6 +325,15 @@ def parse_constraint(text: str, *, layers: int = 2) -> Constraint | None:
         if m.group(4) is not None:
             e["tol"] = m.group(4)
         return e
+    # transient finals: `sim expect VO final == 5` (also min/max over wave)
+    m = re.match(r"sim\s+expect\s+(\w+)\s+(final|min|max)\s*(==|!=|<=|>=|<|>|~)\s*(\S+)(?:\s+tol\s+(\S+))?$", t, re.I)
+    if m:
+        te: Constraint = {"t": "sim", "kind": "expect", "net": m.group(1),
+                          "stat": m.group(2).lower(), "op": m.group(3),
+                          "value": m.group(4)}
+        if m.group(5) is not None:
+            te["tol"] = m.group(5)
+        return te
     m = re.match(r"sim\s+([rcldq])\s+(\w+)\s+(\S+)$", t, re.I)
     if m:
         return {"t": "sim", "kind": m.group(1), "ref": m.group(2), "value": m.group(3)}
@@ -551,7 +560,10 @@ def _dump_sim(c: Constraint) -> str:
             s += f" {_f(c.get('duty')):g}"
         return s
     if k == "expect":
-        s = f"sim expect {c['net']} {c.get('op', '==')} {c.get('value', '0')}"
+        s = f"sim expect {c['net']} "
+        if c.get("stat") is not None:
+            s += f"{c['stat']} "
+        s += f"{c.get('op', '==')} {c.get('value', '0')}"
         if c.get("tol") is not None:
             s += f" tol {c['tol']}"
         return s
