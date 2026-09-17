@@ -611,21 +611,24 @@ assert _ie.fiber.ctx._intercept == {"svc": {"other": 1}}
 import tempfile
 from ocdcircuit import agent as _ag
 from ocdcircuit.util import read_text as _rt, write_text as _wt
-_td = tempfile.mkdtemp()
-_child = os.path.join(_td, "子.ocd")
-_wt(_child, "# café — comment\nboard child 10x10\npart R1 R0805 1k\n")
-_parent = os.path.join(_td, "p.ocd")
-_wt(_parent, "board p 20x10\nuse 子.ocd\npart C1 C0805 100n\n")
-_b = _ag.loads(_rt(_parent), base=_td)
-assert "child_R1" in _b.parts, sorted(_b.parts)
-# latin-1 bytes must not be silently mis-decoded as utf-8 on use
-_bad = os.path.join(_td, "bad.ocd")
-open(_bad, "wb").write(b"board x 10x10\n# \xff\xfe latin-1 only\n")
-try:
-    _ag.loads("board t 10x10\nuse bad.ocd\n", base=_td)
-    raise AssertionError("expected utf-8 decode failure on use")
-except Exception as _e:
-    assert "utf-8" in str(_e).lower() or "unicode" in type(_e).__name__.lower(), _e
+with tempfile.TemporaryDirectory() as _td:
+    _child = os.path.join(_td, "子.ocd")
+    _wt(_child, "# café — comment\nboard child 10x10\npart R1 R0805 1k\n")
+    _parent = os.path.join(_td, "p.ocd")
+    _wt(_parent, "board p 20x10\nuse 子.ocd\npart C1 C0805 100n\n")
+    _b = _ag.loads(_rt(_parent), base=_td)
+    assert "child_R1" in _b.parts, sorted(_b.parts)
+    # latin-1 bytes must not be silently mis-decoded as utf-8 on use
+    _bad = os.path.join(_td, "bad.ocd")
+    with open(_bad, "wb") as _bad_file:
+        _bad_file.write(b"board x 10x10\n# \xff\xfe latin-1 only\n")
+    try:
+        _ag.loads("board t 10x10\nuse bad.ocd\n", base=_td)
+    except _ag.ParseError as _e:
+        assert _e.line == 2, _e
+        assert "not utf-8" in _e.msg and "bad.ocd" in _e.msg, _e
+    else:
+        raise AssertionError("expected utf-8 decode failure on use")
 
 # OLE name truncation must not leave a lone UTF-16 high surrogate
 from ocdcircuit.foreign import _ole_name as _ole_nm
