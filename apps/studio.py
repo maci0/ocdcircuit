@@ -127,7 +127,7 @@ PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8><title>OCD Stu
 <div id=app></div>
 <script type=application/json id=slots>/*__SLOTS__*/</script>
 <script type=module src=/web/workshop.js></script>
-<script type=module src=/web/legacy.js></script>
+<script type=module src=/web/runtime.js></script>
 </body></html>
 """
 

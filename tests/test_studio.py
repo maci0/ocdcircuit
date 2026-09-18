@@ -34,7 +34,8 @@ const $=()=>({contains:n=>!!(n&&n.ed)});
 const S={cur:{parts:{U1:1,R1:1,R2:1,PSU_J1:1}}};
 let sel={isCollapsed:false,anchorNode:{ed:1},text:'',toString(){return this.text;}};
 const window={getSelection:()=>sel};
-let edHl=new Set(), edPin=new Set();
+const edHl=new Set(), edPin=new Set();
+const H={board:()=>S.cur,markDirty};
 """
 HL_DRIVE = """
 function pick(text,inside){sel={isCollapsed:text==='',anchorNode:inside?{ed:1}:{ed:0},
@@ -130,7 +131,7 @@ class SimulationReadoutTests(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+        with open(os.path.join(ROOT, "apps", "web", "status.js")) as source:
             script = source.read().split("function drawDRC(r){", 1)[1].split(
                 "function tidyVal", 1)[0]
         drive = """
@@ -387,14 +388,14 @@ class RevisionAccessTests(unittest.TestCase):
 
 class UploadTests(unittest.TestCase):
     def run_handler(self, start: str, end: str, drive: str,
-                    module: str = "legacy.js") -> None:
+                    module: str = "actions.js") -> None:
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
         with open(os.path.join(ROOT, "apps", "web", module)) as source:
             script = source.read().split(start, 1)[1]
-            if end:
-                script = script.split(end, 1)[0]
+            if end:  # the marker is kept: callers pass a terminator or a type
+                script = script.split(end, 1)[0] + end
         stub = """
 import assert from 'node:assert/strict';
 const elements = {};
@@ -406,6 +407,7 @@ const api = async (path, body) => {
   return path === '/fs/import' ? {note:'imported test.fp'} :
     {score:1, missing:0, extra:0, divs:[]};
 };
+const H = {push(){}};
 let refreshed = false;
 const reloadTree = () => {refreshed = true;};   // tree.js re-lists the dir
 const setEditor = () => {};
@@ -424,7 +426,8 @@ class FileReader {
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_import_payload(self) -> None:
-        self.run_handler("if($('importfile'))", "function unpinRefs", """
+        self.run_handler("if($('importfile'))",
+                         "rd.readAsDataURL(f);$('importfile').value='';};", """
 const payload = Buffer.from('footprint TINY 1x1\\npad 1 0 0 0.5 0.5\\n').toString('base64');
 $('importfile').files = [{name:'test.fp', url:'data:text/plain;base64,' + payload}];
 $('importfile').onchange();
@@ -1104,7 +1107,11 @@ def main() -> None:
         # shell as slot markup, the chrome is a preact module, the behaviour is
         # a module, and the tokens are a stylesheet. Assert each where it lives.
         _chrome = open(os.path.join(_JS, "workshop.js")).read()
-        _wjs = open(os.path.join(_JS, "legacy.js")).read()
+        _wjs = open(os.path.join(_JS, "runtime.js")).read()
+        _cajs = open(os.path.join(_JS, "canvas.js")).read()
+        _ejs = open(os.path.join(_JS, "editor.js")).read()
+        _djs = open(os.path.join(_JS, "drag.js")).read()
+        _ajs2 = open(os.path.join(_JS, "actions.js")).read()
         _wcss = open(os.path.join(_JS, "workshop.css")).read()
         # the tab table is data now (VIEWS in workshop.js), so the row is the
         # marker: one view id per tab, plus the toggle
@@ -1114,9 +1121,15 @@ def main() -> None:
         # …plus runtime-built pieces (created by JS)
         # and the followups CSS rule (in the stylesheet)
         _ajs = open(os.path.join(_JS, "agent.js")).read()
-        for frag in ("setDark", "setView", "showCockpit", "contextmenu",
-                     "rotRefs", "unpinRefs"):
-            assert frag in _wjs, f"flux work missing: {frag}"
+        # each piece is asserted where it now lives
+        for frag in ("setDark", "setView", "showCockpit", "download ${key}",
+                     "sim ${simWhat}"):
+            assert frag in _ajs2, f"actions missing: {frag}"
+        assert "contextmenu" in _djs, "PCB gestures missing from drag.js"
+        for frag in ("rotRefs", "unpinRefs"):
+            assert frag in _ejs, f"editor edit missing: {frag}"
+        for frag in ("withBusy", "applyState", "cancelPush"):
+            assert frag in _wjs, f"runtime missing: {frag}"
         # the chat turn moved to its own module: its trace, chips and proposal
         # guards are asserted there
         for frag in ("followups", "thought", "kind: 'plan'", "kind: 'log'",
@@ -1186,7 +1199,7 @@ def main() -> None:
         _w = get(base, "/").decode()  # still authed: the workshop shell
         # chrome + panels are modules, behaviour is a module, and the slot JSON
         # carries plugin markup only
-        assert 'src=/web/workshop.js' in _w and 'src=/web/legacy.js' in _w, _w[:400]
+        assert 'src=/web/workshop.js' in _w and 'src=/web/runtime.js' in _w, _w[:400]
         assert 'href="/web/workshop.css"' in _w, _w[:400]
         assert "id=slots" in _w, "slot islands must ship with the shell"
         assert "id=app" in _w, "mount point missing from the shell"
@@ -1194,8 +1207,8 @@ def main() -> None:
         assert "fromTemplate" in _lpjs, "template double-click guard missing"
         assert "if (!text || (go && go.disabled) || $('chatclear').disabled) return false;" \
             in _ajs, "chat submit busy guard missing"
-        assert "download ${key}" in _wjs or "download ${" in _wjs, "download label must stay a word"
-        assert "sim ${simWhat}" in _wjs or "sim ${" in _wjs, "sim label must stay a word"
+        assert "download ${key}" in _ajs2, "download label must stay a word"
+        assert "sim ${simWhat}" in _ajs2, "sim label must stay a word"
         # modal lives on the landing page, but its data path is the shelf:
         # template copy + blank-from-search-text both work while authed
         _t2 = post(base, "/shelf/from_template", {"name": "psu.ocd"})
@@ -1435,11 +1448,11 @@ def main() -> None:
         assert "error" in _qqbad, _qqbad
         print(f"quote ok (cheapest={_qrows[0]['fab']} bare=${_qrows[0]['bare_total']})")
 
-        # behaviour ships as a module (apps/web/legacy.js, served at /web/):
-        # syntax + the highlight wiring. node is dev-only here — skip rather
-        # than fail when it is absent.
+        # the runtime and its modules ship as ESM (served at /web/): syntax +
+        # the highlight wiring. node is dev-only here — skip rather than fail
+        # when it is absent.
         node = shutil.which("node")
-        pjs = _wjs
+        pjs = _ejs
         if not node:
             print("no node: editor-highlight check skipped")
         else:
@@ -1464,15 +1477,17 @@ def main() -> None:
             # every frontend module must parse as ESM: the browser half sees
             # them only once authenticated, and a syntax error there is a
             # blank page (this is the gate the inline page got for free)
-            for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
-                         "html.js", "api.js", "store.js", "core.js", "collab.js",
-                         "kb.js", "vcs.js", "gallery.js", "scan.js", "agent.js",
-                         "xray.js", "calc.js", "tree.js", "visibility.js"):
+            for _mod in ("workshop.js", "panels.js", "views.js", "runtime.js",
+                         "canvas.js", "editor.js", "schematic.js", "status.js",
+                         "drag.js", "actions.js", "html.js", "api.js", "store.js",
+                         "core.js", "collab.js", "kb.js", "vcs.js", "gallery.js",
+                         "scan.js", "agent.js", "xray.js", "calc.js", "tree.js",
+                         "visibility.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
             print("editor highlight → pcb/sch ok")
-        assert pjs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
+        assert _cajs.count("edHl.has") >= 2, "PCB + SCH must both read edHl"
         # the chrome is a module too: menus, tabs and pills are htm now
         for _frag in ("id=m-board", "id=m-edit", "id=m-tools",
                       "id=viewtabs", "id=themebtn", "id=logoutbtn", "id=cost"):
@@ -1486,7 +1501,7 @@ def main() -> None:
         # this hint is panel markup (panels.js), not behaviour
         assert "shift-drag a trace previews the shove" in _panels, \
             "seg-drag hint missing"
-        assert "function hitSeg(" in pjs, "hitSeg missing from legacy.js"
+        assert "function hitSeg(" in _djs, "hitSeg missing from drag.js"
         if shutil.which("node"):
             with tempfile.TemporaryDirectory() as _td2:
                 _ent2 = os.path.join(_td2, "gal.js")
@@ -1743,7 +1758,7 @@ def main() -> None:
                     assert _st.get("tabs") == 5, _st
                     assert cast(int, _st.get("panels") or 0) >= 6, _st
                     assert cast(int, _st.get("paint") or 0) > 0, _st
-                    # the chrome is store-driven now: legacy.js pushes the
+                    # the chrome is store-driven now: the runtime pushes the
                     # numbers, preact renders them (apps/web/store.js), and a
                     # store update must not wipe what legacy put in the menus.
                     _cost = str(_cdp.eval("document.querySelector('#cost').textContent"))
@@ -1846,7 +1861,7 @@ def main() -> None:
                     else:
                         raise AssertionError("up-row did not return to the root")
                     # candidates filmstrip: rows and captions are components,
-                    # the frames are painted by legacy.js through a registered
+                    # the frames are painted by canvas.js through a registered
                     # painter, and shift-click compares instead of adopting
                     assert str(_cdp.eval("getComputedStyle(document.querySelector"
                                          "('#galwrap')).display")) == "none", \
@@ -1973,7 +1988,7 @@ def main() -> None:
                     else:
                         raise AssertionError("busy label never cleared")
                     # quote rows carry their fab's own logo tile, and the
-                    # notes under them are state (no innerHTML in legacy.js)
+                    # notes under them are state (no innerHTML anywhere)
                     _cdp.eval("(()=>{document.querySelector('#qgo').click();return 1;})()")
                     for _ in range(60):
                         time.sleep(0.5)
@@ -2143,7 +2158,7 @@ def main() -> None:
                         raise AssertionError("toast never cleared")
                     # layer and part visibility rows are components too: the
                     # row state and the note come from the store, and the
-                    # change is delegated back to legacy.js (VIS + canvas)
+                    # change is delegated back to visibility.js (VIS + canvas)
                     assert int(str(_cdp.eval(
                         "document.querySelectorAll('#cu label').length"))) >= 2, \
                         "copper layer rows missing"
@@ -2180,7 +2195,7 @@ def main() -> None:
                     # the panel contents are components now (views.js): the
                     # DRC strip and the tidy list render from the store, so a
                     # build that fails must repaint them — no innerHTML in
-                    # legacy.js for either.
+                    # the panel modules for either.
                     assert int(str(_cdp.eval(
                         "document.querySelectorAll('#tidy>div').length"))) > 0, \
                         "tidy list never rendered"
