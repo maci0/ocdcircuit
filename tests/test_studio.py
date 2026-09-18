@@ -533,9 +533,11 @@ class ChatFormTests(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+        # the chat turn lives in apps/web/agent.js now: slice its helpers (from
+        # the message counter to the end) and wire initAgent in the drive
+        with open(os.path.join(ROOT, "apps", "web", "agent.js")) as source:
             script = source.read()
-        handler = script.split("let msgSeq=0;", 1)[1].split("function toast(", 1)[0]
+        handler = script.split("let msgSeq = 0;", 1)[1].replace("export ", "")
         stub = """
 import assert from 'node:assert/strict';
 const elements = {};
@@ -553,9 +555,12 @@ const api = async (path, body) => {
 };
 const applyState = () => {};
 const loadVCS = () => {};
+let d = {applyState, loadVCS, setEditor(){}};
 """
         result = subprocess.run(
-            [node, "--input-type=module"], input=stub + "let msgSeq=0;" + handler + drive,
+            [node, "--input-type=module"],
+                        input=stub + "let msgSeq = 0;" + handler
+                        + "\ninitAgent(d);\n" + drive,
             capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -1100,9 +1105,15 @@ def main() -> None:
             assert frag in _chrome, f"flux work missing: {frag}"
         # …plus runtime-built pieces (created by JS)
         # and the followups CSS rule (in the stylesheet)
-        for frag in ("setDark", "setView", "showCockpit", "followups", "thought",
-                     "contextmenu", "rotRefs", "unpinRefs"):
+        _ajs = open(os.path.join(_JS, "agent.js")).read()
+        for frag in ("setDark", "setView", "showCockpit", "contextmenu",
+                     "rotRefs", "unpinRefs"):
             assert frag in _wjs, f"flux work missing: {frag}"
+        # the chat turn moved to its own module: its trace, chips and proposal
+        # guards are asserted there
+        for frag in ("followups", "thought", "kind: 'plan'", "kind: 'log'",
+                     "kind: 'prop'", "data-act"):
+            assert frag in _ajs, f"agent turn missing: {frag}"
         assert "followups:empty" in _wcss, "flux work missing: followups:empty"
         # proper menus: solve stays top-level, the rest lives in named menus
         for frag in ("id=m-board", "id=m-edit", "id=m-sim",
@@ -1173,7 +1184,8 @@ def main() -> None:
         assert "id=app" in _w, "mount point missing from the shell"
         assert "withBusy" in _wjs, "long-action busy feedback missing"
         assert "fromTemplate" in _lpjs, "template double-click guard missing"
-        assert "if(!text||(go&&go.disabled)||$('chatclear').disabled)return false;" in _wjs, "chat submit busy guard missing"
+        assert "if (!text || (go && go.disabled) || $('chatclear').disabled) return false;" \
+            in _ajs, "chat submit busy guard missing"
         assert "download ${key}" in _wjs or "download ${" in _wjs, "download label must stay a word"
         assert "sim ${simWhat}" in _wjs or "sim ${" in _wjs, "sim label must stay a word"
         # modal lives on the landing page, but its data path is the shelf:
@@ -1446,7 +1458,7 @@ def main() -> None:
             # blank page (this is the gate the inline page got for free)
             for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
                          "html.js", "api.js", "store.js", "core.js", "collab.js",
-                         "kb.js", "vcs.js", "gallery.js", "scan.js"):
+                         "kb.js", "vcs.js", "gallery.js", "scan.js", "agent.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
