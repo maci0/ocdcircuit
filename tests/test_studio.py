@@ -456,10 +456,12 @@ class PartFilterTests(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
+        # the part filter lives in apps/web/visibility.js: slice its predicates
+        # and the row shaping, which is all this test exercises
+        with open(os.path.join(ROOT, "apps", "web", "visibility.js")) as source:
             script = source.read()
-        visibility = script.split("function partShown", 1)[1].split("function drawPCB", 1)[0]
-        rows = script.split("const MAX_ROWS=", 1)[1].split("$('partlist').addEventListener", 1)[0]
+        visibility = script.split("function partShown", 1)[1].split("function renderLayers", 1)[0]
+        rows = script.split("const MAX_ROWS=", 1)[1].split("function onlyBox", 1)[0]
         drive = """
 import assert from 'node:assert/strict';
 const VIS={parts:{R1:false},filter:'  r0805  '};
@@ -467,6 +469,7 @@ const S={cur:{parts:{R1:{value:'10k',fp:'R0805'},C1:{value:'100n',fp:'C0805'}}}}
 const edHl=new Set();
 const ui={state:{partRows:[]},set(patch){Object.assign(this.state,patch);}};
 const visSave=()=>{},markDirty=()=>{};
+const d={board:()=>S.cur,edHl:()=>edHl,markDirty};
 """ + "function partShown" + visibility + "const MAX_ROWS=" + rows + """
 renderParts();
 assert.deepEqual(ui.state.partRows.map(r=>r.ref),['R1']);
@@ -1464,7 +1467,7 @@ def main() -> None:
             for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
                          "html.js", "api.js", "store.js", "core.js", "collab.js",
                          "kb.js", "vcs.js", "gallery.js", "scan.js", "agent.js",
-                         "xray.js", "calc.js", "tree.js"):
+                         "xray.js", "calc.js", "tree.js", "visibility.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])
