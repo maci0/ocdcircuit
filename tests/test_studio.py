@@ -386,12 +386,15 @@ class RevisionAccessTests(unittest.TestCase):
 
 
 class UploadTests(unittest.TestCase):
-    def run_handler(self, start: str, end: str, drive: str) -> None:
+    def run_handler(self, start: str, end: str, drive: str,
+                    module: str = "legacy.js") -> None:
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        with open(os.path.join(ROOT, "apps", "web", "legacy.js")) as source:
-            script = source.read().split(start, 1)[1].split(end, 1)[0]
+        with open(os.path.join(ROOT, "apps", "web", module)) as source:
+            script = source.read().split(start, 1)[1]
+            if end:
+                script = script.split(end, 1)[0]
         stub = """
 import assert from 'node:assert/strict';
 const elements = {};
@@ -434,7 +437,10 @@ assert.equal($('importfile').value, '');
 """)
 
     def test_xray_payload(self) -> None:
-        self.run_handler("let xrayRaw='';", "async function hist", """
+        # the x-ray handlers live in apps/web/xray.js: take its module state and
+        # initXray, which the drive calls before touching the inputs
+        self.run_handler("let xrayRaw = '';", "", """
+initXray();
 const payload = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
 $('xrayfile').files = [{name:'scan.png', url:'data:image/png;base64,' + payload}];
 $('xrayfile').onchange();
@@ -443,7 +449,7 @@ assert.match(ui.state.xrayStat, /scan.png ready/);
 await $('xraygo').onclick();
 assert.deepEqual(calls, [{path:'/xray', body:{png:payload, dx:0, dy:0, scale:1, thr:100}}]);
 assert.match(ui.state.xrayStat, /score 1/);
-""")
+""", module="xray.js")
 
 
 class PartFilterTests(unittest.TestCase):
@@ -1458,7 +1464,8 @@ def main() -> None:
             # blank page (this is the gate the inline page got for free)
             for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
                          "html.js", "api.js", "store.js", "core.js", "collab.js",
-                         "kb.js", "vcs.js", "gallery.js", "scan.js", "agent.js"):
+                         "kb.js", "vcs.js", "gallery.js", "scan.js", "agent.js",
+                         "xray.js", "calc.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])

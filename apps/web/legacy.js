@@ -13,6 +13,8 @@ import { commitBoard, initVcs, loadVCS, setVcs } from './vcs.js';
 import { genCands, initGallery } from './gallery.js';
 import { initScan } from './scan.js';
 import { clearProposals, initAgent, msg } from './agent.js';
+import { initXray } from './xray.js';
+import { initCalc } from './calc.js';
 let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
 function fit(cv){ // size canvas once per real resize; dpr capped (4x pixels buy nothing)
@@ -810,23 +812,6 @@ $('simbtn').onclick=async()=>{ // dc → tran → ac cycle on shift-click
   });
 };
 // Ω calculators: same math as ocdcircuit/calc.py, instant, no round-trip
-function calcLive(){
-  const A=parseFloat($('ca').value)||0,dT=parseFloat($('cdt').value)||10;
-  const area=Math.pow(A/(0.048*Math.pow(dT,0.44)),1/0.725); // IPC-2221 ext 1oz
-  const c=`${(area/1.378*0.0254).toFixed(2)}mm ext, via ${(A/(3*Math.sqrt(dT/10))).toFixed(2)}mm drill`;
-  const pv=v=>{const m=String(v).match(/^([\d.]+)(k|M)?$/i);return m?parseFloat(m[1])*(m[2]?({k:1e3,M:1e6})[m[2].toLowerCase()]||1:1):NaN;};
-  const V=pv($('dv').value),Rt=pv($('drt').value),Rb=pv($('drb').value);
-  const d=(V>=0&&Rt>0&&Rb>0)?`Vout ${(V*Rb/(Rt+Rb)).toFixed(2)}V`:'';
-  const zw=parseFloat($('zw').value)||0,zh=parseFloat($('zh').value)||0;
-  let z='';
-  if(zw>0&&zh>0){const u=zw/zh,er=4.4;
-    const ere=(er+1)/2+(er-1)/2/Math.sqrt(1+12/u);
-    const z0=u<=1?60/Math.sqrt(ere)*Math.log(8/u+u/4)
-      :120*Math.PI/(Math.sqrt(ere)*(u+1.393+0.667*Math.log(u+1.444)));
-    z=`Z0 ~${z0.toFixed(1)}Ω (microstrip FR4, estimate)`;}
-  ui.set({calc:{c,d,z}});
-}
-['ca','cdt','dv','drt','drb','zw','zh'].forEach(id=>$(id).addEventListener('input',calcLive));
 if($('qgo'))$('qgo').onclick=async()=>{ // fab price comparison for the open board
   await withBusy($('qgo'),'comparing…',async()=>{
     const q=Math.max(1,parseInt($('qqty').value)||5);
@@ -859,25 +844,6 @@ $('doc').addEventListener('toggle',async()=>{ // lazy: check on first open
 });
 // undo/redo: server keeps text history (git-style log); undo restores + rebuilds
 // x-ray: reference download + fab-scan upload vs the design (score + boxes)
-let xrayRaw='';
-if($('xrayfile'))$('xrayfile').onchange=()=>{const f=$('xrayfile').files[0];if(!f)return;
-  const rd=new FileReader();rd.onload=()=>{xrayRaw=String(rd.result).split(',')[1]||'';
-    ui.set({xrayStat:`${f.name} ready — compare to check it`});};
-  rd.readAsDataURL(f);};
-if($('xraysvg'))$('xraysvg').onclick=async()=>{
-  const r=await api('/render',{key:'xray'});if(r.error){ui.set({xrayStat:r.error});return;}
-  const a=document.createElement('a');
-  a.href=`data:image/svg+xml,${encodeURIComponent(r.data)}`;
-  a.download=r.name;a.click();ui.set({xrayStat:r.name});};
-if($('xraygo'))$('xraygo').onclick=async()=>{
-  if(!xrayRaw){ui.set({xrayStat:'pick a fab PNG first'});return;}
-  const pv=(id,fb)=>{const v=parseFloat($(id).value);return Number.isFinite(v)?v:fb;};
-  const r=await api('/xray',{png:xrayRaw,dx:pv('xraydx',0),dy:pv('xraydy',0),
-    scale:pv('xraysc',1),thr:Math.round(pv('xraythr',100))});
-  if(r.error){ui.set({xrayStat:r.error,xrayDivs:[]});return;}
-  ui.set({xrayStat:`score ${r.score} — missing ${r.missing}px extra ${r.extra}px`,
-    xrayDivs:(r.divs||[]).map(d=>({kind:d.kind,x:d.x,y:d.y,w:d.w,h:d.h}))});
-  if(r.overlay){const w=open('','_blank');if(w)w.document.write(r.overlay);}};
 async function hist(op){
   const r=await api(op,{});
   if(r.error){statMsg(r.error);return;}
@@ -1083,6 +1049,8 @@ initVcs({srcRel:()=>SRCREL,statMsg,toast});
 initGallery({board:()=>S,palette:()=>C,statMsg,applyState,withBusy,drawFeas});
 initScan({push,setEditor});
 initAgent({applyState,loadVCS,setEditor});
+initXray();
+initCalc();
 (async()=>{await boot();})();
 if(location.search.includes('perf')){
 setTimeout(()=>{
