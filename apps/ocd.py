@@ -113,7 +113,8 @@ class _Printer:
     def __init__(self, *, stderr: bool = False) -> None:
         try:
             from rich.console import Console
-            self._c: object = Console(stderr=stderr)
+            # highlight=False: numbers in quote/status lines stay literal
+            self._c: object = Console(stderr=stderr, highlight=False)
         except ImportError:
             self._c = None
         self._stderr = stderr

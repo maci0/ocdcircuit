@@ -15,10 +15,11 @@ else
 endif
 
 # SOURCE_DATE_EPOCH stabilizes fab.zip mtimes for every target.
-# LC_ALL/TZ only on hermetic gate targets — `make run` must keep the host
-# zone so interactive tooling is not forced into UTC.
+# LC_ALL/TZ/NO_COLOR only on hermetic gate targets. `make run` keeps the
+# host zone so interactive tooling is not forced into UTC, and keeps
+# color so the TTY CLI stays readable.
 export SOURCE_DATE_EPOCH ?= 0
-HERMETIC := LC_ALL=C TZ=UTC
+HERMETIC := LC_ALL=C TZ=UTC NO_COLOR=1
 
 .PHONY: help setup check run lint doctor test snap bench farm fabsweep sbom clean
 
