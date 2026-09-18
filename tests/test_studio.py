@@ -406,9 +406,8 @@ const api = async (path, body) => {
   return path === '/fs/import' ? {note:'imported test.fp'} :
     {score:1, missing:0, extra:0, divs:[]};
 };
-const DIR = '.';
 let refreshed = false;
-const loadTree = () => {refreshed = true;};
+const reloadTree = () => {refreshed = true;};   // tree.js re-lists the dir
 const setEditor = () => {};
 const push = () => {};
 let readDone;
@@ -1465,7 +1464,7 @@ def main() -> None:
             for _mod in ("workshop.js", "panels.js", "views.js", "legacy.js",
                          "html.js", "api.js", "store.js", "core.js", "collab.js",
                          "kb.js", "vcs.js", "gallery.js", "scan.js", "agent.js",
-                         "xray.js", "calc.js"):
+                         "xray.js", "calc.js", "tree.js"):
                 _rn3 = subprocess.run([node, "--check", os.path.join(_JS, _mod)],
                                       capture_output=True, text=True, timeout=60)
                 assert _rn3.returncode == 0, (_mod, _rn3.stderr[-400:])

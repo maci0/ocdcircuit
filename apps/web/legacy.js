@@ -14,6 +14,7 @@ import { genCands, initGallery } from './gallery.js';
 import { initScan } from './scan.js';
 import { clearProposals, initAgent, msg } from './agent.js';
 import { initXray } from './xray.js';
+import { initTree, reloadTree, setOpenBoard, srcRel } from './tree.js';
 import { initCalc } from './calc.js';
 let S=null, anim=null;
 const ease=t=>1-Math.pow(1-t,3);
@@ -447,7 +448,7 @@ function cancelPush(){clearTimeout(deb);deb=null;pulseq++;} // switching boards
 $('ed').addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(push,400);});
 async function push(){
   const text=$('ed').innerText, seq=++pulseq;
-  const r=await api('/collab/push',{text,rev:collabRevNow(),src:SRCREL,thash:heldThash,
+  const r=await api('/collab/push',{text,rev:collabRevNow(),src:srcRel(),thash:heldThash,
     placer:$('placer').value,router:$('router').value,
     fab:$('fab').value,silk:$('silk').value});
   if(seq!==pulseq)return;   // the editor moved on (or another board opened)
@@ -657,7 +658,7 @@ if($('importfile'))$('importfile').onchange=()=>{const f=$('importfile').files[0
     ui.set({importStat:'importing '+f.name+'…'});
     const r=await api('/fs/import',{name:f.name,data});
     ui.set({importStat:r.error||r.note||('imported '+f.name)});
-    if(!r.error){loadTree(DIR);if(r.text){setEditor(r.text);push();}}};
+    if(!r.error){reloadTree();if(r.text){setEditor(r.text);push();}}};
   rd.readAsDataURL(f);$('importfile').value='';};
 function unpinRefs(gone){ // drop fix lines for refs; true when something left
   const lines=$('ed').innerText.split('\n')
@@ -879,65 +880,6 @@ $('ed').addEventListener('keydown',e=>{
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();hist('/undo');}
   else if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey))){e.preventDefault();hist('/redo');}
 });
-// --- project files: browse, open, and say which file is the board -------
-let TREE=[],SRCREL='',DIR='.',ROOTREL='.';
-// rows are components (views.js TreePanel): the click is delegated here, so
-// the behaviour stays in this module and the component only describes a row
-$('tree').addEventListener('click',e=>{
-  const b=e.target.closest('button.trow');if(!b||!b.dataset.path)return;
-  const path=b.dataset.path;
-  if(b.dataset.kind==='dir')loadTree(path);
-  else if((b.dataset.name||'').endsWith('.ocd'))openFile(path);
-  else previewFile(path);
-});
-function treeNote(){ // one string, three call sites used to write it by hand
-  ui.set({treeNote:`${DIR==='.'?ROOTREL:DIR} · `
-    +`${TREE.filter(e=>e.kind==='file').length} files`});
-}
-function renderTree(){
-  // one level at a time: this directory, then a way back up while inside root
-  const up=DIR!=='.'
-    ?{name:'.. ('+((DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.')==='.'
-        ?ROOTREL:DIR.replace(/\/[^/]*$/,''))+')',
-      path:DIR.includes('/')?DIR.replace(/\/[^/]*$/,''):'.',kind:'dir'}
-    :null;
-  ui.set({treeUp:up,
-    treeRows:TREE.map(e=>({name:e.name,path:e.path,kind:e.kind,
-      bytes:e.bytes,active:e.path===SRCREL}))});
-}
-async function loadTree(dir){
-  const f=await fetch('/fs?dir='+encodeURIComponent(dir||'.')).then(x=>x.json());
-  if(f.error){statMsg(f.error);return;}
-  DIR=f.dir||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';setVcs(f.vcs||{});
-  TREE=f.tree||[];
-  treeNote();
-  renderTree();
-}
-async function previewFile(path){
-  const r=await api('/fs/read',{path});
-  if(r.error){statMsg(r.error);return;}
-  msg('bot','preview of '+path+' (read-only here; open a .ocd in the editor to edit it).\n'
-      +r.text.split('\n').slice(0,40).join('\n'));
-}
-async function openFile(path){
-  cancelPush();  // a queued rebuild of the old board must not follow us here
-  const r=await api('/fs/open',{path});
-  if(r.error){statMsg(r.error);return;}
-  statMsg('');ui.set({msgs:[],followups:[]});
-  heldThash='';heldTraces=[];  // a different board: its traces are not ours
-  clearProposals();  // the server dropped the old board's proposals with it
-  collabReset(r.rev!==undefined?+r.rev:-1); // re-home the room to the new board
-  applyState(r,false);
-  collabStart(); // join the new board's room: sync + fresh SSE stream
-  toast('opened '+path);
-  const f=await fetch('/fs').then(x=>x.json());
-  if(!f.error){DIR=f.base||'.';ROOTREL=f.root||'.';SRCREL=f.src||'';TREE=f.tree||[];
-    ui.set({srcNote:`${SRCREL} · ${f.base||'.'} · saved on every good build`});
-    ui.set({chatWhere:SRCREL});
-    treeNote();
-    renderTree();}
-  loadVCS();
-}
 function toast(t){
   ui.set({toast:t});                 // views.js renders the one toast node
   clearTimeout(toast._t);
@@ -964,11 +906,7 @@ async function boot(){
   if(r.rev!==undefined)setCollabRev(+r.rev); // the room's rev from the first load
   collabStart(); // realtime: SSE fan-out + presence from here on
   if(f.error){ui.set({treeNote:f.error});return;}
-  DIR=f.base||'.';ROOTREL=f.root||'.';TREE=f.tree||[];SRCREL=f.src||'';setVcs(f.vcs||{});
-  ui.set({srcNote:`${SRCREL} · ${f.base||'.'} · saved on every good build`});
-  ui.set({chatWhere:SRCREL});
-  treeNote();
-  renderTree();
+  setOpenBoard(f);
   loadVCS();
   $('logoutbtn').onclick=async()=>{await api('/auth/logout',{});location.href='/';};
   try{if(JSON.parse(localStorage.getItem('ocd-studio-dark')||'0'))setDark(true);}catch(e){}
@@ -1045,7 +983,9 @@ $('chatbtn').onclick=()=>{
 initCollab({markDirty,cancelPush,setEditor,push,toast,
   view:()=>view,board:()=>S,edHl});
 initKb();   // knowledgebase panel: fetches, prefs and its own polling
-initVcs({srcRel:()=>SRCREL,statMsg,toast});
+initVcs({srcRel:srcRel,statMsg,toast});
+initTree({statMsg,toast,cancelPush,clearProposals,collabReset,collabStart,
+  applyState,loadVCS,setVcs});
 initGallery({board:()=>S,palette:()=>C,statMsg,applyState,withBusy,drawFeas});
 initScan({push,setEditor});
 initAgent({applyState,loadVCS,setEditor});
